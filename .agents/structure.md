@@ -61,7 +61,7 @@ chamvi/
 ├── tsconfig.build.json              # Shared compiler options
 ├── eslint.config.js                 # @tada5hi/eslint-config flat config
 ├── commitlint.config.mjs            # Conventional Commits
-├── release-please-config.json       # Per-package release config
+├── release-please-config.json       # One linked release for every package (linked-versions)
 └── .release-please-manifest.json    # Current released versions
 ```
 

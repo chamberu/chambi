@@ -9,7 +9,7 @@
 | tsdown | Build each entry (`index`, `testing`) to `dist/<entry>.mjs` + `.d.mts` |
 | nx | Runs `build`, `test`, `typecheck` across packages |
 | commitlint + husky | Conventional Commits enforcement (`.husky/commit-msg`) |
-| release-please | Per-package versions and changelogs |
+| release-please | One linked version for every package, one release and changelog (`linked-versions`) |
 | Dependabot | Daily npm + GitHub Actions updates, grouped by prod/dev and major/minor+patch |
 | EditorConfig | Whitespace rules shared with the editor |
 | unplugin-swc | Compiles the store-typeorm entities' legacy decorators in tsdown and Vitest; the root `tsconfig.build.json` sets `experimentalDecorators: true` |
@@ -69,7 +69,7 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 - After changes run `npm run build && npm run test && npm run typecheck && npm run lint`. Run `npm run lint:fix` before hand-fixing formatting.
 - Never edit `dist/` (generated, git-ignored). Never hand-edit `.release-please-manifest.json` or package versions; release-please owns them.
 - Keep runtime `dependencies` minimal (the house libraries `@ebec/core`, `smob`, `validup` are fine); tooling belongs in `devDependencies`, and the AI SDK (`ai`) stays a peer dependency.
-- New package: add `packages/<name>` (copy `packages/test-kit` layout), a path alias in the root `tsconfig.json`, aliases in its `test/vitest.config.ts` for itself and every workspace package it imports, and an entry in `release-please-config.json` and `.release-please-manifest.json`.
+- New package: add `packages/<name>` (copy `packages/test-kit` layout), a path alias in the root `tsconfig.json`, aliases in its `test/vitest.config.ts` for itself and every workspace package it imports, an entry in `release-please-config.json` (`packages` and the `linked-versions` components) and in `.release-please-manifest.json` at the current version.
 - Errors extend `ChamviError` (`@ebec/core` `BaseError`) and live in `src/errors/`, one file each (see File Organization); never throw a bare `Error` from library code.
 - A new public export goes through its folder's `index.ts` (reached from `src/index.ts`) and must be added to the package's `test/unit/exports.spec.ts`.
 
@@ -93,7 +93,7 @@ Conventional Commits: `<type>(scope): <description>`, e.g. `feat(core): add run 
 ## CI/CD
 
 - `ci.yml`: on push and PR to `master`, install, lint, build, typecheck, test on Node 22 and 24.
-- `release.yml`: release-please on `master` opens a release PR per package (`node-workspace` plugin, tags like `core-v0.1.0`); when merged, build and publish via `tada5hi/monoship@v2` with npm provenance.
+- `release.yml`: release-please on `master` opens one release PR for every package (`linked-versions`, the root package `chamvi-root` as component `root`, one tag `v<version>` without a component, `node-workspace` plugin); when merged, build and publish via `tada5hi/monoship@v2` with npm provenance.
 - Both reuse the composite actions in `.github/actions/{install,build}`; change Node setup or caching there.
 
 ## References

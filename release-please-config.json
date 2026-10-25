@@ -1,9 +1,12 @@
 {
+    "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+    "include-component-in-tag": false,
     "release-type": "node",
     "bump-minor-pre-major": true,
     "bump-patch-for-minor-pre-major": true,
     "initial-version": "0.1.0",
     "packages": {
+        ".": {"component": "root"},
         "packages/app": {"component": "app"},
         "packages/channel-cron": {"component": "channel-cron"},
         "packages/channel-openclaw": {"component": "channel-openclaw"},
@@ -23,8 +26,30 @@
     "plugins": [
         {
             "type": "node-workspace",
+            "updateAllPackages": true,
             "updatePeerDependencies": true
+        },
+        {
+            "type": "linked-versions",
+            "groupName": "main",
+            "components": [
+                "root",
+                "app",
+                "channel-cron",
+                "channel-openclaw",
+                "cli",
+                "coding",
+                "core",
+                "github",
+                "http",
+                "sandbox",
+                "sandbox-docker",
+                "sandbox-k8s",
+                "sandbox-local",
+                "store-typeorm",
+                "test-kit",
+                "ui"
+            ]
         }
-    ],
-    "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
+    ]
 }
