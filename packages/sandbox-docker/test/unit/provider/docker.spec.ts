@@ -128,8 +128,9 @@ describeDocker('docker sandbox', () => {
         await workspace.writeFile('kept.txt', 'work');
         // the list is older than the start: an operator's docker start, live-restore, another replica's find
         const client = Object.create(docker) as Docker;
-        client.listContainers = async (options) => (await docker.listContainers(options))
+        const list = async (options?: Docker.ContainerListOptions) => (await docker.listContainers(options))
             .map((item) => ({ ...item, State: 'exited' }));
+        client.listContainers = list as Docker['listContainers'];
 
         const found = await createDockerSandbox({ image: dockerImage, docker: client }).find(runId);
         workspaces.push(...found);
