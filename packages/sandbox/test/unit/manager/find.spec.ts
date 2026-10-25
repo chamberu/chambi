@@ -239,7 +239,11 @@ describe('workspace manager: find', () => {
 
     it('attach with isSettled looks up no settled run this process never touched and leaves it to a collection', async () => {
         const isSettled = async () => true;
-        const { provider, clock, build } = setup({ isSettled, gcIntervalMs: 60_000 });
+        const {
+            provider, 
+            clock, 
+            build, 
+        } = setup({ isSettled, gcIntervalMs: 60_000 });
         const manager = build();
         const engine = fakeEngine();
         manager.attach(engine);

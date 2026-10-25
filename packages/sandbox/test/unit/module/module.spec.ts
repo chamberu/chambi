@@ -411,7 +411,11 @@ describe('sandboxModule', () => {
             const other = createWorkspaceManager({ provider: createLocalSandbox({ root }), gcIntervalMs: 0 });
             const { workspace } = await other.acquire('run-of-another-app', {});
 
-            const module = new SandboxModule({ env: {}, provider: createLocalSandbox({ root }), gcIntervalMs: 0 });
+            const module = new SandboxModule({
+                env: {}, 
+                provider: createLocalSandbox({ root }), 
+                gcIntervalMs: 0, 
+            });
             managers.push(module.manager);
             await harnessWith(module);
             expect(await module.manager.collectGarbage()).toBe(0);
