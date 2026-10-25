@@ -65,10 +65,14 @@ export type GrepMatch = {
     text: string;
 };
 
+/** The program `grep` searched with: its regular expression syntax differs. */
+export type GrepEngine = 'ripgrep' | 'git-grep' | 'grep';
+
 export type GrepResult = {
     matches: GrepMatch[];
     /** True when more matches exist than were returned. */
     truncated: boolean;
+    engine: GrepEngine;
 };
 
 export type ListFilesResult = {
@@ -135,6 +139,12 @@ export type BashKillResult = {
     job: string;
     status: BashJobStatus;
     exitCode?: number;
+};
+
+export type GlobResult = {
+    /** Relative to the workspace root, sorted. */
+    files: string[];
+    truncated: boolean;
 };
 
 export type GitDiffResult = {

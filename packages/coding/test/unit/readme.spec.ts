@@ -53,6 +53,7 @@ describe('README example', () => {
             'dispose_workspace',
             'edit_file',
             'git_diff',
+            'glob',
             'grep',
             'list_files',
             'multi_edit',
