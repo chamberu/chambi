@@ -60,8 +60,8 @@ export const OUTPUT_LOGS_KEPT = 100;
 /**
  * The logs of `~/.chamvi/out/` take at most this many times
  * `outputLogMaxBytes` in all (256 MiB by default): past it each call deletes
- * the oldest ones but its own, since a hardened workspace's HOME is the
- * `/tmp` tmpfs (1 GiB by default).
+ * the oldest ones but its own, since HOME shares the workspace's disk
+ * (`WORKSPACE_HOME`, on Kubernetes counted in its `ephemeral-storage`).
  */
 export const OUTPUT_LOGS_BUDGET_CAPS = 4;
 
