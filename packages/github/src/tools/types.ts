@@ -97,7 +97,7 @@ export type GithubReleaseNote = {
     bodyTruncated: boolean;
 };
 
-/** `github_list_releases`: oldest first; `truncated` when more matched than RELEASES_MAX. */
+/** `github_list_releases`: oldest first; `truncated` when more matched than RELEASES_MAX or the pages read did not reach `from`. */
 export type GithubReleaseList = {
     releases: GithubReleaseNote[];
     truncated: boolean;
@@ -123,7 +123,7 @@ export type GithubComparison = {
         additions: number;
         deletions: number;
     }>;
-    /** True when commits or files were cut. */
+    /** True when commits were cut or the files reached GitHub's cap of 300 (more may exist). */
     truncated: boolean;
 };
 

@@ -350,6 +350,39 @@ describe('read tools', () => {
             expect(result.releases.map((r) => r.tag)).toEqual(['v0.1.0', 'v0.2.0']);
             expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(2);
         });
+
+        it('keeps reading past a backport published after the wanted range', async () => {
+            const { fake, call } = setup();
+            fake.releases.set('octo/demo', [
+                ...Array.from({ length: 111 }, (_, i) => release(`v2.${i}.0`, (i % 28) + 1)),
+                release('v3.0.0', 1),
+                release('v1.9.9', 2),
+            ]);
+
+            const result = await call<{ releases: Array<{ tag: string }>; truncated: boolean }>('github_list_releases', {
+                repo: 'octo/demo',
+                from: '2.5.0',
+                to: '2.20.0',
+            });
+            expect(result.releases.map((r) => r.tag)).toEqual(Array.from({ length: 15 }, (_, i) => `v2.${i + 6}.0`));
+            expect(result.truncated).toBe(false);
+        });
+
+        it('reports a range the page cap left unread as truncated', async () => {
+            const { fake, call } = setup();
+            fake.releases.set('octo/demo', [
+                ...Array.from({ length: 10 }, (_, i) => release(`v1.${i}.0`, i + 1)),
+                ...Array.from({ length: 1_000 }, (_, i) => release(`nightly-${i}`, (i % 28) + 1)),
+            ]);
+
+            const result = await call<{ releases: Array<{ tag: string }>; truncated: boolean }>('github_list_releases', {
+                repo: 'octo/demo',
+                from: '1.0.0',
+                to: '1.5.0',
+            });
+            expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(10);
+            expect(result.truncated).toBe(true);
+        });
     });
 
     describe('github_compare', () => {
@@ -435,6 +468,18 @@ describe('read tools', () => {
                 },
             );
             expect(result.commits).toHaveLength(100);
+            expect(result.files).toHaveLength(300);
+            expect(result.truncated).toBe(true);
+        });
+
+        it('reports a file list at GitHub\'s cap of 300 as truncated', async () => {
+            const { call } = withComparison(2, 300);
+
+            const result = await call<{ files: unknown[]; truncated: boolean }>('github_compare', {
+                repo: 'octo/demo',
+                base: 'a',
+                head: 'b',
+            });
             expect(result.files).toHaveLength(300);
             expect(result.truncated).toBe(true);
         });
