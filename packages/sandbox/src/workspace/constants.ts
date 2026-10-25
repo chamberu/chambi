@@ -11,8 +11,8 @@ export const WORKSPACE_ROOT = '/workspace';
 /** Cap per output stream of one exec. */
 export const OUTPUT_MAX_BYTES = 65_536;
 
-/** Cap of `readFile` and `writeFile`. */
-export const FILE_MAX_BYTES = 1_048_576;
+/** Cap of `readFile`, `readBytes` and `writeFile`. */
+export const FILE_MAX_BYTES = 16_777_216;
 
 export const EXEC_TIMEOUT_MS = 300_000;
 
