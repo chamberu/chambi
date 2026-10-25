@@ -36,6 +36,7 @@ import {
     buildContainerOptions,
     dockerMessage,
     isMissingImage,
+    isStatus,
     pullImage,
     removeContainer,
 } from './helpers.ts';
@@ -187,13 +188,30 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             const containers = await listWorkspaceContainers(deployment, runId);
             const now = clock.now().getTime();
             const found: IWorkspace[] = [];
+            /** Starts a container listed as stopped; false when it cannot run. */
+            const restart = async (item: Docker.ContainerInfo, container: Docker.Container): Promise<boolean> => {
+                if (item.State === 'running') return true;
+                // stopped (a host or daemon restart): the volume still holds the work.
+                // A container never started is a create that crashed: left to the collection
+                if (item.State !== 'exited') return false;
+                try {
+                    await container.start(findOptions.signal ? { abortSignal: findOptions.signal } : {});
+                    return true;
+                } catch (error) {
+                    // started meanwhile (an operator, live-restore, another replica's find)
+                    return isStatus(error, 304);
+                }
+            };
             for (const item of containers) {
                 const labels = item.Labels ?? {};
                 const id = labels[WORKSPACE_LABEL] ?? '';
                 const held = live.get(id);
                 if (held && (!held.disposed || disposing.has(held))) {
                     // a disposed one (also after a failed removal) is never found again
-                    if (!held.disposed) found.push(held);
+                    if (disposing.has(held)) continue;
+                    // not probed yet: its container may have stopped all the same,
+                    // and the same container started again serves the held handle
+                    if (held.info.expiresAt.getTime() > now && await restart(item, docker.getContainer(item.Id))) found.push(held);
                     continue;
                 }
                 // gone (its container stopped): a fresh handle, restarted below
@@ -201,16 +219,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 const info = readWorkspaceInfo(labels, PROVIDER_NAME);
                 if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
                 const container = docker.getContainer(item.Id);
-                if (item.State !== 'running') {
-                    // stopped (a host or daemon restart): the volume still holds the work.
-                    // A container never started is a create that crashed: left to the collection
-                    if (item.State !== 'exited') continue;
-                    try {
-                        await container.start(findOptions.signal ? { abortSignal: findOptions.signal } : {});
-                    } catch {
-                        continue;
-                    }
-                }
+                if (!await restart(item, container)) continue;
                 const workspace = open(id, info, container);
                 const commit = info.repo === undefined ? undefined : await readCheckoutCommit(workspace, findOptions.signal);
                 if (commit !== undefined) info.commit = commit;
