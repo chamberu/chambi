@@ -5,5 +5,5 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export { checkAgentModel } from './module.ts';
-export * from './types.ts';
+export { checkAgentModel, resolveModel } from './module.ts';
+export type { IModelResolver, ModelCheckOptions, ModelRef } from './types.ts';

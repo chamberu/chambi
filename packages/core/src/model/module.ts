@@ -5,9 +5,15 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { LanguageModel } from 'ai';
 import { isObject } from 'smob';
 import type { Agent } from '../agent/types.ts';
+import { inject } from '../context/module.ts';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
+import type { StateSchema } from '../state/types.ts';
+import type { ToolContext } from '../tool/types.ts';
+import { toLanguageModel } from './asserts.ts';
+import { MODEL_CONTEXT } from './constants.ts';
 import type { ModelCheckOptions, ModelRef } from './types.ts';
 
 const SHAPE = 'must be a "<provider>/<model>" string or a LanguageModel object.';
@@ -40,4 +46,29 @@ export function checkAgentModel(agent: Agent, options: ModelCheckOptions): void 
     }
     if (!isModelRef(ref)) throw new InvalidAgentDefinitionError(`Agent "${agent.name}": model ${SHAPE}`);
     if (typeof ref === 'string' && options.models) options.models.check(ref, agent.name);
+}
+
+/**
+ * The LanguageModel for `ref` or, without one, for the run's agent model
+ * (its own, else the engine's default), read from the live registry. A
+ * string goes through EngineOptions.models; without a resolver it is an
+ * InvalidAgentDefinitionError. A context the engine did not pass throws
+ * ContextNotProvidedError.
+ */
+export function resolveModel<S extends StateSchema = StateSchema>(
+    ctx: ToolContext<S>,
+    ref?: ModelRef,
+): LanguageModel {
+    const {
+        model, 
+        models, 
+        agentModel, 
+    } = inject(ctx, MODEL_CONTEXT);
+    const wanted = ref ?? agentModel(ctx.run.agent) ?? model;
+    if (typeof wanted === 'string' && !models) {
+        throw new InvalidAgentDefinitionError(
+            `resolveModel(): the model string "${wanted}" needs a model resolver (EngineOptions.models).`,
+        );
+    }
+    return toLanguageModel(wanted, models, ctx.run.agent);
 }

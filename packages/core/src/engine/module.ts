@@ -36,8 +36,9 @@ import type {
     Usage,
     WaitPoint,
 } from '../run/types.ts';
+import { MODEL_CONTEXT } from '../model/constants.ts';
 import { checkAgentModel, checkDefaultModel } from '../model/module.ts';
-import type { IModelResolver, ModelRef } from '../model/types.ts';
+import type { IModelResolver, ModelContext, ModelRef } from '../model/types.ts';
 import type { IStore } from '../store/types.ts';
 import { idempotencyScope, toInvoker } from '../trigger/helpers.ts';
 import { assertTriggerKey } from '../trigger/key.ts';
@@ -159,6 +160,12 @@ export class Engine implements IContextProvider {
         this.model = opts.model;
         this.models = opts.models;
         checkDefaultModel({ model: this.model, models: this.models });
+        // set directly: the key is module-private, so no provide() can collide
+        this.provided.set(MODEL_CONTEXT, {
+            model: this.model,
+            models: this.models,
+            agentModel: (name: string) => this.agents.get(name)?.definition.model,
+        } satisfies ModelContext);
         for (const agent of opts.agents) this.assertRegistrable(agent);
         // eslint-disable-next-line no-console
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));

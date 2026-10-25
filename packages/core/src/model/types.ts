@@ -7,6 +7,8 @@
 
 import type { LanguageModel } from 'ai';
 
+// #region public
+
 /**
  * A model: `'<provider>/<model id>'` (split at the first `/`, resolved
  * through the engine's IModelResolver) or an AI SDK LanguageModel object,
@@ -30,4 +32,13 @@ export interface IModelResolver {
 export type ModelCheckOptions = {
     model?: ModelRef;
     models?: IModelResolver;
+};
+// #endregion
+
+/** What the engine provides under MODEL_CONTEXT (internal). */
+export type ModelContext = {
+    model?: ModelRef;
+    models?: IModelResolver;
+    /** The model of the agent registered under `name` now (the live registry). */
+    agentModel(name: string): ModelRef | undefined;
 };

@@ -183,6 +183,19 @@ function tryInject<T>(ctx: ToolContext, key: ContextKey<T>): T | undefined;
 
 <<< ../../../core/src/context/types.ts{ts}
 
+## Models
+
+```ts
+function resolveModel<S extends StateSchema = StateSchema>(ctx: ToolContext<S>, ref?: ModelRef): LanguageModel;
+function checkAgentModel(agent: Agent, options: ModelCheckOptions): void;      // InvalidAgentDefinitionError
+```
+
+A `ModelRef` is a `'<provider>/<model id>'` string or an AI SDK `LanguageModel` object (used as is). An agent's `model` falls back to `EngineOptions.model`; the engine refuses an agent with neither, a ref of another shape, and a string its `EngineOptions.models` (`IModelResolver`) refuses, at construction and in `putAgent` (`checkAgentModel` is that check). Strings resolve through `models.resolve()` when an execution starts. **Pass-through:** without `models`, a string model goes to the AI SDK unchanged (its global default provider).
+
+`resolveModel(ctx, ref?)` gives tool code (`execute`, the tools factory, the effect hooks) a model: `ref`, else the run's agent model from the live registry, else the default. An object is returned as is; a string needs `models` (`resolveModel(): the model string "<ref>" needs a model resolver (EngineOptions.models).`) and a ref it cannot resolve is an `InvalidAgentDefinitionError` too, a tool error in `execute`. It reads the engine's models through the context mechanism, so `ToolContext` keeps its shape and a hand-built context throws `ContextNotProvidedError`.
+
+<<< ../../../core/src/model/types.ts#public{ts}
+
 ## Effect tools
 
 ```ts
