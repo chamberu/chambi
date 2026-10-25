@@ -46,7 +46,11 @@ describe('README example', () => {
             },
             { parts: [{ type: 'text', text: 'That address is not reachable.' }] },
         ]));
-        const engine = new Engine({ store: new MemoryStore(), agents: [agent], channels: [httpChannel()] });
+        const engine = new Engine({
+            store: new MemoryStore(),
+            agents: [agent],
+            channels: [httpChannel()],
+        });
         await engine.start();
 
         const { runId } = await engine.dispatch({

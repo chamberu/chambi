@@ -138,3 +138,66 @@ export const RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set([
     'title',
     'xmp',
 ]);
+
+/** Elements whose content is foreign (svg, math): there a self-closed tag closes. */
+export const FOREIGN_ELEMENTS: ReadonlySet<string> = new Set([
+    'svg',
+    'math',
+]);
+
+/** Foreign elements whose content is HTML again (lower-cased), so a self-closed tag in them opens. */
+export const HTML_INTEGRATION_ELEMENTS: ReadonlySet<string> = new Set([
+    'foreignobject',
+    'desc',
+    'title',
+    'annotation-xml',
+]);
+
+/** HTML elements that end the foreign content they appear in (the HTML parser's breakout list). */
+export const FOREIGN_BREAKOUT_ELEMENTS: ReadonlySet<string> = new Set([
+    'b',
+    'big',
+    'blockquote',
+    'body',
+    'br',
+    'center',
+    'code',
+    'dd',
+    'div',
+    'dl',
+    'dt',
+    'em',
+    'embed',
+    'font',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'head',
+    'hr',
+    'i',
+    'img',
+    'li',
+    'listing',
+    'menu',
+    'meta',
+    'nobr',
+    'ol',
+    'p',
+    'pre',
+    'ruby',
+    's',
+    'small',
+    'span',
+    'strike',
+    'strong',
+    'sub',
+    'sup',
+    'table',
+    'tt',
+    'u',
+    'ul',
+    'var',
+]);

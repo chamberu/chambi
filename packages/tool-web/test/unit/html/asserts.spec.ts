@@ -22,6 +22,21 @@ describe('nestingDepth', () => {
         expect(nestingDepth(`<div>${'<p>para'.repeat(1000)}</div>`)).toBe(1);
     });
 
+    it('counts a self-closed non-void element as open, as an HTML parser does', () => {
+        expect(nestingDepth('<div/>'.repeat(1000))).toBe(1000);
+        expect(nestingDepth(`<div>${'<span/>'.repeat(5)}</div>`)).toBe(6);
+    });
+
+    it('honours self-closing in svg and math, but not in their HTML parts', () => {
+        expect(nestingDepth(`<svg>${'<path d="M0"/>'.repeat(1000)}</svg><math>${'<mi/>'.repeat(1000)}</math>`)).toBe(1);
+        expect(nestingDepth('<svg/><math/><div/>')).toBe(1);
+        expect(nestingDepth(`<svg>${'<g>'.repeat(600)}`)).toBe(601);
+        expect(nestingDepth(`<svg><foreignObject>${'<div/>'.repeat(100)}</foreignObject></svg>`)).toBe(102);
+        expect(nestingDepth(`<svg><g><div>${'<div/>'.repeat(100)}`)).toBe(101);
+        expect(nestingDepth(`<svg><style>${'<g>'.repeat(100)}`)).toBe(102);
+        expect(nestingDepth(`<svg><path/></svg>${'<div/>'.repeat(10)}`)).toBe(10);
+    });
+
     it('skips comments and the content of raw text elements', () => {
         expect(nestingDepth(`<div><!-- ${'<div>'.repeat(100)} --></div>`)).toBe(1);
         expect(nestingDepth(`<script>${'"<div>"+'.repeat(100)}</script><div></div>`)).toBe(1);
