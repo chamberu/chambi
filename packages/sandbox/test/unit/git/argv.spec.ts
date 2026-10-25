@@ -16,9 +16,7 @@ const url = 'https://github.com/octo/demo.git';
 
 describe('gitArgv', () => {
     it('resets every credential helper and disables hooks without a credential', () => {
-        expect(gitArgv(url, ['fetch', '-q', url, 'main'])).toEqual({
-            argv: ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null', 'fetch', '-q', url, 'main'],
-        });
+        expect(gitArgv(url, ['fetch', '-q', url, 'main'])).toEqual({ argv: ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null', 'fetch', '-q', url, 'main'] });
     });
 
     it('hands a credential over stdin to the one-shot helper, never in argv', () => {
@@ -40,7 +38,11 @@ describe('runGit', () => {
             signal: controller.signal,
         });
         expect(workspace.calls[0]?.argv[0]).toBe('sh');
-        expect(workspace.calls[0]?.options).toEqual({ stdin: 'u\nsecret-1\n', timeoutMs: EXEC_TIMEOUT_MS, signal: controller.signal });
+        expect(workspace.calls[0]?.options).toEqual({
+            stdin: 'u\nsecret-1\n', 
+            timeoutMs: EXEC_TIMEOUT_MS, 
+            signal: controller.signal, 
+        });
     });
 });
 
@@ -53,8 +55,16 @@ describe('credentialKey', () => {
 
     it('writes one tab separated line per entry', () => {
         expect(credentialsFileContent([
-            { key: 'https://github.com/octo/demo', username: 'x-access-token', password: 'p1' },
-            { key: 'https://github.com/', username: 'u', password: 'p2' },
+            {
+                key: 'https://github.com/octo/demo', 
+                username: 'x-access-token', 
+                password: 'p1', 
+            },
+            {
+                key: 'https://github.com/', 
+                username: 'u', 
+                password: 'p2', 
+            },
         ])).toBe('https://github.com/octo/demo\tx-access-token\tp1\nhttps://github.com/\tu\tp2\n');
     });
 });
