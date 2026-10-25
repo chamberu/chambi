@@ -28,6 +28,23 @@ export type GithubAppOptions = {
 /** An Octokit (`@octokit/core` with `paginate`). */
 export type GithubOctokit = InstanceType<typeof PaginatedOctokit>;
 
+/** GitHub App permissions of a token, e.g. `{ contents: 'write', workflows: 'write' }`. */
+export type GithubPermissions = Record<string, 'read' | 'write'>;
+
+/** A short-lived token of one repository (`IGithubApp.repositoryToken`). */
+export type GithubRepositoryToken = {
+    token: string;
+    expiresAt: Date;
+};
+
+/** The App's bot as a git commit identity. */
+export type GithubBotIdentity = {
+    /** `<slug>[bot]`. */
+    name: string;
+    /** `<bot user id>+<slug>[bot]@users.noreply.github.com`, which GitHub links to the bot. */
+    email: string;
+};
+
 export interface IGithubApp {
     readonly appId: string;
     readonly installationId?: number;
@@ -35,6 +52,20 @@ export interface IGithubApp {
     octokit(installationId: number): Promise<GithubOctokit>;
     /** `<slug>[bot]`, from `slug` or one `GET /app`; cached, single-flight. */
     botLogin(): Promise<string>;
+    /**
+     * The bot as a commit identity (`GET /users/<login>` for its user id,
+     * once; a failure is not cached), e.g. the workspace manager's `author`.
+     */
+    botIdentity(): Promise<GithubBotIdentity>;
+    /**
+     * A token limited to one repository and `permissions` (the deferred
+     * scoped token of plan 014): the App's installation on the repository
+     * (`GET /repos/{owner}/{repo}/installation`), then an exchange with
+     * `repositories: [repo]`. Cached per repository and permissions until 5
+     * minutes before it expires, concurrent callers share one exchange, a
+     * failure is not cached. Undefined when the App is not installed there.
+     */
+    repositoryToken(target: { owner: string; repo: string }, options: { permissions: GithubPermissions }): Promise<GithubRepositoryToken | undefined>;
     /** `sha256=<hex>` of the raw body under any webhook secret, compared in constant time. */
     verifySignature(body: Uint8Array, signature: string | null): boolean;
     /** The read-only tools (`github_get_issue`, `github_search_issues`, ...), acting as the run's installation. */
