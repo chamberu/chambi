@@ -123,17 +123,18 @@ interface IWorkspace {
     readonly disposed: boolean;       // disposed, or found gone
     exec(argv: readonly string[], options?: ExecOptions): Promise<ExecResult>;
     readFile(path: string): Promise<string>;
-    writeFile(path: string, content: string): Promise<void>;
+    readBytes(path: string): Promise<Uint8Array>;
+    writeFile(path: string, content: string | Uint8Array): Promise<void>;
     dispose(): Promise<void>;
 }
 ```
 
-- **argv only.** `exec` never takes a shell string. The only shell is the coding `bash` tool, which runs `['sh', '-c', command]` inside the workspace.
+- **argv only.** `exec` never takes a shell string. The only shells are the coding tools' `sh -c` scripts inside the workspace, which take the command as an argument.
 - **Paths** are relative to the workspace root or start with `/workspace/`; every provider shows the model `/workspace`. An empty path, a NUL byte, any other absolute path or one that leaves the root (`../x`, `/workspace/../etc`) is a `ValidationError` before any filesystem or exec call (`resolveWorkspacePath`).
 - **Output** is capped at `OUTPUT_MAX_BYTES` (64 KiB) per stream with `stdoutTruncated` / `stderrTruncated`; the reader keeps draining past the cap, so a flood never blocks the child or the host's memory.
 - **Timeouts**: `timeoutMs` defaults to `EXEC_TIMEOUT_MS` (5 minutes), at most `EXEC_TIMEOUT_MAX_MS` (30 minutes) and never past the workspace's expiry. A timeout is a result (`timedOut: true`), not an error; the whole process group goes, backgrounded grandchildren included. A command that exits on its own returns with its exit code and its output about 2 s after its exit even when a background job it started (`node server.js &`) still holds its output; the job keeps running until the workspace is disposed. A command that cannot start exits 127.
 - **cwd** must name a directory in the workspace; another one rejects with `SandboxError('cwd /workspace/<path> is no directory in the workspace.')` on every provider.
-- **Files**: `readFile` and `writeFile` take UTF-8 text of at most `FILE_MAX_BYTES` (1 MiB). `readFile` of a file that is not valid UTF-8 (Latin-1, binary) throws `SandboxError` instead of replacing bytes, so `edit_file` never rewrites bytes it did not edit.
+- **Files** have at most `FILE_MAX_BYTES` (16 MiB). `readBytes` returns the raw bytes, `writeFile` takes UTF-8 text or bytes. `readFile` of a file that is not valid UTF-8 (Latin-1, binary) throws `SandboxError` instead of replacing bytes, so `edit_file` never rewrites bytes it did not edit.
 - **Abort**: `signal` stops waiting on the command. Local kills the process group; Docker and Kubernetes detach, and the command runs on until its `timeout` wrapper fires or the workspace is disposed (which every settled run does).
 - **Dispose** is idempotent; an exec in flight rejects with `SandboxError('workspace disposed')`, and every call after it rejects.
 - **Gone**: a workspace whose container stopped or was removed (a `docker kill`, a daemon restart without live-restore), whose pod failed, was evicted or deleted, or whose local directory was removed, reads as `disposed` once a call found it so, and that call rejects with "workspace ... is gone; call create_workspace for a new one". The manager then forgets it without disposing it (a dispose would remove a stopped container with its volume) and asks `provider.find` on the next `get` or `acquire`: a stopped Docker container of an unexpired workspace is started again and comes back with its work, also in the process that held it (a daemon restart while the run waits for an approval). What `find` does not report any more (a removed container, a failed or deleted pod, a removed directory) stays gone: `get` repeats the gone message once, and `create_workspace` creates a new one (`reused: false`). A gone local workspace kills its background jobs when it finds its directory removed.
