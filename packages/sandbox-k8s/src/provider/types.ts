@@ -30,9 +30,9 @@ export type KubernetesSandboxOptions = {
     /** Extra pod labels (e.g. for a NetworkPolicy); may not name a managed label. */
     podLabels?: Record<string, string>;
     /**
-     * Pull policy of the provider's own image: default `'IfNotPresent'`,
-     * `'Always'` for a mutable tag. Any other image (the manager's or the
-     * model's) is pulled if not present.
+     * Pull policy of the provider's image and the manager's: default
+     * `'IfNotPresent'`, `'Always'` for a mutable tag. An image a run asked
+     * for (`create_workspace({ image })`) is pulled if not present.
      */
     imagePullPolicy?: ImagePullPolicy;
     /**

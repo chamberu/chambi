@@ -56,8 +56,9 @@ const PROVIDER_NAME = 'docker';
  * writable root and a few capabilities by default, the hardened mode through
  * `user` and `readOnlyRoot`), commands run through the Docker exec API inside
  * GNU `timeout`. `create` probes the image (`probeImage`) before the
- * checkout; an image other than the provider's (the manager's or the
- * model's) is pulled when missing, whatever `pull` says. `find` lists a run's
+ * checkout; an image a run asked for (`imageRequested`) is pulled when
+ * missing, whatever `pull` says, while the provider's and the operator's
+ * follow `pull`. `find` lists a run's
  * containers by label, starts a stopped one again (its volume holds the
  * work) and rebuilds the info from the labels. The client connects lazily,
  * so creating the provider never contacts the daemon.
@@ -78,14 +79,17 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
     /** The workspaces whose dispose was called: never found again, also while or after a removal fails. */
     const disposing = new WeakSet<IWorkspace>();
 
-    /** Creates the container, pulling its image first as `pull` says; `signal` drops every request. */
+    /**
+     * Creates the container, pulling its image first as `pull` says (as
+     * `'missing'` for an image a run asked for); `signal` drops every request.
+     */
     async function createContainer(
         createOptions: Docker.ContainerCreateOptions,
         imageName: string,
+        requested: boolean,
         signal: AbortSignal | undefined,
     ): Promise<Docker.Container> {
-        // the provider's own image follows `pull`; any other one is pulled when missing
-        const policy = imageName === image ? pull : 'missing';
+        const policy = requested && imageName !== image ? 'missing' : pull;
         const attempt = async (): Promise<Docker.Container> => {
             try {
                 return await docker.createContainer(signal ? { ...createOptions, abortSignal: signal } : createOptions);
@@ -180,7 +184,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 tmpSize,
                 env: { ...options.env, ...input.env },
                 limits,
-            }), imageName, input.signal);
+            }), imageName, input.imageRequested === true, input.signal);
 
             const transport = createDockerTransport(docker, container, clock, user);
             const workspace = open(id, info, transport);

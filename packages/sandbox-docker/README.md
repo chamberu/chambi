@@ -83,7 +83,7 @@ Each workspace is a container `chamvi-ws-<id>`:
 The default image is `ghcr.io/chamvi/sandbox-dev:trixie` (`DEFAULT_SANDBOX_IMAGE`): Debian, git, curl, ripgrep, jq, build-essential, `tini` and [mise](https://mise.jdx.dev), which installs any toolchain at runtime (`mise use -g node@22`, `mise install`), built for `linux/amd64` and `linux/arm64` from [`images/sandbox-dev`](../../images/sandbox-dev). Tags: `trixie` (rebuilt on changes and weekly) and `trixie-<short sha>` (pushed once per commit that changes the image).
 
 - A run may pick any image (`create_workspace({ image })`), which the manager's `allowImage` narrows.
-- `pull: 'missing'` (default) pulls the provider's image once when the daemon lacks it, `'always'` before every create (a mutable tag then follows its rebuilds), `'never'` never. Any other image (the manager's or the model's) is pulled when missing.
+- `pull: 'missing'` (default) pulls the provider's image once when the daemon lacks it, `'always'` before every create (a mutable tag then follows its rebuilds), `'never'` never. It covers the manager's `image` too; an image a run asked for (`create_workspace({ image })`) is pulled when missing.
 - Pin a digest in production (`image: 'ghcr.io/chamvi/sandbox-dev@sha256:...'`), or use `pull: 'always'`.
 - An image needs `sh`, `git` and a GNU `timeout` that takes `-k`, plus `cat`, `head`, `mkdir`, `dirname`, `cp`, `mv` and `rm`. `create` probes the first three once the container runs and fails with a `SandboxError` naming what is missing, before any checkout (and removes the container).
 

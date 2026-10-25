@@ -139,7 +139,7 @@ const DEFAULT_USER: '0:0';
 const DEFAULT_CACHE_VOLUME: 'chamvi-sandbox-cache';
 ```
 
-One container per workspace (`sleep infinity`: its lifetime follows the run), removed with its volume on dispose or by the garbage collection. Root with a writable root and `ROOT_CAPABILITIES` by default; `{ user: '1000:1000', readOnlyRoot: true }` is the hardened mode. `/cache` is the named volume (shared by every workspace of the host) or, with `cache: false`, an anonymous one. An image other than the provider's is pulled when missing. `find` lists a run's containers by label and starts a stopped one again. Creating the provider contacts nothing.
+One container per workspace (`sleep infinity`: its lifetime follows the run), removed with its volume on dispose or by the garbage collection. Root with a writable root and `ROOT_CAPABILITIES` by default; `{ user: '1000:1000', readOnlyRoot: true }` is the hardened mode. `/cache` is the named volume (shared by every workspace of the host) or, with `cache: false`, an anonymous one. An image a run asked for (`imageRequested`) is pulled when missing; the provider's and the manager's follow `pull`. `find` lists a run's containers by label and starts a stopped one again. Creating the provider contacts nothing.
 
 <<< ../../../sandbox-docker/src/provider/types.ts{ts}
 
