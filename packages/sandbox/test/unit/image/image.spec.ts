@@ -54,11 +54,15 @@ describe('cache env', () => {
             PIP_CACHE_DIR: '/cache/pip',
             GOMODCACHE: '/cache/go/mod',
             GOCACHE: '/cache/go/build',
-            CARGO_HOME: '/cache/cargo',
             COMPOSER_CACHE_DIR: '/cache/composer',
             MISE_DATA_DIR: '/cache/mise',
         });
         expect(Object.isFrozen(CACHE_ENV)).toBe(true);
+    });
+
+    it('never shares a home that holds credentials or installed programs (CARGO_HOME)', () => {
+        expect(Object.keys(CACHE_ENV)).not.toContain('CARGO_HOME');
+        expect(Object.keys(cacheEnv('/srv/ws/.cache'))).not.toContain('CARGO_HOME');
     });
 
     it('builds the same variables under another directory', () => {
@@ -68,7 +72,6 @@ describe('cache env', () => {
             PIP_CACHE_DIR: '/srv/ws/.cache/pip',
             GOMODCACHE: '/srv/ws/.cache/go/mod',
             GOCACHE: '/srv/ws/.cache/go/build',
-            CARGO_HOME: '/srv/ws/.cache/cargo',
             COMPOSER_CACHE_DIR: '/srv/ws/.cache/composer',
             MISE_DATA_DIR: '/srv/ws/.cache/mise',
         });

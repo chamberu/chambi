@@ -74,7 +74,7 @@ function isRootUser(user: string | number): boolean;        // 0, '0:<gid>', 'ro
 function assertTmpSizeOption(value: unknown): void;         // a positive memory quantity, else InvalidAgentDefinitionError
 
 const CACHE_DIR: '/cache';
-const CACHE_ENV: Readonly<Record<string, string>>;          // XDG_CACHE_HOME, npm_config_cache, PIP_CACHE_DIR, GOMODCACHE, GOCACHE, CARGO_HOME, COMPOSER_CACHE_DIR, MISE_DATA_DIR
+const CACHE_ENV: Readonly<Record<string, string>>;          // XDG_CACHE_HOME, npm_config_cache, PIP_CACHE_DIR, GOMODCACHE, GOCACHE, COMPOSER_CACHE_DIR, MISE_DATA_DIR
 const ROOT_CAPABILITIES: readonly string[];                 // CHOWN, DAC_OVERRIDE, FOWNER, FSETID, SETUID, SETGID, KILL
 const IMAGE_REQUIREMENTS: readonly string[];                // sh, git, timeout (with -k)
 const IMAGE_PROBE_TIMEOUT_MS: 30_000;

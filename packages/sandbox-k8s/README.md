@@ -113,7 +113,7 @@ A run may pick any image (`create_workspace({ image })`, narrowed by the manager
 
 ## Cache
 
-Every pod mounts `/cache` and gets the cache variables (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `CARGO_HOME`, `COMPOSER_CACHE_DIR`, `MISE_DATA_DIR`). Without `cache` that is an emptyDir of the pod (counted against its `ephemeral-storage`), so installs work but start cold every time. With `cache: { claimName }` every workspace mounts the same ReadWriteMany claim (NFS, CephFS, EFS, Azure Files), so toolchains and packages are fetched once per cluster.
+Every pod mounts `/cache` and gets the cache variables (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`, `MISE_DATA_DIR`). Without `cache` that is an emptyDir of the pod (counted against its `ephemeral-storage`), so installs work but start cold every time. With `cache: { claimName }` every workspace mounts the same ReadWriteMany claim (NFS, CephFS, EFS, Azure Files), so toolchains and packages are fetched once per cluster.
 
 **Risk**: a shared claim is shared by every run and agent of the namespace. A malicious package one run fetched can sit in another run's cache; npm verifies integrity hashes, pip, Go's build cache and others less. Keep runs that must not influence each other on different claims, or without one.
 

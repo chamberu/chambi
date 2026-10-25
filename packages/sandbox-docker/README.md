@@ -89,7 +89,7 @@ The default image is `ghcr.io/chamvi/sandbox-dev:trixie` (`DEFAULT_SANDBOX_IMAGE
 
 ## Cache
 
-Every workspace mounts `/cache` and gets `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `CARGO_HOME`, `COMPOSER_CACHE_DIR` and `MISE_DATA_DIR` pointing into it (`CACHE_ENV`), so a second install of the same packages or toolchain is fast. By default it is one named volume for the whole host, `chamvi-sandbox-cache`, which outlives every workspace (remove it with `docker volume rm` to reset it).
+Every workspace mounts `/cache` and gets `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR` and `MISE_DATA_DIR` pointing into it (`CACHE_ENV`), so a second install of the same packages or toolchain is fast. By default it is one named volume for the whole host, `chamvi-sandbox-cache`, which outlives every workspace (remove it with `docker volume rm` to reset it).
 
 **Risk**: workspaces of different runs and agents share that volume. A malicious package one run fetched can sit in the cache of another run; npm verifies integrity hashes, pip, Go's build cache and others less. Use `cache: false` (an anonymous volume per workspace, removed with it) where runs must not influence each other, or a volume per trust level (`cache: { volume: 'chamvi-cache-public' }`).
 
