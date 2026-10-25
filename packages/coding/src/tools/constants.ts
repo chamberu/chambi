@@ -57,6 +57,16 @@ export const EXCERPT_TAIL_BYTES = 24_576;
  */
 export const OUTPUT_LOGS_KEPT = 100;
 
+/**
+ * Bytes one output log of `bash` may grow to (the `outputLogMaxBytes`
+ * default of `codingTools()`): past it the call is killed and the log cut
+ * back to it, so a runaway writer cannot fill the disk until its timeout.
+ */
+export const OUTPUT_LOG_MAX_BYTES = 64 * 1_048_576;
+
+/** Seconds between two checks of the log sizes while a `bash` call runs (`sleep 1` where fractions fail). */
+export const OUTPUT_LOG_CHECK_SECONDS = '0.2';
+
 /** How long reading the logs of a command that timed out may take. */
 export const REPORT_TIMEOUT_MS = 30_000;
 
@@ -68,6 +78,9 @@ export const REPORT_STDERR_HEADER = 'chamvi-report-stderr';
 
 /** What the `bash` script prints instead of running when the explicit cwd is no directory. */
 export const CWD_MISSING = 'chamvi-cwd-missing';
+
+/** The word after the status of a report header when a log passed its cap. */
+export const REPORT_CAPPED = 'capped';
 
 /** Ends a base64 block of a report. */
 export const BLOCK_END = '-';
@@ -115,8 +128,10 @@ export const INNER_SCRIPT = [
 ].join('\n');
 
 /**
- * Prints the report of call `$n` (logs `$f.stdout.log` and `$f.stderr.log`):
- * on stdout `REPORT_HEADER <status>`, the working directory the next call
+ * Prints the report of call `$n` (logs `$f.stdout.log` and `$f.stderr.log`,
+ * cut back to `$m` bytes when the marker `$f.capped` says a log passed
+ * that cap): on stdout `REPORT_HEADER <status>` (plus `REPORT_CAPPED`
+ * after a cap), the working directory the next call
  * starts in (as `/workspace/...` below the root `$r`), then for stdout its
  * size and log path and the base64 of its first `EXCERPT_HEAD_BYTES` and of
  * the rest or its last `EXCERPT_TAIL_BYTES`, each block ended by a
@@ -127,7 +142,10 @@ export const INNER_SCRIPT = [
 const REPORT_PART = [
     'w=$r; if [ -f "$s/cwd" ]; then IFS= read -r w < "$s/cwd"; fi',
     'case $w in "$r") w=/workspace;; "$r"/*) w="/workspace${w#"$r"}";; esac',
-    `printf '%s %s\\n%s\\n' ${REPORT_HEADER} "$st" "$w"`,
+    `q=; if [ -f "$f.capped" ]; then q=' ${  REPORT_CAPPED  }'; rm -f "$f.capped"; ` +
+    'for g in "$f.stdout.log" "$f.stderr.log"; do if [ -n "$(find "$g" -size +"$m"c 2>/dev/null)" ]; then ' +
+    'head -c "$m" "$g" > "$g.t" && mv -f "$g.t" "$g"; fi; done; fi',
+    `printf '%s %s%s\\n%s\\n' ${REPORT_HEADER} "$st" "$q" "$w"`,
     `printf '%s\\n' ${REPORT_STDERR_HEADER} >&2`,
     'for k in stdout stderr; do',
     '  g=$f.$k.log; z=0; if [ -f "$g" ]; then z=$(wc -c < "$g" | tr -d " "); fi',
@@ -147,29 +165,40 @@ const STATE_PART = 'c=$HOME/.chamvi; s=$c/shell; o=$c/out; mkdir -p "$s" "$o" ||
 
 /**
  * The outer shell of a `bash` call, run in the workspace root as `sh -c
- * BASH_SCRIPT sh <INNER_SCRIPT> <command> <id> <cwd or ''>`: it holds the
- * exec's pipes while the inner shell (bash when the image has it, else sh)
- * writes to the log files only, so a background job of the command never
- * keeps the call open; then it prints the report.
+ * BASH_SCRIPT sh <INNER_SCRIPT> <command> <id> <cwd or ''> <log cap>`: it
+ * holds the exec's pipes while the inner shell (bash when the image has
+ * it, else sh) writes to the log files only, so a background job of the
+ * command never keeps the call open; then it prints the report. A
+ * watchdog in the background checks the log sizes every
+ * `OUTPUT_LOG_CHECK_SECONDS` while the inner shell runs; once a log passed
+ * the cap it leaves the marker `$f.capped` and kills the exec's process
+ * group (the command, its jobs and this shell, like a timeout), so the
+ * report is read afterwards with REPORT_SCRIPT.
  */
 export const BASH_SCRIPT = [
     STATE_PART,
-    'n=$3; f=$o/$n',
+    'n=$3; f=$o/$n; m=$5',
     `if [ -n "$4" ] && [ ! -d "$4" ]; then printf '%s\\n' ${CWD_MISSING}; exit 0; fi`,
     'if command -v bash >/dev/null 2>&1; then x=bash; else x=sh; fi',
+    `( while sleep ${OUTPUT_LOG_CHECK_SECONDS} 2>/dev/null || sleep 1; do ` +
+    'if [ -n "$(find "$f.stdout.log" "$f.stderr.log" -size +"$m"c 2>/dev/null)" ]; then : > "$f.capped"; kill -KILL 0; fi; ' +
+    'done ) > /dev/null 2>&1 < /dev/null &',
+    'wd=$!',
     '"$x" -c "$1" chamvi "$2" "$4" "$s" > "$f.stdout.log" 2> "$f.stderr.log" < /dev/null',
     'st=$?',
+    'kill "$wd" 2>/dev/null',
     REPORT_PART,
     'exit $st',
 ].join('\n');
 
 /**
- * The report of call `$1` alone, run as `sh -c REPORT_SCRIPT sh <id>` after
- * the call was killed (its timeout): the status reads `-`.
+ * The report of call `$1` alone, run as `sh -c REPORT_SCRIPT sh <id> <log
+ * cap>` after the call was killed (its timeout or its log cap): the status
+ * reads `-`.
  */
 export const REPORT_SCRIPT = [
     STATE_PART,
-    'n=$1; f=$o/$n; st=-',
+    'n=$1; f=$o/$n; m=$2; st=-',
     REPORT_PART,
 ].join('\n');
 
