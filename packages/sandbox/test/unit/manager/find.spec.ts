@@ -62,7 +62,11 @@ function findsOf(provider: FakeProvider, runId: string) {
 
 describe('workspace manager: find', () => {
     it('adopts the run\'s workspace another process created, on get', async () => {
-        const { provider, first, second } = setup();
+        const {
+            provider, 
+            first, 
+            second, 
+        } = setup();
         const { workspace } = await first.acquire('r1', { repo: 'octo/demo' });
 
         await expect(second.get('r1')).resolves.toBe(workspace);
@@ -72,7 +76,11 @@ describe('workspace manager: find', () => {
     });
 
     it('adopts on acquire and reports it reused', async () => {
-        const { provider, first, second } = setup();
+        const {
+            provider, 
+            first, 
+            second, 
+        } = setup();
         const { workspace } = await first.acquire('r1', { repo: 'octo/demo' });
 
         const result = await second.acquire('r1', { repo: 'octo/demo' });
@@ -101,7 +109,11 @@ describe('workspace manager: find', () => {
     });
 
     it('asks again for a run without a workspace on a later get', async () => {
-        const { provider, first, second } = setup();
+        const {
+            provider, 
+            first, 
+            second, 
+        } = setup();
         await expect(second.get('r1')).rejects.toThrow(/create_workspace first/);
         const { workspace } = await first.acquire('r1', {});
         await expect(second.get('r1')).resolves.toBe(workspace);
@@ -146,7 +158,11 @@ describe('workspace manager: find', () => {
     });
 
     it('fails a lookup the provider fails with a SandboxError and asks again later', async () => {
-        const { provider, first, second } = setup();
+        const {
+            provider, 
+            first, 
+            second, 
+        } = setup();
         const { workspace } = await first.acquire('r1', {});
         provider.failNextFind(new Error('docker down'));
 
@@ -157,10 +173,14 @@ describe('workspace manager: find', () => {
     });
 
     it('disposes what a lookup found when the run was released meanwhile', async () => {
-        const { provider, first, second } = setup();
+        const {
+            provider, 
+            first, 
+            second, 
+        } = setup();
         const { workspace } = await first.acquire('r1', {});
-        let open!: () => void;
-        provider.findGate = new Promise<void>((resolve) => { open = resolve; });
+        const { promise: gate, resolve: open } = Promise.withResolvers<void>();
+        provider.findGate = gate;
 
         const pending = second.get('r1');
         const settled = expect(pending).rejects.toThrow(/released while it was looked up/);
@@ -175,7 +195,11 @@ describe('workspace manager: find', () => {
     });
 
     it('leaves a second workspace of one repository unused until the run is released', async () => {
-        const { provider, first, second } = setup();
+        const {
+            provider, 
+            first, 
+            second, 
+        } = setup();
         const { workspace } = await first.acquire('r1', { repo: 'octo/demo' });
         const extra = await provider.create({ runId: 'r1', repo: REPO });
 
@@ -187,7 +211,11 @@ describe('workspace manager: find', () => {
     });
 
     it('attach disposes the workspaces of a settled run this process never held', async () => {
-        const { provider, first, second } = setup();
+        const {
+            provider, 
+            first, 
+            second, 
+        } = setup();
         const { workspace } = await first.acquire('r1', {});
         const engine = fakeEngine();
         second.attach(engine);
@@ -225,7 +253,11 @@ describe('workspace manager: find', () => {
 
     it('collectGarbage keeps a run whose isSettled rejects and reports it', async () => {
         const failure = new Error('store down');
-        const { provider, errors, build } = setup();
+        const {
+            provider, 
+            errors, 
+            build, 
+        } = setup();
         const manager = build({ isSettled: async () => { throw failure; } });
         const { workspace } = await manager.acquire('r1', {});
 
@@ -241,7 +273,11 @@ describe('workspace manager: find', () => {
             expect(() => createWorkspaceManager({ provider, deployment: deployment as string })).toThrow(InvalidAgentDefinitionError);
         }
         expect(() => createWorkspaceManager({ provider, isSettled: 'yes' as never })).toThrow(InvalidAgentDefinitionError);
-        const withoutFind = { name: 'x', create: provider.create, collectGarbage: provider.collectGarbage } as unknown as ISandboxProvider;
+        const withoutFind = {
+            name: 'x', 
+            create: provider.create, 
+            collectGarbage: provider.collectGarbage, 
+        } as unknown as ISandboxProvider;
         expect(() => createWorkspaceManager({ provider: withoutFind })).toThrow(/find/);
     });
 });

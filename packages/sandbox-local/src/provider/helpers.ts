@@ -96,7 +96,13 @@ function readTime(value: unknown): Date | undefined {
  */
 export function parseRecord(value: unknown): ParsedRecord | undefined {
     if (!isObject(value)) return undefined;
-    const { runId, deployment, repo, ref, env } = value;
+    const {
+        runId, 
+        deployment, 
+        repo, 
+        ref, 
+        env, 
+    } = value;
     const expiresAt = readTime(value.expiresAt);
     if (typeof runId !== 'string' || runId.length === 0 || !expiresAt) return undefined;
     const info: WorkspaceInfo = {

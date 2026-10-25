@@ -43,7 +43,11 @@ describe('repoKey', () => {
 
 describe('workspaceLabels', () => {
     it('names the run, the workspace and the deployment, and the repo key with a repo', () => {
-        expect(workspaceLabels({ id: 'w', runId: 'r', deployment: 'prod' })).toEqual({
+        expect(workspaceLabels({
+            id: 'w', 
+            runId: 'r', 
+            deployment: 'prod', 
+        })).toEqual({
             'app.kubernetes.io/managed-by': 'chamvi',
             'app.kubernetes.io/component': 'sandbox',
             'chamvi.dev/run': 'r',
@@ -72,7 +76,12 @@ describe('workspaceMetadata and readWorkspaceInfo', () => {
 
     it('round-trips the info through labels and metadata', () => {
         const values = {
-            ...workspaceLabels({ id: 'w', runId: 'r', deployment: 'default', repo }),
+            ...workspaceLabels({
+                id: 'w', 
+                runId: 'r', 
+                deployment: 'default', 
+                repo, 
+            }),
             ...workspaceMetadata(info),
         };
         expect(workspaceMetadata(info)).toEqual({
@@ -93,7 +102,11 @@ describe('workspaceMetadata and readWorkspaceInfo', () => {
             expiresAt: new Date(9_000),
         };
         const values = {
-            ...workspaceLabels({ id: 'w', runId: 'r', deployment: 'default' }),
+            ...workspaceLabels({
+                id: 'w', 
+                runId: 'r', 
+                deployment: 'default', 
+            }),
             ...workspaceMetadata(bare),
         };
         expect(Object.keys(workspaceMetadata(bare)).sort()).toEqual(['chamvi.dev/created-at', 'chamvi.dev/expires-at']);
@@ -107,7 +120,12 @@ describe('workspaceMetadata and readWorkspaceInfo', () => {
         ['chamvi.dev/repo', 'ext::sh -c id'],
     ])('is undefined when %s is %j', (key, value) => {
         const values: Record<string, string | undefined> = {
-            ...workspaceLabels({ id: 'w', runId: 'r', deployment: 'default', repo }),
+            ...workspaceLabels({
+                id: 'w', 
+                runId: 'r', 
+                deployment: 'default', 
+                repo, 
+            }),
             ...workspaceMetadata(info),
             [key]: value,
         };

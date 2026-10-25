@@ -12,9 +12,9 @@ import type { SandboxLimits } from '../provider/types.ts';
 import {
     CPU_PATTERN,
     ENV_KEY_PATTERN,
+    LIFETIME_MIN_MS,
     MEMORY_PATTERN,
     MEMORY_UNITS,
-    LIFETIME_MIN_MS,
 } from './constants.ts';
 import { assertPositiveQuantity } from './helpers.ts';
 
