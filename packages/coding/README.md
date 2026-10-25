@@ -51,7 +51,7 @@ export function createCodingAgent(model: LanguageModel, workspaces: IWorkspaceMa
         model,
         instructions: 'Check out the repository named in the payload, reproduce the reported bug ' +
             'with a failing test and answer with what you found and the diff.',
-        // create_workspace and dispose_workspace, then the seven coding tools
+        // create_workspace and dispose_workspace, then the coding tools
         tools: { ...workspaces.tools(), ...codingTools(workspaces) },
         hooks: {
             // every shell command waits for a human

@@ -11,6 +11,7 @@ import { isObject } from 'smob';
 import { editFileTool, readFileTool, writeFileTool } from './files.ts';
 import { gitDiffTool } from './git.ts';
 import { createKeyedQueue } from './helpers.ts';
+import { bashKillTool, bashOutputTool } from './jobs.ts';
 import { grepTool, listFilesTool } from './search.ts';
 import { bashTool } from './shell.ts';
 import type { CodingWorkspaces } from './types.ts';
@@ -36,6 +37,8 @@ export function codingTools(workspaces: CodingWorkspaces): ToolSet {
         grep: grepTool(workspaces),
         list_files: listFilesTool(workspaces),
         bash: bashTool(workspaces),
+        bash_output: bashOutputTool(workspaces),
+        bash_kill: bashKillTool(workspaces),
         git_diff: gitDiffTool(workspaces),
     };
 }

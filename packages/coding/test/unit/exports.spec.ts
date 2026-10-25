@@ -31,9 +31,11 @@ describe('public api', () => {
         expect(coding.LINE_MAX_CHARS).toBe(500);
     });
 
-    it('builds the seven coding tools', () => {
+    it('builds the coding tools', () => {
         expect(Object.keys(coding.codingTools(manager)).sort()).toEqual([
             'bash',
+            'bash_kill',
+            'bash_output',
             'edit_file',
             'git_diff',
             'grep',

@@ -30,8 +30,9 @@ import {
     signalOf,
     workspaceOf,
 } from './helpers.ts';
+import { startJob } from './jobs.ts';
 import { excerptOf, parseReport } from './output.ts';
-import type { BashResult, CodingWorkspaces } from './types.ts';
+import type { BashJobResult, BashResult, CodingWorkspaces } from './types.ts';
 
 type BashInput = {
     command: string;
@@ -107,8 +108,8 @@ async function runCommand(
     };
 }
 
-export function bashTool(workspaces: CodingWorkspaces): Tool<BashInput, BashResult> {
-    return defineTool<BashInput, BashResult>({
+export function bashTool(workspaces: CodingWorkspaces): Tool<BashInput, BashResult | BashJobResult> {
+    return defineTool<BashInput, BashResult | BashJobResult>({
         description: 'Run a shell command in the workspace (bash when the image has it, else sh), e.g. to install dependencies, build or run tests. ' +
             'The shell keeps its working directory and exported variables from one call to the next (not functions, aliases or options); ' +
             'cwd is where the next call starts. ' +
@@ -147,7 +148,11 @@ export function bashTool(workspaces: CodingWorkspaces): Tool<BashInput, BashResu
             const signal = signalOf(abortSignal, context);
 
             if (background) {
-                throw new SandboxError('background jobs are not supported yet.');
+                return startJob(workspace, {
+                    command, 
+                    cwd, 
+                    signal, 
+                });
             }
             return runCommand(workspace, {
                 command,

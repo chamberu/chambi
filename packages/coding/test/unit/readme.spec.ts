@@ -47,6 +47,8 @@ describe('README example', () => {
 
         expect(Object.keys(agent.definition.tools as object).sort()).toEqual([
             'bash',
+            'bash_kill',
+            'bash_output',
             'create_workspace',
             'dispose_workspace',
             'edit_file',
