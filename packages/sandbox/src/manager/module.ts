@@ -45,18 +45,25 @@ type Entry = {
 
 const NOT_FOUND = 'workspace not found in this run (disposed, expired or never created); call create_workspace for a new one.';
 
-/** What `pick` answers when the run holds no workspace that fits: look the run up, then pick again. */
-const MISS = Symbol('miss');
+/**
+ * What `pick` answers when only a lookup can tell: the run holds no
+ * workspace that fits, or one of its workspaces went gone. `gone` are the
+ * workspaces to report when the lookup finds nothing either.
+ */
+type Miss = { miss: true; gone: IWorkspace[] };
 
 /**
  * Run-scoped workspaces over `provider`: one per (run, repository), created
- * on `acquire`, disposed on `release`, on expiry (checked on every get), once
- * found gone (`IWorkspace.disposed`, dropped on every get and acquire), when
+ * on `acquire`, disposed on `release`, on expiry (checked on every get), when
  * the run settles (`attach`, also the ones another process created: through
  * `provider.find` for a run this process touched, else with `isSettled`
- * through the next garbage collection) and by garbage collection. On a miss the manager asks `provider.find` (one lookup
- * per run at a time) and adopts what it finds, so a run reaches its
- * workspaces after a restart or on another replica. `close()` disposes
+ * through the next garbage collection) and by garbage collection. A
+ * workspace found gone (`IWorkspace.disposed`: its container or pod stopped
+ * or was removed, its directory vanished) is forgotten, never disposed, since
+ * a dispose would remove a stopped container with its work. On a miss, also
+ * after such a forget, the manager asks `provider.find` (one lookup per run
+ * at a time) and adopts what it finds, so a run reaches its workspaces after
+ * a restart, a daemon restart or on another replica. `close()` disposes
  * nothing a live run holds. A run can only ever reach its own workspaces.
  */
 export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorkspaceManager {
@@ -126,17 +133,26 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         if (entries.size === 0) runs.delete(runId);
     };
 
-    /** Forgets every expired or gone workspace of the run; returns them for disposal. */
-    const sweep = (runId: string): IWorkspace[] => {
+    /**
+     * Forgets every expired or gone workspace of the run. The expired ones
+     * are for disposal; the gone ones (not expired) are only forgotten, so
+     * the next lookup finds them again when their container restarts.
+     */
+    const sweep = (runId: string): { expired: IWorkspace[]; gone: IWorkspace[] } => {
         const now = clock.now();
         const expired: IWorkspace[] = [];
+        const gone: IWorkspace[] = [];
         for (const entry of runs.get(runId)?.values() ?? []) {
-            if (entry.workspace && (entry.workspace.disposed || isExpired(entry.workspace, now))) {
+            if (!entry.workspace) continue;
+            if (isExpired(entry.workspace, now)) {
                 forget(runId, entry);
                 expired.push(entry.workspace);
+            } else if (entry.workspace.disposed) {
+                forget(runId, entry);
+                gone.push(entry.workspace);
             }
         }
-        return expired;
+        return { expired, gone };
     };
 
     const heldEntries = (runId: string): Entry[] => [...runs.get(runId)?.values() ?? []]
@@ -144,9 +160,9 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
 
     const collectGarbage = async (): Promise<number> => {
         lastGcAt = clock.now().getTime();
-        const expired = runs.keys().toArray().flatMap((runId) => sweep(runId));
-        // a workspace found gone may still leave a stopped container behind,
-        // but only the expired live ones count as collected here
+        const expired = runs.keys().toArray().flatMap((runId) => sweep(runId).expired);
+        // an expired workspace found gone may still leave a stopped container
+        // behind, but only the expired live ones count as collected here
         const counted = expired.filter((workspace) => !workspace.disposed).length;
         // own disposals first: the provider's collection would find the same
         // expired workspaces, count them twice and dispose them concurrently
@@ -283,7 +299,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         const key = repo ?? '';
 
         maybeCollectGarbage();
-        for (const workspace of sweep(runId)) disposeInBackground(workspace);
+        for (const workspace of sweep(runId).expired) disposeInBackground(workspace);
 
         const reuse = async (existing: Entry): Promise<AcquireResult> => {
             if (existing.ref !== ref) {
@@ -322,49 +338,50 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         `workspace ${workspace.id} is gone (disposed, or its container, pod or directory stopped or was removed); call create_workspace for a new one.` :
         `workspace ${workspace.id} expired at ${workspace.info.expiresAt.toISOString()} and was disposed; call create_workspace for a new one.`);
 
-    /** The workspace `get` answers from what the run holds, or MISS when only a lookup can tell. */
-    const pick = (runId: string, workspaceId: string | undefined, looked: boolean): IWorkspace | typeof MISS => {
-        let entry: Entry | undefined;
+    /**
+     * The workspace `get` answers from what the run holds, or a Miss when
+     * only a lookup can tell; `missed` is the Miss of the pass before the
+     * lookup, so the second pass answers without asking again.
+     */
+    const pick = (runId: string, workspaceId: string | undefined, missed?: Miss): IWorkspace | Miss => {
+        const { expired, gone } = sweep(runId);
+        // the reasons before the disposal: a disposed workspace reads as gone
+        const dead = expired.map((workspace) => ({ id: workspace.id, error: deadError(workspace) }));
+        for (const workspace of expired) disposeInBackground(workspace);
+        const lost = [...gone, ...missed?.gone ?? []];
+
         if (workspaceId === undefined) {
-            // only live workspaces count when picking the run's one workspace
-            const expired = sweep(runId);
-            // the reason before the disposal: a disposed workspace reads as gone
-            const dead = expired.length > 0 ? deadError(expired[0]!) : undefined;
-            for (const workspace of expired) disposeInBackground(workspace);
+            // a gone workspace may be back (its container restarted): ask before picking
+            if (!missed && gone.length > 0) return { miss: true, gone };
             const held = heldEntries(runId);
             if (held.length === 0) {
-                if (dead) throw dead;
-                if (!looked) return MISS;
-                throw new SandboxError('This run has no workspace; call create_workspace first.');
+                if (dead.length > 0) throw dead[0]!.error;
+                if (!missed) return { miss: true, gone };
+                throw lost.length > 0 ?
+                    deadError(lost[0]!) :
+                    new SandboxError('This run has no workspace; call create_workspace first.');
             }
             if (held.length > 1) {
                 const ids = held.map((e) => e.workspace!.id).join(', ');
                 throw new ValidationError(`This run has ${held.length} workspaces (${ids}); pass workspace to pick one.`);
             }
-            [entry] = held;
-        } else {
-            entry = heldEntries(runId).find((e) => e.workspace!.id === workspaceId);
-            if (!entry) {
-                if (!looked) return MISS;
-                throw new SandboxError(NOT_FOUND);
-            }
+            return held[0]!.workspace!;
         }
 
-        const workspace = entry!.workspace!;
-        if (workspace.disposed || isExpired(workspace, clock.now())) {
-            const dead = deadError(workspace);
-            forget(runId, entry!);
-            disposeInBackground(workspace);
-            throw dead;
-        }
-        return workspace;
+        const entry = heldEntries(runId).find((e) => e.workspace!.id === workspaceId);
+        if (entry) return entry.workspace!;
+        const expiredOne = dead.find((item) => item.id === workspaceId);
+        if (expiredOne) throw expiredOne.error;
+        if (!missed) return { miss: true, gone };
+        const goneOne = lost.find((workspace) => workspace.id === workspaceId);
+        throw goneOne ? deadError(goneOne) : new SandboxError(NOT_FOUND);
     };
 
     const get = async (runId: string, workspaceId?: string): Promise<IWorkspace> => {
-        const picked = pick(runId, workspaceId, false);
-        if (picked !== MISS) return picked;
+        const picked = pick(runId, workspaceId);
+        if (!('miss' in picked)) return picked;
         await lookup(runId);
-        return pick(runId, workspaceId, true) as IWorkspace;
+        return pick(runId, workspaceId, picked) as IWorkspace;
     };
 
     const release = async (runId: string, workspaceId?: string): Promise<void> => {

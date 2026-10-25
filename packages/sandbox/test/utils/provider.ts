@@ -44,6 +44,12 @@ export type FakeProvider = ISandboxProvider & {
     gate?: Promise<void>;
     /** The next collectGarbage() rejects with `error`. */
     failNextGc(error: Error): void;
+    /**
+     * Makes the handle of workspace `id` gone (its container stopped) without
+     * disposing it. The next find answers a fresh handle of it with its files
+     * (the container restarted), unless `removed` (nothing left to find).
+     */
+    stop(id: string, options?: { removed?: boolean }): void;
 };
 
 /**
@@ -57,6 +63,19 @@ export function createFakeProvider(options: { clock?: IClock } = {}): FakeProvid
     let nextCreateError: Error | undefined;
     let nextGcError: Error | undefined;
     let nextFindError: Error | undefined;
+    /** Records the first dispose of `workspace` in `provider.disposed`. */
+    const track = (workspace: ScriptedWorkspace): ScriptedWorkspace => {
+        const dispose = workspace.dispose.bind(workspace);
+        let recorded = false;
+        workspace.dispose = async () => {
+            // a stopped (gone) handle's dispose counts too: it removes the container
+            if (!recorded) provider.disposed.push(workspace.id);
+            recorded = true;
+            await dispose();
+        };
+        provider.workspaces.set(workspace.id, workspace);
+        return workspace;
+    };
     const provider: FakeProvider = {
         name: 'fake',
         created: [],
@@ -95,12 +114,7 @@ export function createFakeProvider(options: { clock?: IClock } = {}): FakeProvid
                 createdAt: now,
                 expiresAt: new Date(now.getTime() + (input.limits?.maxLifetimeMs ?? DEFAULT_LIMITS.maxLifetimeMs)),
             }, randomUUID());
-            const dispose = workspace.dispose.bind(workspace);
-            workspace.dispose = async () => {
-                if (!workspace.disposed) provider.disposed.push(workspace.id);
-                await dispose();
-            };
-            provider.workspaces.set(workspace.id, workspace);
+            track(workspace);
             provider.deployments.set(workspace.id, input.deployment ?? DEFAULT_DEPLOYMENT);
             return workspace;
         },
@@ -119,6 +133,14 @@ export function createFakeProvider(options: { clock?: IClock } = {}): FakeProvid
                 workspace.info.runId === runId &&
                 workspace.info.expiresAt.getTime() > now &&
                 provider.deployments.get(workspace.id) === deployment);
+        },
+        stop(id, stopOptions = {}) {
+            const workspace = provider.workspaces.get(id)!;
+            workspace.disposed = true;
+            if (stopOptions.removed) return;
+            const restarted = createScriptedWorkspace(undefined, workspace.info, id);
+            for (const [path, content] of workspace.files) restarted.files.set(path, content);
+            track(restarted);
         },
         async collectGarbage(options) {
             provider.gcCalls++;

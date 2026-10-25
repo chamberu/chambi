@@ -368,6 +368,74 @@ describe('workspace manager: acquire', () => {
         await expect(manager.get('r2')).rejects.toThrow(/create_workspace first/);
     });
 
+    it('forgets a gone workspace without disposing it and finds it again on the next get', async () => {
+        const { provider, manager } = setup();
+        const { workspace } = await manager.acquire('r1', {});
+        await workspace.writeFile('work.txt', 'hours of work');
+        // the container stopped (a daemon restart) while the run holds it
+        provider.stop(workspace.id);
+
+        const restarted = await manager.get('r1');
+        expect(restarted).not.toBe(workspace);
+        expect(restarted.id).toBe(workspace.id);
+        expect(await restarted.readFile('work.txt')).toBe('hours of work');
+        // a dispose would have removed the container and its work
+        expect(provider.disposed).toEqual([]);
+
+        provider.stop(workspace.id);
+        const again = await manager.get('r1', workspace.id);
+        expect(again.id).toBe(workspace.id);
+        expect(again.disposed).toBe(false);
+        expect(provider.disposed).toEqual([]);
+    });
+
+    it('finds a gone workspace again on acquire instead of creating one', async () => {
+        const { provider, manager } = setup();
+        const first = await manager.acquire('r1', { repo: 'octo/demo' });
+        provider.stop(first.workspace.id);
+
+        const second = await manager.acquire('r1', { repo: 'octo/demo' });
+        expect(second.reused).toBe(true);
+        expect(second.workspace.id).toBe(first.workspace.id);
+        expect(second.workspace.disposed).toBe(false);
+        expect(provider.created).toHaveLength(1);
+        expect(provider.disposed).toEqual([]);
+    });
+
+    it('asks the provider before picking among the rest when one of several workspaces is gone', async () => {
+        const { provider, manager } = setup();
+        const plain = await manager.acquire('r1', {});
+        await manager.acquire('r1', { repo: 'octo/demo' });
+        provider.stop(plain.workspace.id);
+        // both are back: the model has to name one
+        await expect(manager.get('r1')).rejects.toThrow(/2 workspaces/);
+        expect(provider.disposed).toEqual([]);
+    });
+
+    it('reports a gone workspace nothing finds again as gone, never disposing it', async () => {
+        const { provider, manager } = setup();
+        const { workspace } = await manager.acquire('r1', {});
+        provider.stop(workspace.id, { removed: true });
+        await expect(manager.get('r1')).rejects.toThrow(/gone.*create_workspace/);
+        await expect(manager.get('r1')).rejects.toThrow(/create_workspace first/);
+        expect(await manager.collectGarbage()).toBe(0);
+        expect(provider.disposed).toEqual([]);
+    });
+
+    it('still disposes a gone workspace once it expired', async () => {
+        const {
+            clock, 
+            provider, 
+            manager, 
+        } = setup({ gcIntervalMs: 0 });
+        const { workspace } = await manager.acquire('r1', {});
+        provider.stop(workspace.id, { removed: true });
+        clock.advance(workspace.info.expiresAt.getTime() - clock.now().getTime());
+        await expect(manager.get('r1')).rejects.toThrow(SandboxError);
+        await until(() => provider.disposed.length === 1);
+        expect(provider.disposed).toEqual([workspace.id]);
+    });
+
     it('does not count a workspace that died outside the manager as collected', async () => {
         const { manager } = setup();
         const { workspace } = await manager.acquire('r1', {});
