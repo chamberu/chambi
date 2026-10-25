@@ -236,6 +236,49 @@ describe('workspace manager credentials', () => {
             expect(errors).toHaveLength(1);
         });
 
+        it('rewrites the file at most once a minute while the source still answers a token that expires soon', async () => {
+            // like IGithubApp.repositoryToken: the cached token until 5 minutes before its expiry
+            let token = { password: 'cached-token-1', expiresAt: new Date(START + HOUR) };
+            let issued = 1;
+            const {
+                manager, 
+                provider, 
+                clock, 
+            } = setup({
+                credentials: {
+                    async get(request) {
+                        if (request.path === '') return undefined;
+                        if (clock.now().getTime() >= token.expiresAt.getTime() - 300_000) {
+                            issued++;
+                            token = { password: `cached-token-${issued}`, expiresAt: new Date(clock.now().getTime() + HOUR) };
+                        }
+                        return { username: 'x-access-token', ...token };
+                    },
+                },
+            });
+            const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+            const raw = provider.workspaces.get(workspace.id)!;
+            expect(installs(raw)).toHaveLength(1);
+
+            clock.advance(HOUR - 540_000);
+            for (let i = 0; i < 5; i++) await workspace.exec(['true']);
+            expect(installs(raw)).toHaveLength(2);
+
+            clock.advance(60_000);
+            await workspace.exec(['true']);
+            await workspace.exec(['true']);
+            expect(installs(raw)).toHaveLength(3);
+
+            // past the source's own refresh: a fresh token, the next rewrite 50 minutes later
+            clock.advance(180_000);
+            await workspace.exec(['true']);
+            expect(installs(raw)).toHaveLength(4);
+            expect(installs(raw)[3]!.options.stdin).toContain('cached-token-2');
+            clock.advance(60_000);
+            await workspace.exec(['true']);
+            expect(installs(raw)).toHaveLength(4);
+        });
+
         it('installs nothing in a workspace without a repository', async () => {
             const { manager, provider } = setup();
             const { workspace } = await manager.acquire('r1', {});
