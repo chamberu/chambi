@@ -6,8 +6,15 @@
  */
 
 import { Buffer } from 'node:buffer';
+import { posix } from 'node:path';
 import type { JSONSchema7, Tool } from 'ai';
-import { SandboxError, ValidationError, defineTool } from '@chamvi/core';
+import {
+    SandboxError,
+    ValidationError,
+    artifactFilePart,
+    defineTool,
+} from '@chamvi/core';
+import type { IRunArtifacts } from '@chamvi/core';
 import { FILE_MAX_BYTES, absoluteWorkspacePath, decodeUtf8File } from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
 import {
@@ -140,9 +147,10 @@ async function readLog(
     return sliceResult(input.path, lines, offset, totalLines, result.stdoutTruncated);
 }
 
-/** A binary file as base64, or an image, or the line range of a UTF-8 text file. */
+/** A binary file as base64, or an image (stored as a run artifact), or the line range of a UTF-8 text file. */
 async function readWorkspaceFile(
     workspace: IWorkspace,
+    artifacts: IRunArtifacts,
     input: {
         path: string; 
         offset: number; 
@@ -174,12 +182,17 @@ async function readWorkspaceFile(
         if (bytes.length > IMAGE_MAX_BYTES) {
             throw new SandboxError(`${path} is an image of ${bytes.length} bytes, more than the ${IMAGE_MAX_BYTES} read_file shows.`);
         }
+        const artifact = await artifacts.put({
+            mediaType, 
+            filename: posix.basename(path), 
+            data: bytes, 
+        });
         return {
             path,
             type: 'image',
             mediaType,
             bytes: bytes.length,
-            data: Buffer.from(bytes).toString('base64'),
+            artifactId: artifact.id,
         };
     }
 
@@ -225,11 +238,7 @@ export function readFileTool(workspaces: CodingWorkspaces): Tool<ReadFileInput, 
                     type: 'content',
                     value: [
                         { type: 'text', text: `Image ${output.path} (${output.mediaType}, ${output.bytes} bytes).` },
-                        {
-                            type: 'file', 
-                            mediaType: output.mediaType, 
-                            data: { type: 'data', data: output.data }, 
-                        },
+                        artifactFilePart({ id: output.artifactId, mediaType: output.mediaType }),
                     ],
                 };
             }
@@ -253,7 +262,7 @@ export function readFileTool(workspaces: CodingWorkspaces): Tool<ReadFileInput, 
                 });
             }
 
-            return readWorkspaceFile(workspace, {
+            return readWorkspaceFile(workspace, context.artifacts, {
                 path,
                 offset,
                 limit,

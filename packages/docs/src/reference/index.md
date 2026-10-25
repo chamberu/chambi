@@ -150,6 +150,8 @@ class MemoryStore implements IStore {
 
 `isArtifactMediaType(value: unknown): value is string` is the media type rule `dispatch` and `artifacts.put()` apply: `type/subtype` (RFC 6838 restricted names) without parameters. An intake layer can check attachments with it before dispatching (`@chamvi/http` does).
 
+`artifactFilePart(artifact)` is the file item a tool's `toModelOutput` returns to show an artifact of the run to the model (an image it stored with `artifacts.put()`): its data is the artifact's marker, so the tool step and the checkpoints keep the id while the engine hands the model the bytes before each model call.
+
 See [Files](/guide/agents#files) and [Attachments](/guide/channels#attachments).
 
 ## Tools

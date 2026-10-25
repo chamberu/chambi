@@ -46,8 +46,12 @@ export type ReadFileImageResult = {
     type: 'image';
     mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
     bytes: number;
-    /** The image, base64. */
-    data: string;
+    /**
+     * The run artifact holding the image (`context.artifacts`): the model
+     * gets the bytes through its marker, so the tool step and the
+     * checkpoints keep this id, never the image.
+     */
+    artifactId: string;
 };
 
 export type WriteFileResult = {

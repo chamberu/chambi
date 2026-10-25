@@ -7,16 +7,36 @@
 
 import type { ToolSet } from 'ai';
 import { MemoryStore, createAgentState } from '@chamvi/core';
-import type { IRunArtifacts, ToolContext } from '@chamvi/core';
+import type { Artifact, IRunArtifacts, ToolContext } from '@chamvi/core';
 
-const NO_ARTIFACTS: IRunArtifacts = {
-    put: async () => { throw new TypeError('artifacts are not used by the coding tools'); },
-    get: async () => undefined,
-    list: async () => [],
-};
+/** In-memory run artifacts (`read_file` stores the images it shows), ids `artifact-<n>`. */
+export function createArtifacts(runId = 'r1'): IRunArtifacts {
+    const stored = new Map<string, { artifact: Artifact; data: Uint8Array }>();
+    return {
+        put: async (input) => {
+            const artifact: Artifact = {
+                id: `artifact-${stored.size + 1}`,
+                runId,
+                agent: 'coder',
+                mediaType: input.mediaType,
+                ...(input.filename === undefined ? {} : { filename: input.filename }),
+                size: input.data.byteLength,
+                createdAt: new Date(0),
+            };
+            stored.set(artifact.id, { artifact, data: Uint8Array.from(input.data) });
+            return artifact;
+        },
+        get: async (id) => stored.get(id),
+        list: async () => Array.from(stored.values(), (entry) => entry.artifact),
+    };
+}
 
-/** A ToolContext of run `runId`, started over http; `signal` defaults to one that never aborts. */
-export function toolContext(runId: string, signal: AbortSignal = new AbortController().signal): ToolContext {
+/** A ToolContext of run `runId`, started over http; `signal` defaults to one that never aborts, `artifacts` to fresh ones. */
+export function toolContext(
+    runId: string,
+    signal: AbortSignal = new AbortController().signal,
+    artifacts: IRunArtifacts = createArtifacts(runId),
+): ToolContext {
     return {
         // these tools reach no channel
         channels: {} as ToolContext['channels'],
@@ -34,7 +54,7 @@ export function toolContext(runId: string, signal: AbortSignal = new AbortContro
             signal,
         },
         state: createAgentState('coder', undefined, new MemoryStore()),
-        artifacts: NO_ARTIFACTS,
+        artifacts,
     };
 }
 

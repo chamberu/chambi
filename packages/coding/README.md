@@ -78,7 +78,7 @@ The tools are plain tools you did not write, so the gate lives in the agent's `b
 
 | Tool | Input | Result |
 |---|---|---|
-| `read_file` | `{ path, offset?, limit?, encoding?, workspace? }` | `{ path, content, startLine, endLine, totalLines, truncated }`: at most 2000 lines and 65 536 characters of a text file up to 16 MiB; `{ path, encoding: 'base64', content, bytes }` with `encoding: 'base64'` (at most 1 MiB); `{ path, type: 'image', mediaType, bytes, data }` for a png, jpeg, gif or webp up to 5 MiB, which the model gets as an image. Also reads the output logs of `bash` |
+| `read_file` | `{ path, offset?, limit?, encoding?, workspace? }` | `{ path, content, startLine, endLine, totalLines, truncated }`: at most 2000 lines and 65 536 characters of a text file up to 16 MiB; `{ path, encoding: 'base64', content, bytes }` with `encoding: 'base64'` (at most 1 MiB); `{ path, type: 'image', mediaType, bytes, artifactId }` for a png, jpeg, gif or webp up to 5 MiB, stored as a run artifact, which the model gets as an image (steps and checkpoints keep the id only). Also reads the output logs of `bash` |
 | `write_file` | `{ path, content, encoding?, workspace? }` | `{ path, bytes }`: replaces the file (text, or bytes with `encoding: 'base64'`), creates missing directories |
 | `edit_file` | `{ path, oldString, newString, replaceAll?, workspace? }` | `{ path, replacements }`: `oldString` must match exactly once unless `replaceAll`. Calls of `edit_file` and `write_file` on one file run one after the other, so several edits of a file in one step all apply |
 | `multi_edit` | `{ path, edits: [{ oldString, newString, replaceAll? }], workspace? }` | `{ path, edits, replacements }`: the edits in order on the file's content, nothing written when one fails |
