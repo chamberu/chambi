@@ -13,7 +13,7 @@ import {
 } from '@chamvi/core';
 import type { Agent } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { customProvider } from 'ai';
+import { customProvider, streamText } from 'ai';
 import {
     afterEach,
     describe,
@@ -308,9 +308,24 @@ describe('installDefaultProvider', () => {
         const registry = await registryOf({ local: customProvider({ languageModels: { m: textModel() } }) });
         const restore = installDefaultProvider(registry);
 
-        expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toBe(registry);
+        expect(globalThis.AI_SDK_DEFAULT_PROVIDER?.languageModel('local/m')).toBe(registry.languageModel('local/m'));
         restore();
         expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toBeUndefined();
+    });
+
+    it('resolves V4 string models without legacy compatibility conversion', async () => {
+        const model = textModel('native V4');
+        const registry = await registryOf({ local: customProvider({ languageModels: { m: model } }) });
+        const restore = installDefaultProvider(registry);
+        try {
+            expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toMatchObject({ specificationVersion: 'v4' });
+            expect(globalThis.AI_SDK_DEFAULT_PROVIDER?.languageModel('local/m')).toBe(model);
+            const result = streamText({ model: 'local/m', prompt: 'hello' });
+            expect(await result.text).toBe('native V4');
+            expect(await result.warnings).toEqual([]);
+        } finally {
+            restore();
+        }
     });
 
     it('keeps a global set by the user', async () => {
