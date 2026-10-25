@@ -15,10 +15,14 @@ export const DEFAULT_LIMITS: Readonly<Required<SandboxLimits>> = Object.freeze({
     maxLifetimeMs: 604_800_000,
 });
 
-export const DEFAULT_SANDBOX_IMAGE = 'ghcr.io/chamvi/sandbox-node:24';
+/**
+ * The workspace image of Docker and Kubernetes: Debian with git, the build
+ * tools and mise, which installs toolchains at runtime (`images/sandbox-dev`).
+ */
+export const DEFAULT_SANDBOX_IMAGE = 'ghcr.io/chamvi/sandbox-dev:trixie';
 
-/** Size of the `/tmp` tmpfs of a container or pod workspace. */
-export const TMP_SIZE = '512Mi';
+/** Default size of the `/tmp` tmpfs of a container or pod workspace (toolchains go to the cache). */
+export const TMP_SIZE = '1Gi';
 
 /** Labels every container or pod workspace carries. */
 export const SANDBOX_LABELS: Readonly<Record<string, string>> = Object.freeze({
