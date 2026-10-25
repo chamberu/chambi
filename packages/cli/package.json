@@ -68,7 +68,7 @@
         "@chamvi/github": "^0.1.0",
         "@chamvi/test-kit": "^0.1.0",
         "@swc/core": "^1.16.18",
-        "ai": "^7.0.143",
+        "ai": "^7.0.146",
         "tsdown": "^0.23.1",
         "unplugin-swc": "^2.0.0"
     },
