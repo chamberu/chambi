@@ -5,18 +5,32 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { AppToken, envOneOf, envString } from '@chamvi/app';
-import type { AppContext, IContainer, IModule } from '@chamvi/app';
+import {
+    AppToken,
+    envJson,
+    envOneOf,
+    envString,
+} from '@chamvi/app';
+import type {
+    AppContext,
+    Env,
+    GitCredentialSource,
+    IContainer,
+    IModule,
+} from '@chamvi/app';
 import { InvalidAgentDefinitionError, MemoryStore } from '@chamvi/core';
 import type { Engine } from '@chamvi/core';
 import { isObject } from 'smob';
 import { provideSandboxContext } from '../context/module.ts';
+import { staticGitCredentials } from '../credentials/module.ts';
+import type { IGitCredentials, StaticGitCredential } from '../credentials/types.ts';
 import { isTerminal } from '../manager/helpers.ts';
 import { createWorkspaceManager } from '../manager/module.ts';
 import type { IWorkspaceManager } from '../manager/types.ts';
 import { DEFAULT_SANDBOX_IMAGE } from '../provider/constants.ts';
 import type { ISandboxProvider } from '../provider/types.ts';
 import {
+    CREDENTIAL_MODES,
     SANDBOX_MODULE_NAME,
     SANDBOX_PROVIDER_IDS,
     SANDBOX_PROVIDER_NAMES,
@@ -59,6 +73,38 @@ export class SandboxModule implements IModule {
      */
     protected ownsDeployment = false;
 
+    /** The sources other modules contribute to `AppToken.GIT_CREDENTIALS`, readable once `setup` ran. */
+    protected contributed: () => readonly GitCredentialSource[] = () => [];
+
+    /**
+     * The manager's sources: the `credentials` option, the tokens of
+     * `CHAMVI_GIT_TOKENS`, then the contributed ones (asked on each lookup,
+     * so modules set up after this one count too).
+     */
+    protected credentialSources(env: Env, credentials: SandboxModuleOptions['credentials']): IGitCredentials[] {
+        const sources = credentials === undefined ? [] : [credentials].flat();
+        const tokens = envJson(env, 'CHAMVI_GIT_TOKENS');
+        if (tokens !== undefined) {
+            try {
+                sources.push(staticGitCredentials(tokens as StaticGitCredential[]));
+            } catch (error) {
+                // the message names an entry and a rule, never a token
+                const message = error instanceof Error ? error.message.replace(/^staticGitCredentials\(\) ?/, '') : 'is invalid';
+                throw new InvalidAgentDefinitionError(`CHAMVI_GIT_TOKENS ${message}`);
+            }
+        }
+        sources.push({
+            get: async (input) => {
+                for (const source of this.contributed()) {
+                    const answer = await source.get(input);
+                    if (answer) return answer;
+                }
+                return undefined;
+            },
+        });
+        return sources;
+    }
+
     constructor(options: SandboxModuleOptions = {}) {
         const {
             provider,
@@ -100,9 +146,13 @@ export class SandboxModule implements IModule {
             target = this.lazy;
         }
 
+        const credentials = this.credentialSources(env, managerOptions.credentials);
+        const credentialMode = envOneOf(env, 'CHAMVI_GIT_CREDENTIAL_MODE', CREDENTIAL_MODES) ?? managerOptions.credentialMode;
         try {
             this.manager = createWorkspaceManager({
                 ...managerOptions,
+                credentials,
+                ...(credentialMode && { credentialMode }),
                 provider: target,
                 ...(workspaceEnv && { env: workspaceEnv }),
                 ...(deployment !== undefined && { deployment }),
@@ -126,6 +176,8 @@ export class SandboxModule implements IModule {
 
         this.report = context.report;
         await this.lazy?.load();
+        // after every module's setup: the sources other modules contributed (githubModule()'s App)
+        this.contributed = () => container.resolveAll(AppToken.GIT_CREDENTIALS);
 
         let detach: (() => void) | undefined;
         container.registerMany(AppToken.LIFECYCLE_HOOKS, {
