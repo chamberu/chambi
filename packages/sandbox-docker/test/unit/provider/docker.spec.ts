@@ -94,6 +94,15 @@ describeDocker('docker sandbox', () => {
         expect(await found[0]!.readFile('kept.txt')).toBe('work');
     });
 
+    it('never finds a stopped container whose create died before the checkout finished', async () => {
+        const { runId, workspace } = await create();
+        // the state a create killed during the fetch leaves: no checkout record
+        expect((await workspace.exec(['git', 'config', '--unset', 'chamvi.checkout'])).exitCode).toBe(0);
+        await docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`).stop({ t: 0 });
+
+        expect(await createDockerSandbox({ image: dockerImage }).find(runId)).toEqual([]);
+    });
+
     it('restarts the stopped container of a workspace the manager still holds', async () => {
         const provider = createDockerSandbox({ image: dockerImage });
         const errors: unknown[] = [];

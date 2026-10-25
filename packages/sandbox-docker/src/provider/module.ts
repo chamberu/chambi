@@ -23,7 +23,7 @@ import {
     createSettledCheck,
     isExpiredAt,
     prepareWorkspace,
-    readCheckoutCommit,
+    readCheckout,
     readWorkspaceInfo,
     resolveLimits,
 } from '@chamvi/sandbox';
@@ -221,8 +221,14 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 const container = docker.getContainer(item.Id);
                 if (!await restart(item, container)) continue;
                 const workspace = open(id, info, container);
-                const commit = info.repo === undefined ? undefined : await readCheckoutCommit(workspace, findOptions.signal);
-                if (commit !== undefined) info.commit = commit;
+                const checkout = await readCheckout(workspace, findOptions.signal);
+                if (!checkout) {
+                    // a create that died before its checkout finished (restarted above
+                    // only to read that): left to the collection
+                    live.delete(id);
+                    continue;
+                }
+                if (checkout.commit !== undefined) info.commit = checkout.commit;
                 found.push(workspace);
             }
             return found;

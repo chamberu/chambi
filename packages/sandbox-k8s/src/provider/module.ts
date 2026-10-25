@@ -27,7 +27,7 @@ import {
     createSettledCheck,
     delay,
     prepareWorkspace,
-    readCheckoutCommit,
+    readCheckout,
     readWorkspaceInfo,
     resolveLimits,
 } from '@chamvi/sandbox';
@@ -192,8 +192,13 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                 const info = readWorkspaceInfo({ ...pod.metadata?.annotations, ...labels }, PROVIDER_NAME);
                 if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
                 const workspace = open(id, info);
-                const commit = info.repo === undefined ? undefined : await readCheckoutCommit(workspace, findOptions.signal);
-                if (commit !== undefined) info.commit = commit;
+                const checkout = await readCheckout(workspace, findOptions.signal);
+                if (!checkout) {
+                    // a create that died before its checkout finished: left to the collection
+                    live.delete(id);
+                    continue;
+                }
+                if (checkout.commit !== undefined) info.commit = checkout.commit;
                 found.push(workspace);
             }
             return found;

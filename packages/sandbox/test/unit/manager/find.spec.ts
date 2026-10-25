@@ -88,6 +88,26 @@ describe('workspace manager: find', () => {
         expect(provider.created).toHaveLength(1);
     });
 
+    it('never adopts a found workspace of a repository without its commit (a create that died during the checkout)', async () => {
+        const {
+            provider,
+            first,
+            second,
+        } = setup();
+        const { workspace: half } = await first.acquire('r1', { repo: 'octo/demo' });
+        // what a provider that does not check the checkout record would answer
+        delete half.info.commit;
+
+        const result = await second.acquire('r1', { repo: 'octo/demo' });
+        expect(result.reused).toBe(false);
+        expect(result.workspace).not.toBe(half);
+        expect(result.workspace.info.commit).toBeDefined();
+        expect(provider.created).toHaveLength(2);
+        // left to the garbage collection, like a container that never started
+        expect(provider.disposed).toEqual([]);
+        await expect(second.get('r1')).resolves.toBe(result.workspace);
+    });
+
     it('shares one lookup between concurrent misses of a run', async () => {
         const { provider, second } = setup();
         const [a, b] = await Promise.all([

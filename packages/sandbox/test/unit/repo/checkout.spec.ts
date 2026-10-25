@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
-import { EXEC_TIMEOUT_MS, prepareWorkspace, readCheckoutCommit } from '@chamvi/sandbox';
+import { EXEC_TIMEOUT_MS, prepareWorkspace, readCheckout } from '@chamvi/sandbox';
 import { createScriptedWorkspace } from '../../utils/workspace.ts';
 
 const url = 'https://github.com/octo/demo.git';
@@ -23,7 +23,7 @@ describe('prepareWorkspace', () => {
             ['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'v1'],
             ['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD'],
             ['git', 'rev-parse', 'HEAD'],
-            ['git', 'config', 'chamvi.commit', sha],
+            ['git', 'config', 'chamvi.checkout', sha],
         ]);
         expect(result).toEqual({ commit: sha });
     });
@@ -53,7 +53,11 @@ describe('prepareWorkspace', () => {
     it('only inits without a repo', async () => {
         const workspace = createScriptedWorkspace();
         const result = await prepareWorkspace(workspace, {});
-        expect(workspace.calls.map((call) => call.argv)).toEqual([['git', 'init', '-q', '.']]);
+        expect(workspace.calls.map((call) => call.argv)).toEqual([
+            ['git', 'init', '-q', '.'],
+            // the end of the checkout is recorded for a repo-less workspace too
+            ['git', 'config', 'chamvi.checkout', 'none'],
+        ]);
         expect(result.commit).toBeUndefined();
     });
 
@@ -103,18 +107,37 @@ describe('prepareWorkspace', () => {
     });
 });
 
-describe('readCheckoutCommit', () => {
-    it('reads the commit the checkout recorded', async () => {
-        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'config' ? { stdout: `${sha}\n` } : {}));
-        await expect(readCheckoutCommit(workspace)).resolves.toBe(sha);
-        expect(workspace.calls[0]?.argv).toEqual(['git', 'config', '--get', 'chamvi.commit']);
+describe('readCheckout', () => {
+    const answering = (value: string, repo?: string) => {
+        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'config' ? { stdout: `${value}\n` } : {}));
+        if (repo !== undefined) workspace.info.repo = repo;
+        return workspace;
+    };
+
+    it('reads the commit a finished checkout recorded', async () => {
+        const workspace = answering(sha, url);
+        await expect(readCheckout(workspace)).resolves.toEqual({ commit: sha });
+        expect(workspace.calls[0]?.argv).toEqual(['git', 'config', '--get', 'chamvi.checkout']);
     });
 
-    it('is undefined without a recorded commit, for no commit and for a failed exec', async () => {
-        await expect(readCheckoutCommit(createScriptedWorkspace(() => ({ exitCode: 1 })))).resolves.toBeUndefined();
-        await expect(readCheckoutCommit(createScriptedWorkspace(() => ({ stdout: 'nope\n' })))).resolves.toBeUndefined();
+    it('reads a finished repo-less checkout', async () => {
+        await expect(readCheckout(answering('none'))).resolves.toEqual({});
+    });
+
+    it('is undefined for a checkout that never finished (a create that died during the fetch)', async () => {
+        // nothing recorded: git config exits 1
+        await expect(readCheckout(createScriptedWorkspace(() => ({ exitCode: 1 })))).resolves.toBeUndefined();
+        const halfRepo = createScriptedWorkspace(() => ({ exitCode: 1 }));
+        halfRepo.info.repo = url;
+        await expect(readCheckout(halfRepo)).resolves.toBeUndefined();
+    });
+
+    it('is undefined when the record does not fit the workspace, and for a failed exec', async () => {
+        await expect(readCheckout(answering('none', url))).resolves.toBeUndefined();
+        await expect(readCheckout(answering(sha))).resolves.toBeUndefined();
+        await expect(readCheckout(answering('nope', url))).resolves.toBeUndefined();
         const broken = createScriptedWorkspace();
         broken.exec = async () => { throw new SandboxError('workspace disposed'); };
-        await expect(readCheckoutCommit(broken)).resolves.toBeUndefined();
+        await expect(readCheckout(broken)).resolves.toBeUndefined();
     });
 });

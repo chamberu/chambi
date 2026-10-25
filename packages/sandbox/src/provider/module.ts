@@ -162,7 +162,8 @@ export function workspaceMetadata(info: WorkspaceInfo): Record<string, string> {
 
 /**
  * The info of a found workspace from its labels and metadata (`commit` is
- * read separately, `readCheckoutCommit`); undefined when the run, a time or
+ * read separately, `readCheckout`, which also tells a finished create from
+ * one that died during its checkout); undefined when the run, a time or
  * the repository is missing or unreadable.
  */
 export function readWorkspaceInfo(values: Readonly<Record<string, string | undefined>>, provider: string): WorkspaceInfo | undefined {

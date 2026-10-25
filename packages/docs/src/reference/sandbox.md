@@ -47,7 +47,7 @@ function parseCpu(value: string): number;
 function parseMemory(value: string): number;
 function assertSandboxEnv(env: Record<string, string> | undefined): void;
 function prepareWorkspace(workspace: IWorkspace, input: { repo?: string; ref?: string; signal?: AbortSignal }): Promise<{ commit?: string }>;
-function readCheckoutCommit(workspace: IWorkspace, signal?: AbortSignal): Promise<string | undefined>;
+function readCheckout(workspace: IWorkspace, signal?: AbortSignal): Promise<{ commit?: string } | undefined>;
 function createOutputCollector(maxBytes: number): IOutputCollector;
 ```
 
@@ -62,7 +62,7 @@ function readWorkspaceInfo(values: Readonly<Record<string, string | undefined>>,
 function createSettledCheck(isSettled?: (runId: string) => Promise<boolean>): (runId: string) => Promise<boolean | SandboxError>;
 ```
 
-`normalizeRepo`, `assertGitRef` and `resolveWorkspacePath` throw `ValidationError` (model input); `resolveLimits`, `parseCpu`, `parseMemory` and `assertSandboxEnv` throw `InvalidAgentDefinitionError` (configuration); `prepareWorkspace` throws `SandboxError` with git's stderr when a checkout step fails and records the commit as `git config chamvi.commit`, which `readCheckoutCommit` reads back.
+`normalizeRepo`, `assertGitRef` and `resolveWorkspacePath` throw `ValidationError` (model input); `resolveLimits`, `parseCpu`, `parseMemory` and `assertSandboxEnv` throw `InvalidAgentDefinitionError` (configuration); `prepareWorkspace` throws `SandboxError` with git's stderr when a checkout step fails and, as its last step, records the checkout as `git config chamvi.checkout` (the commit, or `none` without a repo). `readCheckout` reads it back: `{ commit }`, `{}` for a repo-less workspace, `undefined` for a create that died before its checkout finished, which `find` must skip.
 
 ### Remote workspaces
 

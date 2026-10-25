@@ -230,12 +230,19 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         })();
     };
 
-    /** Holds what a lookup found: one workspace per repository key, never over one held or being created. */
+    /**
+     * Holds what a lookup found: one workspace per repository key, never over
+     * one held or being created, never a repository's without its commit.
+     */
     const adopt = (runId: string, found: readonly IWorkspace[]): void => {
         const now = clock.now();
         let entries = runs.get(runId);
         for (const workspace of found) {
             if (workspace.info.runId !== runId || workspace.disposed || isExpired(workspace, now)) continue;
+            // a workspace of a repository without its commit is a create that died
+            // during the checkout (or one still running elsewhere): a fresh create
+            // checks out anew, the collection removes it
+            if (workspace.info.repo !== undefined && workspace.info.commit === undefined) continue;
             const key = workspace.info.repo ?? '';
             // a second workspace of one key (a crash between two creates) stays
             // unused; the release of the settled run disposes it

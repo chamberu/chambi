@@ -21,7 +21,7 @@ import {
     assertSandboxEnv,
     buildWorkspaceInfo,
     prepareWorkspace,
-    readCheckoutCommit,
+    readCheckout,
     resolveLimits,
 } from '@chamvi/sandbox';
 import type { ISandboxProvider, IWorkspace, WorkspaceInfo } from '@chamvi/sandbox';
@@ -124,8 +124,13 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
                 // a folder without its repo directory is no workspace any more
                 if (!(await stat(join(root, id, REPO_DIR)).catch(() => undefined))?.isDirectory()) continue;
                 const workspace = open(id, { ...record.info, provider: LOCAL_PROVIDER_NAME }, record.env);
-                const commit = record.info.repo === undefined ? undefined : await readCheckoutCommit(workspace, findOptions.signal);
-                if (commit !== undefined) workspace.info.commit = commit;
+                const checkout = await readCheckout(workspace, findOptions.signal);
+                if (!checkout) {
+                    // a create that died before its checkout finished: left to the collection
+                    live.delete(id);
+                    continue;
+                }
+                if (checkout.commit !== undefined) workspace.info.commit = checkout.commit;
                 found.push(workspace);
             }
             return found;

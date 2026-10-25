@@ -9,6 +9,6 @@ export {
     assertGitRef,
     normalizeRepo,
     prepareWorkspace,
-    readCheckoutCommit,
+    readCheckout,
 } from './module.ts';
 export type * from './types.ts';

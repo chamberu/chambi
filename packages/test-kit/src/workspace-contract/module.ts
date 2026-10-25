@@ -31,8 +31,10 @@ const sleep = (ms: number) => new Promise<void>((resolve) => {
  * creates: argv exec, exit codes, stdin, cwd and path escapes, a missing
  * cwd, a background job holding the output, output caps, process-group
  * kills on timeout, abort, UTF-8 files, size caps and dispose, and with
- * `options.find` a workspace found again after its handle was dropped. It
- * runs real processes with short real timeouts.
+ * `options.find` a workspace found again after its handle was dropped and
+ * never one whose checkout record (`git config chamvi.checkout`, written last
+ * by `prepareWorkspace`) is missing. It runs real processes with short real
+ * timeouts.
  *
  * @param name     Suite name, e.g. the provider name.
  * @param factory  A fresh, repo-less workspace per call; the suite disposes it.
@@ -235,6 +237,24 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
 
                 await again!.dispose();
                 expect(await find!(runId)).toEqual([]);
+            } finally {
+                await Promise.all(found.map((workspace) => workspace.dispose().catch(() => undefined)));
+                await created.dispose().catch(() => undefined);
+            }
+        }, TEST_TIMEOUT_MS);
+
+        it.runIf(find !== undefined)('never finds a workspace whose checkout did not finish', async () => {
+            const runId = `contract-${randomUUID()}`;
+            const created = await factory({ runId });
+            let found: ContractWorkspace[] = [];
+            try {
+                // the state a create killed before the end of prepareWorkspace leaves:
+                // its record (labels, metadata) is there, the end of the checkout is not
+                const unset = await created.exec(['git', 'config', '--unset', 'chamvi.checkout']);
+                expect(unset.exitCode).toBe(0);
+
+                found = await find!(runId);
+                expect(found).toEqual([]);
             } finally {
                 await Promise.all(found.map((workspace) => workspace.dispose().catch(() => undefined)));
                 await created.dispose().catch(() => undefined);

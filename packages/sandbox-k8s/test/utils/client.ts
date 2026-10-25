@@ -36,8 +36,10 @@ export type FakePodClient = IPodClient & {
     reads: number;
     /** Statuses the next reads return in order; the last one sticks. */
     statuses: Array<Partial<V1PodStatus>>;
-    /** Answers exec calls (default: exit 0, no output). */
+    /** Answers exec calls (default: exit 0, no output); never asked for `git config`. */
     onExec: FakeExecHandler;
+    /** Each pod's git config, kept by the fake: `git config <key> <value>`, `--get`, `--unset`. */
+    gitConfig: Map<string, Map<string, string>>;
 };
 
 const running: Partial<V1PodStatus> = {
@@ -65,7 +67,8 @@ function matches(pod: V1Pod, selector: string): boolean {
  * An in-memory `IPodClient`: `create` stores the pod, `read` returns it with
  * the next scripted status (default Running), `delete` removes it (a missing
  * one is fine), `list` filters by labels, `exec` asks `onExec` and writes its
- * answer to the given streams.
+ * answer to the given streams; `git config` runs against the pod's
+ * `gitConfig`, so a checkout record written on create is read back on find.
  */
 export function createFakePodClient(onExec: FakeExecHandler = () => ({})): FakePodClient {
     const client: FakePodClient = {
@@ -77,6 +80,7 @@ export function createFakePodClient(onExec: FakeExecHandler = () => ({})): FakeP
         reads: 0,
         statuses: [],
         onExec,
+        gitConfig: new Map(),
 
         async create(pod) {
             const name = pod.metadata!.name!;
@@ -114,11 +118,29 @@ export function createFakePodClient(onExec: FakeExecHandler = () => ({})): FakeP
                 argv: [...input.argv],
                 ...(input.stdin ? { stdin: new TextDecoder().decode(input.stdin) } : {}),
             });
-            const answer = await client.onExec(input.argv, input);
+            const answer = gitConfig(name, unwrap(input.argv)) ?? await client.onExec(input.argv, input);
             if (answer.stdout) input.stdout.write(new TextEncoder().encode(answer.stdout));
             if (answer.stderr) input.stderr.write(new TextEncoder().encode(answer.stderr));
             return { exitCode: answer.exitCode ?? 0 };
         },
+    };
+    /** Runs `git config` against the pod's config; undefined for any other command. */
+    const gitConfig = (name: string, command: string[]): FakeExecAnswer | undefined => {
+        if (command[0] !== 'git' || command[1] !== 'config') return undefined;
+        let config = client.gitConfig.get(name);
+        if (!config) {
+            config = new Map();
+            client.gitConfig.set(name, config);
+        }
+        const [, , first, second, third] = command;
+        if (first === '--get') {
+            const value = config.get(second!);
+            return value === undefined ? { exitCode: 1 } : { stdout: `${value}\n` };
+        }
+        if (first === '--unset') return config.delete(second!) ? {} : { exitCode: 5 };
+        if (third !== undefined || second === undefined) return { exitCode: 2 };
+        config.set(first!, second);
+        return {};
     };
     return client;
 }

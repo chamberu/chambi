@@ -85,7 +85,7 @@ describe('kubernetes sandbox', () => {
             wrapped(['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'v1']),
             wrapped(['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']),
             wrapped(['git', 'rev-parse', 'HEAD']),
-            wrapped(['git', 'config', 'chamvi.commit', COMMIT]),
+            wrapped(['git', 'config', 'chamvi.checkout', COMMIT]),
         ]);
         expect(workspace.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
         expect(workspace.info).toEqual({
@@ -114,7 +114,10 @@ describe('kubernetes sandbox', () => {
             unwrap(argv)[0] === 'cat' ? { stdout: new TextDecoder().decode(input.stdin), exitCode: 3 } : {}
         ));
         const workspace = await provider.create({ runId: 'r1' });
-        expect(client.execs.map((call) => call.argv)).toEqual([wrapped(['git', 'init', '-q', '.'])]);
+        expect(client.execs.map((call) => call.argv)).toEqual([
+            wrapped(['git', 'init', '-q', '.']),
+            wrapped(['git', 'config', 'chamvi.checkout', 'none']),
+        ]);
         expect(workspace.info.commit).toBeUndefined();
 
         const result = await workspace.exec(['cat'], {
@@ -424,19 +427,12 @@ describe('kubernetes sandbox', () => {
     });
 
     describe('find', () => {
-        const answerCommit: FakeExecHandler = (argv) => {
-            const command = unwrap(argv);
-            if (command[1] === 'rev-parse') return { stdout: `${COMMIT}\n` };
-            if (command[1] === 'config' && command[2] === '--get') return { stdout: `${COMMIT}\n` };
-            return {};
-        };
-
         it('rebuilds a running pod\'s workspace in another provider from its labels and annotations', async () => {
             const {
                 client, 
                 clock, 
                 provider, 
-            } = setup(answerCommit);
+            } = setup();
             const created = await provider.create({
                 runId: 'r1', 
                 repo: REPO, 
@@ -487,6 +483,27 @@ describe('kubernetes sandbox', () => {
             });
             expect((await replica.find('r1')).map((workspace) => workspace.id)).toEqual([running.id]);
             expect(expired.info.expiresAt.getTime()).toBe(START + 60_000);
+        });
+
+        it('skips a running pod whose create died before the checkout finished', async () => {
+            const {
+                client,
+                clock,
+                provider,
+            } = setup();
+            const half = await provider.create({ runId: 'r1', repo: REPO });
+            const done = await provider.create({ runId: 'r1' });
+            // the record a finished checkout writes last is missing
+            client.gitConfig.get(`chamvi-ws-${half.id}`)!.delete('chamvi.checkout');
+
+            const replica = createKubernetesSandbox({
+                namespace: 'agents',
+                client,
+                clock,
+            });
+            expect((await replica.find('r1')).map((workspace) => workspace.id)).toEqual([done.id]);
+            // left to the garbage collection
+            expect(client.deleted).toEqual([]);
         });
 
         it('finds nothing for a runId that is no label value, without a request', async () => {

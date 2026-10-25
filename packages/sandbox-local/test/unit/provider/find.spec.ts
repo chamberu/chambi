@@ -16,6 +16,7 @@ import {
     it,
 } from 'vitest';
 import { ValidationError } from '@chamvi/core';
+import { createWorkspaceManager } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import { ControllableClock, createGitFixture } from '@chamvi/test-kit';
 
@@ -51,6 +52,36 @@ describe('local find', () => {
             expect((await found!.exec(['sh', '-c', 'echo $FOO'])).stdout).toBe('bar\n');
             expect(await found!.readFile('README.md')).toBe('hello\n');
             await found!.dispose();
+        } finally {
+            await fixture.cleanup();
+        }
+    });
+
+    it('never finds a repo workspace whose create died during the checkout, so the manager checks out anew', async () => {
+        const fixture = await createGitFixture({ 'README.md': 'hello\n' });
+        try {
+            const clock = new ControllableClock(new Date(1_000_000));
+            const half = await createLocalSandbox({ root, clock }).create({ runId: 'r1', repo: fixture.url });
+            // back to what create leaves after `git init` when the process is killed:
+            // the record and an empty repository, no checkout record
+            const reset = await half.exec(['sh', '-c', 'git config --unset chamvi.checkout && rm -rf README.md .git && git init -q .']);
+            expect(reset.exitCode).toBe(0);
+
+            const provider = createLocalSandbox({ root, clock });
+            expect(await provider.find('r1')).toEqual([]);
+
+            const manager = createWorkspaceManager({
+                provider,
+                clock,
+                allowFileRepos: true,
+                gcIntervalMs: 0,
+            });
+            const { workspace, reused } = await manager.acquire('r1', { repo: fixture.url });
+            expect(reused).toBe(false);
+            expect(workspace.id).not.toBe(half.id);
+            expect(workspace.info.commit).toMatch(/^[0-9a-f]{40}$/);
+            expect(await workspace.readFile('README.md')).toBe('hello\n');
+            await manager.release('r1');
         } finally {
             await fixture.cleanup();
         }
