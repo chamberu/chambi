@@ -28,6 +28,11 @@ type Report = {
     stderr: ReportStream;
 };
 
+/** Length of `bytes` without a trailing UTF-8 sequence that a cut left short. */
+export function completeLength(bytes: Uint8Array): number {
+    return bytes.length - cutTailLength(bytes);
+}
+
 /** Bytes of a trailing UTF-8 sequence `bytes` cut short (0 when it ends on a whole character). */
 function cutTailLength(bytes: Uint8Array): number {
     for (let back = 1; back <= Math.min(4, bytes.length); back++) {

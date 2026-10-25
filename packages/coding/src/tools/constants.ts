@@ -66,6 +66,18 @@ export const CWD_MISSING = 'chamvi-cwd-missing';
 export const BLOCK_END = '-';
 
 /**
+ * Takes `<command> <cwd> <state dir>`, drops the positional parameters,
+ * restores the exported variables (`export -p` of the last call) and the
+ * working directory (an explicit `cwd` wins).
+ */
+const RESTORE_PART = [
+    '__chamvi_c=$1; __chamvi_d=$2; __chamvi_s=$3; set --',
+    'if [ -f "$__chamvi_s/env" ]; then . "$__chamvi_s/env" 2>/dev/null; fi',
+    'if [ -n "$__chamvi_d" ]; then cd -- "$__chamvi_d" || exit 1; ' +
+    'elif [ -f "$__chamvi_s/cwd" ]; then IFS= read -r __chamvi_w < "$__chamvi_s/cwd"; cd -- "$__chamvi_w" 2>/dev/null; unset __chamvi_w; fi',
+].join('\n');
+
+/**
  * The inner shell of a `bash` call, run as `<bash or sh> -c INNER_SCRIPT
  * chamvi <command> <cwd> <state dir>`: restores the exported variables
  * (`export -p` of the last call) and the working directory (an explicit
@@ -76,10 +88,7 @@ export const BLOCK_END = '-';
  * does not overwrite them by accident.
  */
 export const INNER_SCRIPT = [
-    '__chamvi_c=$1; __chamvi_d=$2; __chamvi_s=$3; set --',
-    'if [ -f "$__chamvi_s/env" ]; then . "$__chamvi_s/env" 2>/dev/null; fi',
-    'if [ -n "$__chamvi_d" ]; then cd -- "$__chamvi_d" || exit 1; ' +
-    'elif [ -f "$__chamvi_s/cwd" ]; then IFS= read -r __chamvi_w < "$__chamvi_s/cwd"; cd -- "$__chamvi_w" 2>/dev/null; unset __chamvi_w; fi',
+    RESTORE_PART,
     '__chamvi_save() {',
     '  set +eu',
     '  if [ -z "$__chamvi_d" ]; then pwd -P > "$__chamvi_s/cwd.t" 2>/dev/null && mv -f "$__chamvi_s/cwd.t" "$__chamvi_s/cwd"; fi',
@@ -166,4 +175,88 @@ export const READ_LOG_SCRIPT = [
     'f=$HOME/$1',
     'if [ ! -f "$f" ]; then exit 3; fi',
     'awk -v s="$2" -v e="$3" \'NR >= s && NR <= e { print } END { print NR > "/dev/stderr" }\' "$f"',
+].join('\n');
+
+/** Bytes of job output `bash_output` returns at most. */
+export const JOB_OUTPUT_MAX_BYTES = 32_768;
+
+/** A job id: 12 hex characters. */
+export const JOB_ID_PATTERN = /^[0-9a-f]{12}$/;
+
+/** The first line of a job script's answer. */
+export const JOB_HEADER = 'chamvi-job';
+
+/** The inner shell of a background job: the restored state, then the command (nothing saved). */
+export const JOB_INNER_SCRIPT = [
+    RESTORE_PART,
+    'eval "$__chamvi_c"',
+].join('\n');
+
+/** `pgof <pid>`: the process group of a process, from `/proc` (Linux) or `ps` (macOS); empty when it is gone. */
+const PGOF_PART = 'pgof() { if [ -r "/proc/$1/stat" ]; then sed \'s/.*) //\' "/proc/$1/stat" 2>/dev/null | cut -d" " -f3; ' +
+    'else ps -o pgid= -p "$1" 2>/dev/null | tr -d " "; fi; }';
+
+/**
+ * Starts a background job, run as `sh -c JOB_START_SCRIPT sh
+ * <JOB_INNER_SCRIPT> <command> <id> <cwd or ''>` in its own exec, so the
+ * job lives in that exec's process group (the local spawn's group, GNU
+ * `timeout`'s in a container) and outlives the exec: `$j/pgid` holds the
+ * group, `$j/pid` the wrapper that waits for the command and writes its
+ * exit status to `$j/status`; stdout and stderr go to `$j/output`. The
+ * job's pipes never are the exec's, so the exec returns at once.
+ */
+export const JOB_START_SCRIPT = [
+    'c=$HOME/.chamvi; s=$c/shell; j=$c/jobs/$3; mkdir -p "$s" "$j" || exit 125',
+    `if [ -n "$4" ] && [ ! -d "$4" ]; then printf '%s\\n' ${CWD_MISSING}; exit 0; fi`,
+    PGOF_PART,
+    'g=$(pgof $$)',
+    'case $g in ""|*[!0-9]*|0|1) printf \'cannot read the process group\\n\' >&2; exit 125;; esac',
+    'printf \'%s\\n\' "$g" > "$j/pgid"; printf \'%s\\n\' "$2" > "$j/command"',
+    'if command -v bash >/dev/null 2>&1; then x=bash; else x=sh; fi',
+    '( "$x" -c "$1" chamvi "$2" "$4" "$s" > "$j/output" 2>&1 < /dev/null; ' +
+    'echo $? > "$j/status.t" && mv -f "$j/status.t" "$j/status" ) > /dev/null 2>&1 < /dev/null &',
+    'printf \'%s\\n\' "$!" > "$j/pid"',
+    `printf '%s %s\\n' ${JOB_HEADER} "$g"`,
+].join('\n');
+
+/**
+ * Prints `JOB_HEADER <size> <status> [exit code]` of job `$1` (status
+ * `killed` once bash_kill ran, `exited` with the code, `running` while its
+ * wrapper lives in the job's group, else `lost`: the container restarted).
+ * Exit 3 for an unknown job.
+ */
+const JOB_STATE_PART = [
+    'j=$HOME/.chamvi/jobs/$1; if [ ! -f "$j/pgid" ]; then exit 3; fi',
+    PGOF_PART,
+    'IFS= read -r g < "$j/pgid"; p=; if [ -f "$j/pid" ]; then IFS= read -r p < "$j/pid"; fi',
+    'e=; if [ -f "$j/status" ]; then IFS= read -r e < "$j/status"; fi',
+    'if [ -f "$j/killed" ]; then t=killed; elif [ -n "$e" ]; then t=exited; ' +
+    'elif [ -n "$p" ] && [ "$(pgof "$p")" = "$g" ]; then t=running; else t=lost; fi',
+    'z=0; if [ -f "$j/output" ]; then z=$(wc -c < "$j/output" | tr -d " "); fi',
+].join('\n');
+
+/**
+ * The state of job `$1` and the base64 of at most `$3` bytes of its output
+ * from byte `$2`, run as `sh -c JOB_OUTPUT_SCRIPT sh <id> <offset> <max>`.
+ */
+export const JOB_OUTPUT_SCRIPT = [
+    JOB_STATE_PART,
+    `printf '%s %s %s %s\\n' ${JOB_HEADER} "$z" "$t" "$e"`,
+    'if [ "$z" -gt "$2" ]; then tail -c "+$(($2 + 1))" "$j/output" | head -c "$3" | base64; fi',
+].join('\n');
+
+/**
+ * Kills job `$1` unless it exited or is lost: marks it killed, sends TERM to
+ * its process group, waits up to 3 s for the group to end, then sends KILL.
+ * Prints the state like JOB_OUTPUT_SCRIPT, without output.
+ */
+export const JOB_KILL_SCRIPT = [
+    JOB_STATE_PART,
+    'if [ "$t" = running ]; then',
+    '  : > "$j/killed"; t=killed',
+    '  kill -TERM "-$g" 2>/dev/null',
+    '  i=0; while kill -0 "-$g" 2>/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i + 1)); done',
+    '  kill -KILL "-$g" 2>/dev/null',
+    'fi',
+    `printf '%s %s %s %s\\n' ${JOB_HEADER} "$z" "$t" "$e"`,
 ].join('\n');
