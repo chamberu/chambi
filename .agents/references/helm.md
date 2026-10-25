@@ -1,0 +1,27 @@
+# Reference: chamvi/helm (chart `agent-app`)
+
+- **Project:** [chamvi/helm](https://github.com/chamvi/helm), the Helm chart that deploys one chamvi app (an image built from `createApp()`) on Kubernetes. Chart `charts/agent-app`, published to `oci://ghcr.io/chamvi/helm/agent-app` (public) and the `gh-pages` index.
+- **Why referenced:** the chart hard-codes parts of the monorepo contract (CLI commands, env names, port, probe paths, image entrypoint, sandbox RBAC and labels). A monorepo change to any of them must be checked here, or deployments break silently.
+- **Verified against:** `agent-app` 0.1.1 (`root-0.1.1`, commit `312eba4`, 2026-10-25), with `@chamvi/*` 0.2.1.
+- **How to maintain:** when a monorepo change touches a row below, update the chart in the same breath (a PR to chamvi/helm) and correct the row here; pin the chart version.
+
+## Contract map (monorepo -> chart)
+
+| Monorepo source | Chart file | What the chart relies on |
+|---|---|---|
+| `@chamvi/cli` commands (`packages/cli/src/commands/`) | `templates/deployment.yaml`, `templates/cronjob.yaml` | Value `command` (default `[node, node_modules/@chamvi/cli/dist/cli.mjs]`) renders into `args`, never `command:`, so the image's tini entrypoint stays PID 1; Deployment `args` = `command + [start]`, CronJob `args` = `command + [run-job, <agent>] (+ [<subscription>])`. |
+| `run-job <agent> [subscription]`, cron subscription id `cron:<expression>` (`@chamvi/channel-cron`) | `templates/cronjob.yaml`, `values.yaml` `cronJobs[]` (`name`, `schedule`, `agent`, `subscription?`, `timeZone?`, `suspend?`) | One argv element per argument (no shell); `concurrencyPolicy: Forbid`, `backoffLimit: 0`, `restartPolicy: Never` (a Job retry would mint a new `<subscription>@<now>` idempotency key). |
+| `CHAMVI_SCHEDULER` (`packages/app/src/config/`) | `templates/_helpers.tpl` `agent-app.env` | Set to `false` on every pod whenever `cronJobs` is non-empty (start mode registers a cron channel that validates but never fires). |
+| App config env (`readConfig`, `packages/app/src/config/`) | `templates/_helpers.tpl` `agent-app.env`, `templates/validations.yaml` | The chart owns `PORT` (`3000`), `CHAMVI_BASE_PATH` (from `basePath`), `CHAMVI_SCHEDULER`, `CHAMVI_SANDBOX_NAMESPACE` and a derived `CHAMVI_PUBLIC_URL` (origin only, from the Ingress, unless `env.CHAMVI_PUBLIC_URL` is set); `env` may not name an owned variable; `env.HOST` only empty, `0.0.0.0` or `::`; numbers render without exponent notation (`agent-app.scalar`, the app's `envInteger` is `^\d+$`). |
+| `CHAMVI_FORCE_EXIT_MS` (CLI, default 90 000) | `templates/validations.yaml` | Render-time guard `preStopSleepSeconds * 1000 + CHAMVI_FORCE_EXIT_MS < terminationGracePeriodSeconds * 1000` (defaults 5 s + 90 s < 120 s). |
+| `@chamvi/http` routes under `basePath`: `/healthz`, `/readyz`, `/metrics` | `templates/deployment.yaml` probes, `templates/servicemonitor.yaml`, `templates/tests/test-readyz.yaml`, `templates/ingress.yaml` | Startup and liveness on `<basePath>/healthz`, readiness on `<basePath>/readyz`, ServiceMonitor on `<basePath>/metrics`; `basePath` guard `^(?:\/[a-z0-9._~-]+)+$` mirrors the app's `CHAMVI_BASE_PATH` rule. |
+| `approvalUrlOf()` (`packages/app/src/config/asserts.ts`) | `templates/_helpers.tpl` (derived public URL) | The chart passes an origin only; the app appends `basePath` itself. |
+| `ghcr.io/chamvi/node:24` (`images/node`: tini entrypoint, uid 1000, workdir `/app`) | `templates/_helpers.tpl` `podCommon`/`containerCommon` | Pod Security `restricted`, uid/gid 1000, read-only root, `/tmp` emptyDir. |
+| `@chamvi/sandbox-k8s` client calls, `SANDBOX_LABELS` (`packages/sandbox/src/provider/constants.ts`) | `templates/sandbox-rbac.yaml`, `templates/sandbox-networkpolicy.yaml`, `templates/sandbox-ciliumnetworkpolicy.yaml` | Role in `sandbox.namespace`: `pods` create/get/list/delete, `pods/exec` get/create; egress policies select `app.kubernetes.io/managed-by: chamvi` + `app.kubernetes.io/component: sandbox`; the app pod never carries the sandbox label. The chart does not set `CHAMVI_SANDBOX_PROVIDER` (the app picks `kubernetes`). |
+| Static tokens (`CHAMVI_TOKENS`), provider keys, `DATABASE_URL` | `values.yaml` `secrets` (envFrom) | Secrets only through `secrets`; `env` is for non-secret values. Without an authenticator the app exits 2. |
+
+## Repo notes
+
+- CI (`.github/workflows/lint-test.yaml`): helm lint, yamllint, helm-unittest, a Python contract suite (`scripts/tests/`), values coverage, helm-docs/helm-schema drift, ct lint, ArtifactHub lint, a fixture app (`ci/app`, published `@chamvi/*` on `ghcr.io/chamvi/node:24`) and `ct install` on kind with Calico (kindnet's NetworkPolicy fails open on GitHub runners) plus `scripts/kind-smoke.sh` (CronJob run, egress policy enforcement).
+- Release: release-please (`simple` root linked to the `helm` chart), `tada5hi/hevi@v2` publishes the GitHub release, the `gh-pages` index and the OCI artifact on every master push (idempotent).
+- Its own map back to this repo: `.agents/references/chamvi.md` in chamvi/helm.

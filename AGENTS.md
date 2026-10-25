@@ -31,6 +31,10 @@ Packages live in `packages/*`. `@chamvi/app`, `@chamvi/channel-cron`, `@chamvi/c
 - **[Conventions](.agents/conventions.md)**: Tooling, naming rules, commits, release flow, external references (`.agents/references/`)
 - **[Design](.agents/design.md)**: Brand direction, colour tokens, type, logo and docs landing page rules
 
+## Downstream Repos
+
+Two repos outside this monorepo depend on its contract: [chamvi/helm](https://github.com/chamvi/helm) (the `agent-app` chart) and [chamvi/agent-template](https://github.com/chamvi/agent-template) (the starter app). A change to the CLI (commands, arguments, exit codes, signals), env variable names or defaults, the HTTP port or route paths (`/healthz`, `/readyz`, `/metrics`, `/channels/*`), the base image, sandbox RBAC or labels, the public `@chamvi/app` API or the model string format must be checked against both, using the contract maps in [helm.md](.agents/references/helm.md) and [agent-template.md](.agents/references/agent-template.md), and followed by a PR there.
+
 ## Plans
 
 Plans and specs are local only (`.agents/plans/` and `docs/superpowers/` are gitignored). Never commit them.

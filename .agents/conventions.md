@@ -106,4 +106,6 @@ External project references live in `.agents/references/`: one Markdown file per
 
 Current references:
 
+- [helm.md](references/helm.md): chamvi/helm, the `agent-app` chart; contract map from the CLI, env, routes, image and sandbox to the chart's templates (see [Downstream Repos](../AGENTS.md#downstream-repos)).
+- [agent-template.md](references/agent-template.md): chamvi/agent-template, the starter app; contract map from the public API, CLI, env and chart values to the template's files and tests.
 - [eve.md](references/eve.md): Vercel's eve agent framework (and `@vercel/agent-runs`), the closest competitor; concept map for durability, approvals, channels, sandboxes, coding tools, tracing, evals and compaction.

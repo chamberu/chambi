@@ -65,6 +65,13 @@ chamvi/
 └── .release-please-manifest.json    # Current released versions
 ```
 
+## Related Repositories
+
+| Repo | Holds | Reference |
+|------|-------|-----------|
+| [chamvi/helm](https://github.com/chamvi/helm) | Chart `agent-app` (`oci://ghcr.io/chamvi/helm/agent-app`) | [references/helm.md](references/helm.md) |
+| [chamvi/agent-template](https://github.com/chamvi/agent-template) | The starter app, its Dockerfile, CI and Flux examples | [references/agent-template.md](references/agent-template.md) |
+
 ## Packages
 
 | Package | Status | Responsibility |
