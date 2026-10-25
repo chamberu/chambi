@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Agent } from '@chamvi/core';
+import type { Agent, ModelRef } from '@chamvi/core';
 import type { ProviderRegistryProvider, createProviderRegistry } from 'ai';
 import type { Env } from '../env/types.ts';
 import type { MODEL_SEPARATOR } from './constants.ts';
@@ -34,6 +34,36 @@ export type ProviderConfig = {
 
 /** Where a setting came from: an env variable, the config file, createApp's options, or a bare provider variable. */
 export type SettingSource = 'env' | 'file' | 'code' | 'implicit';
+
+/** A provider after merging code, config file and env: secrets resolved, header names lower-cased. */
+export type ProviderSettings = {
+    name: string;
+    type: ProviderType;
+    apiKey?: string;
+    baseURL?: string;
+    headers: Record<string, string>;
+    /** Where each field came from. */
+    sources: {
+        type: SettingSource;
+        apiKey?: SettingSource;
+        baseURL?: SettingSource;
+        headers: Record<string, SettingSource>;
+    };
+};
+
+/** The app's model settings: the default model and the providers that were read without an issue. */
+export type ModelSettings = {
+    model?: { ref: ModelRef; source: SettingSource };
+    providers: ReadonlyMap<string, ProviderSettings>;
+    /** The config file read (absolute), when one was. */
+    configFile?: string;
+};
+
+/** A problem found while reading the settings; never holds a secret value. */
+export type ModelIssue = {
+    provider?: string;
+    message: string;
+};
 
 /** A provider package `createModelRegistry()` discovers when it is installed. */
 export type BuiltinProvider = {

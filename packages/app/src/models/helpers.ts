@@ -8,7 +8,8 @@
 import { InvalidAgentDefinitionError } from '@chamvi/core';
 import { isObject } from 'smob';
 import { AGENT_NAME_MAX_LENGTH, AGENT_NAME_PATTERN } from '../loader/constants.ts';
-import { HEADER_NAME_PATTERN, MODEL_SEPARATOR } from './constants.ts';
+import { HEADER_NAME_PATTERN, MODEL_SEPARATOR, PROVIDER_TYPES } from './constants.ts';
+import type { ProviderType } from './types.ts';
 
 /**
  * True when the package itself is not installed, not when something it
@@ -49,6 +50,15 @@ export function providerName(envName: string): string | undefined {
     }
 
     return name;
+}
+
+/** True when `name` follows the agent-name rule (`team-a`, `a1`). */
+export function isProviderName(name: string): boolean {
+    return providerName(providerEnvName(name)) === name;
+}
+
+export function isProviderType(value: unknown): value is ProviderType {
+    return typeof value === 'string' && Object.hasOwn(PROVIDER_TYPES, value);
 }
 
 /** The header name of an env suffix: `X_TEAM` -> `x-team`. */
