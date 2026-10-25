@@ -6,6 +6,7 @@
  */
 
 import { Buffer } from 'node:buffer';
+import { randomUUID } from 'node:crypto';
 import {
     afterAll,
     beforeAll,
@@ -14,7 +15,7 @@ import {
     it,
 } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
-import type { ContractWorkspace, WorkspaceContractFactory } from './types.ts';
+import type { ContractWorkspace, WorkspaceContractFactory, WorkspaceContractOptions } from './types.ts';
 
 const TEST_TIMEOUT_MS = 30_000;
 
@@ -29,12 +30,15 @@ const sleep = (ms: number) => new Promise<void>((resolve) => {
  * Shared behavioural contract for every `IWorkspace` a sandbox provider
  * creates: argv exec, exit codes, stdin, cwd and path escapes, a missing
  * cwd, a background job holding the output, output caps, process-group
- * kills on timeout, abort, UTF-8 files, size caps and dispose. It runs real processes with short real timeouts.
+ * kills on timeout, abort, UTF-8 files, size caps and dispose, and with
+ * `options.find` a workspace found again after its handle was dropped. It
+ * runs real processes with short real timeouts.
  *
  * @param name     Suite name, e.g. the provider name.
  * @param factory  A fresh, repo-less workspace per call; the suite disposes it.
+ * @param options  `find` of a second provider instance (the find section).
  */
-export function describeWorkspaceContract(name: string, factory: WorkspaceContractFactory): void {
+export function describeWorkspaceContract(name: string, factory: WorkspaceContractFactory, options: WorkspaceContractOptions = {}): void {
     describe(`workspace contract: ${name}`, () => {
         let workspace: ContractWorkspace;
 
@@ -206,6 +210,35 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
             await settled;
             await expect(pending).rejects.toBeInstanceOf(SandboxError);
             expect(Date.now() - started).toBeLessThan(10_000);
+        }, TEST_TIMEOUT_MS);
+
+        const { find } = options;
+        it.runIf(find !== undefined)('finds a workspace again after its handle was dropped', async () => {
+            const runId = `contract-${randomUUID()}`;
+            const created = await factory({ runId });
+            let found: ContractWorkspace[] = [];
+            try {
+                await created.writeFile('kept/note.txt', 'still here ✓');
+                const { id } = created;
+                // the handle is dropped: only a second provider instance looks
+
+                found = await find!(runId);
+                expect(found).toHaveLength(1);
+                const [again] = found;
+                expect(again!.id).toBe(id);
+                expect(again!.disposed).toBe(false);
+                expect(again!.info?.runId).toBe(runId);
+                expect(await again!.readFile('kept/note.txt')).toBe('still here ✓');
+                expect((await again!.exec(['cat', 'kept/note.txt'])).stdout).toBe('still here ✓');
+
+                expect(await find!(`contract-${randomUUID()}`)).toEqual([]);
+
+                await again!.dispose();
+                expect(await find!(runId)).toEqual([]);
+            } finally {
+                await Promise.all(found.map((workspace) => workspace.dispose().catch(() => undefined)));
+                await created.dispose().catch(() => undefined);
+            }
         }, TEST_TIMEOUT_MS);
     });
 }

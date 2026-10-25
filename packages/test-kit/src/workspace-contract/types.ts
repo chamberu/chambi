@@ -14,6 +14,7 @@
  */
 export type ContractWorkspace = {
     readonly id: string;
+    readonly info?: { readonly runId: string };
     readonly disposed: boolean;
     exec(argv: readonly string[], options?: {
         cwd?: string;
@@ -34,5 +35,13 @@ export type ContractWorkspace = {
     dispose(): Promise<void>;
 };
 
-/** A fresh, repo-less workspace per call. */
-export type WorkspaceContractFactory = () => Promise<ContractWorkspace>;
+/** A fresh, repo-less workspace per call, of run `input.runId` when given. */
+export type WorkspaceContractFactory = (input?: { runId?: string }) => Promise<ContractWorkspace>;
+
+export type WorkspaceContractOptions = {
+    /**
+     * The provider's `find(runId)`, from a second provider instance over the
+     * same host (a restarted process or a replica). Runs the find section.
+     */
+    find?: (runId: string) => Promise<ContractWorkspace[]>;
+};
