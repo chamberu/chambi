@@ -27,6 +27,7 @@ import {
     isTerminal,
     toSandboxError,
 } from './helpers.ts';
+import { createGitTools } from './git-tools.ts';
 import { createWorkspaceTools } from './tools.ts';
 import type {
     AcquireInput,
@@ -517,7 +518,15 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         release,
         attach,
         tools: () => {
-            tools ??= createWorkspaceTools(manager);
+            tools ??= {
+                ...createWorkspaceTools(manager),
+                ...createGitTools({
+                    manager,
+                    lookup: async (url, access, runId, signal) => credentials?.lookup(url, access, runId, signal),
+                    normalize: (repo) => normalizeRepo(repo, { allowFileRepos: options.allowFileRepos, allowRepo: options.allowRepo }),
+                    push: options.push ?? {},
+                }),
+            };
             return tools;
         },
         collectGarbage,

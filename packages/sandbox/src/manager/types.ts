@@ -185,3 +185,33 @@ export type DisposeWorkspaceResult = {
     workspace: string;
     disposed: true;
 };
+
+/** What `git_fetch`, `git_pull` and `git_push` answer: the git call's outcome, redacted. */
+export type GitToolResult = {
+    workspace: string;
+    /** The repository URL git talked to (never a remote name of the repository config). */
+    remote: string;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    timedOut: boolean;
+};
+
+export type GitFetchResult = GitToolResult & {
+    refspec: string;
+};
+
+export type GitPullResult = GitToolResult & {
+    branch: string;
+    rebase: boolean;
+    /** The step the result is of: the fetch when it failed, else the merge or rebase. */
+    step: 'fetch' | 'merge' | 'rebase';
+};
+
+export type GitPushResult = GitToolResult & {
+    branch: string;
+    /** The commit pushed. */
+    commit: string;
+    pushed: boolean;
+    forced: boolean;
+};
