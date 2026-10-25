@@ -389,7 +389,12 @@ describe('local sandbox', () => {
     it('writes the workspace record and removes the directory on dispose', async () => {
         const workspace = await createLocalSandbox({ root }).create({ runId: 'r1' });
         const record = JSON.parse(await readFile(join(root, workspace.id, 'workspace.json'), 'utf8'));
-        expect(record).toEqual({ runId: 'r1', expiresAt: workspace.info.expiresAt.toISOString() });
+        expect(record).toEqual({
+            runId: 'r1',
+            deployment: 'default',
+            createdAt: workspace.info.createdAt.toISOString(),
+            expiresAt: workspace.info.expiresAt.toISOString(),
+        });
         await workspace.dispose();
         expect(await readdir(root)).toEqual([]);
     });

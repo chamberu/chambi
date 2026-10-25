@@ -314,7 +314,7 @@ export class LocalWorkspace implements IWorkspace {
         // the leader was reaped: a live member is a job, and the id cannot be reused while it lives
         if (this.disposing || !groupAlive(pid)) return;
         this.lingering.add(pid);
-        this.lingerTimer ??= this.clock.setTimeout(() => this.checkLingering(), LINGER_CHECK_MS);
+        this.lingerTimer ??= this.clock.setTimeout(() => this.checkLingering(), LINGER_CHECK_MS, { keepAlive: false });
     }
 
     protected checkLingering(): void {
@@ -323,7 +323,7 @@ export class LocalWorkspace implements IWorkspace {
             if (!groupAlive(pid)) this.lingering.delete(pid);
         }
         if (this.lingering.size > 0 && !this.disposing) {
-            this.lingerTimer = this.clock.setTimeout(() => this.checkLingering(), LINGER_CHECK_MS);
+            this.lingerTimer = this.clock.setTimeout(() => this.checkLingering(), LINGER_CHECK_MS, { keepAlive: false });
         }
     }
 
