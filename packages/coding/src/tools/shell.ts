@@ -5,7 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { Buffer } from 'node:buffer';
 import { randomBytes } from 'node:crypto';
 import type { Tool } from 'ai';
 import { SandboxError, defineTool } from '@chamvi/core';
@@ -17,6 +16,8 @@ import {
     EXCERPT_HEAD_BYTES,
     EXCERPT_TAIL_BYTES,
     INNER_SCRIPT,
+    OUTPUT_LOGS_BUDGET_CAPS,
+    REPORT_FAILED_EXIT_CODE,
     REPORT_SCRIPT,
     REPORT_TIMEOUT_MS,
 } from './constants.ts';
@@ -42,23 +43,14 @@ type BashInput = {
     workspace?: string;
 };
 
-/** A result from the exec alone, when no report could be read (the script could not even start). */
-function plainResult(result: ExecResult): BashResult {
-    return {
-        exitCode: result.exitCode,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        stdoutTruncated: result.stdoutTruncated,
-        stderrTruncated: result.stderrTruncated,
-        stdoutBytes: Buffer.byteLength(result.stdout),
-        stderrBytes: Buffer.byteLength(result.stderr),
-        stdoutLog: '',
-        stderrLog: '',
-        cwd: '',
-        outputCapped: false,
-        timedOut: result.timedOut,
-        durationMs: result.durationMs,
-    };
+/** The error for a call that left no report even when read again: its folders or the report could not be written. */
+function reportError(result: ExecResult): SandboxError {
+    const stderr = result.stderr.trim().slice(0, 500);
+    let message = `bash left no report: exit code ${result.exitCode}${stderr ? `: ${stderr}` : ''}`;
+    if (result.exitCode === REPORT_FAILED_EXIT_CODE) {
+        message += '. $HOME/.chamvi has no space left or is not writable: free space (e.g. in /tmp or ~/.chamvi/out), then call again.';
+    }
+    return new SandboxError(message);
 }
 
 /** Runs one foreground command and reads its report (again, after a timeout killed the script). */
@@ -74,8 +66,9 @@ async function runCommand(
 ): Promise<BashResult> {
     const id = randomBytes(6).toString('hex');
     const cap = String(input.outputLogMaxBytes);
+    const budget = String(input.outputLogMaxBytes * OUTPUT_LOGS_BUDGET_CAPS);
     const result = await workspace.exec(
-        ['sh', '-c', BASH_SCRIPT, 'sh', INNER_SCRIPT, input.command, id, input.cwd ?? '', cap],
+        ['sh', '-c', BASH_SCRIPT, 'sh', INNER_SCRIPT, input.command, id, input.cwd ?? '', cap, budget],
         { timeoutMs: input.timeoutMs, signal: input.signal },
     );
     if (input.cwd !== undefined && result.stdout === `${CWD_MISSING}\n`) {
@@ -84,14 +77,14 @@ async function runCommand(
 
     let report = parseReport(result.stdout, result.stderr);
     if (!report) {
-        // the script was killed with the command (its timeout or log cap): read what the command wrote
-        const again = await workspace.exec(['sh', '-c', REPORT_SCRIPT, 'sh', id, cap], {
+        // the script was killed with the command (its timeout or log cap), or could not write its report: read what the command wrote
+        const again = await workspace.exec(['sh', '-c', REPORT_SCRIPT, 'sh', id, cap, budget], {
             timeoutMs: REPORT_TIMEOUT_MS,
             signal: input.signal,
         });
         report = parseReport(again.stdout, again.stderr);
+        if (!report) throw reportError(again);
     }
-    if (!report) return plainResult(result);
 
     const stdout = excerptOf(report.stdout);
     const stderr = excerptOf(report.stderr);
@@ -154,9 +147,10 @@ export function bashTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number
 
             if (background) {
                 return startJob(workspace, {
-                    command, 
-                    cwd, 
-                    signal, 
+                    command,
+                    cwd,
+                    signal,
+                    outputLogMaxBytes,
                 });
             }
             return runCommand(workspace, {

@@ -5,6 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { chmod, readdir, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
     afterAll,
     afterEach,
@@ -145,6 +147,41 @@ describe('bash', () => {
         } finally {
             await capped.cleanup();
         }
+    });
+
+    it('keeps the logs under four times the log cap, the newest call\'s always', async () => {
+        const small = await setupCoding(fixture, { outputLogMaxBytes: 1_048_576 });
+        try {
+            const out = join(small.root, small.workspace.id, 'home', '.chamvi', 'out');
+            let last: BashResult | undefined;
+            for (let i = 0; i < 6; i++) {
+                last = await small.call<BashResult>('bash', { command: 'yes | head -c 1000000' });
+                expect(last).toMatchObject({
+                    exitCode: 0, 
+                    stdoutBytes: 1_000_000, 
+                    outputCapped: false, 
+                });
+            }
+            let total = 0;
+            for (const name of await readdir(out)) total += (await stat(join(out, name))).size;
+            expect(total).toBeLessThanOrEqual(4 * 1_048_576);
+            await expect(stat(join(out, last!.stdoutLog.slice('~/.chamvi/out/'.length)))).resolves.toMatchObject({ size: 1_000_000 });
+        } finally {
+            await small.cleanup();
+        }
+    });
+
+    it.skipIf(process.getuid?.() === 0)('fails with a SandboxError when the logs cannot be written', async () => {
+        await s.call('bash', { command: 'true' });
+        const out = join(s.root, s.workspace.id, 'home', '.chamvi', 'out');
+        await chmod(out, 0o500);
+        try {
+            await expect(s.call('bash', { command: 'echo hello' })).rejects.toThrow(SandboxError);
+            await expect(s.call('bash', { command: 'echo hello' })).rejects.toThrow(/no space left/);
+        } finally {
+            await chmod(out, 0o700);
+        }
+        await expect(s.call('bash', { command: 'echo hello' })).resolves.toMatchObject({ stdout: 'hello\n' });
     });
 
     it('refuses timeouts out of range', async () => {

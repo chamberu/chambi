@@ -58,6 +58,14 @@ export const EXCERPT_TAIL_BYTES = 24_576;
 export const OUTPUT_LOGS_KEPT = 100;
 
 /**
+ * The logs of `~/.chamvi/out/` take at most this many times
+ * `outputLogMaxBytes` in all (256 MiB by default): past it each call deletes
+ * the oldest ones but its own, since a hardened workspace's HOME is the
+ * `/tmp` tmpfs (1 GiB by default).
+ */
+export const OUTPUT_LOGS_BUDGET_CAPS = 4;
+
+/**
  * Bytes one output log of `bash` may grow to (the `outputLogMaxBytes`
  * default of `codingTools()`): past it the call is killed and the log cut
  * back to it, so a runaway writer cannot fill the disk until its timeout.
@@ -66,6 +74,9 @@ export const OUTPUT_LOG_MAX_BYTES = 64 * 1_048_576;
 
 /** Seconds between two checks of the log sizes while a `bash` call runs (`sleep 1` where fractions fail). */
 export const OUTPUT_LOG_CHECK_SECONDS = '0.2';
+
+/** Seconds between two checks of the output size while a background job runs (it may run for days). */
+export const JOB_OUTPUT_CHECK_SECONDS = '1';
 
 /** How long reading the logs of a command that timed out may take. */
 export const REPORT_TIMEOUT_MS = 30_000;
@@ -78,6 +89,9 @@ export const REPORT_STDERR_HEADER = 'chamvi-report-stderr';
 
 /** What the `bash` script prints instead of running when the explicit cwd is no directory. */
 export const CWD_MISSING = 'chamvi-cwd-missing';
+
+/** The exit code of a `bash` script that could not write its state folders or its report (no space left, or not writable). */
+export const REPORT_FAILED_EXIT_CODE = 125;
 
 /** The word after the status of a report header when a log passed its cap. */
 export const REPORT_CAPPED = 'capped';
@@ -130,23 +144,31 @@ export const INNER_SCRIPT = [
 /**
  * Prints the report of call `$n` (logs `$f.stdout.log` and `$f.stderr.log`,
  * cut back to `$m` bytes when the marker `$f.capped` says a log passed
- * that cap): on stdout `REPORT_HEADER <status>` (plus `REPORT_CAPPED`
- * after a cap), the working directory the next call
- * starts in (as `/workspace/...` below the root `$r`), then for stdout its
- * size and log path and the base64 of its first `EXCERPT_HEAD_BYTES` and of
- * the rest or its last `EXCERPT_TAIL_BYTES`, each block ended by a
- * `BLOCK_END` line; the same for stderr on stderr after a
- * `REPORT_STDERR_HEADER` line. Then deletes all but the newest
- * `OUTPUT_LOGS_KEPT` logs.
+ * that cap). First it deletes all but the newest `OUTPUT_LOGS_KEPT` logs,
+ * then, while `du` finds the folder above `$b` bytes, the oldest ones past
+ * that budget (counted newest first, this call's own logs never deleted),
+ * so the report has room. Then it writes the report to two files and checks
+ * that each ends whole (two `BLOCK_END` lines): a full disk or a folder that
+ * takes no file is a stderr message and exit `REPORT_FAILED_EXIT_CODE`,
+ * never a half report. The report: on stdout `REPORT_HEADER <status>` (plus
+ * `REPORT_CAPPED` after a cap), the working directory the next call starts
+ * in (as `/workspace/...` below the root `$r`), then for stdout its size and
+ * log path and the base64 of its first `EXCERPT_HEAD_BYTES` and of the rest
+ * or its last `EXCERPT_TAIL_BYTES`, each block ended by a `BLOCK_END` line;
+ * the same for stderr on stderr after a `REPORT_STDERR_HEADER` line.
  */
 const REPORT_PART = [
     'w=$r; if [ -f "$s/cwd" ]; then IFS= read -r w < "$s/cwd"; fi',
     'case $w in "$r") w=/workspace;; "$r"/*) w="/workspace${w#"$r"}";; esac',
     `q=; if [ -f "$f.capped" ]; then q=' ${  REPORT_CAPPED  }'; rm -f "$f.capped"; ` +
     'for g in "$f.stdout.log" "$f.stderr.log"; do if [ -n "$(find "$g" -size +"$m"c 2>/dev/null)" ]; then ' +
-    'head -c "$m" "$g" > "$g.t" && mv -f "$g.t" "$g"; fi; done; fi',
-    `printf '%s %s%s\\n%s\\n' ${REPORT_HEADER} "$st" "$q" "$w"`,
-    `printf '%s\\n' ${REPORT_STDERR_HEADER} >&2`,
+    'head -c "$m" "$g" > "$g.t" && mv -f "$g.t" "$g" || rm -f "$g.t"; fi; done; fi',
+    `ls -1t "$o" | tail -n +${OUTPUT_LOGS_KEPT + 1} | while IFS= read -r g; do case $g in "$n".*) ;; *) rm -f -- "$o/$g";; esac; done`,
+    'if [ "$(du -sk "$o" 2>/dev/null | cut -f1)" -gt "$((b / 1024))" ] 2>/dev/null; then',
+    '  a=0; for g in "$f.stdout.log" "$f.stderr.log"; do if [ -f "$g" ]; then a=$((a + $(wc -c < "$g" | tr -d " "))); fi; done',
+    '  ls -1t "$o" | while IFS= read -r g; do case $g in "$n".*) continue;; esac; ' +
+    'z=$(wc -c < "$o/$g" 2>/dev/null | tr -d " "); a=$((a + ${z:-0})); if [ "$a" -gt "$b" ]; then rm -f -- "$o/$g"; fi; done',
+    'fi',
     'for k in stdout stderr; do',
     '  g=$f.$k.log; z=0; if [ -f "$g" ]; then z=$(wc -c < "$g" | tr -d " "); fi',
     '  {',
@@ -154,21 +176,40 @@ const REPORT_PART = [
     `    if [ "$z" -gt 0 ]; then head -c ${EXCERPT_HEAD_BYTES} "$g" | base64; fi; printf '%s\\n' ${BLOCK_END}`,
     `    if [ "$z" -gt ${EXCERPT_HEAD_BYTES + EXCERPT_TAIL_BYTES} ]; then tail -c ${EXCERPT_TAIL_BYTES} "$g" | base64; ` +
     `elif [ "$z" -gt ${EXCERPT_HEAD_BYTES} ]; then tail -c +${EXCERPT_HEAD_BYTES + 1} "$g" | base64; fi; printf '%s\\n' ${BLOCK_END}`,
-    '  } > "$o/.report.$n.$k"',
+    '  } > "$o/.report.$n.$k" 2>/dev/null',
     'done',
+    `if [ "$(grep -c -e '^${BLOCK_END}$' "$o/.report.$n.stdout" 2>/dev/null)" != 2 ] || ` +
+    `[ "$(grep -c -e '^${BLOCK_END}$' "$o/.report.$n.stderr" 2>/dev/null)" != 2 ]; then`,
+    '  rm -f "$o/.report.$n.stdout" "$o/.report.$n.stderr"',
+    `  printf 'cannot write the bash report in %s\\n' "$o" >&2; exit ${REPORT_FAILED_EXIT_CODE}`,
+    'fi',
+    `printf '%s %s%s\\n%s\\n' ${REPORT_HEADER} "$st" "$q" "$w"`,
+    `printf '%s\\n' ${REPORT_STDERR_HEADER} >&2`,
     'cat "$o/.report.$n.stdout"; cat "$o/.report.$n.stderr" >&2; rm -f "$o/.report.$n.stdout" "$o/.report.$n.stderr"',
-    `ls -1t "$o" | tail -n +${OUTPUT_LOGS_KEPT + 1} | while IFS= read -r g; do rm -f -- "$o/$g"; done`,
 ].join('\n');
 
+/**
+ * A watchdog subshell, started in the background (`... &`): every `seconds`
+ * (`sleep 1` where fractions fail) it runs `check`. The sleep runs in the
+ * background so the TERM trap can kill and reap it, since an orphaned sleep
+ * is a zombie for good under a PID 1 that reaps nothing (an image without
+ * an init); the caller ends it with `kill "$wd"; wait "$wd"`.
+ */
+function watchdogPart(seconds: string, check: string): string {
+    return '( p=; trap \'if [ -n "$p" ]; then kill "$p" 2>/dev/null; fi; wait; exit 0\' TERM; while :; do ' +
+        `sleep ${seconds} 2>/dev/null & p=$!; wait "$p" || { sleep 1 & p=$!; wait "$p"; }; p=; ${check}; ` +
+        'done ) > /dev/null 2>&1 < /dev/null &';
+}
+
 /** The folders of the shell state and the logs, `$c`, `$s` and `$o`, created when missing. */
-const STATE_PART = 'c=$HOME/.chamvi; s=$c/shell; o=$c/out; mkdir -p "$s" "$o" || exit 125; r=$(pwd -P)';
+const STATE_PART = `c=$HOME/.chamvi; s=$c/shell; o=$c/out; mkdir -p "$s" "$o" || exit ${REPORT_FAILED_EXIT_CODE}; r=$(pwd -P)`;
 
 /**
  * The outer shell of a `bash` call, run in the workspace root as `sh -c
- * BASH_SCRIPT sh <INNER_SCRIPT> <command> <id> <cwd or ''> <log cap>`: it
- * holds the exec's pipes while the inner shell (bash when the image has
- * it, else sh) writes to the log files only, so a background job of the
- * command never keeps the call open; then it prints the report. A
+ * BASH_SCRIPT sh <INNER_SCRIPT> <command> <id> <cwd or ''> <log cap> <log
+ * budget>`: it holds the exec's pipes while the inner shell (bash when the
+ * image has it, else sh) writes to the log files only, so a background job
+ * of the command never keeps the call open; then it prints the report. A
  * watchdog in the background checks the log sizes every
  * `OUTPUT_LOG_CHECK_SECONDS` while the inner shell runs; once a log passed
  * the cap it leaves the marker `$f.capped` and kills the exec's process
@@ -177,28 +218,29 @@ const STATE_PART = 'c=$HOME/.chamvi; s=$c/shell; o=$c/out; mkdir -p "$s" "$o" ||
  */
 export const BASH_SCRIPT = [
     STATE_PART,
-    'n=$3; f=$o/$n; m=$5',
+    'n=$3; f=$o/$n; m=$5; b=$6',
     `if [ -n "$4" ] && [ ! -d "$4" ]; then printf '%s\\n' ${CWD_MISSING}; exit 0; fi`,
     'if command -v bash >/dev/null 2>&1; then x=bash; else x=sh; fi',
-    `( while sleep ${OUTPUT_LOG_CHECK_SECONDS} 2>/dev/null || sleep 1; do ` +
-    'if [ -n "$(find "$f.stdout.log" "$f.stderr.log" -size +"$m"c 2>/dev/null)" ]; then : > "$f.capped"; kill -KILL 0; fi; ' +
-    'done ) > /dev/null 2>&1 < /dev/null &',
+    watchdogPart(
+        OUTPUT_LOG_CHECK_SECONDS,
+        'if [ -n "$(find "$f.stdout.log" "$f.stderr.log" -size +"$m"c 2>/dev/null)" ]; then : > "$f.capped"; kill -KILL 0; fi',
+    ),
     'wd=$!',
     '"$x" -c "$1" chamvi "$2" "$4" "$s" > "$f.stdout.log" 2> "$f.stderr.log" < /dev/null',
     'st=$?',
-    'kill "$wd" 2>/dev/null',
+    'kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null',
     REPORT_PART,
     'exit $st',
 ].join('\n');
 
 /**
  * The report of call `$1` alone, run as `sh -c REPORT_SCRIPT sh <id> <log
- * cap>` after the call was killed (its timeout or its log cap): the status
- * reads `-`.
+ * cap> <log budget>` after the call was killed (its timeout or its log cap):
+ * the status reads `-`.
  */
 export const REPORT_SCRIPT = [
     STATE_PART,
-    'n=$1; f=$o/$n; m=$2; st=-',
+    'n=$1; f=$o/$n; m=$2; b=$3; st=-',
     REPORT_PART,
 ].join('\n');
 
@@ -240,41 +282,57 @@ const PGOF_PART = 'pgof() { if [ -r "/proc/$1/stat" ]; then sed \'s/.*) //\' "/p
 
 /**
  * Starts a background job, run as `sh -c JOB_START_SCRIPT sh
- * <JOB_INNER_SCRIPT> <command> <id> <cwd or ''>` in its own exec, so the
- * job lives in that exec's process group (the local spawn's group, GNU
- * `timeout`'s in a container) and outlives the exec: `$j/pgid` holds the
- * group, `$j/pid` the wrapper that waits for the command and writes its
- * exit status to `$j/status`; stdout and stderr go to `$j/output`. The
- * job's pipes never are the exec's, so the exec returns at once.
+ * <JOB_INNER_SCRIPT> <command> <id> <cwd or ''> <log cap>` in its own exec,
+ * so the job lives in that exec's process group (the local spawn's group,
+ * GNU `timeout`'s in a container) and outlives the exec: `$j/pgid` holds
+ * the group, `$j/pid` the wrapper that waits for the command and writes its
+ * exit status to `$j/status`; stdout and stderr go to `$j/output`. A
+ * watchdog of the wrapper checks the output every `JOB_OUTPUT_CHECK_SECONDS`
+ * while the command runs; once it passed the log cap it leaves
+ * `$j/capped`, cuts the file back to the cap (the job writes on into the
+ * replaced file until the kill) and kills the job's process group, like
+ * bash_kill. The job's pipes never are the exec's, so the exec returns at
+ * once.
  */
 export const JOB_START_SCRIPT = [
-    'c=$HOME/.chamvi; s=$c/shell; j=$c/jobs/$3; mkdir -p "$s" "$j" || exit 125',
+    'c=$HOME/.chamvi; s=$c/shell; j=$c/jobs/$3; m=$5; mkdir -p "$s" "$j" || exit 125',
     `if [ -n "$4" ] && [ ! -d "$4" ]; then printf '%s\\n' ${CWD_MISSING}; exit 0; fi`,
     PGOF_PART,
     'g=$(pgof $$)',
     'case $g in ""|*[!0-9]*|0|1) printf \'cannot read the process group\\n\' >&2; exit 125;; esac',
     'printf \'%s\\n\' "$g" > "$j/pgid"; printf \'%s\\n\' "$2" > "$j/command"',
     'if command -v bash >/dev/null 2>&1; then x=bash; else x=sh; fi',
-    '( "$x" -c "$1" chamvi "$2" "$4" "$s" > "$j/output" 2>&1 < /dev/null; ' +
-    'echo $? > "$j/status.t" && mv -f "$j/status.t" "$j/status" ) > /dev/null 2>&1 < /dev/null &',
+    '(',
+    `  ${watchdogPart(
+        JOB_OUTPUT_CHECK_SECONDS,
+        'if [ -n "$(find "$j/output" -size +"$m"c 2>/dev/null)" ]; then : > "$j/capped"; ' +
+        'head -c "$m" "$j/output" > "$j/output.t" && mv -f "$j/output.t" "$j/output" || rm -f "$j/output.t"; kill -KILL 0; fi',
+    )}`,
+    '  wd=$!',
+    '  "$x" -c "$1" chamvi "$2" "$4" "$s" > "$j/output" 2>&1 < /dev/null',
+    '  e=$?',
+    '  kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null',
+    '  echo $e > "$j/status.t" && mv -f "$j/status.t" "$j/status"',
+    ') > /dev/null 2>&1 < /dev/null &',
     'printf \'%s\\n\' "$!" > "$j/pid"',
     `printf '%s %s\\n' ${JOB_HEADER} "$g"`,
 ].join('\n');
 
 /**
- * Prints `JOB_HEADER <size> <status> [exit code]` of job `$1` (status
- * `killed` once bash_kill ran, `exited` with the code, `running` while its
- * wrapper lives in the job's group, else `lost`: the container restarted).
- * Exit 3 for an unknown job.
+ * Prints `JOB_HEADER <size> <status> <capped 0|1> [exit code]` of job `$1`
+ * (status `killed` once bash_kill or the log cap ended it, `exited` with the
+ * code, `running` while its wrapper lives in the job's group, else `lost`:
+ * the container restarted). Exit 3 for an unknown job.
  */
 const JOB_STATE_PART = [
     'j=$HOME/.chamvi/jobs/$1; if [ ! -f "$j/pgid" ]; then exit 3; fi',
     PGOF_PART,
     'IFS= read -r g < "$j/pgid"; p=; if [ -f "$j/pid" ]; then IFS= read -r p < "$j/pid"; fi',
     'e=; if [ -f "$j/status" ]; then IFS= read -r e < "$j/status"; fi',
-    'if [ -f "$j/killed" ]; then t=killed; elif [ -n "$e" ]; then t=exited; ' +
+    'if [ -f "$j/killed" ] || [ -f "$j/capped" ]; then t=killed; elif [ -n "$e" ]; then t=exited; ' +
     'elif [ -n "$p" ] && [ "$(pgof "$p")" = "$g" ]; then t=running; else t=lost; fi',
     'z=0; if [ -f "$j/output" ]; then z=$(wc -c < "$j/output" | tr -d " "); fi',
+    'u=0; if [ -f "$j/capped" ]; then u=1; fi',
 ].join('\n');
 
 /**
@@ -283,7 +341,7 @@ const JOB_STATE_PART = [
  */
 export const JOB_OUTPUT_SCRIPT = [
     JOB_STATE_PART,
-    `printf '%s %s %s %s\\n' ${JOB_HEADER} "$z" "$t" "$e"`,
+    `printf '%s %s %s %s %s\\n' ${JOB_HEADER} "$z" "$t" "$u" "$e"`,
     'if [ "$z" -gt "$2" ]; then tail -c "+$(($2 + 1))" "$j/output" | head -c "$3" | base64; fi',
 ].join('\n');
 
@@ -300,7 +358,7 @@ export const JOB_KILL_SCRIPT = [
     '  i=0; while kill -0 "-$g" 2>/dev/null && [ $i -lt 30 ]; do sleep 0.1; i=$((i + 1)); done',
     '  kill -KILL "-$g" 2>/dev/null',
     'fi',
-    `printf '%s %s %s %s\\n' ${JOB_HEADER} "$z" "$t" "$e"`,
+    `printf '%s %s %s %s %s\\n' ${JOB_HEADER} "$z" "$t" "$u" "$e"`,
 ].join('\n');
 
 /** Bytes a `read_file` with `encoding: 'base64'` returns at most. */

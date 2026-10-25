@@ -147,6 +147,12 @@ export type BashOutputResult = {
     size: number;
     /** True when more output follows `nextOffset`. */
     truncated: boolean;
+    /**
+     * True when the output passed `outputLogMaxBytes`: the job was killed
+     * with every process it started (status `killed`) and its output cut
+     * back to the cap.
+     */
+    outputCapped: boolean;
 };
 
 export type BashKillResult = {
