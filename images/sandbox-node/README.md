@@ -1,6 +1,8 @@
 # sandbox-node
 
-The default workspace image of chamvi's container sandboxes (`@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s`): `ghcr.io/chamvi/sandbox-node`.
+> **Deprecated.** `ghcr.io/chamvi/sandbox-dev` ([`images/sandbox-dev`](../sandbox-dev/README.md)) is the default workspace image now: any toolchain through mise, root by default. `sandbox-node` keeps building for one release, then goes. To keep using it, pass `image: 'ghcr.io/chamvi/sandbox-node:24'` to the provider (it runs as root there too, or as uid 1000 with `user: '1000:1000'` and `readOnlyRoot: true` on Docker, `user: { uid: 1000, gid: 1000 }` on Kubernetes).
+
+The former default workspace image of chamvi's container sandboxes (`@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s`): `ghcr.io/chamvi/sandbox-node`.
 
 ## What is inside
 
@@ -9,9 +11,9 @@ The default workspace image of chamvi's container sandboxes (`@chamvi/sandbox-do
 - `tini` as the entrypoint (pid 1 reaps orphaned processes and forwards signals)
 - GNU coreutils `timeout`, which the providers wrap every command in
 - `/workspace`, owned by uid 1000, the working directory
-- `USER 1000:1000` (the image's `node` user); the default command is `sleep infinity`, the providers replace it with `sleep <workspace lifetime>`
+- `USER 1000:1000` (the image's `node` user), which the providers' `user` option overrides; the command is `sleep infinity`
 
-The providers run the container with a read-only root filesystem, no capabilities, `no-new-privileges`, pid, memory and cpu limits, a 512 MiB `/tmp` tmpfs and a volume at `/workspace`. Everything a process writes goes to `/workspace` or `/tmp`.
+In the providers' hardened mode the container has a read-only root filesystem, no capabilities, `no-new-privileges`, pid, memory and cpu limits, a `/tmp` tmpfs and volumes at `/workspace` and `/cache`.
 
 ## Environment
 
