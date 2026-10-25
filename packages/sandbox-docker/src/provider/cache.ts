@@ -35,8 +35,11 @@ export const CACHE_OPEN_SCRIPT = `for d in ${cacheFolders().join(' ')}; do ` +
  * workspace over the same container whose commands run as
  * `CACHE_OPEN_USER`, so the PATH guard and the `timeout` wrapper apply):
  * Docker makes the mount point of an image without `/cache` root-owned
- * 0755, and a root workspace sharing the volume leaves its folders so,
- * where every install of the hardened user would fail. SandboxError when
+ * 0755 (and a root workspace sharing the volume leaves the top-level
+ * folders so), where every install of the hardened user would fail. Only
+ * those folders: what a root workspace made below them (npm's `_cacache`,
+ * mise's installs) stays root's, which is why a non-root user gets a
+ * volume of its own by default (`defaultCacheVolume`). SandboxError when
  * it fails, `abortedCreate()` once `signal` fires.
  */
 export async function openCache(root: IWorkspace, user: string, signal?: AbortSignal): Promise<void> {

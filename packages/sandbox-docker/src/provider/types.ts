@@ -39,8 +39,11 @@ export type DockerSandboxOptions = {
     readOnlyRoot?: boolean;
     /**
      * The `/cache` mount: a named volume every workspace shares (default
-     * `DEFAULT_CACHE_VOLUME`), or with `false` an anonymous volume per
-     * workspace, removed with it. A shared cache is shared by every run and
+     * `DEFAULT_CACHE_VOLUME` for root, `<DEFAULT_CACHE_VOLUME>-<user>` for a
+     * non-root `user`, since a root workspace leaves root-owned folders deep
+     * in the cache), or with `false` an anonymous volume per workspace,
+     * removed with it. Never point a non-root `user` at a volume a root
+     * workspace wrote to. A shared cache is shared by every run and
      * agent on the host: a package one run fetched can be used by another.
      */
     cache?: false | { volume?: string };

@@ -393,7 +393,9 @@ describeDocker('docker sandbox', () => {
         }
     });
 
-    it('opens the folders a root workspace made in a shared cache to the hardened user', async () => {
+    // only the top-level folders: what a root workspace makes below them stays
+    // root's, which is why a non-root user gets a volume of its own by default
+    it('opens the top-level folders a root workspace made in an explicitly shared cache to the hardened user', async () => {
         await buildFixtureImage(docker, 'no-cache', NO_CACHE_IMAGE);
         const volume = `chamvi-sandbox-cache-test-${randomUUID()}`;
         try {

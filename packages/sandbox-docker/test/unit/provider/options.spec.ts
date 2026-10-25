@@ -60,6 +60,14 @@ function fakeDocker(createError: unknown) {
     };
 }
 
+type CreateCall = [{ HostConfig: { Mounts: Array<{ Source: string; Target: string }> } }];
+
+/** The `/cache` volume of the fake's first `createContainer` call. */
+function cacheMountOf(docker: ReturnType<typeof fakeDocker>): string | undefined {
+    const [options] = docker.createContainer.mock.calls[0] as unknown as CreateCall;
+    return options.HostConfig.Mounts.find((mount) => mount.Target === '/cache')?.Source;
+}
+
 describe('docker sandbox create without a daemon', () => {
     it('does not pull for a 404 that names no missing image', async () => {
         const docker = fakeDocker(Object.assign(new Error('not found'), {
@@ -71,6 +79,28 @@ describe('docker sandbox create without a daemon', () => {
         await expect(provider.create({ runId: 'run-1' })).rejects.toThrow(SandboxError);
         expect(docker.pull).not.toHaveBeenCalled();
         expect(docker.createContainer).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['the default root user', {}, 'chamvi-sandbox-cache'],
+        ['root by name', { user: 'root:root' }, 'chamvi-sandbox-cache'],
+        ['a non-root uid', { user: '1000:1000' }, 'chamvi-sandbox-cache-1000'],
+        ['a non-root name', { user: 'node' }, 'chamvi-sandbox-cache-node'],
+        ['a non-root user with an explicit volume', { user: '1000:1000', cache: { volume: 'shared' } }, 'shared'],
+    ])('mounts the cache volume of %s', async (_name, options, volume) => {
+        const docker = fakeDocker(new Error('stop after the create options'));
+        const provider = createDockerSandbox({ docker: docker as never, ...options });
+
+        await expect(provider.create({ runId: 'run-1' })).rejects.toThrow(SandboxError);
+        expect(cacheMountOf(docker)).toBe(volume);
+    });
+
+    it('gives a non-root user name that is no volume name a hashed cache volume', async () => {
+        const docker = fakeDocker(new Error('stop after the create options'));
+        const provider = createDockerSandbox({ docker: docker as never, user: 'dom\\user' });
+
+        await expect(provider.create({ runId: 'run-1' })).rejects.toThrow(SandboxError);
+        expect(cacheMountOf(docker)).toMatch(/^chamvi-sandbox-cache-[0-9a-f]{16}$/);
     });
 
     it('creates no container for an already aborted signal', async () => {
