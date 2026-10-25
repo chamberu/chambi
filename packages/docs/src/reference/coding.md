@@ -16,19 +16,23 @@ function codingTools(workspaces: CodingWorkspaces): ToolSet;
 type CodingWorkspaces = Pick<IWorkspaceManager, 'get'>;
 ```
 
-Throws `InvalidAgentDefinitionError` when `workspaces` has no `get`. Returns `read_file`, `write_file`, `edit_file`, `grep`, `list_files`, `bash` and `git_diff`, each a [`defineTool()`](/guide/tools) tool that resolves its workspace through `workspaces.get(context.run.runId, input.workspace)`.
+Throws `InvalidAgentDefinitionError` when `workspaces` has no `get`. Returns `read_file`, `write_file`, `edit_file`, `multi_edit`, `grep`, `glob`, `list_files`, `bash`, `bash_output`, `bash_kill` and `git_diff`, each a [`defineTool()`](/guide/tools) tool that resolves its workspace through `workspaces.get(context.run.runId, input.workspace)`.
 
 | Tool | Input | Result |
 |---|---|---|
-| `read_file` | `path`, `offset?` (1-based, default 1), `limit?` (default and maximum 2000) | `ReadFileResult` |
-| `write_file` | `path`, `content` | `WriteFileResult` |
+| `read_file` | `path`, `offset?` (1-based, default 1), `limit?` (default and maximum 2000), `encoding?` (`utf8` default, `base64`) | `ReadFileResult`; `ReadFileBinaryResult` for `base64` (at most 1 MiB); `ReadFileImageResult` for a png, jpeg, gif or webp (at most 5 MiB), an image part for the model through `toModelOutput` |
+| `write_file` | `path`, `content`, `encoding?` (`utf8` default, `base64`) | `WriteFileResult` |
 | `edit_file` | `path`, `oldString`, `newString`, `replaceAll?` | `EditFileResult` |
-| `grep` | `pattern` (POSIX ERE), `path?`, `ignoreCase?`, `limit?` (default 100, at most 500) | `GrepResult` |
-| `list_files` | `path?`, `limit?` (default 1000, at most 5000) | `ListFilesResult` |
-| `bash` | `command`, `cwd?`, `timeoutMs?` (default 300 000, at most 1 800 000) | `ExecResult` from `@chamvi/sandbox` |
+| `multi_edit` | `path`, `edits` (1 to 100 of `{ oldString, newString, replaceAll? }`, applied in order, all or none) | `MultiEditResult` |
+| `grep` | `pattern` (ripgrep syntax, else POSIX ERE: see `engine`), `path?`, `ignoreCase?`, `includeIgnored?`, `limit?` (default 100, at most 500) | `GrepResult` |
+| `glob` | `pattern` (`*`, `?`, `**/`), `path?`, `includeIgnored?`, `limit?` (default 1000, at most 5000) | `GlobResult` |
+| `list_files` | `path?`, `includeIgnored?`, `limit?` (default 1000, at most 5000) | `ListFilesResult` |
+| `bash` | `command`, `cwd?` (this call only), `timeoutMs?` (default 300 000, at most 1 800 000), `background?` | `BashResult`; `BashJobResult` with `background: true` |
+| `bash_output` | `job`, `offset?` (bytes, default 0) | `BashOutputResult` (at most 32 KiB of output) |
+| `bash_kill` | `job` | `BashKillResult` |
 | `git_diff` | `staged?`, `path?` | `GitDiffResult` |
 
-Every tool also takes `workspace?`, the id from `create_workspace`. A path is relative to the workspace root or starts with `/workspace/`. Input the model can correct (a bad path, an `oldString` that is missing or ambiguous) is a `ValidationError` tool error; a missing or oversized file and any other sandbox failure a `SandboxError` tool error.
+Every tool also takes `workspace?`, the id from `create_workspace`. A path is relative to the workspace root or starts with `/workspace/`; `read_file` and `grep` also take the log paths `bash` and `bash_output` name (`~/.chamvi/out/<id>.stdout.log`, `~/.chamvi/jobs/<id>/output`), and nothing else outside the workspace. See [The shell](/guide/workspaces#the-shell) for the kept state, the output logs and the jobs. Input the model can correct (a bad path, an `oldString` that is missing or ambiguous) is a `ValidationError` tool error; a missing or oversized file and any other sandbox failure a `SandboxError` tool error.
 
 <<< ../../../coding/src/tools/types.ts{ts}
 
