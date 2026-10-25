@@ -159,6 +159,8 @@ describe('workspace manager: acquire', () => {
         const { provider, manager } = setup({ maxWorkspacesPerRun: 1 });
         const first = manager.acquire('r1', { repo: 'octo/a' });
         await expect(manager.acquire('r1', { repo: 'octo/b' })).rejects.toThrow(SandboxError);
+        await expect(manager.acquire('r1', { repo: 'octo/b' })).rejects.toThrow('A run holds at most 1 workspace; dispose one first ' +
+            '(dispose_workspace), or have the operator raise maxWorkspacesPerRun of the workspace manager.');
         await first;
         expect(provider.created).toHaveLength(1);
     });
