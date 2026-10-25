@@ -13,6 +13,7 @@ import {
     it,
 } from 'vitest';
 import { SandboxError } from '@chamvi/core';
+import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
 import { CONTAINER_NAME_PREFIX, createDockerSandbox } from '@chamvi/sandbox-docker';
 import { ControllableClock } from '@chamvi/test-kit';
@@ -91,6 +92,46 @@ describeDocker('docker sandbox', () => {
         expect(found[0]!.info).toEqual({ ...workspace.info, image: dockerImage });
         expect((await container.inspect()).State.Running).toBe(true);
         expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('restarts the stopped container of a workspace the manager still holds', async () => {
+        const provider = createDockerSandbox({ image: dockerImage });
+        const errors: unknown[] = [];
+        const manager = createWorkspaceManager({
+            provider, 
+            gcIntervalMs: 0, 
+            onError: (error) => { errors.push(error); }, 
+        });
+        const runId = `test-${randomUUID()}`;
+        const { workspace } = await manager.acquire(runId, {});
+        workspaces.push(workspace);
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        // the daemon restarted while the run waited on an approval
+        await container.stop({ t: 0 });
+
+        const held = await manager.get(runId);
+        await expect(held.exec(['cat', 'kept.txt'])).rejects.toThrow(/is gone/);
+
+        const restarted = await manager.get(runId);
+        workspaces.push(restarted);
+        expect(restarted.id).toBe(workspace.id);
+        expect(restarted).not.toBe(workspace);
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await restarted.readFile('kept.txt')).toBe('work');
+        expect(await provider.find(runId)).toEqual([restarted]);
+        expect(errors).toEqual([]);
+    });
+
+    it('never finds a workspace again that it is disposing', async () => {
+        const provider = createDockerSandbox({ image: dockerImage });
+        const runId = `test-${randomUUID()}`;
+        const workspace = await provider.create({ runId });
+        workspaces.push(workspace);
+        const disposal = workspace.dispose();
+        expect(await provider.find(runId)).toEqual([]);
+        await disposal;
+        expect(await containersOf(runId)).toEqual([]);
     });
 
     it('finds the instance it holds, never another deployment\'s or an expired one', async () => {

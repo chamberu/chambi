@@ -59,6 +59,8 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
     const pull = options.pull ?? 'missing';
     const clock = options.clock ?? systemClock;
     const live = new Map<string, IWorkspace>();
+    /** The workspaces whose dispose was called: never found again, also while or after a removal fails. */
+    const disposing = new WeakSet<IWorkspace>();
 
     /** Creates the container, pulling its image first as `pull` says; `signal` drops every request. */
     async function createContainer(
@@ -115,6 +117,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             readFile: remote.readFile,
             writeFile: remote.writeFile,
             async dispose() {
+                disposing.add(workspace);
                 await remote.dispose();
                 live.delete(id);
             },
@@ -188,10 +191,13 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 const labels = item.Labels ?? {};
                 const id = labels[WORKSPACE_LABEL] ?? '';
                 const held = live.get(id);
-                if (held) {
+                if (held && (!held.disposed || disposing.has(held))) {
+                    // a disposed one (also after a failed removal) is never found again
                     if (!held.disposed) found.push(held);
                     continue;
                 }
+                // gone (its container stopped): a fresh handle, restarted below
+                if (held) live.delete(id);
                 const info = readWorkspaceInfo(labels, PROVIDER_NAME);
                 if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
                 const container = docker.getContainer(item.Id);
