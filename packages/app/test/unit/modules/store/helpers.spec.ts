@@ -31,10 +31,10 @@ describe('maskPassword', () => {
 
     it('a password that is a substring of the stack or the message keeps the error', () => {
         const url = 'postgres://chamvi:postgres@db/chamvi';
-        const error = new DriverError('relation "chamvi_checkpoints" already exists, postgres said');
+        const error = new DriverError('relation "checkpoints" already exists, postgres said');
         error.stack = `${error.message}\n    at PostgresQueryRunner.query (node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:1:1)`;
         expect(maskPassword(error, url)).toBe(error);
-        expect(error.message).toBe('relation "chamvi_checkpoints" already exists, postgres said');
+        expect(error.message).toBe('relation "checkpoints" already exists, postgres said');
         expect(error.code).toBe('28P01');
     });
 

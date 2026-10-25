@@ -61,7 +61,7 @@ describePostgres('TypeormStore legacy envelopes', () => {
             }))
             .execute();
 
-        const columns = await dataSource.query('SELECT "thread" FROM "chamvi_runs" WHERE "id" = $1', ['legacy']);
+        const columns = await dataSource.query('SELECT "thread" FROM "runs" WHERE "id" = $1', ['legacy']);
         expect(columns).toEqual([{ thread: 'x' }]);
 
         const run = await store.getRun('legacy');

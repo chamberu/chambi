@@ -51,7 +51,7 @@ describePostgres('TypeormStore artifacts', () => {
         await store.putArtifact(artifact('a1'), new Uint8Array([0, 1, 255]));
 
         const [{ type }] = await dataSource.query(
-            'SELECT pg_typeof(data)::text AS type FROM chamvi_artifacts WHERE id = $1',
+            'SELECT pg_typeof(data)::text AS type FROM artifacts WHERE id = $1',
             ['a1'],
         );
         expect(type).toBe('bytea');

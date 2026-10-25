@@ -12,18 +12,18 @@ export class AgentRevisions1792627200000 implements MigrationInterface {
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
-            CREATE TABLE "chamvi_agent_revisions" (
+            CREATE TABLE "agent_revisions" (
                 "agent" character varying(64) COLLATE "C" NOT NULL,
                 "hash" character varying(128) NOT NULL,
                 "changed_at" TIMESTAMP WITH TIME ZONE NOT NULL,
-                CONSTRAINT "PK_d355b7063fb6b3201e6d588b511" PRIMARY KEY ("agent")
+                CONSTRAINT "PK_39766d9e051bfc00c64af00226c" PRIMARY KEY ("agent")
             )
         `);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
-            DROP TABLE "chamvi_agent_revisions"
+            DROP TABLE "agent_revisions"
         `);
     }
 }

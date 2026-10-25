@@ -18,14 +18,14 @@ export class IdempotencyScope1792454400000 implements MigrationInterface {
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
-            ALTER TABLE "chamvi_idempotency_keys" ALTER COLUMN "scope" TYPE character varying(1024)
+            ALTER TABLE "idempotency_keys" ALTER COLUMN "scope" TYPE character varying(1024)
         `);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         // fails while a scope is longer than 255 characters (purge or delete those keys first)
         await queryRunner.query(`
-            ALTER TABLE "chamvi_idempotency_keys" ALTER COLUMN "scope" TYPE character varying(255)
+            ALTER TABLE "idempotency_keys" ALTER COLUMN "scope" TYPE character varying(255)
         `);
     }
 }

@@ -164,7 +164,7 @@ describePostgres('storeModule on Postgres', () => {
         await harness.setup();
 
         const dataSource = harness.container.resolve(AppToken.DATA_SOURCE);
-        expect(await tableExists(dataSource, 'chamvi_runs')).toBe(true);
+        expect(await tableExists(dataSource, 'runs')).toBe(true);
         expect(harness.container.resolve(AppToken.STORE)).toBeInstanceOf(TypeormStore);
 
         await harness.stop();
@@ -205,14 +205,14 @@ describePostgres('storeModule on Postgres', () => {
         const url = await createTestDatabaseUrl();
         const seed = new DataSource({ type: 'postgres', url });
         await seed.initialize();
-        await seed.query('CREATE TABLE "chamvi_checkpoints" ("id" int)');
+        await seed.query('CREATE TABLE "checkpoints" ("id" int)');
         await seed.destroy();
 
         const { harness } = build({ env: { DATABASE_URL: url } });
         const error = await harness.setup().then(() => undefined, (e: unknown) => e);
         expect(error).toBeInstanceOf(QueryFailedError);
         expect(error).toMatchObject({ driverError: { code: '42P07' } });
-        expect((error as Error).message).toMatch(/chamvi_checkpoints/);
+        expect((error as Error).message).toMatch(/checkpoints/);
         expect(harness.container.resolve(AppToken.DATA_SOURCE).isInitialized).toBe(false);
         expect(harness.container.has(AppToken.STORE)).toBe(false);
     });
@@ -221,14 +221,14 @@ describePostgres('storeModule on Postgres', () => {
         const url = await createUrlWithPassword('postgres');
         const seed = new DataSource({ type: 'postgres', url });
         await seed.initialize();
-        await seed.query('CREATE TABLE "chamvi_checkpoints" ("id" int)');
+        await seed.query('CREATE TABLE "checkpoints" ("id" int)');
         await seed.destroy();
 
         const { harness } = build({ env: { DATABASE_URL: url } });
         const error = await harness.setup().then(() => undefined, (e: unknown) => e);
         expect(error).toBeInstanceOf(QueryFailedError);
         expect(error).toMatchObject({ driverError: { code: '42P07' } });
-        expect((error as Error).message).toBe('relation "chamvi_checkpoints" already exists');
+        expect((error as Error).message).toBe('relation "checkpoints" already exists');
     });
 
     it('a stop after initialize rejects app_stopped, also for a password like "app"', async () => {
@@ -246,7 +246,7 @@ describePostgres('storeModule on Postgres', () => {
             expect(error).toMatchObject({ code: APP_ERROR_CODE.STOPPED, message: 'The app was stopped.' });
             const dataSource = harness.container.resolve(AppToken.DATA_SOURCE);
             expect(dataSource.isInitialized).toBe(false);
-            expect(await tableExists(await openAdmin(url), 'chamvi_runs')).toBe(false);
+            expect(await tableExists(await openAdmin(url), 'runs')).toBe(false);
         } finally {
             spy.mockRestore();
             await closeAdmin();

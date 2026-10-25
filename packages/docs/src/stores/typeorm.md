@@ -25,22 +25,22 @@ On shutdown, drain the engine before destroying the data source:
 
 ## Migrations
 
-`migrateStore(dataSource)` runs the pending migrations under the Postgres advisory lock `chamvi:migrations` (`MIGRATION_LOCK_NAME`). Call it on every boot: replicas that start at once wait for each other, and each migration is applied and recorded once. Each call uses one pooled connection, the one holding the lock, for the migrations as well. chamvi is pre-1.0, so a new version may ship a new migration. The migrations so far: `1792195200000-init.ts`, `1792368000000-artifacts.ts`, `1792454400000-idempotency-scope.ts`, `1792540800000-kv-key-collation.ts` and `1792627200000-agent-revisions.ts` (`AgentRevisions1792627200000`, the table `chamvi_agent_revisions`).
+`migrateStore(dataSource)` runs the pending migrations under the Postgres advisory lock `chamvi:migrations` (`MIGRATION_LOCK_NAME`). Call it on every boot: replicas that start at once wait for each other, and each migration is applied and recorded once. Each call uses one pooled connection, the one holding the lock, for the migrations as well. chamvi is pre-1.0, so a new version may ship a new migration. The migrations so far: `1792195200000-init.ts`, `1792368000000-artifacts.ts`, `1792454400000-idempotency-scope.ts`, `1792540800000-kv-key-collation.ts` and `1792627200000-agent-revisions.ts` (`AgentRevisions1792627200000`, the table `agent_revisions`).
 
 ## Tables
 
 | Table | Holds | Keys and indexes |
 |---|---|---|
-| `chamvi_runs` | Runs; JSON columns for trigger, output, error, usage and wait point; the run's `address` in the `thread` column; claim owner and expiry | PK `id` (`COLLATE "C"`); `(agent, status, concurrency_key)`; `(status, created_at, id)` |
-| `chamvi_steps` | Append-only steps | `(run_id, step_index)` |
-| `chamvi_checkpoints` | The latest checkpoint per run | PK `run_id` |
-| `chamvi_idempotency_keys` | Intake keys | PK `(scope, key)`; `expires_at` |
-| `chamvi_locks` | Keyed leases | PK `key`; `expires_at` |
-| `chamvi_effects` | Recorded effect results | PK `key` |
-| `chamvi_kv` | Agent key-value state | PK `(agent, key)`, `key` `COLLATE "C"` (migration `1792540800000-kv-key-collation.ts`) |
-| `chamvi_docs` | Agent document collections | PK `(agent, collection, id)`; GIN index on `doc` |
-| `chamvi_artifacts` | Artifact metadata and bytes (`data` `bytea`) | PK `id`; `run_id` |
-| `chamvi_agent_revisions` | One revision marker per folder agent: `hash` varchar(128), `changed_at` | PK `agent` varchar(64) `COLLATE "C"` (migration `1792627200000-agent-revisions.ts`) |
+| `runs` | Runs; JSON columns for trigger, output, error, usage and wait point; the run's `address` in the `thread` column; claim owner and expiry | PK `id` (`COLLATE "C"`); `(agent, status, concurrency_key)`; `(status, created_at, id)` |
+| `steps` | Append-only steps | `(run_id, step_index)` |
+| `checkpoints` | The latest checkpoint per run | PK `run_id` |
+| `idempotency_keys` | Intake keys | PK `(scope, key)`; `expires_at` |
+| `locks` | Keyed leases | PK `key`; `expires_at` |
+| `effects` | Recorded effect results | PK `key` |
+| `kv` | Agent key-value state | PK `(agent, key)`, `key` `COLLATE "C"` (migration `1792540800000-kv-key-collation.ts`) |
+| `docs` | Agent document collections | PK `(agent, collection, id)`; GIN index on `doc` |
+| `artifacts` | Artifact metadata and bytes (`data` `bytea`) | PK `id`; `run_id` |
+| `agent_revisions` | One revision marker per folder agent: `hash` varchar(128), `changed_at` | PK `agent` varchar(64) `COLLATE "C"` (migration `1792627200000-agent-revisions.ts`) |
 
 ## How it keeps the contract
 

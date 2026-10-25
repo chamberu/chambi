@@ -17,13 +17,13 @@ export class KvKeyCollation1792540800000 implements MigrationInterface {
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
-            ALTER TABLE "chamvi_kv" ALTER COLUMN "key" TYPE character varying(512) COLLATE "C"
+            ALTER TABLE "kv" ALTER COLUMN "key" TYPE character varying(512) COLLATE "C"
         `);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
-            ALTER TABLE "chamvi_kv" ALTER COLUMN "key" TYPE character varying(512) COLLATE "default"
+            ALTER TABLE "kv" ALTER COLUMN "key" TYPE character varying(512) COLLATE "default"
         `);
     }
 }

@@ -9,16 +9,16 @@ import type { ValueTransformer } from 'typeorm';
 import { toJsonParameter } from './helpers.ts';
 
 export const TableName = {
-    RUNS: 'chamvi_runs',
-    STEPS: 'chamvi_steps',
-    CHECKPOINTS: 'chamvi_checkpoints',
-    IDEMPOTENCY_KEYS: 'chamvi_idempotency_keys',
-    LOCKS: 'chamvi_locks',
-    EFFECTS: 'chamvi_effects',
-    KV: 'chamvi_kv',
-    DOCS: 'chamvi_docs',
-    ARTIFACTS: 'chamvi_artifacts',
-    AGENT_REVISIONS: 'chamvi_agent_revisions',
+    RUNS: 'runs',
+    STEPS: 'steps',
+    CHECKPOINTS: 'checkpoints',
+    IDEMPOTENCY_KEYS: 'idempotency_keys',
+    LOCKS: 'locks',
+    EFFECTS: 'effects',
+    KV: 'kv',
+    DOCS: 'docs',
+    ARTIFACTS: 'artifacts',
+    AGENT_REVISIONS: 'agent_revisions',
 } as const;
 
 /**

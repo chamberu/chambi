@@ -40,7 +40,7 @@ describePostgres('schema', () => {
         const ds = await create();
         const rows: { indexdef: string }[] = await ds.query(
             'SELECT indexdef FROM pg_indexes WHERE indexname = $1',
-            ['IDX_chamvi_docs_doc_gin'],
+            ['IDX_docs_doc_gin'],
         );
         expect(rows).toHaveLength(1);
         expect(rows[0]!.indexdef).toContain('USING gin');
