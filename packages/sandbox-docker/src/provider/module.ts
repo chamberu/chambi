@@ -13,6 +13,7 @@ import {
     EXPIRES_AT_KEY,
     RUN_LABEL,
     SANDBOX_LABEL_SELECTORS,
+    TMP_SIZE,
     WORKSPACE_LABEL,
     abortedCreate,
     assertCreateInput,
@@ -23,14 +24,20 @@ import {
     createSettledCheck,
     isExpiredAt,
     prepareWorkspace,
+    probeImage,
     readCheckout,
     readWorkspaceInfo,
     resolveLimits,
 } from '@chamvi/sandbox';
-import type { ISandboxProvider, IWorkspace, WorkspaceInfo } from '@chamvi/sandbox';
+import type {
+    IExecTransport,
+    ISandboxProvider,
+    IWorkspace,
+    WorkspaceInfo,
+} from '@chamvi/sandbox';
 import Docker from 'dockerode';
 import { createDockerTransport } from '../transport/module.ts';
-import { DEFAULT_NETWORK } from './constants.ts';
+import { DEFAULT_CACHE_VOLUME, DEFAULT_NETWORK, DEFAULT_USER } from './constants.ts';
 import {
     assertDockerOptions,
     buildContainerOptions,
@@ -45,8 +52,12 @@ import type { DockerSandboxOptions } from './types.ts';
 const PROVIDER_NAME = 'docker';
 
 /**
- * One hardened container per workspace (see `buildContainerOptions`), commands
- * run through the Docker exec API inside GNU `timeout`. `find` lists a run's
+ * One container per workspace (see `buildContainerOptions`: root with a
+ * writable root and a few capabilities by default, the hardened mode through
+ * `user` and `readOnlyRoot`), commands run through the Docker exec API inside
+ * GNU `timeout`. `create` probes the image (`probeImage`) before the
+ * checkout; an image other than the provider's (the manager's or the
+ * model's) is pulled when missing, whatever `pull` says. `find` lists a run's
  * containers by label, starts a stopped one again (its volume holds the
  * work) and rebuilds the info from the labels. The client connects lazily,
  * so creating the provider never contacts the daemon.
@@ -58,6 +69,10 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
     const image = options.image ?? DEFAULT_SANDBOX_IMAGE;
     const network = options.network ?? DEFAULT_NETWORK;
     const pull = options.pull ?? 'missing';
+    const user = options.user ?? DEFAULT_USER;
+    const readOnlyRoot = options.readOnlyRoot ?? false;
+    const cacheVolume = options.cache === false ? undefined : (options.cache?.volume ?? DEFAULT_CACHE_VOLUME);
+    const tmpSize = options.tmpSize ?? TMP_SIZE;
     const clock = options.clock ?? systemClock;
     const live = new Map<string, IWorkspace>();
     /** The workspaces whose dispose was called: never found again, also while or after a removal fails. */
@@ -69,6 +84,8 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
         imageName: string,
         signal: AbortSignal | undefined,
     ): Promise<Docker.Container> {
+        // the provider's own image follows `pull`; any other one is pulled when missing
+        const policy = imageName === image ? pull : 'missing';
         const attempt = async (): Promise<Docker.Container> => {
             try {
                 return await docker.createContainer(signal ? { ...createOptions, abortSignal: signal } : createOptions);
@@ -80,12 +97,12 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             }
         };
 
-        if (pull === 'always') await pullImage(docker, imageName, signal);
+        if (policy === 'always') await pullImage(docker, imageName, signal);
         try {
             return await attempt();
         } catch (error) {
             if (error instanceof SandboxError) throw error;
-            if (pull !== 'missing' || !isMissingImage(error)) {
+            if (policy !== 'missing' || !isMissingImage(error)) {
                 throw new SandboxError(`cannot create a workspace container from ${imageName}: ${dockerMessage(error)}`, { cause: error });
             }
         }
@@ -100,12 +117,12 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
         }
     }
 
-    /** The workspace of a container, registered as live until disposed. */
-    function open(id: string, info: WorkspaceInfo, container: Docker.Container): IWorkspace {
+    /** The workspace of a container (reached through `transport`), registered as live until disposed. */
+    function open(id: string, info: WorkspaceInfo, transport: IExecTransport): IWorkspace {
         const remote = createRemoteWorkspace({
             id,
             info,
-            transport: createDockerTransport(docker, container, clock),
+            transport,
             clock,
         });
         const workspace: IWorkspace = {
@@ -157,17 +174,27 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 deployment,
                 info,
                 network,
+                user,
+                readOnlyRoot,
+                cacheVolume,
+                tmpSize,
                 env: { ...options.env, ...input.env },
                 limits,
             }), imageName, input.signal);
 
-            const workspace = open(id, info, container);
+            const transport = createDockerTransport(docker, container, clock, user);
+            const workspace = open(id, info, transport);
 
             try {
                 await container.start(input.signal ? { abortSignal: input.signal } : {});
                 if (input.signal?.aborted) {
                     throw abortedCreate();
                 }
+                await probeImage(transport, {
+                    image: imageName, 
+                    clock, 
+                    signal: input.signal, 
+                });
                 const { commit } = await prepareWorkspace(workspace, {
                     repo: input.repo,
                     ref: input.ref,
@@ -220,7 +247,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
                 const container = docker.getContainer(item.Id);
                 if (!await restart(item, container)) continue;
-                const workspace = open(id, info, container);
+                const workspace = open(id, info, createDockerTransport(docker, container, clock, user));
                 const checkout = await readCheckout(workspace, findOptions.signal, clock);
                 if (!checkout) {
                     // a create that died before its checkout finished (restarted above

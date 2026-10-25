@@ -10,9 +10,12 @@ import Docker from 'dockerode';
 import type { TestProject } from 'vitest/node';
 import type { DockerContext } from './utils/docker.ts';
 
-const IMAGE = 'chamvi/sandbox-node:test';
+const IMAGE = 'chamvi/sandbox-dev:test';
 
-const IMAGE_CONTEXT = fileURLToPath(new URL('../../../images/sandbox-node', import.meta.url));
+const IMAGE_CONTEXT = fileURLToPath(new URL('../../../images/sandbox-dev', import.meta.url));
+
+/** The shared cache volume of the test workspaces, removed after the run (never the default one). */
+const CACHE_VOLUME = 'chamvi-sandbox-cache-test';
 
 async function buildImage(docker: Docker): Promise<void> {
     const stream = await docker.buildImage(
@@ -60,10 +63,11 @@ export default async function setup(project: TestProject) {
 
     await buildImage(docker);
 
-    const context: DockerContext = { image: IMAGE };
+    const context: DockerContext = { image: IMAGE, cacheVolume: CACHE_VOLUME };
     project.provide('docker', context);
 
     return async () => {
         await removeTestContainers(docker);
+        await docker.getVolume(CACHE_VOLUME).remove().catch(() => undefined);
     };
 }

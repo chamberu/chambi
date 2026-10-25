@@ -24,9 +24,26 @@ export type DockerSandboxOptions = {
      * before every create (a mutable tag then follows its rebuilds), `'never'` never.
      */
     pull?: 'missing' | 'always' | 'never';
-    /** Added to every workspace's environment, after `SANDBOX_ENV`. */
+    /** Added to every workspace's environment, after `SANDBOX_ENV` and `CACHE_ENV`. */
     env?: Record<string, string>;
     limits?: SandboxLimits;
+    /**
+     * The container user and the user of every command; default `DEFAULT_USER`
+     * (`'0:0'`, root with the `ROOT_CAPABILITIES`). `'1000:1000'` with
+     * `readOnlyRoot: true` is the hardened mode (no capability at all).
+     */
+    user?: string;
+    /** A read-only root filesystem (only `/workspace`, `/cache` and `/tmp` writable). Default false. */
+    readOnlyRoot?: boolean;
+    /**
+     * The `/cache` mount: a named volume every workspace shares (default
+     * `DEFAULT_CACHE_VOLUME`), or with `false` an anonymous volume per
+     * workspace, removed with it. A shared cache is shared by every run and
+     * agent on the host: a package one run fetched can be used by another.
+     */
+    cache?: false | { volume?: string };
+    /** Size of the `/tmp` tmpfs; default `TMP_SIZE` (`'1Gi'`). */
+    tmpSize?: string;
     clock?: IClock;
 };
 
@@ -36,6 +53,11 @@ export type ContainerOptionsInput = {
     /** Run, image, repo, ref and times: labels a provider's `find` rebuilds the info from. */
     info: WorkspaceInfo & { image: string };
     network: string;
+    user: string;
+    readOnlyRoot: boolean;
+    /** The shared cache volume; undefined mounts an anonymous one. */
+    cacheVolume?: string;
+    tmpSize: string;
     env: Record<string, string>;
     limits: Required<SandboxLimits>;
 };

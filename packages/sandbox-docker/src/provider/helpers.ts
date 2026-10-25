@@ -7,13 +7,17 @@
 
 import { InvalidAgentDefinitionError, SandboxError } from '@chamvi/core';
 import {
+    CACHE_DIR,
+    CACHE_ENV,
+    ROOT_CAPABILITIES,
     SANDBOX_ENV,
-    TMP_SIZE,
     WORKSPACE_ROOT,
     abortedCreate,
     assertClockOption,
     assertImageOption,
     assertSandboxEnv,
+    assertTmpSizeOption,
+    isRootUser,
     parseCpu,
     parseMemory,
     resolveLimits,
@@ -22,10 +26,13 @@ import {
 } from '@chamvi/sandbox';
 import type Dockerode from 'dockerode';
 import { isObject } from 'smob';
-import { CONTAINER_NAME_PREFIX, SANDBOX_USER } from './constants.ts';
+import { CONTAINER_NAME_PREFIX } from './constants.ts';
 import type { ContainerOptionsInput, DockerSandboxOptions } from './types.ts';
 
 const PULL_POLICIES = ['missing', 'always', 'never'];
+
+/** A Docker volume name. */
+const VOLUME_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]+$/;
 
 function isName(value: unknown): boolean {
     return typeof value === 'string' && value.length > 0 && !value.includes('\0');
@@ -57,6 +64,22 @@ export function assertDockerOptions(options: DockerSandboxOptions): void {
     if (options.pull !== undefined && !PULL_POLICIES.includes(options.pull)) {
         throw new InvalidAgentDefinitionError(`pull must be one of ${PULL_POLICIES.join(', ')}, got ${JSON.stringify(options.pull)}.`);
     }
+    if (options.user !== undefined && !isName(options.user)) {
+        throw new InvalidAgentDefinitionError('user must be a non-empty string like "0:0" or "1000:1000".');
+    }
+    if (options.readOnlyRoot !== undefined && typeof options.readOnlyRoot !== 'boolean') {
+        throw new InvalidAgentDefinitionError('readOnlyRoot must be a boolean.');
+    }
+    const { cache } = options;
+    if (cache !== undefined && cache !== false) {
+        if (!isObject(cache)) {
+            throw new InvalidAgentDefinitionError('cache must be false or { volume? }.');
+        }
+        if (cache.volume !== undefined && (typeof cache.volume !== 'string' || !VOLUME_NAME.test(cache.volume))) {
+            throw new InvalidAgentDefinitionError('cache.volume must be a Docker volume name (letters, digits, _ . -).');
+        }
+    }
+    assertTmpSizeOption(options.tmpSize);
     assertClockOption(clock);
     assertSandboxEnv(options.env);
     resolveLimits(options.limits);
@@ -131,23 +154,29 @@ export async function pullImage(docker: Dockerode, image: string, signal?: Abort
 }
 
 /**
- * The create options of one workspace container: uid 1000, read-only root,
- * no capabilities, no-new-privileges, pid/memory/cpu limits, a `/tmp` tmpfs,
- * an anonymous `/workspace` volume and only `SANDBOX_ENV` plus the configured
- * `env` (never the host's). It sleeps forever: its lifetime follows the
+ * The create options of one workspace container: the user (root by default,
+ * then with only the `ROOT_CAPABILITIES`, else none), a writable root unless
+ * `readOnlyRoot`, no-new-privileges, pid/memory/cpu limits, a `/tmp` tmpfs,
+ * an anonymous `/workspace` volume, the cache at `/cache` (the shared named
+ * volume, or an anonymous one) and only `SANDBOX_ENV`, `CACHE_ENV` and the
+ * configured `env` (never the host's). No host mount, no privileged mode. It sleeps forever: its lifetime follows the
  * run, and only the garbage collection (expiry, settled run) removes it.
  * Its labels hold everything `find` rebuilds the info from.
  */
 export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.ContainerCreateOptions {
     // Docker takes whole bytes; a quantity like '1.1Gi' is fractional
     const memory = Math.round(parseMemory(input.limits.memory));
-    const env = { ...SANDBOX_ENV, ...input.env };
+    const env = {
+        ...SANDBOX_ENV, 
+        ...CACHE_ENV, 
+        ...input.env, 
+    };
 
     return {
         name: `${CONTAINER_NAME_PREFIX}${input.id}`,
         Image: input.info.image,
         Cmd: ['sleep', 'infinity'],
-        User: SANDBOX_USER,
+        User: input.user,
         WorkingDir: WORKSPACE_ROOT,
         Env: Object.entries(env).map(([key, value]) => `${key}=${value}`),
         Labels: {
@@ -161,8 +190,9 @@ export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.C
         },
         HostConfig: {
             NetworkMode: input.network,
-            ReadonlyRootfs: true,
+            ReadonlyRootfs: input.readOnlyRoot,
             CapDrop: ['ALL'],
+            ...(isRootUser(input.user) && { CapAdd: [...ROOT_CAPABILITIES] }),
             SecurityOpt: ['no-new-privileges:true'],
             Privileged: false,
             PidsLimit: input.limits.pids,
@@ -171,12 +201,17 @@ export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.C
             MemorySwap: memory,
             NanoCpus: Math.round(parseCpu(input.limits.cpu) * 1e9),
             // Docker mounts a tmpfs noexec unless told: npm's global bins and corepack live in /tmp
-            Tmpfs: { '/tmp': `rw,exec,nosuid,nodev,size=${Math.round(parseMemory(TMP_SIZE))}` },
+            Tmpfs: { '/tmp': `rw,exec,nosuid,nodev,size=${Math.round(parseMemory(input.tmpSize))}` },
             // anonymous volume, removed with the container (`remove({ v: true })`)
             Mounts: [{
                 Type: 'volume',
                 Source: '',
                 Target: WORKSPACE_ROOT,
+            }, {
+                // a named volume outlives the container; an anonymous one goes with it
+                Type: 'volume',
+                Source: input.cacheVolume ?? '',
+                Target: CACHE_DIR,
             }],
             AutoRemove: false,
         },

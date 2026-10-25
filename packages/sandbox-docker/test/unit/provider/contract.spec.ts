@@ -8,14 +8,14 @@
 import { randomUUID } from 'node:crypto';
 import { createDockerSandbox } from '@chamvi/sandbox-docker';
 import { describeWorkspaceContract } from '@chamvi/test-kit';
-import { describeDocker, dockerImage } from '../../utils/docker.ts';
+import { describeDocker, dockerOptions } from '../../utils/docker.ts';
 
 describeDocker('docker sandbox', () => {
     describeWorkspaceContract(
         'docker',
-        (input) => createDockerSandbox({ image: dockerImage })
+        (input) => createDockerSandbox({ ...dockerOptions })
             .create({ runId: input?.runId ?? `test-${randomUUID()}` }),
         // a second provider: a restarted process or a replica on the same host
-        { find: (runId) => createDockerSandbox({ image: dockerImage }).find(runId) },
+        { find: (runId) => createDockerSandbox({ ...dockerOptions }).find(runId) },
     );
 });

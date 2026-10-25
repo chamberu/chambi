@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import Docker from 'dockerode';
 import {
     afterAll,
@@ -17,11 +18,27 @@ import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
 import { CONTAINER_NAME_PREFIX, createDockerSandbox } from '@chamvi/sandbox-docker';
 import { ControllableClock } from '@chamvi/test-kit';
-import { describeDocker, dockerImage } from '../../utils/docker.ts';
+import { describeDocker, dockerImage, dockerOptions } from '../../utils/docker.ts';
 
 const offline = Boolean(process.env.CHAMVI_OFFLINE);
 
 const MISSING_IMAGE = 'chamvi/does-not-exist:none';
+
+const NO_GIT_IMAGE = 'chamvi/sandbox-no-git:test';
+
+/** Builds `test/fixtures/no-git` on top of the test image (offline). */
+async function buildNoGitImage(docker: Docker): Promise<void> {
+    const stream = await docker.buildImage(
+        { context: fileURLToPath(new URL('../../fixtures/no-git', import.meta.url)), src: ['Dockerfile'] },
+        { t: NO_GIT_IMAGE, buildargs: { BASE: dockerImage as string } },
+    );
+    await new Promise<void>((resolve, reject) => {
+        docker.modem.followProgress(stream, (error: Error | null, output: Array<{ error?: string }>) => {
+            const failed = output.find((event) => typeof event.error === 'string');
+            if (error || failed) reject(error ?? new Error(failed!.error)); else resolve();
+        });
+    });
+}
 
 function statusCode(error: unknown): number | undefined {
     return (error as { statusCode?: number } | undefined)?.statusCode;
@@ -33,7 +50,7 @@ describeDocker('docker sandbox', () => {
 
     async function create(options: Parameters<typeof createDockerSandbox>[0] = {}, input: { repo?: string; ref?: string } = {}) {
         const runId = `test-${randomUUID()}`;
-        const workspace = await createDockerSandbox({ image: dockerImage, ...options }).create({ runId, ...input });
+        const workspace = await createDockerSandbox({ ...dockerOptions, ...options }).create({ runId, ...input });
         workspaces.push(workspace);
         return { runId, workspace };
     }
@@ -86,7 +103,7 @@ describeDocker('docker sandbox', () => {
         // the host restarted: the container stopped, its volume holds the work
         await container.stop({ t: 0 });
 
-        const found = await createDockerSandbox({ image: dockerImage }).find(runId);
+        const found = await createDockerSandbox({ ...dockerOptions }).find(runId);
         workspaces.push(...found);
         expect(found.map((item) => item.id)).toEqual([workspace.id]);
         expect(found[0]!.info).toEqual({ ...workspace.info, image: dockerImage });
@@ -104,7 +121,7 @@ describeDocker('docker sandbox', () => {
     });
 
     it('restarts the stopped container of a workspace the manager still holds', async () => {
-        const provider = createDockerSandbox({ image: dockerImage });
+        const provider = createDockerSandbox({ ...dockerOptions });
         const errors: unknown[] = [];
         const manager = createWorkspaceManager({
             provider, 
@@ -164,7 +181,7 @@ describeDocker('docker sandbox', () => {
     });
 
     it('never finds a workspace again that it is disposing', async () => {
-        const provider = createDockerSandbox({ image: dockerImage });
+        const provider = createDockerSandbox({ ...dockerOptions });
         const runId = `test-${randomUUID()}`;
         const workspace = await provider.create({ runId });
         workspaces.push(workspace);
@@ -175,7 +192,7 @@ describeDocker('docker sandbox', () => {
     });
 
     it('finds the instance it holds, never another deployment\'s or an expired one', async () => {
-        const provider = createDockerSandbox({ image: dockerImage });
+        const provider = createDockerSandbox({ ...dockerOptions });
         const runId = `test-${randomUUID()}`;
         const workspace = await provider.create({ runId, deployment: 'test-a' });
         workspaces.push(workspace);
@@ -184,7 +201,7 @@ describeDocker('docker sandbox', () => {
         expect(await provider.find(runId)).toEqual([]);
 
         const later = new ControllableClock(new Date(workspace.info.expiresAt.getTime()));
-        expect(await createDockerSandbox({ image: dockerImage, clock: later }).find(runId, { deployment: 'test-a' })).toEqual([]);
+        expect(await createDockerSandbox({ ...dockerOptions, clock: later }).find(runId, { deployment: 'test-a' })).toEqual([]);
     });
 
     it('dispose removes container and volume', async () => {
@@ -232,7 +249,7 @@ describeDocker('docker sandbox', () => {
         expect(result.exitCode).not.toBe(0);
 
         const runId = `test-${randomUUID()}`;
-        await expect(createDockerSandbox({ image: dockerImage, network: 'none' }).create({
+        await expect(createDockerSandbox({ ...dockerOptions, network: 'none' }).create({
             runId,
             repo: 'https://github.com/octocat/Hello-World.git',
         })).rejects.toBeInstanceOf(SandboxError);
@@ -261,14 +278,22 @@ describeDocker('docker sandbox', () => {
 
     it('a missing image fails cleanly', async () => {
         const runId = `test-${randomUUID()}`;
-        await expect(createDockerSandbox({ image: MISSING_IMAGE, pull: 'never' }).create({ runId }))
+        await expect(createDockerSandbox({
+            ...dockerOptions, 
+            image: MISSING_IMAGE, 
+            pull: 'never', 
+        }).create({ runId }))
             .rejects.toBeInstanceOf(SandboxError);
         expect(await containersOf(runId)).toEqual([]);
     });
 
     it.skipIf(offline)('a failed pull fails cleanly', async () => {
         const runId = `test-${randomUUID()}`;
-        const error = await createDockerSandbox({ image: MISSING_IMAGE, pull: 'missing' })
+        const error = await createDockerSandbox({
+            ...dockerOptions, 
+            image: MISSING_IMAGE, 
+            pull: 'missing', 
+        })
             .create({ runId })
             .catch((e: unknown) => e);
         expect(error).toBeInstanceOf(SandboxError);
@@ -279,11 +304,76 @@ describeDocker('docker sandbox', () => {
     it.skipIf(offline)('pull always pulls', async () => {
         const runId = `test-${randomUUID()}`;
         // the test image is a local-only tag, so a pull must fail
-        const error = await createDockerSandbox({ image: dockerImage, pull: 'always' })
+        const error = await createDockerSandbox({ ...dockerOptions, pull: 'always' })
             .create({ runId })
             .catch((e: unknown) => e);
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toContain(dockerImage as string);
+        expect(await containersOf(runId)).toEqual([]);
+    });
+
+    it('runs a workspace as root with a writable root, so apt-style installs work', async () => {
+        const { workspace } = await create();
+        expect((await workspace.exec(['id', '-u'])).stdout.trim()).toBe('0');
+        const result = await workspace.exec(['sh', '-c', 'touch /usr/local/bin/probe && echo ok']);
+        expect(result).toMatchObject({ exitCode: 0, stdout: 'ok\n' });
+    });
+
+    it('shares the cache volume between workspaces of different runs', async () => {
+        const { workspace: first } = await create();
+        const { workspace: second } = await create();
+        const marker = randomUUID();
+        expect((await first.exec(['sh', '-c', `mkdir -p "$npm_config_cache" && echo ${marker} > "$npm_config_cache/${marker}"`])).exitCode).toBe(0);
+        const read = await second.exec(['sh', '-c', `cat "$npm_config_cache/${marker}"`]);
+        expect(read.stdout.trim()).toBe(marker);
+        expect((await second.exec(['sh', '-c', 'echo $npm_config_cache'])).stdout.trim()).toBe('/cache/npm');
+    });
+
+    it('keeps the cache of its own with cache false', async () => {
+        const { workspace: first } = await create({ cache: false });
+        const { workspace: second } = await create({ cache: false });
+        await first.exec(['sh', '-c', 'mkdir -p /cache/npm && echo one > /cache/npm/own']);
+        expect((await second.exec(['cat', '/cache/npm/own'])).exitCode).not.toBe(0);
+        expect((await first.exec(['cat', '/cache/npm/own'])).stdout).toBe('one\n');
+    });
+
+    it('runs the hardened mode as its user on a read-only root', async () => {
+        const { workspace } = await create({
+            user: '1000:1000', 
+            readOnlyRoot: true, 
+            cache: false, 
+        });
+        expect((await workspace.exec(['id', '-u'])).stdout.trim()).toBe('1000');
+        expect((await workspace.exec(['touch', '/etc/probe'])).exitCode).not.toBe(0);
+        await workspace.writeFile('a.txt', 'hardened');
+        expect(await workspace.readFile('a.txt')).toBe('hardened');
+    });
+
+    it('refuses an image without git before any checkout and leaves no container', async () => {
+        await buildNoGitImage(docker);
+        try {
+            const runId = `test-${randomUUID()}`;
+            const error = await createDockerSandbox({
+                ...dockerOptions, 
+                image: NO_GIT_IMAGE, 
+                pull: 'never', 
+            })
+                .create({ runId, repo: 'https://github.com/octocat/Hello-World.git' })
+                .catch((e: unknown) => e);
+            expect(error).toBeInstanceOf(SandboxError);
+            expect((error as Error).message).toContain(`image ${NO_GIT_IMAGE} lacks what a workspace needs: git.`);
+            expect(await containersOf(runId)).toEqual([]);
+        } finally {
+            await docker.getImage(NO_GIT_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
+    });
+
+    it.skipIf(offline)('pulls a model-chosen image when missing, whatever pull says', async () => {
+        const runId = `test-${randomUUID()}`;
+        const error = await createDockerSandbox({ ...dockerOptions, pull: 'never' })
+            .create({ runId, image: MISSING_IMAGE })
+            .catch((e: unknown) => e);
+        expect((error as Error).message).toContain(`cannot pull the image ${MISSING_IMAGE}`);
         expect(await containersOf(runId)).toEqual([]);
     });
 });

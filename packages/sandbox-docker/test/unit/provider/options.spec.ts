@@ -26,6 +26,14 @@ describe('docker sandbox options', () => {
         ['an unknown pull policy', { pull: 'sometimes' }],
         ['a bad env key', { env: { 'A-B': 'x' } }],
         ['bad limits', { limits: { pids: 0 } }],
+        ['an empty user', { user: '' }],
+        ['a user with NUL', { user: 'a\0' }],
+        ['a readOnlyRoot that is no boolean', { readOnlyRoot: 'yes' }],
+        ['cache true', { cache: true }],
+        ['an empty cache volume', { cache: { volume: '' } }],
+        ['a cache volume with a slash', { cache: { volume: '/var/lib/x' } }],
+        ['a bad tmpSize', { tmpSize: 'big' }],
+        ['a zero tmpSize', { tmpSize: '0' }],
         ['a docker client without the API', { docker: {} }],
         ['a docker client without pull or modem', {
             docker: {

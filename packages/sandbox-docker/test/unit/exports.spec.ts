@@ -12,13 +12,15 @@ describe('public api', () => {
     it('exports the provider and the constants', () => {
         expect(Object.keys(docker).sort()).toEqual([
             'CONTAINER_NAME_PREFIX',
+            'DEFAULT_CACHE_VOLUME',
             'DEFAULT_NETWORK',
-            'SANDBOX_USER',
+            'DEFAULT_USER',
             'createDockerSandbox',
         ]);
         expect(docker.DEFAULT_NETWORK).toBe('bridge');
         expect(docker.CONTAINER_NAME_PREFIX).toBe('chamvi-ws-');
-        expect(docker.SANDBOX_USER).toBe('1000:1000');
+        expect(docker.DEFAULT_USER).toBe('0:0');
+        expect(docker.DEFAULT_CACHE_VOLUME).toBe('chamvi-sandbox-cache');
         expect(typeof docker.createDockerSandbox).toBe('function');
     });
 
