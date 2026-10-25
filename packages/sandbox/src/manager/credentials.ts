@@ -36,7 +36,8 @@ export type CredentialSupport = {
      * not wrapped) when it has none from this process yet, or one of its
      * credentials expires within `CREDENTIAL_REFRESH_MS`: the repository's
      * write credential, else (none, or a failing write lookup, reported to
-     * `onError`) its read credential. A failure goes to
+     * `onError`) its read credential. A credential already inside that
+     * window is rewritten `CREDENTIAL_RETRY_MS` later at the earliest. A failure goes to
      * `onError` and is retried `CREDENTIAL_RETRY_MS` later; it never throws.
      */
     refresh(workspace: IWorkspace): Promise<void>;
@@ -113,7 +114,10 @@ export function createCredentialSupport(input: {
             throw new SandboxError(`writing the git credentials of workspace ${workspace.id} ${reason}: ${redactor.redact(result.stderr.trim()).slice(0, 500)}`);
         }
         const expiries = entries.flatMap((entry) => (entry.expiresAt ? [entry.expiresAt.getTime()] : []));
-        return expiries.length === 0 ? undefined : Math.min(...expiries) - CREDENTIAL_REFRESH_MS;
+        if (expiries.length === 0) return undefined;
+        // a source may keep answering a token inside the window (IGithubApp until 5 minutes
+        // before its expiry): try again a minute later instead of before every exec
+        return Math.max(Math.min(...expiries) - CREDENTIAL_REFRESH_MS, clock.now().getTime() + CREDENTIAL_RETRY_MS);
     };
 
     const refresh: CredentialSupport['refresh'] = async (workspace) => {
