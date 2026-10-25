@@ -86,3 +86,11 @@ export function redirect(location: string, status = 302): FakeRoute {
 export function html(body: string, contentType = 'text/html; charset=utf-8'): FakeRoute {
     return () => new Response(body, { status: 200, headers: { 'content-type': contentType } });
 }
+
+export function json(body: unknown, status = 200): FakeRoute {
+    return () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+}
+
+export function text(body: string, status = 200): FakeRoute {
+    return () => new Response(body, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+}

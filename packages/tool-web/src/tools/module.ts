@@ -8,14 +8,18 @@
 import type { ToolSet } from 'ai';
 import { resolveOptions } from './asserts.ts';
 import { webFetchTool } from './fetch.ts';
+import { packageInfoTool } from './package.ts';
 import type { WebToolsOptions } from './types.ts';
 
 /**
- * The web research tools: web_fetch. They run in the chamvi process (not
- * in a workspace) and reach public addresses only, unless `allowUrl`
- * opens more. Plain chamvi tools, not effect tools: they change nothing.
+ * The web research tools: web_fetch and package_info. They run in the
+ * chamvi process (not in a workspace) and reach public addresses only,
+ * unless `allowUrl` opens more (or `registries` names a private mirror). Plain chamvi tools, not effect tools: they change nothing.
  */
 export function webTools(options: WebToolsOptions = {}): ToolSet {
     const resolved = resolveOptions(options);
-    return { web_fetch: webFetchTool(resolved) };
+    return {
+        web_fetch: webFetchTool(resolved),
+        package_info: packageInfoTool(resolved),
+    };
 }

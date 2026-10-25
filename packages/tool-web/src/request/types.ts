@@ -44,6 +44,8 @@ export type RequestOptions = {
     accept?: string;
     /** Origins whose addresses are not checked (the operator's registries). */
     trusted?: readonly string[];
+    /** Error statuses returned like a success instead of failing (e.g. a registry's 404). */
+    acceptStatus?: readonly number[];
     /** Overrides the requester's maxBytes for this request. */
     maxBytes?: number;
 };

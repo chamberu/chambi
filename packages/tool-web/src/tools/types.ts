@@ -6,6 +6,7 @@
  */
 
 import type { IClock } from '@chamvi/core';
+import type { PackageEcosystem } from '../registry/types.ts';
 import type { WebLookup, WebUrlPolicy } from '../request/types.ts';
 
 export type WebToolsOptions = {
@@ -19,6 +20,11 @@ export type WebToolsOptions = {
     maxBytes?: number;
     /** Timeout of one request, redirects and body included (default WEB_TIMEOUT_MS, 30 s). */
     timeoutMs?: number;
+    /**
+     * Registry base URLs per ecosystem (default DEFAULT_REGISTRIES); their
+     * origins skip the address check, so a mirror on a private address works.
+     */
+    registries?: Partial<Record<PackageEcosystem, string>>;
     /** Timers (default systemClock). */
     clock?: IClock;
 };

@@ -64,7 +64,7 @@ export function createRequester(options: RequesterOptions): Requester {
                     url = parseWebUrl(new URL(location, url));
                     continue;
                 }
-                if (response.status >= 400) {
+                if (response.status >= 400 && !init.acceptStatus?.includes(response.status)) {
                     discard(response);
                     throw requestError(`HTTP ${response.status} from ${url.href}`);
                 }

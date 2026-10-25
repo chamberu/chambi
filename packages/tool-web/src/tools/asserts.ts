@@ -19,11 +19,14 @@ import { WEB_FETCH_MAX_BYTES, WEB_TIMEOUT_MS } from '../request/constants.ts';
 import { createRequester } from '../request/module.ts';
 import { fetchTransport, pinnedTransport } from '../request/transport.ts';
 import type { Requester } from '../request/types.ts';
+import { DEFAULT_REGISTRIES } from '../registry/constants.ts';
+import type { PackageEcosystem } from '../registry/types.ts';
 import { TIMER_MAX_MS } from './constants.ts';
 import type { WebToolsOptions } from './types.ts';
 
 export type ResolvedWebOptions = {
     request: Requester;
+    registries: Record<PackageEcosystem, string>;
     clock: IClock;
     timeoutMs: number;
 };
@@ -40,6 +43,31 @@ function positiveInteger(value: unknown, name: string, fallback: number, max = N
         throw new InvalidAgentDefinitionError(`webTools() ${name} must be an integer from 1 to ${max}.`);
     }
     return value;
+}
+
+/** The registries: the defaults, overridden by absolute http(s) URLs without query or hash (trailing slashes dropped). */
+function resolveRegistries(value: unknown): Record<PackageEcosystem, string> {
+    if (value === undefined) return { ...DEFAULT_REGISTRIES };
+    if (!isObject(value)) {
+        throw new InvalidAgentDefinitionError('webTools() registries must be an object.');
+    }
+    const registries = { ...DEFAULT_REGISTRIES };
+    for (const [key, url] of Object.entries(value)) {
+        if (!(key in DEFAULT_REGISTRIES)) {
+            throw new InvalidAgentDefinitionError(`webTools() registries has no ecosystem ${JSON.stringify(key)}; known: ${Object.keys(DEFAULT_REGISTRIES).join(', ')}.`);
+        }
+        let parsed: URL | undefined;
+        try {
+            parsed = typeof url === 'string' ? new URL(url) : undefined;
+        } catch {
+            parsed = undefined;
+        }
+        if (!parsed || !['http:', 'https:'].includes(parsed.protocol) || parsed.search || parsed.hash || parsed.username || parsed.password) {
+            throw new InvalidAgentDefinitionError(`webTools() registries.${key} must be an absolute http or https URL without credentials, query or hash.`);
+        }
+        registries[key as PackageEcosystem] = parsed.href.replace(/\/+$/, '');
+    }
+    return registries;
 }
 
 /** Every option checked (InvalidAgentDefinitionError), the requester built. */
@@ -65,9 +93,10 @@ export function resolveOptions(options: WebToolsOptions): ResolvedWebOptions {
         clock,
     });
     return {
-        request, 
-        clock, 
-        timeoutMs, 
+        request,
+        registries: resolveRegistries(options.registries),
+        clock,
+        timeoutMs,
     };
 }
 
@@ -101,13 +130,17 @@ export function optionalInteger(value: unknown, name: string, min: number, max =
     return value;
 }
 
-/** One of `allowed` or undefined, else a ValidationError. */
-export function optionalOneOf<T extends string>(value: unknown, name: string, allowed: readonly T[]): T | undefined {
-    if (value === undefined) return undefined;
+/** One of `allowed`, else a ValidationError. */
+export function requireOneOf<T extends string>(value: unknown, name: string, allowed: readonly T[]): T {
     if (typeof value !== 'string' || !allowed.includes(value as T)) {
         throw new ValidationError(`${name} must be one of ${allowed.join(', ')}.`);
     }
     return value as T;
+}
+
+/** One of `allowed` or undefined, else a ValidationError. */
+export function optionalOneOf<T extends string>(value: unknown, name: string, allowed: readonly T[]): T | undefined {
+    return value === undefined ? undefined : requireOneOf(value, name, allowed);
 }
 
 /** The call's abort signal combined with the run's. */

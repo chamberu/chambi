@@ -25,7 +25,7 @@ describe('webTools options', () => {
     });
 
     it('builds the tools without options', () => {
-        expect(Object.keys(webTools()).sort()).toEqual(['web_fetch']);
+        expect(Object.keys(webTools()).sort()).toEqual(['package_info', 'web_fetch']);
     });
 
     it('are chamvi tools and not effect tools', () => {

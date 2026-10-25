@@ -216,6 +216,14 @@ describe('createRequester', () => {
         expect(error.message).toBe('HTTP 404 from https://example.com/missing');
     });
 
+    it('returns the statuses a caller accepts instead of failing', async () => {
+        const { request, signal } = setup();
+
+        const response = await request('https://example.com/missing', { signal, acceptStatus: [404, 410] });
+        expect(response.status).toBe(404);
+        expect(new TextDecoder().decode(response.bytes)).toBe('not found');
+    });
+
     it('fails with web_request for a host without an address', async () => {
         const {
             web, 
