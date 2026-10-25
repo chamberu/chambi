@@ -76,3 +76,65 @@ export const TEXT_MEDIA_TYPES: ReadonlySet<string> = new Set([
     'application/x-yaml',
     'application/x-ndjson',
 ]);
+
+/** Characters of an HTML page converted at most (its start); the conversion grows faster than linear with size. */
+export const HTML_MAX_CHARS = 1_048_576;
+
+/** Element nesting a converted page may reach (Blink's parser limit); a deeper one is refused before parsing. */
+export const HTML_MAX_DEPTH = 512;
+
+/** The heap limit of the conversion worker. */
+export const CONVERT_MAX_HEAP_MB = 512;
+
+/** Elements that never hold content, so they never nest. */
+export const VOID_ELEMENTS: ReadonlySet<string> = new Set([
+    'area',
+    'base',
+    'br',
+    'col',
+    'embed',
+    'hr',
+    'img',
+    'input',
+    'keygen',
+    'link',
+    'meta',
+    'param',
+    'source',
+    'track',
+    'wbr',
+]);
+
+/** Elements whose end tag may be left out (the next sibling closes them), so they are not counted as nesting. */
+export const OPTIONAL_END_ELEMENTS: ReadonlySet<string> = new Set([
+    'html',
+    'head',
+    'body',
+    'p',
+    'li',
+    'dt',
+    'dd',
+    'tr',
+    'td',
+    'th',
+    'thead',
+    'tbody',
+    'tfoot',
+    'colgroup',
+    'caption',
+    'option',
+    'optgroup',
+    'rb',
+    'rt',
+    'rtc',
+    'rp',
+]);
+
+/** Elements whose content is text up to their end tag, never markup. */
+export const RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set([
+    'script',
+    'style',
+    'textarea',
+    'title',
+    'xmp',
+]);

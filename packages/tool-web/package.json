@@ -38,6 +38,15 @@
         "test": "vitest --config test/vitest.config.ts --run",
         "test:coverage": "vitest --config test/vitest.config.ts --run --coverage"
     },
+    "nx": {
+        "targets": {
+            "test": {
+                "dependsOn": [
+                    "build"
+                ]
+            }
+        }
+    },
     "keywords": [
         "chamvi",
         "web",

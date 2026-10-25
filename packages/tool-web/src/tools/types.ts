@@ -32,7 +32,7 @@ export type WebToolsOptions = {
     allowUrl?: WebUrlPolicy;
     /** Bytes `web_fetch` reads of a response (default WEB_FETCH_MAX_BYTES, 5 MiB). */
     maxBytes?: number;
-    /** Timeout of one request, redirects and body included (default WEB_TIMEOUT_MS, 30 s). */
+    /** Timeout of one request, redirects and body included, and for web_fetch of the HTML conversion too (default WEB_TIMEOUT_MS, 30 s). */
     timeoutMs?: number;
     /**
      * Registry base URLs per ecosystem (default DEFAULT_REGISTRIES); their
@@ -61,6 +61,6 @@ export type WebFetchResult = {
     totalChars: number;
     /** The offset of the next page, when more follows. */
     nextOffset?: number;
-    /** True when the response was longer than `maxBytes` and only its start was read. */
+    /** True when the response was longer than `maxBytes` and only its start was read, or only the start of a longer HTML page was converted. */
     truncated: boolean;
 };

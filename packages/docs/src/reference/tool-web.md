@@ -25,7 +25,7 @@ Throws `InvalidAgentDefinitionError` for options that are no object, a `fetch`, 
 
 | Tool | Input | Result |
 |---|---|---|
-| `web_fetch` | `url`, `format?` (`markdown` default, `text`, `raw`), `offset?` | `WebFetchResult`: at most 65 536 characters from `offset` |
+| `web_fetch` | `url`, `format?` (`markdown` default, `text`, `raw`), `offset?` | `WebFetchResult`: at most 65 536 characters from `offset`; an HTML page converts in a worker thread (its first 1 Mi characters, bounded by `timeoutMs`, refused when nested deeper than 512 elements) |
 | `package_info` | `ecosystem` (`npm`, `pypi`, `crates`, `packagist`, `go`, `rubygems`), `name`, `version?` (or an npm dist-tag) | `PackageInfo`: up to 100 versions, newest first, and the detail of `version` (default the latest) |
 | `web_search` | `query`, `limit?` (default 10, at most 20) | `SearchResult[]` |
 

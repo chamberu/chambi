@@ -7,10 +7,10 @@
 
 import type { Tool } from 'ai';
 import { ValidationError, defineTool } from '@chamvi/core';
+import { convertHtml } from '../html/convert.ts';
+import { HTML_MAX_CHARS } from '../html/constants.ts';
 import {
     decodeBody,
-    htmlToMarkdown,
-    htmlToText,
     isHtml,
     isText,
     mediaTypeOf,
@@ -63,8 +63,10 @@ export function webFetchTool(options: ResolvedWebOptions): Tool<WebFetchInput, W
             const format = optionalOneOf(body.format, 'format', WEB_FETCH_FORMATS) ?? 'markdown';
             const offset = optionalInteger(body.offset, 'offset', 0) ?? 0;
 
+            const started = options.clock.now().getTime();
+            const signal = signalOf(abortSignal, context);
             const response = await options.request(url, {
-                signal: signalOf(abortSignal, context),
+                signal,
                 accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
             });
             const contentType = response.headers.get('content-type');
@@ -73,8 +75,19 @@ export function webFetchTool(options: ResolvedWebOptions): Tool<WebFetchInput, W
             }
             const text = decodeBody(response.bytes, contentType);
             let page: { title?: string; content: string } = { content: text };
+            let cut = false;
             if (format !== 'raw' && isHtml(contentType)) {
-                page = format === 'markdown' ? htmlToMarkdown(text, response.url) : htmlToText(text);
+                const html = cutText(text, 0, HTML_MAX_CHARS);
+                cut = html.length < text.length;
+                page = await convertHtml({
+                    html,
+                    baseUrl: response.url,
+                    format,
+                    signal,
+                    // the call's timeout covers the conversion too
+                    timeoutMs: Math.max(options.timeoutMs - (options.clock.now().getTime() - started), 0),
+                    clock: options.clock,
+                });
             }
 
             const totalChars = page.content.length;
@@ -93,7 +106,7 @@ export function webFetchTool(options: ResolvedWebOptions): Tool<WebFetchInput, W
                 offset,
                 totalChars,
                 ...(next < totalChars ? { nextOffset: next } : {}),
-                truncated: response.truncated,
+                truncated: response.truncated || cut,
             };
         },
     });

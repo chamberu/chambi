@@ -68,7 +68,7 @@ Release notes between two versions of a GitHub project come from `@chamvi/github
 
 | Tool | Input | Result |
 |---|---|---|
-| `web_fetch` | `{ url, format?, offset? }` | `{ url, status, contentType, format, title?, content, offset, totalChars, nextOffset?, truncated }`: an HTML page as markdown (default, links made absolute, scripts, navigation and footers dropped) or plain text, other text as is, `raw` the body unchanged; at most 65 536 characters from `offset`, `nextOffset` for the next page; `truncated` when the response was longer than `maxBytes` |
+| `web_fetch` | `{ url, format?, offset? }` | `{ url, status, contentType, format, title?, content, offset, totalChars, nextOffset?, truncated }`: an HTML page as markdown (default, links made absolute, scripts, navigation and footers dropped) or plain text, other text as is, `raw` the body unchanged; at most 65 536 characters from `offset`, `nextOffset` for the next page; `truncated` when the response was longer than `maxBytes` or an HTML page longer than 1 Mi characters was converted from its start (the conversion runs in a worker thread, bounded by `timeoutMs`; a page nested deeper than 512 elements is refused, `raw` still reads it) |
 | `package_info` | `{ ecosystem, name, version? }` | `{ ecosystem, name, description, latest, tags, versions, totalVersions, version, homepage, repository, changelog, source }`: up to 100 versions with dates, newest first; for `version` (default the latest) its dependencies (runtime, peer, optional, build), engines, deprecation and license |
 | `web_search` | `{ query, limit? }` | `[{ title, url, snippet? }]`, default 10, at most 20; only with a `search` provider |
 
@@ -117,7 +117,7 @@ Everything these tools return comes from the open web, and a page can carry text
 | `lookup` | `dns.lookup`, every address | Resolves host names (tests pass a fake) |
 | `allowUrl` | none | `(url) => boolean \| undefined`, see [Address guard](#address-guard) |
 | `maxBytes` | `5_242_880` (5 MiB) | Bytes of a `web_fetch` response read |
-| `timeoutMs` | `30_000` | Per request (redirects and body included) and per search, on the clock |
+| `timeoutMs` | `30_000` | Per request (redirects and body included, for `web_fetch` the HTML conversion too) and per search, on the clock |
 | `registries` | `DEFAULT_REGISTRIES` | Base URL per ecosystem |
 | `search` | none | Adds `web_search` |
 | `clock` | `systemClock` | Timers |

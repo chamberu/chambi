@@ -13,6 +13,7 @@ import {
     LINK_PROTOCOLS,
     TEXT_MEDIA_TYPES,
 } from './constants.ts';
+import type { ConvertedPage } from './types.ts';
 
 /**
  * domino (turndown's own HTML parser) is CommonJS and its bundled types
@@ -20,11 +21,6 @@ import {
  */
 const domino = createRequire(import.meta.url)('@mixmark-io/domino') as {
     createDocument(html?: string, force?: boolean): Document;
-};
-
-export type ConvertedPage = {
-    title?: string;
-    content: string;
 };
 
 /** The lower-cased `type/subtype` of a content type, else undefined. */
