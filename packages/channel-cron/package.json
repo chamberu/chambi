@@ -1,6 +1,6 @@
 {
     "name": "@chamvi/channel-cron",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "type": "module",
     "description": "The chamvi cron channel: fires cron subscriptions once per tick across replicas, on hubwire.",
     "author": {
@@ -54,13 +54,13 @@
         "hubwire": "^0.2.2"
     },
     "devDependencies": {
-        "@chamvi/core": "^0.1.0",
-        "@chamvi/test-kit": "^0.1.0",
+        "@chamvi/core": "^0.2.0",
+        "@chamvi/test-kit": "^0.2.0",
         "@hubwire/test": "^0.1.2",
         "ai": "^7.0.146",
         "zod": "^4.6.7"
     },
     "peerDependencies": {
-        "@chamvi/core": "^0.1.0"
+        "@chamvi/core": "^0.2.0"
     }
 }
