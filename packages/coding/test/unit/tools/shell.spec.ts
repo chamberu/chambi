@@ -171,6 +171,44 @@ describe('bash', () => {
         }
     });
 
+    it('never deletes the logs of a call still running in parallel', async () => {
+        const small = await setupCoding(fixture, { outputLogMaxBytes: 1_048_576 });
+        try {
+            const out = join(small.root, small.workspace.id, 'home', '.chamvi', 'out');
+            // a sibling call of the same model step: 2 MB of logs, then still running
+            const sibling = small.call<BashResult>('bash', {
+                command: 'yes b | head -c 1000000; yes e | head -c 1000000 >&2; sleep 3; echo b-done',
+                timeoutMs: 60_000,
+            });
+            await expect.poll(async () => {
+                let total = 0;
+                for (const name of await readdir(out).catch(() => [])) total += (await stat(join(out, name))).size;
+                return total;
+            }, { timeout: 10_000, interval: 50 }).toBeGreaterThanOrEqual(2_000_000);
+
+            // two more calls finish meanwhile: the folder passes four times the cap
+            for (let i = 0; i < 2; i++) {
+                await expect(small.call<BashResult>('bash', { command: 'yes | head -c 1000000; yes | head -c 1000000 >&2' }))
+                    .resolves.toMatchObject({
+                        exitCode: 0, 
+                        stdoutBytes: 1_000_000, 
+                        stderrBytes: 1_000_000, 
+                    });
+            }
+
+            const result = await sibling;
+            expect(result).toMatchObject({
+                exitCode: 0, 
+                stdoutBytes: 1_000_007, 
+                stderrBytes: 1_000_000, 
+            });
+            expect(result.stdout.endsWith('b\nb-done\n')).toBe(true);
+            await expect(stat(join(out, result.stdoutLog.slice('~/.chamvi/out/'.length)))).resolves.toMatchObject({ size: 1_000_007 });
+        } finally {
+            await small.cleanup();
+        }
+    });
+
     it.skipIf(process.getuid?.() === 0)('fails with a SandboxError when the logs cannot be written', async () => {
         await s.call('bash', { command: 'true' });
         const out = join(s.root, s.workspace.id, 'home', '.chamvi', 'out');

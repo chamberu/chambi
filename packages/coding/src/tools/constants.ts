@@ -60,10 +60,17 @@ export const OUTPUT_LOGS_KEPT = 100;
 /**
  * The logs of `~/.chamvi/out/` take at most this many times
  * `outputLogMaxBytes` in all (256 MiB by default): past it each call deletes
- * the oldest ones but its own, since HOME shares the workspace's disk
+ * the oldest ones but those of calls still running, since HOME shares the workspace's disk
  * (`WORKSPACE_HOME`, on Kubernetes counted in its `ephemeral-storage`).
  */
 export const OUTPUT_LOGS_BUDGET_CAPS = 4;
+
+/**
+ * Minutes after which the log rotation drops a call's running marker
+ * (`.active.<id>`) whose report never ran: past the longest exec timeout
+ * (`EXEC_TIMEOUT_MAX_MS`, 30 minutes), so a running call always keeps it.
+ */
+export const ACTIVE_MARKER_MAX_MINUTES = 35;
 
 /**
  * Bytes one output log of `bash` may grow to (the `outputLogMaxBytes`
@@ -146,8 +153,12 @@ export const INNER_SCRIPT = [
  * cut back to `$m` bytes when the marker `$f.capped` says a log passed
  * that cap). First it deletes all but the newest `OUTPUT_LOGS_KEPT` logs,
  * then, while `du` finds the folder above `$b` bytes, the oldest ones past
- * that budget (counted newest first, this call's own logs never deleted),
- * so the report has room. Then it writes the report to two files and checks
+ * that budget (counted newest first), so the report has room. Neither pass
+ * deletes the logs of a call that is still running or reporting (its
+ * marker `.active.<id>`, `ACTIVE_PART`), this call's own included: the AI
+ * SDK runs a step's calls in parallel. The marker goes once the report
+ * files are written; one older than `ACTIVE_MARKER_MAX_MINUTES` (a call
+ * whose report never ran) is removed. Then it writes the report to two files and checks
  * that each ends whole (two `BLOCK_END` lines): a full disk or a folder that
  * takes no file is a stderr message and exit `REPORT_FAILED_EXIT_CODE`,
  * never a half report. The report: on stdout `REPORT_HEADER <status>` (plus
@@ -163,10 +174,11 @@ const REPORT_PART = [
     `q=; if [ -f "$f.capped" ]; then q=' ${  REPORT_CAPPED  }'; rm -f "$f.capped"; ` +
     'for g in "$f.stdout.log" "$f.stderr.log"; do if [ -n "$(find "$g" -size +"$m"c 2>/dev/null)" ]; then ' +
     'head -c "$m" "$g" > "$g.t" && mv -f "$g.t" "$g" || rm -f "$g.t"; fi; done; fi',
-    `ls -1t "$o" | tail -n +${OUTPUT_LOGS_KEPT + 1} | while IFS= read -r g; do case $g in "$n".*) ;; *) rm -f -- "$o/$g";; esac; done`,
+    `find "$o" -name '.active.*' -mmin +${ACTIVE_MARKER_MAX_MINUTES} 2>/dev/null | while IFS= read -r g; do rm -f -- "$g"; done`,
+    `ls -1t "$o" | tail -n +${OUTPUT_LOGS_KEPT + 1} | while IFS= read -r g; do if [ ! -e "$o/.active.\${g%%.*}" ]; then rm -f -- "$o/$g"; fi; done`,
     'if [ "$(du -sk "$o" 2>/dev/null | cut -f1)" -gt "$((b / 1024))" ] 2>/dev/null; then',
     '  a=0; for g in "$f.stdout.log" "$f.stderr.log"; do if [ -f "$g" ]; then a=$((a + $(wc -c < "$g" | tr -d " "))); fi; done',
-    '  ls -1t "$o" | while IFS= read -r g; do case $g in "$n".*) continue;; esac; ' +
+    '  ls -1t "$o" | while IFS= read -r g; do if [ -e "$o/.active.${g%%.*}" ]; then continue; fi; ' +
     'z=$(wc -c < "$o/$g" 2>/dev/null | tr -d " "); a=$((a + ${z:-0})); if [ "$a" -gt "$b" ]; then rm -f -- "$o/$g"; fi; done',
     'fi',
     'for k in stdout stderr; do',
@@ -178,6 +190,7 @@ const REPORT_PART = [
     `elif [ "$z" -gt ${EXCERPT_HEAD_BYTES} ]; then tail -c +${EXCERPT_HEAD_BYTES + 1} "$g" | base64; fi; printf '%s\\n' ${BLOCK_END}`,
     '  } > "$o/.report.$n.$k" 2>/dev/null',
     'done',
+    'rm -f "$o/.active.$n"',
     `if [ "$(grep -c -e '^${BLOCK_END}$' "$o/.report.$n.stdout" 2>/dev/null)" != 2 ] || ` +
     `[ "$(grep -c -e '^${BLOCK_END}$' "$o/.report.$n.stderr" 2>/dev/null)" != 2 ]; then`,
     '  rm -f "$o/.report.$n.stdout" "$o/.report.$n.stderr"',
@@ -214,6 +227,13 @@ const PGOF_PART = 'pgof() { if [ -r "/proc/$1/stat" ]; then sed \'s/.*) //\' "/p
 const HELD_PART = 'held() { if [ -d /proc/self/fd ]; then ls -l /proc/[0-9]*/fd/ 2>/dev/null | grep -qF -- "/.chamvi/out/$n.std"; ' +
     'elif command -v lsof >/dev/null 2>&1; then lsof -g "$g" -a -- "$f.stdout.log" "$f.stderr.log" >/dev/null 2>&1; else return 1; fi; }';
 
+/**
+ * Marks call `$n` as running: no call's log rotation deletes its logs until
+ * its report removes `$o/.active.$n` (a dot file, which `ls` skips). `true`,
+ * not `:`: a failing redirection of a special builtin ends the shell.
+ */
+const ACTIVE_PART = 'true > "$o/.active.$n" 2>/dev/null';
+
 /** The folders of the shell state and the logs, `$c`, `$s` and `$o`, created when missing. */
 const STATE_PART = `c=$HOME/.chamvi; s=$c/shell; o=$c/out; mkdir -p "$s" "$o" || exit ${REPORT_FAILED_EXIT_CODE}; r=$(pwd -P)`;
 
@@ -243,6 +263,7 @@ export const BASH_SCRIPT = [
     STATE_PART,
     `n=$3; f=$o/$n; m=$5; b=$6; t=${OUTPUT_LOG_CHECK_SECONDS}`,
     `if [ -n "$4" ] && [ ! -d "$4" ]; then printf '%s\\n' ${CWD_MISSING}; exit 0; fi`,
+    ACTIVE_PART,
     'if command -v bash >/dev/null 2>&1; then x=bash; else x=sh; fi',
     PGOF_PART,
     HELD_PART,
@@ -274,6 +295,7 @@ export const BASH_SCRIPT = [
 export const REPORT_SCRIPT = [
     STATE_PART,
     'n=$1; f=$o/$n; m=$2; b=$3; st=-',
+    ACTIVE_PART,
     REPORT_PART,
 ].join('\n');
 
