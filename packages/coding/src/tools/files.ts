@@ -7,10 +7,11 @@
 
 import { Buffer } from 'node:buffer';
 import type { Tool } from 'ai';
-import { ValidationError, defineTool } from '@chamvi/core';
-import { READ_MAX_CHARS, READ_MAX_LINES } from './constants.ts';
+import { SandboxError, ValidationError, defineTool } from '@chamvi/core';
+import { READ_LOG_SCRIPT, READ_MAX_CHARS, READ_MAX_LINES } from './constants.ts';
 import {
     cutText,
+    homeLogPath,
     inputObject,
     objectSchema,
     optionalBoolean,
@@ -18,9 +19,11 @@ import {
     requirePath,
     requireString,
     requireText,
+    signalOf,
     workspaceOf,
 } from './helpers.ts';
 import type { createKeyedQueue } from './helpers.ts';
+import type { IWorkspace } from '@chamvi/sandbox';
 import type {
     CodingWorkspaces,
     EditFileResult,
@@ -67,10 +70,64 @@ function linesOf(text: string): string[] {
     return lines;
 }
 
+/** The lines from `offset` (`slice`, already cut to the line limit) as a result, cut at READ_MAX_CHARS. */
+function sliceResult(path: string, slice: string[], offset: number, totalLines: number, cut: boolean): ReadFileResult {
+    let content = slice.join('\n');
+    let endLine = offset - 1 + slice.length;
+    let truncated = cut;
+    if (content.length > READ_MAX_CHARS) {
+        content = cutText(content, READ_MAX_CHARS);
+        truncated = true;
+        const newlines = content.split('\n').length - 1;
+        endLine = offset + newlines - (content.endsWith('\n') ? 1 : 0);
+    }
+    return {
+        path,
+        content,
+        startLine: offset,
+        endLine,
+        totalLines,
+        truncated,
+    };
+}
+
+/** Lines of an output log under `$HOME` (`below`), read with awk in the workspace. */
+async function readLog(
+    workspace: IWorkspace,
+    input: {
+        path: string; 
+        below: string; 
+        offset: number; 
+        limit: number; 
+        signal: AbortSignal 
+    },
+): Promise<ReadFileResult> {
+    const { offset, limit } = input;
+    const result = await workspace.exec(
+        ['sh', '-c', READ_LOG_SCRIPT, 'sh', input.below, String(offset), String(offset + limit - 1)],
+        { signal: input.signal },
+    );
+    if (result.exitCode === 3) {
+        throw new SandboxError(`file not found: ${input.path}`);
+    }
+    const totalLines = Number(result.stderr.trim().split('\n').at(-1));
+    if (result.exitCode !== 0 || !Number.isSafeInteger(totalLines)) {
+        throw new SandboxError(`cannot read ${input.path}: exit code ${result.exitCode}${result.stderr ? `: ${result.stderr.trim()}` : ''}`);
+    }
+    if (offset > Math.max(totalLines, 1)) {
+        throw new ValidationError(`offset ${offset} is past the end of ${input.path}, which has ${totalLines} lines.`);
+    }
+    const lines = linesOf(result.stdout);
+    // the exec's output cap may have cut the last line
+    if (result.stdoutTruncated && lines.length > 1) lines.pop();
+    return sliceResult(input.path, lines, offset, totalLines, result.stdoutTruncated);
+}
+
 export function readFileTool(workspaces: CodingWorkspaces): Tool<ReadFileInput, ReadFileResult> {
     return defineTool<ReadFileInput, ReadFileResult>({
         description: `Read a text file of the workspace, by line range. Returns at most ${READ_MAX_LINES} lines and ${READ_MAX_CHARS} characters ` +
-            '(truncated: true when cut); compare endLine with totalLines to see whether more follows.',
+            '(truncated: true when cut); compare endLine with totalLines to see whether more follows. ' +
+            'Also reads the output logs bash and bash_output name (~/.chamvi/out/..., ~/.chamvi/jobs/.../output).',
         inputSchema: objectSchema<ReadFileInput>({
             path: PATH,
             offset: {
@@ -85,37 +142,29 @@ export function readFileTool(workspaces: CodingWorkspaces): Tool<ReadFileInput, 
                 description: `How many lines to read. Default ${READ_MAX_LINES}.`,
             },
         }, ['path']),
-        execute: async (input, { context }) => {
+        execute: async (input, { context, abortSignal }) => {
             const body = inputObject(input);
-            const path = requirePath(body.path);
+            const below = homeLogPath(body.path);
+            const path = below === undefined ? requirePath(body.path) : body.path as string;
             const offset = optionalInteger(body.offset, 'offset', 1, Number.MAX_SAFE_INTEGER) ?? 1;
             const limit = optionalInteger(body.limit, 'limit', 1, READ_MAX_LINES) ?? READ_MAX_LINES;
             const workspace = await workspaceOf(workspaces, body, context);
+            if (below !== undefined) {
+                return readLog(workspace, {
+                    path,
+                    below,
+                    offset,
+                    limit,
+                    signal: signalOf(abortSignal, context),
+                });
+            }
 
             const lines = linesOf(await workspace.readFile(path));
             const totalLines = lines.length;
             if (offset > Math.max(totalLines, 1)) {
                 throw new ValidationError(`offset ${offset} is past the end of ${path}, which has ${totalLines} lines.`);
             }
-            const slice = lines.slice(offset - 1, offset - 1 + limit);
-            let content = slice.join('\n');
-            let endLine = offset - 1 + slice.length;
-            let truncated = false;
-            if (content.length > READ_MAX_CHARS) {
-                content = cutText(content, READ_MAX_CHARS);
-                truncated = true;
-                const newlines = content.split('\n').length - 1;
-                endLine = offset + newlines - (content.endsWith('\n') ? 1 : 0);
-            }
-
-            return {
-                path,
-                content,
-                startLine: offset,
-                endLine,
-                totalLines,
-                truncated,
-            };
+            return sliceResult(path, lines.slice(offset - 1, offset - 1 + limit), offset, totalLines, false);
         },
     });
 }
