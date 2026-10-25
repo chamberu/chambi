@@ -51,6 +51,13 @@ export class SandboxModule implements IModule {
     /** Set in `engineCreated`: answers `isSettled` for the garbage collection. */
     protected engine: Engine | undefined;
 
+    /**
+     * True when the deployment was named (`CHAMVI_DEPLOYMENT` or the option):
+     * only then is a run this engine does not know settled, since several
+     * apps share the default deployment on one host.
+     */
+    protected ownsDeployment = false;
+
     constructor(options: SandboxModuleOptions = {}) {
         const {
             provider,
@@ -69,6 +76,7 @@ export class SandboxModule implements IModule {
 
         const env = input ?? process.env;
         const deployment = envString(env, 'CHAMVI_DEPLOYMENT') ?? managerOptions.deployment;
+        this.ownsDeployment = deployment !== undefined;
         const name = envOneOf(env, 'CHAMVI_SANDBOX_PROVIDER', SANDBOX_PROVIDER_NAMES) ??
             (typeof provider === 'string' ? provider : undefined);
 
@@ -173,11 +181,17 @@ export class SandboxModule implements IModule {
         }
     }
 
-    /** A run that no longer exists or settled; false before the engine exists. */
+    /**
+     * A settled run, or with a named deployment also one that no longer
+     * exists: in the default deployment an unknown run may be another app's
+     * on the same host, so its workspaces stay until `maxLifetimeMs`. False
+     * before the engine exists.
+     */
     protected async isSettled(runId: string): Promise<boolean> {
         if (!this.engine) return false;
         const run = await this.engine.getRun(runId);
-        return !run || isTerminal(run.status);
+        if (!run) return this.ownsDeployment;
+        return isTerminal(run.status);
     }
 
     protected reportError(error: unknown): void {

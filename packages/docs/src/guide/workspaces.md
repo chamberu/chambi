@@ -56,13 +56,13 @@ A workspace is keyed by run and repository, and its lifetime follows the run: co
 - `dispose_workspace`, or `workspaces.release(runId, id?)`
 - its hard cap, `limits.maxLifetimeMs` (default 7 days from its creation, never renewed), checked on every use
 - it was found gone: its container was removed, its pod failed, was evicted or deleted, or its local directory was removed. The call that found it says "workspace ... is gone; call create_workspace for a new one", and `create_workspace` then creates a new one
-- garbage collection, the only reaper: `acquire` runs `workspaces.collectGarbage()` at most every 10 minutes. It removes expired workspaces and, with `isSettled` (which `sandboxModule()` answers through the engine), those whose run settled or no longer exists, also when the replica that ran it was down
+- garbage collection, the only reaper: `acquire` runs `workspaces.collectGarbage()` at most every 10 minutes. It removes expired workspaces and, with `isSettled` (which `sandboxModule()` answers through the engine), those whose run settled, also when the replica that ran it was down; with a named deployment (see below) also those whose run no longer exists
 
 **A run finds its workspaces again** after an approval pause, a restart or on another replica of the same Docker host or Kubernetes cluster: on a miss the manager asks the provider (`find`) for the run's workspaces by label (local: the folder records) and adopts them, with their files, repository and ref. A stopped Docker container (a host restart) is started again; its volume still holds the work. Moving a workspace between hosts is not supported.
 
 `workspaces.close()` at shutdown (call it **after** `engine.drain()`) disposes nothing a live run holds: it aborts the creates still in flight (disposing what they made) and waits for them and for every disposal already started, at most 30 seconds (`close({ timeoutMs })`), then reports what is left to `onError`.
 
-Several deployments (dev and prod, CI) may share one Docker host or namespace: every workspace carries the manager's `deployment` (`CHAMVI_DEPLOYMENT` with the module, default `default`), and `find` and the garbage collection only see their own.
+Several deployments (dev and prod, CI) may share one Docker host or namespace: every workspace carries the manager's `deployment` (`CHAMVI_DEPLOYMENT` with the module, default `default`), and `find` and the garbage collection only see their own. Give every app on a shared host its own `CHAMVI_DEPLOYMENT`: `sandboxModule()` treats a run its engine does not know as finished only in a named deployment, since in `default` that run may belong to another app. So with the default, the workspaces of runs the store no longer holds (a `MemoryStore` app restarted) stay until `maxLifetimeMs`; with a named deployment they go on the next collection, and two apps sharing one name remove each other's workspaces.
 
 For development, the local provider runs everything in a temporary directory:
 

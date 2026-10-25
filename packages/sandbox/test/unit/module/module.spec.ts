@@ -14,7 +14,7 @@ import {
     defineTool,
 } from '@chamvi/core';
 import type { Agent, Engine, Run } from '@chamvi/core';
-import { injectSandboxContext, provideSandboxContext } from '@chamvi/sandbox';
+import { createWorkspaceManager, injectSandboxContext, provideSandboxContext } from '@chamvi/sandbox';
 import type { ISandboxProvider, IWorkspaceManager } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import {
@@ -388,8 +388,45 @@ describe('sandboxModule', () => {
         expect(() => sandboxModule({ env: { CHAMVI_DEPLOYMENT: 'not valid' } })).toThrow(InvalidAgentDefinitionError);
     });
 
-    it('answers isSettled through the engine: a missing or settled run is settled', async () => {
+    it('answers isSettled through the engine: with the default deployment only a settled run is settled', async () => {
+        // another app sharing the host in deployment `default` holds runs this engine never saw
         const module = new RecordingSandboxModule({ env: {} });
+        const harness = await harnessWith(module);
+        await module.manager.collectGarbage();
+        const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
+        const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
+
+        const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+        expect(await isSettled('missing')).toBe(false);
+        const getRun = vi.spyOn(engine, 'getRun');
+        getRun.mockResolvedValueOnce({ status: 'waiting' } as Run);
+        expect(await isSettled('r1')).toBe(false);
+        getRun.mockResolvedValueOnce({ status: 'cancelled' } as Run);
+        expect(await isSettled('r1')).toBe(true);
+    });
+
+    it('a GC with the default deployment keeps the workspaces of runs another app holds', async () => {
+        const root = await mkdtemp(join(tmpdir(), 'chamvi-module-shared-'));
+        try {
+            const other = createWorkspaceManager({ provider: createLocalSandbox({ root }), gcIntervalMs: 0 });
+            const { workspace } = await other.acquire('run-of-another-app', {});
+
+            const module = new SandboxModule({ env: {}, provider: createLocalSandbox({ root }), gcIntervalMs: 0 });
+            managers.push(module.manager);
+            await harnessWith(module);
+            expect(await module.manager.collectGarbage()).toBe(0);
+
+            expect(workspace.disposed).toBe(false);
+            expect((await workspace.exec(['true'])).exitCode).toBe(0);
+            await other.release('run-of-another-app');
+            await other.close();
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it('answers isSettled through the engine: with an explicit deployment a missing or settled run is settled', async () => {
+        const module = new RecordingSandboxModule({ env: { CHAMVI_DEPLOYMENT: 'prod' } });
         const harness = await harnessWith(module);
         await module.manager.collectGarbage();
         const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
