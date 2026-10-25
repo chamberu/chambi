@@ -68,9 +68,9 @@ describe('read tools', () => {
         const { fake, call } = setup();
         fake.issues.set('octo/demo#5', { ...ISSUE });
         fake.issues.set('octo/demo#6', {
-            ...ISSUE, 
-            number: 6, 
-            pull_request: { url: 'x' }, 
+            ...ISSUE,
+            number: 6,
+            pull_request: { url: 'x' },
         });
         expect(await call('github_get_issue', { repo: 'octo/demo', number: 5 })).toEqual({
             number: 5,
@@ -177,9 +177,9 @@ describe('read tools', () => {
         fake.files.set('octo/demo:src/lib/a.ts', file('src/lib/a.ts', 'a'));
 
         expect(await call('github_get_file', {
-            repo: 'octo/demo', 
-            path: 'src/index.ts', 
-            ref: 'main', 
+            repo: 'octo/demo',
+            path: 'src/index.ts',
+            ref: 'main',
         })).toEqual({
             path: 'src/index.ts',
             size: 11,
@@ -198,14 +198,14 @@ describe('read tools', () => {
             path: 'src',
             entries: [
                 {
-                    name: 'index.ts', 
-                    type: 'file', 
-                    path: 'src/index.ts', 
+                    name: 'index.ts',
+                    type: 'file',
+                    path: 'src/index.ts',
                 },
                 {
-                    name: 'big.txt', 
-                    type: 'file', 
-                    path: 'src/big.txt', 
+                    name: 'big.txt',
+                    type: 'file',
+                    path: 'src/big.txt',
                 },
             ],
         });
@@ -264,9 +264,9 @@ describe('read tools', () => {
             const result = await call<{ releases: Array<{ tag: string; prerelease: boolean }>; truncated: boolean }>(
                 'github_list_releases',
                 {
-                    repo: 'octo/demo', 
-                    from: '1.0.0', 
-                    to: 'v1.2.0', 
+                    repo: 'octo/demo',
+                    from: '1.0.0',
+                    to: 'v1.2.0',
                 },
             );
             expect(result.truncated).toBe(false);
@@ -308,9 +308,9 @@ describe('read tools', () => {
             const result = await call<{ releases: Array<{ tag: string }> }>(
                 'github_list_releases',
                 {
-                    repo: 'octo/demo', 
-                    tagPrefix: '@octo/a@', 
-                    from: '1.0.0', 
+                    repo: 'octo/demo',
+                    tagPrefix: '@octo/a@',
+                    from: '1.0.0',
                 },
             );
             expect(result.releases.map((r) => r.tag)).toEqual(['@octo/a@1.1.0']);
@@ -322,11 +322,11 @@ describe('read tools', () => {
 
             const result = await call<{
                 releases: Array<{
-                    tag: string; 
-                    body: string; 
-                    bodyTruncated: boolean 
+                    tag: string;
+                    body: string;
+                    bodyTruncated: boolean
                 }>;
-                truncated: boolean 
+                truncated: boolean
             }>(
                 'github_list_releases',
                 { repo: 'octo/demo', from: 'v1.0.0' },
@@ -343,9 +343,9 @@ describe('read tools', () => {
             fake.releases.set('octo/demo', Array.from({ length: 150 }, (_, i) => release(`v0.${i}.0`, (i % 28) + 1)));
 
             const result = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', {
-                repo: 'octo/demo', 
-                from: 'v0.0.0', 
-                to: 'v0.2.0', 
+                repo: 'octo/demo',
+                from: 'v0.0.0',
+                to: 'v0.2.0',
             });
             expect(result.releases.map((r) => r.tag)).toEqual(['v0.1.0', 'v0.2.0']);
             expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(2);
@@ -366,6 +366,48 @@ describe('read tools', () => {
             });
             expect(result.releases.map((r) => r.tag)).toEqual(Array.from({ length: 15 }, (_, i) => `v2.${i + 6}.0`));
             expect(result.truncated).toBe(false);
+        });
+
+        it('reads one page for the newest releases without from', async () => {
+            const { fake, call } = setup();
+            fake.releases.set('octo/demo', Array.from({ length: 1_000 }, (_, i) => release(`v1.${i}.0`, (i % 28) + 1)));
+
+            const result = await call<{ releases: Array<{ tag: string }>; truncated: boolean }>('github_list_releases', { repo: 'octo/demo' });
+            expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(1);
+            expect(result.releases.map((r) => r.tag)).toEqual(Array.from({ length: 20 }, (_, i) => `v1.${i + 980}.0`));
+            // older releases matched too
+            expect(result.truncated).toBe(true);
+        });
+
+        it('reads until enough releases of a tag prefix matched without from', async () => {
+            const { fake, call } = setup();
+            fake.releases.set('octo/demo', [
+                ...Array.from({ length: 30 }, (_, i) => release(`pkg-a@1.${i}.0`, (i % 28) + 1)),
+                ...Array.from({ length: 200 }, (_, i) => release(`pkg-b@1.${i}.0`, (i % 28) + 1)),
+                ...Array.from({ length: 10 }, (_, i) => release(`pkg-a@2.${i}.0`, (i % 28) + 1)),
+            ]);
+
+            const result = await call<{ releases: Array<{ tag: string }>; truncated: boolean }>(
+                'github_list_releases',
+                { repo: 'octo/demo', tagPrefix: 'pkg-a@' },
+            );
+            expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(3);
+            expect(result.releases.map((r) => r.tag)).toEqual([
+                ...Array.from({ length: 10 }, (_, i) => `pkg-a@1.${i + 20}.0`),
+                ...Array.from({ length: 10 }, (_, i) => `pkg-a@2.${i}.0`),
+            ]);
+        });
+
+        it('stops reading up to to once a whole page is below the newest releases found', async () => {
+            const { fake, call } = setup();
+            fake.releases.set('octo/demo', Array.from({ length: 1_000 }, (_, i) => release(`v1.${i}.0`, (i % 28) + 1)));
+
+            const result = await call<{ releases: Array<{ tag: string }>; truncated: boolean }>(
+                'github_list_releases',
+                { repo: 'octo/demo', to: 'v1.950.0' },
+            );
+            expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(2);
+            expect(result.releases.map((r) => r.tag)).toEqual(Array.from({ length: 20 }, (_, i) => `v1.${i + 931}.0`));
         });
 
         it('reports a range the page cap left unread as truncated', async () => {
@@ -402,11 +444,11 @@ describe('read tools', () => {
                         author: { login: 'alice' },
                     })),
                     files: Array.from({ length: files }, (_, i) => ({
-                        filename: `src/f${i}.ts`, 
-                        status: 'modified', 
-                        additions: 3, 
-                        deletions: 1, 
-                        changes: 4, 
+                        filename: `src/f${i}.ts`,
+                        status: 'modified',
+                        additions: 3,
+                        deletions: 1,
+                        changes: 4,
                         patch: '@@',
                     })),
                 },
@@ -418,9 +460,9 @@ describe('read tools', () => {
             const { fake, call } = withComparison();
 
             expect(await call('github_compare', {
-                repo: 'octo/demo', 
-                base: 'v1.0.0', 
-                head: 'v1.1.0', 
+                repo: 'octo/demo',
+                base: 'v1.0.0',
+                head: 'v1.1.0',
             })).toEqual({
                 status: 'ahead',
                 aheadBy: 2,
@@ -429,22 +471,22 @@ describe('read tools', () => {
                 url: 'https://github.com/octo/demo/compare/v1.0.0...v1.1.0',
                 commits: [
                     {
-                        sha: 'sha0', 
-                        message: 'feat: change 0', 
-                        author: 'alice', 
+                        sha: 'sha0',
+                        message: 'feat: change 0',
+                        author: 'alice',
                         date: '2026-10-01T00:00:00Z',
                     },
                     {
-                        sha: 'sha1', 
-                        message: 'feat: change 1', 
-                        author: 'alice', 
+                        sha: 'sha1',
+                        message: 'feat: change 1',
+                        author: 'alice',
                         date: '2026-10-01T00:00:00Z',
                     },
                 ],
                 files: [{
-                    path: 'src/f0.ts', 
-                    status: 'modified', 
-                    additions: 3, 
+                    path: 'src/f0.ts',
+                    status: 'modified',
+                    additions: 3,
                     deletions: 1,
                 }],
                 truncated: false,
@@ -456,15 +498,15 @@ describe('read tools', () => {
             const { call } = withComparison(120, 310);
 
             const result = await call<{
-                commits: unknown[]; 
-                files: unknown[]; 
-                truncated: boolean 
+                commits: unknown[];
+                files: unknown[];
+                truncated: boolean
             }>(
                 'github_compare',
                 {
-                    repo: 'octo/demo', 
-                    base: 'a', 
-                    head: 'b', 
+                    repo: 'octo/demo',
+                    base: 'a',
+                    head: 'b',
                 },
             );
             expect(result.commits).toHaveLength(100);
@@ -488,14 +530,14 @@ describe('read tools', () => {
             const { call } = withComparison();
 
             await expect(call('github_compare', {
-                repo: 'octo/demo', 
-                base: 'a...b', 
-                head: 'c', 
+                repo: 'octo/demo',
+                base: 'a...b',
+                head: 'c',
             })).rejects.toBeInstanceOf(ValidationError);
             await expect(call('github_compare', {
-                repo: 'octo/demo', 
-                base: 'a b', 
-                head: 'c', 
+                repo: 'octo/demo',
+                base: 'a b',
+                head: 'c',
             })).rejects.toBeInstanceOf(ValidationError);
         });
     });
@@ -587,9 +629,9 @@ describe('read tools', () => {
 
     it('does not leak the token in errors', async () => {
         const {
-            clock, 
-            fake, 
-            gh, 
+            clock,
+            fake,
+            gh,
         } = createGithubFixture();
         const store = new MemoryStore({ clock });
         const agent = defineAgent({
@@ -597,10 +639,10 @@ describe('read tools', () => {
             model: mockModel([
                 {
                     parts: [{
-                        type: 'tool-call', 
-                        toolName: 'github_get_issue', 
-                        input: { repo: 'octo/demo', number: 99 }, 
-                    }], 
+                        type: 'tool-call',
+                        toolName: 'github_get_issue',
+                        input: { repo: 'octo/demo', number: 99 },
+                    }],
                 },
                 { parts: [{ type: 'text', text: 'no such issue' }] },
             ]),
