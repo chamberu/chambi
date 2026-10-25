@@ -76,7 +76,7 @@ Each workspace is a container `chamvi-ws-<id>`:
 
 `limits.storage` is not enforced: a default volume has no size (use a storage driver with quotas, or the Kubernetes provider). Commands run through the Docker exec API in `/workspace`; a file is read with `cat` and written with `head -c` from stdin.
 
-**Hardened mode**: `createDockerSandbox({ user: '1000:1000', readOnlyRoot: true })` gives the container of earlier versions: uid 1000, a read-only root, no capability at all. `apt` and root-only installs then fail; toolchains still install into `/cache` with mise.
+**Hardened mode**: `createDockerSandbox({ user: '1000:1000', readOnlyRoot: true })` gives the container of earlier versions: uid 1000, a read-only root, no capability at all. `apt` and root-only installs then fail; toolchains still install into `/cache` with mise. Before the checkout the provider opens the cache to that user (one exec as root, which owns the mount point Docker makes for an image without `/cache` and the folders a root workspace made in a shared volume, so it changes their mode without any capability), so any image works there; a folder another non-root user made stays as it is, so give deployments with different users their own `cache.volume`.
 
 ## Image
 

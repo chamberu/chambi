@@ -47,7 +47,7 @@ The default pods run as root, which the Pod Security level `restricted` refuses;
 kubectl label namespace agents-sandbox pod-security.kubernetes.io/enforce=baseline
 ```
 
-Where a cluster allows only `restricted`, use the hardened mode: non-root with `runAsNonRoot` and `fsGroup`, a read-only root, no capability. `apt-get` then fails; toolchains still install into `/cache` with mise.
+Where a cluster allows only `restricted`, use the hardened mode: non-root with `runAsNonRoot` and `fsGroup`, a read-only root, no capability. `apt-get` then fails; toolchains still install into `/cache` with mise. A shared cache claim must honour `fsGroup` (NFS-style volume plugins ignore it) or be world-writable, else the hardened user cannot write it.
 
 A shared cache claim is shared trust: a malicious package one run fetched can sit in another run's cache (npm verifies integrity hashes, pip and Go's build cache less). Leave `cache` unset, or use one claim per trust level, where runs must not influence each other.
 

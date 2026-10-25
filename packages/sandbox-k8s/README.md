@@ -79,7 +79,7 @@ rules:
 kubectl label namespace agents pod-security.kubernetes.io/enforce=baseline
 ```
 
-Where only `restricted` is allowed, use the hardened mode, `createKubernetesSandbox({ namespace, user: { uid: 1000, gid: 1000 }, readOnlyRoot: true })`: non-root with `runAsNonRoot` and `fsGroup`, a read-only root, no capability (`apt` then fails; toolchains still install into `/cache` with mise).
+Where only `restricted` is allowed, use the hardened mode, `createKubernetesSandbox({ namespace, user: { uid: 1000, gid: 1000 }, readOnlyRoot: true })`: non-root with `runAsNonRoot` and `fsGroup`, a read-only root, no capability (`apt` then fails; toolchains still install into `/cache` with mise). A shared `cache.claimName` must honour `fsGroup` (NFS-style volume plugins ignore it) or be world-writable, else the hardened user cannot write it.
 
 `pods/exec` needs both verbs: the client opens the exec WebSocket with a `GET`, which the API server authorizes as `get`, while servers with the WebSocket-upgrade authorization change ask for `create`. Keep the sandbox namespace apart from chamvi's own, so the pods never share a namespace with its secrets.
 

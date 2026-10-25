@@ -23,6 +23,7 @@ import {
     createRemoteWorkspace,
     createSettledCheck,
     isExpiredAt,
+    isRootUser,
     prepareWorkspace,
     probeImage,
     readCheckout,
@@ -37,7 +38,13 @@ import type {
 } from '@chamvi/sandbox';
 import Docker from 'dockerode';
 import { createDockerTransport } from '../transport/module.ts';
-import { DEFAULT_CACHE_VOLUME, DEFAULT_NETWORK, DEFAULT_USER } from './constants.ts';
+import { openCache } from './cache.ts';
+import {
+    CACHE_OPEN_USER,
+    DEFAULT_CACHE_VOLUME,
+    DEFAULT_NETWORK,
+    DEFAULT_USER,
+} from './constants.ts';
 import {
     assertDockerOptions,
     buildContainerOptions,
@@ -56,7 +63,7 @@ const PROVIDER_NAME = 'docker';
  * writable root and a few capabilities by default, the hardened mode through
  * `user` and `readOnlyRoot`), commands run through the Docker exec API inside
  * GNU `timeout`. `create` probes the image (`probeImage`) before the
- * checkout; an image a run asked for (`imageRequested`) is pulled when
+ * checkout and, for a non-root `user`, opens the cache to it (`openCache`); an image a run asked for (`imageRequested`) is pulled when
  * missing, whatever `pull` says, while the provider's and the operator's
  * follow `pull`. `find` lists a run's
  * containers by label, starts a stopped one again (its volume holds the
@@ -199,6 +206,16 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                     clock, 
                     signal: input.signal, 
                 });
+                if (!isRootUser(user)) {
+                    // never disposed: it removes the container, which the workspace owns
+                    const root = createRemoteWorkspace({
+                        id,
+                        info,
+                        transport: createDockerTransport(docker, container, clock, CACHE_OPEN_USER),
+                        clock,
+                    });
+                    await openCache(root, user, input.signal);
+                }
                 const { commit } = await prepareWorkspace(workspace, {
                     repo: input.repo,
                     ref: input.ref,

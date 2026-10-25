@@ -27,5 +27,7 @@ describe('public api', () => {
     it('keeps the container builder and the transport internal', () => {
         expect(docker).not.toHaveProperty('buildContainerOptions');
         expect(docker).not.toHaveProperty('createDockerTransport');
+        expect(docker).not.toHaveProperty('openCache');
+        expect(docker).not.toHaveProperty('CACHE_OPEN_USER');
     });
 });
