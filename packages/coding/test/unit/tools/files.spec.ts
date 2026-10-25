@@ -16,7 +16,7 @@ import {
 } from 'vitest';
 import { Buffer } from 'node:buffer';
 import type { ToolSet } from 'ai';
-import { SandboxError, ValidationError } from '@chamvi/core';
+import { SandboxError, ValidationError, artifactFilePart } from '@chamvi/core';
 import type { GitFixture } from '@chamvi/test-kit';
 import { createFixture, setupCoding } from '../../utils/setup.ts';
 import type { CodingSetup } from '../../utils/setup.ts';
@@ -124,25 +124,30 @@ describe('read_file: binary files and images', () => {
         expect((error as Error).message).toContain("encoding: 'base64'");
     });
 
-    it('returns an image as an image part for the model', async () => {
-        await s.workspace.writeFile('logo.png', PNG);
-        const result = await s.call('read_file', { path: 'logo.png' });
+    it('stores an image as a run artifact and shows it to the model through its marker', async () => {
+        await s.workspace.writeFile('img/logo.png', PNG);
+        const result = await s.call<{ artifactId: string }>('read_file', { path: 'img/logo.png' });
         expect(result).toEqual({
-            path: 'logo.png',
+            path: 'img/logo.png',
             type: 'image',
             mediaType: 'image/png',
             bytes: PNG.length,
-            data: PNG.toString('base64'),
+            artifactId: expect.any(String),
         });
+        // the step and the checkpoints keep the id only, never the bytes
+        expect(JSON.stringify(result)).not.toContain(PNG.toString('base64'));
+        const stored = await s.artifacts.get(result.artifactId);
+        expect(stored?.artifact).toMatchObject({
+            mediaType: 'image/png', 
+            filename: 'logo.png', 
+            size: PNG.length, 
+        });
+        expect(Buffer.from(stored!.data).equals(PNG)).toBe(true);
         expect(modelOutput(s.tools, 'read_file', result)).toEqual({
             type: 'content',
             value: [
-                { type: 'text', text: `Image logo.png (image/png, ${PNG.length} bytes).` },
-                {
-                    type: 'file', 
-                    mediaType: 'image/png', 
-                    data: { type: 'data', data: PNG.toString('base64') }, 
-                },
+                { type: 'text', text: `Image img/logo.png (image/png, ${PNG.length} bytes).` },
+                artifactFilePart({ id: result.artifactId, mediaType: 'image/png' }),
             ],
         });
         const text = await s.call('read_file', { path: 'src/a.ts' });

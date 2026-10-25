@@ -38,7 +38,7 @@ const ALPINE_IMAGE = 'chamvi/sandbox-alpine-git:test';
 /** A 1x1 PNG. */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
-/** A ToolContext of run `runId`, as the engine builds it (the coding tools read `run` only). */
+/** A ToolContext of run `runId`, as the engine builds it (the coding tools read `run`, and `artifacts` for images). */
 function toolContext(runId: string): ToolContext {
     return {
         channels: {} as ToolContext['channels'],
@@ -57,7 +57,15 @@ function toolContext(runId: string): ToolContext {
         },
         state: createAgentState('coder', undefined, new MemoryStore()),
         artifacts: {
-            put: async () => { throw new TypeError('unused'); },
+            // read_file stores the images it shows
+            put: async (input) => ({
+                id: `artifact-${runId}`,
+                runId,
+                agent: 'coder',
+                mediaType: input.mediaType,
+                size: input.data.byteLength,
+                createdAt: new Date(0),
+            }),
             get: async () => undefined,
             list: async () => [],
         },
@@ -265,6 +273,7 @@ describeDocker('coding tools in a container', () => {
             type: 'image', 
             mediaType: 'image/png', 
             bytes: PNG.length, 
+            artifactId: `artifact-${runId}`,
         });
 
         const bytes = new Uint8Array(512 * 1024).map((_, index) => (index * 7) % 256);

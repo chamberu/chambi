@@ -20,7 +20,7 @@ Throws `InvalidAgentDefinitionError` when `workspaces` has no `get`. Returns `re
 
 | Tool | Input | Result |
 |---|---|---|
-| `read_file` | `path`, `offset?` (1-based, default 1), `limit?` (default and maximum 2000), `encoding?` (`utf8` default, `base64`) | `ReadFileResult`; `ReadFileBinaryResult` for `base64` (at most 1 MiB); `ReadFileImageResult` for a png, jpeg, gif or webp (at most 5 MiB), an image part for the model through `toModelOutput` |
+| `read_file` | `path`, `offset?` (1-based, default 1), `limit?` (default and maximum 2000), `encoding?` (`utf8` default, `base64`) | `ReadFileResult`; `ReadFileBinaryResult` for `base64` (at most 1 MiB); `ReadFileImageResult` for a png, jpeg, gif or webp (at most 5 MiB), stored as a run artifact (`artifactId`), an image part for the model through `toModelOutput` and `artifactFilePart()`, so steps and checkpoints keep the id only |
 | `write_file` | `path`, `content`, `encoding?` (`utf8` default, `base64`) | `WriteFileResult` |
 | `edit_file` | `path`, `oldString`, `newString`, `replaceAll?` | `EditFileResult` |
 | `multi_edit` | `path`, `edits` (1 to 100 of `{ oldString, newString, replaceAll? }`, applied in order, all or none) | `MultiEditResult` |
