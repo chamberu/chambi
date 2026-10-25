@@ -137,6 +137,12 @@ export function createFakePodClient(onExec: FakeExecHandler = () => ({})): FakeP
             const value = config.get(second!);
             return value === undefined ? { exitCode: 1 } : { stdout: `${value}\n` };
         }
+        if (first === '--get-regexp') {
+            // git prints the variable names lower-cased
+            const pattern = new RegExp(second!, 'i');
+            const lines = [...config].filter(([key]) => pattern.test(key)).map(([key, value]) => `${key.toLowerCase()} ${value}\n`);
+            return lines.length === 0 ? { exitCode: 1 } : { stdout: lines.join('') };
+        }
         if (first === '--unset') return config.delete(second!) ? {} : { exitCode: 5 };
         if (third !== undefined || second === undefined) return { exitCode: 2 };
         config.set(first!, second);

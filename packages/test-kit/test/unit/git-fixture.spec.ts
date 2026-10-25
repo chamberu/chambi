@@ -27,4 +27,17 @@ describe('createGitFixture', () => {
         await fixture.cleanup();
         expect(existsSync(fixture.path)).toBe(false);
     });
+
+    it('runs git in the repository with the fixture identity', async () => {
+        const fixture = await createGitFixture({ 'a.txt': 'a' });
+        try {
+            await fixture.git('switch', '-q', '-c', 'feature');
+            await fixture.git('commit', '-q', '--allow-empty', '-m', 'second');
+            const log = await fixture.git('log', '--format=%an %s', 'feature');
+            expect(log).toBe('chamvi second\nchamvi fixture\n');
+            await expect(fixture.git('rev-parse', 'main')).resolves.toBe(`${fixture.commit}\n`);
+        } finally {
+            await fixture.cleanup();
+        }
+    });
 });

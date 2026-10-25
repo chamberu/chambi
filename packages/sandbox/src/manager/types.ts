@@ -138,6 +138,8 @@ export type WorkspaceToolResult = {
     repo: string | null;
     ref: string | null;
     commit: string | null;
+    /** The remote's default branch, fetched as `origin/<name>` (the base to merge or rebase onto). */
+    defaultBranch: string | null;
     /** The image of a container or pod workspace; null on local. */
     image: string | null;
     expiresAt: string;

@@ -91,6 +91,57 @@ describe('local sandbox', () => {
         }
     }, 30_000);
 
+    it('checks out a branch with its history, tracking origin, and the default branch next to it', async () => {
+        const fixture = await createGitFixture({ 'README.md': '# demo\n' });
+        try {
+            await fixture.git('switch', '-q', '-c', 'feature');
+            await fixture.git('commit', '-q', '--allow-empty', '-m', 'feature work');
+            await fixture.git('switch', '-q', 'main');
+            const provider = createLocalSandbox({ root });
+            const workspace = await provider.create({
+                runId: 'r1',
+                repo: fixture.url,
+                ref: 'feature',
+            });
+            try {
+                const git = async (...args: string[]) => (await workspace.exec(['git', ...args])).stdout.trim();
+                expect(workspace.info.defaultBranch).toBe('main');
+                expect(await git('log', '--format=%s')).toBe('feature work\nfixture');
+                expect(await git('rev-parse', '--abbrev-ref', 'HEAD')).toBe('feature');
+                expect(await git('rev-parse', '--abbrev-ref', '@{upstream}')).toBe('origin/feature');
+                expect(await git('rev-parse', 'origin/main')).toBe(fixture.commit);
+
+                const [found] = await createLocalSandbox({ root }).find('r1');
+                expect(found!.info.defaultBranch).toBe('main');
+                expect(found!.info.commit).toBe(workspace.info.commit);
+            } finally {
+                await workspace.dispose();
+            }
+        } finally {
+            await fixture.cleanup();
+        }
+    }, 30_000);
+
+    it('fetches only depth commits when asked', async () => {
+        const fixture = await createGitFixture({ 'README.md': '# demo\n' });
+        try {
+            await fixture.git('commit', '-q', '--allow-empty', '-m', 'second');
+            const workspace = await createLocalSandbox({ root }).create({
+                runId: 'r1',
+                repo: fixture.url,
+                checkout: { depth: 1 },
+            });
+            try {
+                const log = await workspace.exec(['git', 'log', '--format=%s']);
+                expect(log.stdout).toBe('second\n');
+            } finally {
+                await workspace.dispose();
+            }
+        } finally {
+            await fixture.cleanup();
+        }
+    }, 30_000);
+
     it('does not leak the host environment', async () => {
         process.env.CHAMVI_SECRET_PROBE = 's3cret';
         try {

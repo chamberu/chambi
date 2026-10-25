@@ -29,5 +29,8 @@ export const CHECKOUT_KEY = 'chamvi.checkout';
 /** The `CHECKOUT_KEY` value of a finished repo-less workspace. */
 export const NO_REPO_CHECKOUT = 'none';
 
+/** The git config key `prepareWorkspace` records the remote's default branch under (before `CHECKOUT_KEY`). */
+export const CHECKOUT_DEFAULT_BRANCH_KEY = 'chamvi.defaultBranch';
+
 /** Exec timeout of `readCheckout`. */
 export const CHECKOUT_READ_TIMEOUT_MS = 30_000;
