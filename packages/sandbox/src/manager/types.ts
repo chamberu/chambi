@@ -90,8 +90,11 @@ export interface IWorkspaceManager {
     release(runId: string, workspaceId?: string): Promise<void>;
     /**
      * Disposes a run's workspaces on completed | failed | cancelled (`release`,
-     * so also those other processes created). Returns the unsubscribe; after
-     * close() it subscribes nothing.
+     * so also those other processes created). With `isSettled`, a run this
+     * process neither holds nor looks up is not looked up (no `provider.find`
+     * per settled run): it starts a garbage collection instead (at most one
+     * per `gcIntervalMs`), which removes what other processes left for it.
+     * Returns the unsubscribe; after close() it subscribes nothing.
      */
     attach(engine: Pick<Engine, 'on'>): () => void;
     /** `create_workspace` and `dispose_workspace`. */

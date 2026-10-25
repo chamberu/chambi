@@ -52,8 +52,9 @@ const MISS = Symbol('miss');
  * Run-scoped workspaces over `provider`: one per (run, repository), created
  * on `acquire`, disposed on `release`, on expiry (checked on every get), once
  * found gone (`IWorkspace.disposed`, dropped on every get and acquire), when
- * the run settles (`attach`, also the ones another process created) and by
- * garbage collection. On a miss the manager asks `provider.find` (one lookup
+ * the run settles (`attach`, also the ones another process created: through
+ * `provider.find` for a run this process touched, else with `isSettled`
+ * through the next garbage collection) and by garbage collection. On a miss the manager asks `provider.find` (one lookup
  * per run at a time) and adopts what it finds, so a run reaches its
  * workspaces after a restart or on another replica. `close()` disposes
  * nothing a live run holds. A run can only ever reach its own workspaces.
@@ -413,7 +414,15 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         // a closed manager holds nothing and acquires nothing: nothing to dispose
         if (closed) return () => {};
         const off = engine.on('run.updated', ({ run }) => {
-            if (isTerminal(run.status)) release(run.id).catch(onError);
+            if (!isTerminal(run.status)) return;
+            if (isSettled && !runs.has(run.id) && !lookups.has(run.id)) {
+                // never touched here: no lookup per settled run (a container or
+                // pod list each); another process's leftovers go with the next
+                // collection (isSettled), at most one per gcIntervalMs
+                maybeCollectGarbage();
+                return;
+            }
+            release(run.id).catch(onError);
         });
         let active = true;
         const unsubscribe = () => {

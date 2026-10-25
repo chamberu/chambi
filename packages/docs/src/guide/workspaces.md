@@ -52,11 +52,11 @@ A run may hold `maxWorkspacesPerRun` (3) workspaces at once. Repositories are `o
 
 A workspace is keyed by run and repository, and its lifetime follows the run: containers sleep forever and pods have no deadline, so nothing kills a workspace while its run lives, also through a 24 hour approval. It lives until the first of:
 
-- the run settles: `completed`, `failed` or `cancelled` (through `workspaces.attach(engine)`, also for the workspaces another replica created). A run `waiting` for an approval or `interrupted` keeps its workspaces.
+- the run settles: `completed`, `failed` or `cancelled` (through `workspaces.attach(engine)`, also for the workspaces another replica created: with `isSettled` those go with the garbage collection a settled run starts, at most one per 10 minutes). A run `waiting` for an approval or `interrupted` keeps its workspaces.
 - `dispose_workspace`, or `workspaces.release(runId, id?)`
 - its hard cap, `limits.maxLifetimeMs` (default 7 days from its creation, never renewed), checked on every use
 - it was found gone: its container was removed, its pod failed, was evicted or deleted, or its local directory was removed. The call that found it says "workspace ... is gone; call create_workspace for a new one", and `create_workspace` then creates a new one
-- garbage collection, the only reaper: `acquire` runs `workspaces.collectGarbage()` at most every 10 minutes. It removes expired workspaces and, with `isSettled` (which `sandboxModule()` answers through the engine), those whose run settled, also when the replica that ran it was down; with a named deployment (see below) also those whose run no longer exists
+- garbage collection, the only reaper: `acquire` (and a settled run `attach` sees) runs `workspaces.collectGarbage()` at most every 10 minutes. It removes expired workspaces and, with `isSettled` (which `sandboxModule()` answers through the engine), those whose run settled, also when the replica that ran it was down; with a named deployment (see below) also those whose run no longer exists
 
 **A run finds its workspaces again** after an approval pause, a restart or on another replica of the same Docker host or Kubernetes cluster: on a miss the manager asks the provider (`find`) for the run's workspaces by label (local: the folder records) and adopts them, with their files, repository and ref. A stopped Docker container (a host restart) is started again; its volume still holds the work. Moving a workspace between hosts is not supported.
 

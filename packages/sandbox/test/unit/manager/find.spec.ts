@@ -237,6 +237,44 @@ describe('workspace manager: find', () => {
         expect(provider.disposed).toEqual([]);
     });
 
+    it('attach with isSettled looks up no settled run this process never touched and leaves it to a collection', async () => {
+        const isSettled = async () => true;
+        const { provider, clock, build } = setup({ isSettled, gcIntervalMs: 60_000 });
+        const manager = build();
+        const engine = fakeEngine();
+        manager.attach(engine);
+
+        engine.emit({ id: 'r8', status: RunStatus.COMPLETED });
+        engine.emit({ id: 'r9', status: RunStatus.FAILED });
+        await flush();
+        await flush();
+        expect(findsOf(provider, 'r8')).toEqual([]);
+        expect(findsOf(provider, 'r9')).toEqual([]);
+        // one collection per interval, whatever the number of settled runs
+        expect(provider.gcCalls).toBe(1);
+        expect(provider.gcOptions[0]?.isSettled).toBe(isSettled);
+
+        clock.advance(60_000);
+        engine.emit({ id: 'r7', status: RunStatus.CANCELLED });
+        await flush();
+        expect(provider.gcCalls).toBe(2);
+    });
+
+    it('attach with isSettled still releases a settled run it holds, also what another process created', async () => {
+        const isSettled = async () => true;
+        const { provider, build } = setup({ isSettled });
+        const manager = build();
+        const { workspace } = await manager.acquire('r1', {});
+        const extra = await provider.create({ runId: 'r1', repo: REPO });
+        const engine = fakeEngine();
+        manager.attach(engine);
+
+        engine.emit({ id: 'r1', status: RunStatus.COMPLETED });
+        await flush();
+        await flush();
+        expect(provider.disposed.sort()).toEqual([workspace.id, extra.id].sort());
+    });
+
     it('collectGarbage releases the settled runs it holds and hands isSettled to the provider', async () => {
         const settled = new Set(['r1']);
         const isSettled = async (runId: string) => settled.has(runId);
