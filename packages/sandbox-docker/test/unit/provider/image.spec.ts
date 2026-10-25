@@ -127,8 +127,9 @@ describeDocker('sandbox-dev image as root (the default)', () => {
         expect((await run(['grep', 'NoNewPrivs', '/proc/self/status'])).stdout).toMatch(/NoNewPrivs:\s+1/);
     });
 
-    it('runs tini as pid 1', async () => {
-        expect((await run(['cat', '/proc/1/comm'])).stdout.trim()).toBe('tini');
+    it('runs docker-init as pid 1 above the image\'s tini', async () => {
+        expect((await run(['cat', '/proc/1/comm'])).stdout.trim()).toBe('docker-init');
+        expect((await run(['sh', '-c', 'cat /proc/[0-9]*/comm'])).stdout.split('\n')).toContain('tini');
     });
 
     it('is no privileged container and mounts nothing of the host', async () => {

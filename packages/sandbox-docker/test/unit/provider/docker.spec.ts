@@ -27,6 +27,11 @@ const MISSING_IMAGE = 'chamvi/does-not-exist:none';
 const NO_GIT_IMAGE = 'chamvi/sandbox-no-git:test';
 
 const NO_CACHE_IMAGE = 'chamvi/sandbox-no-cache:test';
+const NO_INIT_IMAGE = 'chamvi/sandbox-no-init:test';
+
+/** Leaves 20 orphans that exit at once, waits, then prints how many processes are zombies. */
+const ORPHANS = 'for i in $(seq 20); do sh -c "sleep 0.1 &"; done; sleep 1; ' +
+    'cat /proc/[0-9]*/stat 2>/dev/null | awk \'$3 == "Z"\' | wc -l';
 
 /** Builds the fixture `test/fixtures/<fixture>` on top of the test image (offline) as `tag`. */
 async function buildFixtureImage(docker: Docker, fixture: string, tag: string): Promise<void> {
@@ -373,6 +378,20 @@ describeDocker('docker sandbox', () => {
         expect((await workspace.exec(['touch', '/etc/probe'])).exitCode).not.toBe(0);
         await workspace.writeFile('a.txt', 'hardened');
         expect(await workspace.readFile('a.txt')).toBe('hardened');
+    });
+
+    it('reaps the orphans of an image without an init', async () => {
+        await buildFixtureImage(docker, 'no-init', NO_INIT_IMAGE);
+        try {
+            const { workspace } = await create({ image: NO_INIT_IMAGE, pull: 'never' });
+            expect((await workspace.exec(['cat', '/proc/1/comm'])).stdout.trim()).not.toBe('sleep');
+            const result = await workspace.exec(['sh', '-c', ORPHANS]);
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout.trim()).toBe('0');
+            await workspace.dispose();
+        } finally {
+            await docker.getImage(NO_INIT_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
     });
 
     it('opens the cache of an image without /cache to the hardened user', async () => {

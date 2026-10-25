@@ -97,6 +97,8 @@ describe('buildPod', () => {
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
             enableServiceLinks: false,
+            // the pause container is pid 1 and reaps the orphans of every image
+            shareProcessNamespace: true,
             terminationGracePeriodSeconds: 5,
         });
         // the lifetime follows the run: nothing ends the pod but the garbage collection

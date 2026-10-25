@@ -89,10 +89,10 @@ Each workspace is a bare pod `chamvi-ws-<id>` with one container `sandbox`:
 
 | Setting | Value |
 |---|---|
-| Pod | `restartPolicy: Never`, `automountServiceAccountToken: false`, `enableServiceLinks: false`, no `activeDeadlineSeconds` (the lifetime follows the run), `terminationGracePeriodSeconds: 5` |
+| Pod | `restartPolicy: Never`, `automountServiceAccountToken: false`, `enableServiceLinks: false`, `shareProcessNamespace: true` (the pause container is pid 1 and reaps orphaned processes for any image, also one without an init, whose zombies would otherwise fill the kubelet's pid limit), no `activeDeadlineSeconds` (the lifetime follows the run), `terminationGracePeriodSeconds: 5` |
 | Pod security | `runAsUser`/`runAsGroup` from `user` (default 0), seccomp `RuntimeDefault`; a non-root user adds `runAsNonRoot` and `fsGroup` |
 | Container security | `allowPrivilegeEscalation: false`, not privileged, `readOnlyRootFilesystem` from `readOnlyRoot` (default false), all capabilities dropped and for root `ROOT_CAPABILITIES` added back |
-| Command | the image's entrypoint (`tini`) with `sleep infinity` |
+| Command | the image's entrypoint (`sandbox-dev`: `tini`) with `sleep infinity` |
 | Resources | requests equal limits: `cpu`, `memory`, `ephemeral-storage` from `storage` |
 | `/workspace` | an emptyDir with `sizeLimit` from `storage` |
 | `/tmp` | a memory-backed emptyDir of `tmpSize` (default 1 GiB, `TMP_SIZE`) |
