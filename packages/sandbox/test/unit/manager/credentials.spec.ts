@@ -124,6 +124,39 @@ describe('workspace manager credentials', () => {
     });
 
     describe('credentialMode workspace', () => {
+        it('installs the read credential when the write lookup fails, reporting the failure once', async () => {
+            const reads: string[] = [];
+            const {
+                manager, 
+                provider, 
+                errors, 
+            } = setup({
+                credentials: {
+                    async get(request) {
+                        if (request.path === '') return undefined;
+                        if (request.access === 'write') throw new Error('GitHub 422: The permissions requested are not granted to this installation.');
+                        reads.push(request.url);
+                        return {
+                            username: 'x-access-token', 
+                            password: `read-token-${reads.length}`, 
+                            expiresAt: new Date(START + HOUR), 
+                        };
+                    },
+                },
+            });
+            const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+            const raw = provider.workspaces.get(workspace.id)!;
+            expect(installs(raw)).toHaveLength(1);
+            expect(installs(raw)[0]!.options.stdin).toBe('https://github.com/octo/demo\tx-access-token\tread-token-2\n');
+            expect(errors).toHaveLength(1);
+            expect(String((errors[0] as Error).message)).toContain('422');
+
+            await workspace.exec(['true']);
+            await workspace.exec(['true']);
+            expect(installs(raw)).toHaveLength(1);
+            expect(errors).toHaveLength(1);
+        });
+
         it('installs the write credential of the repository after the create', async () => {
             const { manager, provider } = setup();
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });

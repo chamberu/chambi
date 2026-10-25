@@ -34,7 +34,9 @@ export type CredentialSupport = {
     /**
      * In `workspace` mode, writes the credentials file of `workspace` (raw,
      * not wrapped) when it has none from this process yet, or one of its
-     * credentials expires within `CREDENTIAL_REFRESH_MS`. A failure goes to
+     * credentials expires within `CREDENTIAL_REFRESH_MS`: the repository's
+     * write credential, else (none, or a failing write lookup, reported to
+     * `onError`) its read credential. A failure goes to
      * `onError` and is retried `CREDENTIAL_RETRY_MS` later; it never throws.
      */
     refresh(workspace: IWorkspace): Promise<void>;
@@ -83,7 +85,19 @@ export function createCredentialSupport(input: {
         const url = workspace.info.repo!;
         const { runId } = workspace.info;
         const entries: Array<GitCredential & { key: string }> = [];
-        const repo = await lookup(url, 'write', runId) ?? await lookup(url, 'read', runId);
+        let repo: GitCredential | undefined;
+        let writeError: unknown;
+        try {
+            repo = await lookup(url, 'write', runId);
+        } catch (error) {
+            // e.g. an App without contents: write: the read credential still serves fetch and pull
+            writeError = error;
+        }
+        if (!repo) {
+            // a failing read lookup fails the install (reported once by refresh)
+            repo = await lookup(url, 'read', runId);
+            if (writeError !== undefined) onError(redactor.redactError(writeError));
+        }
         if (repo) entries.push({ key: credentialKey(url), ...repo });
         // a token for the whole host (private dependencies of the same host)
         const host = await lookup(`${urlOrigin(url)}/`, 'read', runId);
