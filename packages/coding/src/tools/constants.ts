@@ -201,6 +201,19 @@ function watchdogPart(seconds: string, check: string): string {
         'done ) > /dev/null 2>&1 < /dev/null &';
 }
 
+/** `pgof <pid>`: the process group of a process, from `/proc` (Linux) or `ps` (macOS); empty when it is gone. */
+const PGOF_PART = 'pgof() { if [ -r "/proc/$1/stat" ]; then sed \'s/.*) //\' "/proc/$1/stat" 2>/dev/null | cut -d" " -f3; ' +
+    'else ps -o pgid= -p "$1" 2>/dev/null | tr -d " "; fi; }';
+
+/**
+ * `held`: whether a process still has a log of call `$n` (`$f`) open, i.e.
+ * a process the command left running writes to it: on Linux any process
+ * whose `/proc/<pid>/fd` links to it (also once it was deleted), elsewhere
+ * (macOS) `lsof` over the call's process group `$g`; never without either.
+ */
+const HELD_PART = 'held() { if [ -d /proc/self/fd ]; then ls -l /proc/[0-9]*/fd/ 2>/dev/null | grep -qF -- "/.chamvi/out/$n.std"; ' +
+    'elif command -v lsof >/dev/null 2>&1; then lsof -g "$g" -a -- "$f.stdout.log" "$f.stderr.log" >/dev/null 2>&1; else return 1; fi; }';
+
 /** The folders of the shell state and the logs, `$c`, `$s` and `$o`, created when missing. */
 const STATE_PART = `c=$HOME/.chamvi; s=$c/shell; o=$c/out; mkdir -p "$s" "$o" || exit ${REPORT_FAILED_EXIT_CODE}; r=$(pwd -P)`;
 
@@ -209,26 +222,46 @@ const STATE_PART = `c=$HOME/.chamvi; s=$c/shell; o=$c/out; mkdir -p "$s" "$o" ||
  * BASH_SCRIPT sh <INNER_SCRIPT> <command> <id> <cwd or ''> <log cap> <log
  * budget>`: it holds the exec's pipes while the inner shell (bash when the
  * image has it, else sh) writes to the log files only, so a background job
- * of the command never keeps the call open; then it prints the report. A
- * watchdog in the background checks the log sizes every
- * `OUTPUT_LOG_CHECK_SECONDS` while the inner shell runs; once a log passed
+ * of the command never keeps the call open; then it prints the report. The
+ * inner shell runs in the background and the outer one waits for it, so a
+ * TERM to the outer shell alone (BusyBox `timeout` signals the command it
+ * execs, not its group as GNU `timeout` does) runs its trap at once: it
+ * kills the exec's process group (the command, its jobs and both shells),
+ * and the report is read afterwards with REPORT_SCRIPT.
+ *
+ * A watchdog in the background checks the log sizes every
+ * `OUTPUT_LOG_CHECK_SECONDS` while the outer shell runs; once a log passed
  * the cap it leaves the marker `$f.capped` and kills the exec's process
- * group (the command, its jobs and this shell, like a timeout), so the
- * report is read afterwards with REPORT_SCRIPT.
+ * group (like a timeout). When the command left a process that still holds
+ * a log open (`cmd &`), the watchdog outlives the call: every
+ * `JOB_OUTPUT_CHECK_SECONDS` it ends once nobody holds the logs, and kills
+ * the group once a log passed the cap (cut back to it first) or was deleted
+ * by the log rotation of a later call, so such a writer never grows a log
+ * past the cap either.
  */
 export const BASH_SCRIPT = [
     STATE_PART,
-    'n=$3; f=$o/$n; m=$5; b=$6',
+    `n=$3; f=$o/$n; m=$5; b=$6; t=${OUTPUT_LOG_CHECK_SECONDS}`,
     `if [ -n "$4" ] && [ ! -d "$4" ]; then printf '%s\\n' ${CWD_MISSING}; exit 0; fi`,
     'if command -v bash >/dev/null 2>&1; then x=bash; else x=sh; fi',
+    PGOF_PART,
+    HELD_PART,
+    'g=$(pgof $$)',
     watchdogPart(
-        OUTPUT_LOG_CHECK_SECONDS,
-        'if [ -n "$(find "$f.stdout.log" "$f.stderr.log" -size +"$m"c 2>/dev/null)" ]; then : > "$f.capped"; kill -KILL 0; fi',
+        '"$t"',
+        'big=$(find "$f.stdout.log" "$f.stderr.log" -size +"$m"c 2>/dev/null); ' +
+        'if kill -0 $$ 2>/dev/null; then if [ -n "$big" ]; then : > "$f.capped"; kill -KILL 0; fi; ' +
+        `else t=${JOB_OUTPUT_CHECK_SECONDS}; held || exit 0; ` +
+        'if [ ! -f "$f.stdout.log" ] || [ ! -f "$f.stderr.log" ]; then kill -KILL 0; fi; ' +
+        'if [ -n "$big" ]; then for h in "$f.stdout.log" "$f.stderr.log"; do if [ -n "$(find "$h" -size +"$m"c 2>/dev/null)" ]; then ' +
+        'head -c "$m" "$h" > "$h.t" && mv -f "$h.t" "$h" || rm -f "$h.t"; fi; done; kill -KILL 0; fi; fi',
     ),
     'wd=$!',
-    '"$x" -c "$1" chamvi "$2" "$4" "$s" > "$f.stdout.log" 2> "$f.stderr.log" < /dev/null',
+    'trap \'kill -KILL 0\' TERM',
+    '"$x" -c "$1" chamvi "$2" "$4" "$s" > "$f.stdout.log" 2> "$f.stderr.log" < /dev/null &',
+    'wait $!',
     'st=$?',
-    'kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null',
+    'if ! held; then kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null; fi',
     REPORT_PART,
     'exit $st',
 ].join('\n');
@@ -275,10 +308,6 @@ export const JOB_INNER_SCRIPT = [
     RESTORE_PART,
     'eval "$__chamvi_c"',
 ].join('\n');
-
-/** `pgof <pid>`: the process group of a process, from `/proc` (Linux) or `ps` (macOS); empty when it is gone. */
-const PGOF_PART = 'pgof() { if [ -r "/proc/$1/stat" ]; then sed \'s/.*) //\' "/proc/$1/stat" 2>/dev/null | cut -d" " -f3; ' +
-    'else ps -o pgid= -p "$1" 2>/dev/null | tr -d " "; fi; }';
 
 /**
  * Starts a background job, run as `sh -c JOB_START_SCRIPT sh

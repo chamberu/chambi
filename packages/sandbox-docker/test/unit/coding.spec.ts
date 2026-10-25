@@ -87,6 +87,37 @@ async function tearEnv(call: ReturnType<typeof caller>): Promise<void> {
     }, { timeout: 5_000 });
 }
 
+/** A command counting the processes whose command line matches the regex `pattern` (no ps in a slim image). */
+function countProcesses(pattern: string): string {
+    return `for p in /proc/[0-9]*; do tr '\\0' ' ' < "$p/cmdline" 2>/dev/null; echo; done | grep -c '${pattern}'`;
+}
+
+/**
+ * Starts a call that leaves a loop writing to its stdout log and expects the
+ * log to stop growing at the 1 MiB cap of `call`'s tools.
+ */
+async function expectLeaverCapped(call: ReturnType<typeof caller>): Promise<void> {
+    const line = 'x'.repeat(64);
+    const result = await call<BashResult>('bash', { command: `echo started; (while :; do echo ${line}; done) &` });
+    const log = result.stdoutLog.replace('~', '"$HOME"');
+    await vi.waitFor(async () => {
+        const sizes = await call<BashResult>('bash', { command: `a=$(wc -c < ${log}); sleep 1.5; b=$(wc -c < ${log}); echo $a $b` });
+        const [before, after] = sizes.stdout.trim().split(' ').map(Number);
+        expect(after).toBe(before);
+        expect(after).toBeLessThanOrEqual(1_048_576);
+    }, { timeout: 15_000, interval: 500 });
+}
+
+/** Expects a timeout to kill the whole command (nothing it started runs on) and to read as one. */
+async function expectTimeoutKills(call: ReturnType<typeof caller>): Promise<void> {
+    await expect(call('bash', { command: 'echo before; sleep 0.1; sleep 17; echo after > /tmp/after', timeoutMs: 1_000 })).resolves.toMatchObject({
+        timedOut: true,
+        stdout: 'before\n',
+    });
+    await new Promise((resolve) => { setTimeout(resolve, 1_000); });
+    await expect(call('bash', { command: `${countProcesses('[s]leep 17')}; test -e /tmp/after && echo after` })).resolves.toMatchObject({ stdout: '0\n' });
+}
+
 describeDocker('coding tools in a container', () => {
     const runId = `test-coding-${randomUUID()}`;
     let manager: IWorkspaceManager;
@@ -141,10 +172,22 @@ describeDocker('coding tools in a container', () => {
         });
     });
 
-    it('returns promptly when the command leaves a job running', async () => {
+    it('returns promptly when the command leaves a job running, and keeps it', async () => {
         const started = Date.now();
-        await expect(call('bash', { command: 'sleep 30 & echo started' })).resolves.toMatchObject({ stdout: 'started\n' });
+        await expect(call('bash', { command: 'sleep 31 & echo started' })).resolves.toMatchObject({ stdout: 'started\n' });
         expect(Date.now() - started).toBeLessThan(2_000);
+        await new Promise((resolve) => { setTimeout(resolve, 1_500); });
+        const left = await call<BashResult>('bash', { command: countProcesses('[s]leep 31') });
+        expect(Number(left.stdout)).toBeGreaterThan(0);
+    });
+
+    it('kills the whole command after its timeout', async () => {
+        await expectTimeoutKills(call);
+    });
+
+    it('stops a process the command leaves writing once its log passes the cap', async () => {
+        const capped = codingTools(manager, { outputLogMaxBytes: 1_048_576 });
+        await expectLeaverCapped(caller(() => capped, runId));
     });
 
     it('spills long output to a log read_file and grep can read', async () => {
@@ -334,6 +377,14 @@ describeDocker('coding tools in a BusyBox image', () => {
             stdoutBytes: 1_048_576,
         });
         await expect(call('bash', { command: 'echo ok' })).resolves.toMatchObject({ stdout: 'ok\n', outputCapped: false });
+    });
+
+    it.skipIf(offline)('kills the whole command after its timeout under BusyBox timeout', async () => {
+        await expectTimeoutKills(call);
+    });
+
+    it.skipIf(offline)('stops a process the command leaves writing once its log passes the cap', async () => {
+        await expectLeaverCapped(call);
     });
 });
 

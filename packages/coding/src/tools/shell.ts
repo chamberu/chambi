@@ -113,6 +113,7 @@ export function bashTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number
             `Output past ${EXCERPT_HEAD_BYTES + EXCERPT_TAIL_BYTES} bytes per stream shows its start and end; the whole of it is in stdoutLog and stderrLog ` +
             '(read them with read_file, grep or bash). A command past its timeout is killed (timedOut: true), and so is one whose log ' +
             `passes ${outputLogMaxBytes} bytes (outputCapped: true; redirect huge output to a file). No interactive input. ` +
+            'A process the command leaves running (cmd &) keeps writing to the log and is killed once the log passes that size. ' +
             'For servers and watchers pass background: true and read the output with bash_output.',
         inputSchema: objectSchema<BashInput>({
             command: {
