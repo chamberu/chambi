@@ -7,6 +7,7 @@
 
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
+import Docker from 'dockerode';
 import type { ToolSet } from 'ai';
 import {
     afterAll,
@@ -27,7 +28,12 @@ import type { ToolContext } from '@chamvi/core';
 import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { IWorkspaceManager } from '@chamvi/sandbox';
 import { createDockerSandbox } from '@chamvi/sandbox-docker';
-import { describeDocker, dockerOptions } from '../utils/docker.ts';
+import { buildFixtureImage, describeDocker, dockerOptions } from '../utils/docker.ts';
+
+const offline = Boolean(process.env.CHAMVI_OFFLINE);
+
+/** Alpine with git: BusyBox sh, grep and cut, no bash and no ripgrep. */
+const ALPINE_IMAGE = 'chamvi/sandbox-alpine-git:test';
 
 /** A 1x1 PNG. */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
@@ -58,19 +64,34 @@ function toolContext(runId: string): ToolContext {
     };
 }
 
-describeDocker('coding tools in a container', () => {
-    const runId = `test-coding-${randomUUID()}`;
-    let manager: IWorkspaceManager;
-    let tools: ToolSet;
-
-    const call = async <T>(name: string, input: unknown): Promise<T> => {
-        const execute = tools[name]?.execute as (i: unknown, o: unknown) => Promise<unknown>;
+/** Calls a coding tool of `tools()` as run `runId`, as the AI SDK does. */
+function caller(tools: () => ToolSet, runId: string) {
+    return async <T>(name: string, input: unknown): Promise<T> => {
+        const execute = tools()[name]?.execute as (i: unknown, o: unknown) => Promise<unknown>;
         return await execute(input, {
             toolCallId: 'call-1',
             messages: [],
             context: toolContext(runId),
         }) as T;
     };
+}
+
+/**
+ * Leaves a torn env file, as two parallel saves could: written by a
+ * background job, since a foreground call saves a whole one when it ends.
+ */
+async function tearEnv(call: ReturnType<typeof caller>): Promise<void> {
+    const job = await call<BashJobResult>('bash', { command: 'printf \'export TORN="ab\' > "$HOME/.chamvi/shell/env"', background: true });
+    await vi.waitFor(async () => {
+        await expect(call('bash_output', { job: job.job })).resolves.toMatchObject({ status: 'exited', exitCode: 0 });
+    }, { timeout: 5_000 });
+}
+
+describeDocker('coding tools in a container', () => {
+    const runId = `test-coding-${randomUUID()}`;
+    let manager: IWorkspaceManager;
+    let tools: ToolSet;
+    const call = caller(() => tools, runId);
 
     beforeAll(async () => {
         manager = createWorkspaceManager({ provider: createDockerSandbox(dockerOptions), gcIntervalMs: 0 });
@@ -104,6 +125,10 @@ describeDocker('coding tools in a container', () => {
                 stdout: 'dash\n/usr/bin/dash\n',
                 cwd: '/workspace/sub/dir',
             });
+            // a torn env file (two parallel saves) must not end every later call
+            await tearEnv(call);
+            await expect(call('bash', { command: 'echo alive; export SHELL_KIND=again' })).resolves.toMatchObject({ exitCode: 0, stdout: 'alive\n' });
+            await expect(call('bash', { command: 'echo "$SHELL_KIND"' })).resolves.toMatchObject({ stdout: 'again\n' });
         } finally {
             await call('bash', { command: 'rm -f /usr/local/bin/bash; cd /workspace' });
         }
@@ -209,5 +234,92 @@ describeDocker('coding tools in a container', () => {
             content: Buffer.from(bytes).toString('base64'),
             bytes: bytes.length,
         });
+    });
+});
+
+describeDocker('coding tools in a BusyBox image', () => {
+    const runId = `test-coding-alpine-${randomUUID()}`;
+    let manager: IWorkspaceManager;
+    let tools: ToolSet;
+    const call = caller(() => tools, runId);
+
+    beforeAll(async () => {
+        if (offline) return;
+        await buildFixtureImage(new Docker(), 'alpine-git', ALPINE_IMAGE);
+        manager = createWorkspaceManager({ provider: createDockerSandbox({ ...dockerOptions, image: ALPINE_IMAGE }), gcIntervalMs: 0 });
+        await manager.acquire(runId, {});
+        tools = codingTools(manager, { outputLogMaxBytes: 1_048_576 });
+    });
+
+    afterAll(async () => {
+        await manager?.close();
+    });
+
+    it.skipIf(offline)('keeps the shell state under BusyBox sh, also over a torn env file', async () => {
+        await expect(call('bash', { command: 'command -v bash rg; mkdir -p a/b && cd a/b && export KIND=ash' })).resolves.toMatchObject({
+            stdout: '',
+            cwd: '/workspace/a/b',
+        });
+        await expect(call('bash', { command: 'echo "$KIND"' })).resolves.toMatchObject({ stdout: 'ash\n' });
+        await tearEnv(call);
+        await expect(call('bash', { command: 'echo alive; export KIND=again; cd /workspace' })).resolves.toMatchObject({ exitCode: 0, stdout: 'alive\n' });
+        await expect(call('bash', { command: 'echo "$KIND"' })).resolves.toMatchObject({ stdout: 'again\n', cwd: '/workspace' });
+    });
+
+    it.skipIf(offline)('finds matches with git grep and BusyBox grep', async () => {
+        await call('bash', {
+            command: 'git init -q . 2>/dev/null; mkdir -p src && printf "needle one\\nx\\nneedle two\\n" > src/a.txt && ' +
+                'printf "needle%05000d\\n" 0 > src/min.js',
+        });
+        const found = await call<GrepResult>('grep', { pattern: 'needle [a-z]+' });
+        expect(found).toEqual({
+            matches: [
+                {
+                    path: 'src/a.txt',
+                    line: 1,
+                    text: 'needle one',
+                },
+                {
+                    path: 'src/a.txt',
+                    line: 3,
+                    text: 'needle two',
+                },
+            ],
+            truncated: false,
+            engine: 'git-grep',
+        });
+        await expect(call<GrepResult>('grep', { pattern: 'needle0' })).resolves.toMatchObject({ matches: [{ path: 'src/min.js', line: 1 }] });
+
+        const run = await call<BashResult>('bash', { command: 'printf "a\\nneedle 1\\nb\\nneedle 2"' });
+        await expect(call('grep', {
+            pattern: 'NEEDLE', 
+            path: run.stdoutLog, 
+            ignoreCase: true, 
+        })).resolves.toEqual({
+            matches: [
+                {
+                    path: run.stdoutLog,
+                    line: 2,
+                    text: 'needle 1',
+                },
+                {
+                    path: run.stdoutLog,
+                    line: 4,
+                    text: 'needle 2',
+                },
+            ],
+            truncated: false,
+            engine: 'grep',
+        });
+        await expect(call('grep', { pattern: '(', path: run.stdoutLog })).rejects.toThrow(/grep failed: .*regex/);
+    });
+
+    it.skipIf(offline)('kills a command whose log passes the cap', async () => {
+        await expect(call('bash', { command: 'yes', timeoutMs: 60_000 })).resolves.toMatchObject({
+            outputCapped: true,
+            timedOut: false,
+            stdoutBytes: 1_048_576,
+        });
+        await expect(call('bash', { command: 'echo ok' })).resolves.toMatchObject({ stdout: 'ok\n', outputCapped: false });
     });
 });
