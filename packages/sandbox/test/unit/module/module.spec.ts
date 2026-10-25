@@ -254,7 +254,11 @@ describe('sandboxModule', () => {
     it('a MemoryStore app disposes a live run\'s workspace on stop', async () => {
         const root = await mkdtemp(join(tmpdir(), 'chamvi-sandbox-module-'));
         roots.push(root);
-        const module = sandboxModule({ env: {}, provider: createLocalSandbox({ root }), gcIntervalMs: 0 });
+        const module = sandboxModule({
+            env: {}, 
+            provider: createLocalSandbox({ root }), 
+            gcIntervalMs: 0, 
+        });
         const harness = await harnessWith(module);
         const { workspace } = await module.manager.acquire('run-1', {});
         expect(await readdir(root)).toHaveLength(1);
