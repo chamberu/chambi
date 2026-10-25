@@ -112,31 +112,41 @@ describe('the workspace credential helper', () => {
         const home = await mkdtemp(join(tmpdir(), 'chamvi-git-home-'));
         try {
             const content = credentialsFileContent([
-                { key: 'https://github.com/octo/demo', username: 'x-access-token', password: 'repo-secret' },
-                { key: 'https://github.com/', username: 'oauth2', password: 'host-secret' },
+                {
+                    key: 'https://github.com/octo/demo', 
+                    username: 'x-access-token', 
+                    password: 'repo-secret', 
+                },
+                {
+                    key: 'https://github.com/', 
+                    username: 'oauth2', 
+                    password: 'host-secret', 
+                },
             ]);
-            const realGit = { PATH: process.env.PATH ?? '', HOME: home, GIT_CONFIG_NOSYSTEM: '1' };
+            const realGit = {
+                PATH: process.env.PATH ?? '', 
+                HOME: home, 
+                GIT_CONFIG_NOSYSTEM: '1', 
+            };
             const install = await run(['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(content))], content, realGit);
             expect(install.code).toBe(0);
             expect(await readFile(join(home, '.chamvi/credentials'), 'utf8')).toBe(content);
             expect((await stat(join(home, '.chamvi/credentials'))).mode & 0o777).toBe(0o600);
 
             const fill = (request: string) => run(['git', 'credential', 'fill'], request, { ...realGit, GIT_TERMINAL_PROMPT: '0' });
-            await expect(fill('protocol=https\nhost=github.com\npath=octo/demo.git\n\n')).resolves.toMatchObject({
-                stdout: expect.stringContaining('password=repo-secret'),
-            });
-            await expect(fill('protocol=https\nhost=github.com\npath=other/repo.git\n\n')).resolves.toMatchObject({
-                stdout: expect.stringContaining('password=host-secret'),
-            });
+            await expect(fill('protocol=https\nhost=github.com\npath=octo/demo.git\n\n')).resolves.toMatchObject({ stdout: expect.stringContaining('password=repo-secret') });
+            await expect(fill('protocol=https\nhost=github.com\npath=other/repo.git\n\n')).resolves.toMatchObject({ stdout: expect.stringContaining('password=host-secret') });
             const other = await fill('protocol=https\nhost=gitlab.com\npath=octo/demo.git\n\n');
             expect(other.stdout).not.toContain('secret');
 
             // a second install replaces the file
-            const next = credentialsFileContent([{ key: 'https://github.com/octo/demo', username: 'x-access-token', password: 'fresh-secret' }]);
+            const next = credentialsFileContent([{
+                key: 'https://github.com/octo/demo', 
+                username: 'x-access-token', 
+                password: 'fresh-secret', 
+            }]);
             await run(['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(next))], next, realGit);
-            await expect(fill('protocol=https\nhost=github.com\npath=octo/demo.git\n\n')).resolves.toMatchObject({
-                stdout: expect.stringContaining('password=fresh-secret'),
-            });
+            await expect(fill('protocol=https\nhost=github.com\npath=octo/demo.git\n\n')).resolves.toMatchObject({ stdout: expect.stringContaining('password=fresh-secret') });
         } finally {
             await rm(home, { recursive: true, force: true });
         }

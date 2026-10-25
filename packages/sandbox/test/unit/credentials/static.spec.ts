@@ -48,7 +48,11 @@ describe('staticGitCredentials', () => {
     it('uses oauth2 for a GitLab host and keeps a given username', async () => {
         const credentials = staticGitCredentials([
             { host: 'gitlab.example.com', token: 'glpat-aaaa' },
-            { host: 'git.example.com', username: 'deploy', token: 'tok-bbbb' },
+            {
+                host: 'git.example.com', 
+                username: 'deploy', 
+                token: 'tok-bbbb', 
+            },
         ]);
         await expect(credentials.get(request('https://gitlab.example.com/g/r.git'))).resolves.toMatchObject({ username: 'oauth2' });
         await expect(credentials.get(request('https://git.example.com/g/r.git'))).resolves.toMatchObject({ username: 'deploy' });
@@ -56,8 +60,16 @@ describe('staticGitCredentials', () => {
 
     it('matches the host case-insensitively and the path by whole segments, the longest prefix first', async () => {
         const credentials = staticGitCredentials([
-            { host: 'GitHub.com', path: 'octo', token: 'owner-token' },
-            { host: 'github.com', path: 'octo/demo', token: 'repo-token' },
+            {
+                host: 'GitHub.com', 
+                path: 'octo', 
+                token: 'owner-token', 
+            },
+            {
+                host: 'github.com', 
+                path: 'octo/demo', 
+                token: 'repo-token', 
+            },
             { host: 'github.com', token: 'host-token' },
         ]);
         await expect(credentials.get(request('https://github.com/octo/demo.git'))).resolves.toMatchObject({ password: 'repo-token' });
@@ -67,7 +79,11 @@ describe('staticGitCredentials', () => {
     });
 
     it('answers nothing for a path below no entry and for the bare host of a path entry', async () => {
-        const credentials = staticGitCredentials([{ host: 'github.com', path: '/octo/', token: TOKEN }]);
+        const credentials = staticGitCredentials([{
+            host: 'github.com', 
+            path: '/octo/', 
+            token: TOKEN, 
+        }]);
         await expect(credentials.get(request('https://github.com/other/demo.git'))).resolves.toBeUndefined();
         await expect(credentials.get(request('https://github.com/'))).resolves.toBeUndefined();
         await expect(credentials.get(request('https://github.com/octo/demo'))).resolves.toMatchObject({ password: TOKEN });
@@ -80,8 +96,16 @@ describe('staticGitCredentials', () => {
             [{ host: '', token: TOKEN }],
             [{ host: 'github.com/x', token: TOKEN }],
             [{ host: 'github.com', token: `${TOKEN}\n` }],
-            [{ host: 'github.com', token: TOKEN, username: 'a\tb' }],
-            [{ host: 'github.com', token: TOKEN, path: 'a/../b' }],
+            [{
+                host: 'github.com', 
+                token: TOKEN, 
+                username: 'a\tb', 
+            }],
+            [{
+                host: 'github.com', 
+                token: TOKEN, 
+                path: 'a/../b', 
+            }],
         ];
         for (const entries of cases) {
             let error: unknown;

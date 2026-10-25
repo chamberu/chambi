@@ -20,7 +20,11 @@ const HOST_PATTERN = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/;
 /** One path segment: no `.` or `..`, no whitespace or control character. */
 const SEGMENT_PATTERN = /^[^\s/\0]+$/;
 
-type Entry = { host: string; segments: string[]; credential: GitCredential };
+type Entry = {
+    host: string; 
+    segments: string[]; 
+    credential: GitCredential 
+};
 
 function defaultUsername(host: string): string {
     return host.includes('gitlab') ? 'oauth2' : 'x-access-token';
