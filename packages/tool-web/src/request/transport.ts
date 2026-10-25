@@ -12,11 +12,11 @@ import type { LookupFunction } from 'node:net';
 import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
-import { hostOf } from './asserts.ts';
+import { hostOf, requestError } from './asserts.ts';
 import type { Transport, WebAddress } from './types.ts';
 
-/** Statuses a web Response carries without a body. */
-const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+/** Statuses a web Response carries without a body (101 and 103 never reach the response callback). */
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 
 /**
  * A lookup that answers the checked addresses only, so DNS cannot swap them
@@ -61,6 +61,9 @@ function decodedBody(message: IncomingMessage, headers: Headers): Readable {
             return message;
     }
     message.on('error', (error) => stream.destroy(error));
+    // A cancel or error on the decoder only unpipes the message: destroy it,
+    // so its socket does not stay open with the unread rest.
+    stream.once('close', () => message.destroy());
     headers.delete('content-encoding');
     headers.delete('content-length');
     return stream;
@@ -85,15 +88,27 @@ export const pinnedTransport: Transport = (url, init) => new Promise<Response>((
     };
     const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
     const request = send(options, (message) => {
-        const status = message.statusCode ?? 502;
-        const headers = toHeaders(message);
-        if (NULL_BODY_STATUSES.has(status)) {
-            message.resume();
-            resolve(new Response(null, { status, headers }));
-            return;
+        // A throw here would escape as an uncaughtException and leave the promise open.
+        try {
+            const status = message.statusCode ?? 502;
+            if (status < 200 || status > 599) {
+                // llhttp accepts any three-digit status; a web Response only 200 to 599.
+                message.destroy();
+                reject(requestError(`HTTP ${status} from ${url.href}`));
+                return;
+            }
+            const headers = toHeaders(message);
+            if (NULL_BODY_STATUSES.has(status)) {
+                message.resume();
+                resolve(new Response(null, { status, headers }));
+                return;
+            }
+            const body = Readable.toWeb(decodedBody(message, headers)) as ReadableStream<Uint8Array>;
+            resolve(new Response(body, { status, headers }));
+        } catch (error) {
+            message.destroy();
+            reject(error);
         }
-        const body = Readable.toWeb(decodedBody(message, headers)) as ReadableStream<Uint8Array>;
-        resolve(new Response(body, { status, headers }));
     });
     request.on('error', reject);
     request.end();
