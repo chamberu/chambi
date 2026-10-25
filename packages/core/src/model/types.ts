@@ -33,7 +33,7 @@ export type ModelCheckOptions = {
     model?: ModelRef;
     models?: IModelResolver;
 };
-// #endregion
+// #endregion public
 
 /** What the engine provides under MODEL_CONTEXT (internal). */
 export type ModelContext = {
