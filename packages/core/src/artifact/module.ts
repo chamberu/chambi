@@ -9,8 +9,14 @@ import { randomUUID } from 'node:crypto';
 import type { IClock } from '../clock/index.ts';
 import { InvalidRunStateError } from '../errors/index.ts';
 import type { IArtifactStore } from '../store/types.ts';
+import { ARTIFACT_URI_PREFIX } from './constants.ts';
 import { assertArtifactInput } from './helpers.ts';
-import type { Artifact, ArtifactInput, IRunArtifacts } from './types.ts';
+import type {
+    Artifact,
+    ArtifactFilePart,
+    ArtifactInput,
+    IRunArtifacts,
+} from './types.ts';
 
 /**
  * Stores `input` (validated already) as an artifact of the run under `id`
@@ -72,5 +78,21 @@ export function createRunArtifacts(
         list() {
             return store.listArtifacts(run.id);
         },
+    };
+}
+
+/**
+ * The file item a tool's `toModelOutput` returns for an artifact (e.g. one
+ * it stored with `context.artifacts.put()`): the data is the artifact's
+ * marker, so the tool step and every checkpoint keep the id only, and the
+ * engine hands the model the bytes before each model call (also after a
+ * resume). The artifact must belong to the run.
+ */
+export function artifactFilePart(artifact: Pick<Artifact, 'id' | 'mediaType' | 'filename'>): ArtifactFilePart {
+    return {
+        type: 'file',
+        mediaType: artifact.mediaType,
+        ...(artifact.filename === undefined ? {} : { filename: artifact.filename }),
+        data: { type: 'data', data: `${ARTIFACT_URI_PREFIX}${artifact.id}` },
     };
 }
