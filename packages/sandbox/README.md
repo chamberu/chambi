@@ -94,14 +94,18 @@ await workspaces.close();
 
 | Tool | Input | Result |
 |---|---|---|
-| `create_workspace` | `{ repo?, ref?, image? }` | `{ workspace, root: '/workspace', repo, ref, commit, image, expiresAt, reused }` |
+| `create_workspace` | `{ repo?, ref?, image? }` | `{ workspace, root: '/workspace', repo, ref, commit, defaultBranch, image, expiresAt, reused }` |
 | `dispose_workspace` | `{ workspace? }` | `{ workspace, disposed: true }` |
+| `git_fetch` | `{ remote?, refspec?, workspace? }` | `{ workspace, remote, refspec, exitCode, stdout, stderr, timedOut }` |
+| `git_pull` | `{ remote?, branch?, rebase?, workspace? }` | the same plus `{ branch, rebase, step }` |
+| `git_push` | `{ remote?, branch?, force?, setUpstream?, workspace? }` | the same plus `{ branch, commit, pushed, forced }` |
 
 - `create_workspace` with a `repo` checks it out with its full history at `ref` (default: the default branch), a branch tracking `origin/<ref>` and the default branch fetched next to it (`defaultBranch` in the result); without one the workspace is an empty `git init`-ed directory (for "install the published package and run a repro script"). Calling it again for the same repository returns the same workspace with `reused: true`; another `ref` or `image` of a held repository is an error telling the model to dispose it first.
 - `image` picks any container image (`python:3.13`, `rust:1`); the manager's `allowImage(image)` narrows it, and a refused or malformed reference is a `ValidationError`. The image needs `sh`, `git` and a GNU `timeout` that takes `-k`; the provider probes them before the checkout and names what is missing. Without it the workspace runs the manager's `image`, else the provider's (`sandbox-dev`, where `mise use -g node@22` installs any toolchain).
 - A run holds at most `maxWorkspacesPerRun` (3) workspaces at once.
 - A workspace id of another run is "not found", never that workspace: ids land in stored steps that other readers may see.
-- Neither tool is an effect tool: a workspace can be removed, expire or be collected, while an effect record would survive in the store and skip the redone step on a fresh workspace.
+- `git_fetch`, `git_pull` and `git_push` authenticate with the run's [git credentials](#git-credentials) and pass the repository URL on the command line, never trusting `remote.*.url`; `remote` names another repository (a fork), checked like `repo`. A rejected push or a merge conflict comes back in the result, not as an error.
+- No tool is an effect tool: a workspace can be removed, expire or be collected, while an effect record would survive in the store and skip the redone step on a fresh workspace.
 
 ## Lifecycle
 
@@ -155,6 +159,26 @@ A ref matches `^[A-Za-z0-9][A-Za-z0-9._/+-]{0,254}$` without `..`, `//`, `@{`, a
 
 The checkout runs inside the workspace through its own `exec`, the same commands on every provider: `git init -q .`, `git remote add origin <url>`, `git ls-remote --symref <url> HEAD` (the default branch, `info.defaultBranch`), `git fetch -q [--depth <n>] origin <ref or the default branch> [<default branch>]` (full history unless the manager's `depth` is set), `git checkout -q -B <ref> --track origin/<ref>` for a branch or a detached `FETCH_HEAD` for a tag or commit, `git rev-parse HEAD` (`info.commit`), then `git config chamvi.defaultBranch <branch>` and, last, `git config chamvi.checkout <commit or none>`, so a workspace whose create died during the checkout is never found again. The remote calls reset every credential helper and disable hooks (`-c credential.helper= -c core.hooksPath=/dev/null`); with a credential they run through the one-shot helper described under [Git credentials](#git-credentials). A failed step disposes the workspace and throws a `SandboxError` with git's stderr (first 2000 characters).
 
+## Git credentials
+
+Private repositories and pushes take `credentials` on the manager, one source or a list (the first answer wins, none is anonymous):
+
+```ts
+import { createWorkspaceManager, staticGitCredentials } from '@chamvi/sandbox';
+
+const workspaces = createWorkspaceManager({
+    provider,
+    credentials: staticGitCredentials([{ host: 'github.com', path: 'acme', token: process.env.GITHUB_TOKEN! }]),
+    author: { name: 'acme-bot', email: 'bot@acme.dev' },
+    push: { allowForce: true },
+});
+```
+
+- `staticGitCredentials([{ host, path?, username?, token }])`: GitHub (`x-access-token`), GitLab (`oauth2`) or any https host; `path` narrows to an owner or repository, the longest match wins. `githubAppCredentials(app)` from `@chamvi/github` issues repository-scoped App tokens.
+- `credentialMode: 'workspace'` (default): a credential helper and a 0600 file in the workspace's `$HOME/.chamvi/`, refreshed before a command once a token expires within ten minutes, so plain git in `bash` works; every result, file read and error the manager hands out has the issued tokens replaced by `[redacted]`. `'tools'`: no credential in the workspace, only the checkout and the git tools authenticate, each through a one-shot helper reading the token from stdin.
+- `push`: `mode` `'auto'` (default) or `'approve'` (asks through `approve()`, the run's source channel first), `allowForce` (default `false`, force is always `--force-with-lease`), `allowBranch(branch, ctx)` (default: every branch but the default branch). In `workspace` mode it binds `git_push` only, not a `git push` in `bash`.
+- `depth` makes the checkout shallow; `author` sets `GIT_AUTHOR_*` and `GIT_COMMITTER_*`.
+
 ## Limits and environment
 
 | Limit | Default | Local | Docker | Kubernetes |
@@ -174,7 +198,7 @@ No host environment reaches a workspace. Containers and pods get `SANDBOX_ENV` (
 - **Untrusted code**: the model decides what runs, and an issue body or a README it reads can steer it (prompt injection). Run untrusted repositories on Docker or Kubernetes, never local, and put `bash` behind an approval where a human should see each command: a `beforeToolExecution` hook on the agent that calls `approve()` for `toolName === 'bash'` (see [`@chamvi/coding`](../coding#usage)).
 - **Permissive inside, strict at the edge**: Docker and Kubernetes workspaces run as root with a writable root filesystem by default, so `apt` and every package manager work; the container is the boundary (no privileged mode, only the package-manager capabilities, `no-new-privileges`, no host mount but the cache). The providers' `user` and `readOnlyRoot` restore the hardened mode.
 - **Shared cache**: the default cache volume is shared by every run and agent of a host (or a claim): a malicious package one run fetched can sit in another run's cache. Turn it off per provider (`cache: false` on Docker, no `cache` claim on Kubernetes, `cache: false` locally) where runs must not influence each other.
-- **No credentials**: repository URLs with credentials are refused, `credential.helper` is reset for the fetch, and no token, service account or host variable enters a workspace. Private repositories are not supported yet.
+- **Credentials**: repository URLs with credentials are refused, every configured credential helper is reset for chamvi's git calls, and no service account or host variable enters a workspace. Tokens never reach a URL, the environment, a result or an error: in `credentialMode: 'workspace'` a short-lived one sits in a 0600 file the model can read, redacted from everything it sees; `'tools'` keeps it out of the workspace.
 - **Not a network boundary**: a container sandbox stops code from touching the host, not from reaching the network. On a Docker `bridge` network a workspace reaches the host gateway (the chamvi API, Postgres), other containers and cloud metadata (`169.254.169.254`); on Kubernetes every cluster service by DNS. Add an egress firewall or a NetworkPolicy (the Helm chart's is planned), and narrow `allowRepo`.
 
 ## Writing a provider
@@ -206,7 +230,7 @@ A missing manager throws `ContextNotProvidedError` naming `sandbox` (in the fact
 
 ## With @chamvi/app
 
-`sandboxModule()` from `@chamvi/sandbox/module` picks the provider from `CHAMVI_SANDBOX_PROVIDER` (`local`, `docker`, `kubernetes`), else `options.provider`, else `local`, builds the manager when it is called (`.manager` at once), imports the provider package on start (`@chamvi/sandbox-local`, `@chamvi/sandbox-docker` or `@chamvi/sandbox-k8s`; install the one you use beside `@chamvi/sandbox`, it is no declared peer; under Yarn PnP or pnpm with `hoist=false`, where `@chamvi/sandbox` cannot resolve an undeclared package, pass a built provider instead: `sandboxModule({ provider: createDockerSandbox() })`), attaches the manager, provides it on the engine and closes it after the engine drained. `@chamvi/app` is an optional peer; the main entry never imports it.
+`sandboxModule()` from `@chamvi/sandbox/module` picks the provider from `CHAMVI_SANDBOX_PROVIDER` (`local`, `docker`, `kubernetes`), else `options.provider`, else `local`, builds the manager when it is called (`.manager` at once; git tokens from `CHAMVI_GIT_TOKENS` as JSON and the mode from `CHAMVI_GIT_CREDENTIAL_MODE`, plus the sources other modules contribute, e.g. `githubModule()`'s App), imports the provider package on start (`@chamvi/sandbox-local`, `@chamvi/sandbox-docker` or `@chamvi/sandbox-k8s`; install the one you use beside `@chamvi/sandbox`, it is no declared peer; under Yarn PnP or pnpm with `hoist=false`, where `@chamvi/sandbox` cannot resolve an undeclared package, pass a built provider instead: `sandboxModule({ provider: createDockerSandbox() })`), attaches the manager, provides it on the engine and closes it after the engine drained. `@chamvi/app` is an optional peer; the main entry never imports it.
 
 ```ts
 import { createApp } from '@chamvi/app';
@@ -230,8 +254,13 @@ export default createApp({ agents: [coder], modules: [sandboxModule({ provider: 
 | `allowImage` | `(image) => boolean` | every image | Narrows the images `create_workspace` may ask for |
 | `maxWorkspacesPerRun` | `number` | `3` | Workspaces one run may hold at once |
 | `gcIntervalMs` | `number` | `600_000` | Minimum interval between the collections `acquire` starts; `0` disables them |
-| `clock` | `IClock` | `systemClock` | Expiry and the collection interval |
-| `onError` | `(error) => void` | `console.error` | Background failures (disposal, garbage collection) |
+| `credentials` | `IGitCredentials \| IGitCredentials[]` | none | Git credential sources, the first answer wins |
+| `credentialMode` | `'workspace' \| 'tools'` | `'workspace'` | How a token reaches git |
+| `depth` | `number` | full history | A shallow checkout |
+| `author` | `{ name, email }` | none | The commit identity |
+| `push` | `PushPolicy` | auto, no force, not the default branch | What `git_push` may push |
+| `clock` | `IClock` | `systemClock` | Expiry, the collection interval, token refreshes |
+| `onError` | `(error) => void` | `console.error` | Background failures (disposal, garbage collection, credential refreshes) |
 
 Misconfiguration throws core `InvalidAgentDefinitionError`.
 
@@ -240,9 +269,10 @@ Misconfiguration throws core `InvalidAgentDefinitionError`.
 | Export | Kind | Purpose |
 |---|---|---|
 | `createWorkspaceManager` | function | Run-scoped workspaces and the workspace tools |
+| `staticGitCredentials` | function | Git credentials from tokens |
 | `provideSandboxContext`, `injectSandboxContext` | function | Provide the manager on the engine, read it from a `ToolContext` |
 | `createRemoteWorkspace` | function | An `IWorkspace` over an `IExecTransport` |
-| `prepareWorkspace` | function | The checkout inside a workspace |
+| `prepareWorkspace`, `readCheckout` | function | The checkout inside a workspace, its recorded commit and default branch |
 | `normalizeRepo`, `assertGitRef` | function | Repository and ref rules |
 | `resolveWorkspacePath` | function | Path rule |
 | `resolveLimits`, `parseCpu`, `parseMemory`, `assertSandboxEnv` | function | Limits and environment rules |
@@ -250,11 +280,12 @@ Misconfiguration throws core `InvalidAgentDefinitionError`.
 | `createOutputCollector` | function | A capped output stream collector |
 | `WORKSPACE_ROOT`, `WORKSPACE_HOME`, `OUTPUT_MAX_BYTES`, `FILE_MAX_BYTES`, `EXEC_TIMEOUT_MS`, `EXEC_TIMEOUT_MAX_MS`, `SANDBOX_ENV` | constant | Workspace rules |
 | `DEFAULT_LIMITS`, `DEFAULT_SANDBOX_IMAGE`, `TMP_SIZE`, `SANDBOX_LABELS`, `RUN_LABEL`, `WORKSPACE_LABEL`, `EXPIRES_AT_KEY` | constant | Provider defaults and labels |
-| `MAX_WORKSPACES_PER_RUN`, `GC_INTERVAL_MS`, `CLOSE_TIMEOUT_MS` | constant | Manager defaults |
+| `MAX_WORKSPACES_PER_RUN`, `GC_INTERVAL_MS`, `CLOSE_TIMEOUT_MS`, `CREDENTIAL_INSTALL_TIMEOUT_MS`, `PUSH_LOG_MAX_COMMITS` | constant | Manager defaults |
+| `REDACTED`, `CREDENTIAL_REFRESH_MS`, `CREDENTIAL_RETRY_MS`, `CREDENTIALS_FILE`, `REDACT_MIN_LENGTH` | constant | Git credential handling |
 | `TIMEOUT_KILL_AFTER_SECONDS`, `EXEC_GRACE_MS`, `ALIVE_PROBE_TIMEOUT_MS` | constant | Remote timeout handling and the liveness probe bound |
 | `CACHE_DIR`, `CACHE_ENV`, `ROOT_CAPABILITIES`, `IMAGE_REQUIREMENTS`, `IMAGE_PROBE_TIMEOUT_MS` | constant | The cache mount and variables, the root capability set, the image probe |
 
-Types: `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult`, `ISandboxProvider`, `WorkspaceCreateOptions`, `SandboxLimits`, `IExecTransport`, `TransportExecOptions`, `TransportExecResult`, `RemoteWorkspaceInput`, `IWorkspaceManager`, `WorkspaceManagerOptions`, `AcquireInput`, `AcquireResult`, `CloseOptions`, `WorkspaceToolResult`, `DisposeWorkspaceResult`, `IOutputCollector`, `NormalizeRepoOptions`.
+Types: `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult`, `ISandboxProvider`, `WorkspaceCreateOptions`, `SandboxLimits`, `IExecTransport`, `TransportExecOptions`, `TransportExecResult`, `RemoteWorkspaceInput`, `IWorkspaceManager`, `WorkspaceManagerOptions`, `AcquireInput`, `AcquireResult`, `CloseOptions`, `WorkspaceToolResult`, `DisposeWorkspaceResult`, `GitToolResult`, `GitFetchResult`, `GitPullResult`, `GitPushResult`, `GitAuthor`, `PushPolicy`, `IOutputCollector`, `NormalizeRepoOptions`, `CheckoutOptions`, `IGitCredentials`, `GitCredential`, `GitCredentialRequest`, `GitAccess`, `StaticGitCredential`, `CredentialMode`, `Redactor`.
 
 `@chamvi/sandbox/module`: `sandboxModule`, `SandboxModule`, `SANDBOX_MODULE_NAME`, `SANDBOX_PROVIDER_NAMES`, types `SandboxModuleOptions`, `SandboxProviderName`.
 
