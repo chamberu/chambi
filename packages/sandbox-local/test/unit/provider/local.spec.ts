@@ -28,6 +28,7 @@ import { InvalidAgentDefinitionError, SandboxError, ValidationError } from '@cha
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import { ControllableClock, createGitFixture } from '@chamvi/test-kit';
 import { KILL_GRACE_MS, LINGER_CHECK_MS } from '../../../src/provider/constants.ts';
+import { killLingeringJobs } from '../../../src/provider/exit.ts';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -213,6 +214,23 @@ describe('local sandbox', () => {
             expect(kill).not.toHaveBeenCalledWith(-group, 'SIGKILL');
         } finally {
             vi.restoreAllMocks();
+            await workspace.dispose();
+        }
+    }, 30_000);
+
+    it('kills the background jobs of its open workspaces when the process exits, keeping the folders', async () => {
+        const workspace = await createLocalSandbox({ root }).create({ runId: 'r1' });
+        try {
+            const { stdout } = await workspace.exec(['sh', '-c', 'sleep 600 >/dev/null 2>&1 & echo $!']);
+            const job = Number(stdout.trim());
+            expect(isAlive(job)).toBe(true);
+            expect(process.listeners('exit')).toContain(killLingeringJobs);
+
+            killLingeringJobs();
+            await waitFor(async () => (isAlive(job) ? undefined : true), 5_000);
+            expect(workspace.disposed).toBe(false);
+            expect(await readdir(join(root, workspace.id))).toContain('workspace.json');
+        } finally {
             await workspace.dispose();
         }
     }, 30_000);
