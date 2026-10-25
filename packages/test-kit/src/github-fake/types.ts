@@ -55,6 +55,10 @@ export type FakeGithub = {
     releases: Map<string, Array<Record<string, unknown>>>;
     files: Map<string, Record<string, unknown>>;
     pulls: Map<string, Record<string, unknown>>;
+    /** The installation of a repository (`owner/repo`, lower case) for `GET /repos/:owner/:repo/installation` (App JWT); 404 when missing. */
+    installations: Map<string, number>;
+    /** The user id of a login for `GET /users/:login` (public, no credentials needed); 404 when missing. */
+    users: Map<string, number>;
     /** Adds a route (it wins over the built-in ones) for an installation token, e.g. `route('GET', '/repos/:owner/:repo/issues/:number', ...)`. */
     route(method: string, path: string, handler: FakeRouteHandler): void;
     /** The next request matching method and path answers `status` (once). */
