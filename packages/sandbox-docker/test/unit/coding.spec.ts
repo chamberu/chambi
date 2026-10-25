@@ -411,6 +411,8 @@ describeDocker('coding tools with HOME on a small /tmp', () => {
                 readOnlyRoot: true,
                 tmpSize: '16Mi',
             }),
+            // HOME (and with it the output logs of bash) on the small /tmp; by default it is a disk volume
+            env: { HOME: '/tmp' },
             gcIntervalMs: 0,
         });
         await manager.acquire(runId, {});
