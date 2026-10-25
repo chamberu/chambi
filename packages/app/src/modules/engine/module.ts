@@ -5,10 +5,12 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { Engine } from '@chamvi/core';
+import { Engine, InvalidAgentDefinitionError } from '@chamvi/core';
+import type { IModelResolver, ModelRef } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
-import { installDefaultProvider, resolveModels } from '../../models/module.ts';
+import { createModelResolver } from '../../models/resolver.ts';
+import { readModelSettings } from '../../models/settings.ts';
 import { AppToken, ModuleName } from '../../module/constants.ts';
 import { runHooks } from '../../module/helpers.ts';
 import { registerStartStep } from '../../module/start.ts';
@@ -16,11 +18,12 @@ import type { EngineModuleOptions } from './types.ts';
 
 /**
  * Builds the `Engine` (start and job mode; nothing in migrate mode). `setup`
- * checks every string model against the provider registry, installs it as
- * the AI SDK default provider, unless one is set already, and registers that
- * check as `MODEL_CHECK` (a no-op with a preset provider); `onReady` builds the
- * engine with every `CHANNELS` contribution (two of one name, or a
- * subscription of a channel nobody contributed, is InvalidAgentDefinitionError),
+ * reads the model settings (env over the config file over createApp's
+ * `model`/`providers`; every issue in one InvalidAgentDefinitionError) and
+ * builds the model resolver; `onReady` builds the engine with the default
+ * model, the resolver (which refuses an agent whose model cannot resolve) and
+ * every `CHANNELS` contribution (two of one name, or a subscription of a
+ * channel nobody contributed, is InvalidAgentDefinitionError),
  * registers `ENGINE`, runs the `engineCreated` hooks and, in start mode,
  * registers its start step (run once every module's `onReady` checked its
  * configuration): `engine.start()`, which starts the channels; a job starts
@@ -36,7 +39,9 @@ export class EngineModule implements IModule {
 
     protected engine: Engine | undefined;
 
-    protected restore: (() => void) | undefined;
+    protected model: ModelRef | undefined;
+
+    protected models: IModelResolver | undefined;
 
     constructor(options: EngineModuleOptions = {}) {
         this.options = options;
@@ -48,19 +53,19 @@ export class EngineModule implements IModule {
             return;
         }
 
-        if (globalThis.AI_SDK_DEFAULT_PROVIDER !== undefined) {
-            container.resolve(AppToken.LOGGER).debug('a default provider is set; chamvi leaves model strings to it');
-            container.register(AppToken.MODEL_CHECK, { useValue: () => undefined });
-            return;
+        const { settings, issues } = await readModelSettings({
+            env: context.env,
+            cwd: process.cwd(),
+            ...(context.model !== undefined && { model: context.model }),
+            ...(context.providers !== undefined && { providers: context.providers }),
+        });
+        if (issues.length > 0) {
+            const lines = issues.map((issue) => `- ${issue.message}`);
+            throw new InvalidAgentDefinitionError(`The model settings have ${issues.length} issue(s):\n${lines.join('\n')}`);
         }
 
-        const { registry, check } = await resolveModels({
-            agents: context.agents,
-            env: context.env,
-            models: context.models,
-        });
-        container.register(AppToken.MODEL_CHECK, { useValue: check });
-        this.restore = installDefaultProvider(registry);
+        this.model = settings.model?.ref;
+        this.models = await createModelResolver(settings, { ...(context.models !== undefined && { models: context.models }) });
     }
 
     async onReady(container: IContainer): Promise<void> {
@@ -75,6 +80,8 @@ export class EngineModule implements IModule {
         const engine = new Engine({
             store: container.resolve(AppToken.STORE),
             agents: [...context.agents],
+            ...(this.model !== undefined && { model: this.model }),
+            ...(this.models !== undefined && { models: this.models }),
             channels: container.resolveAll(AppToken.CHANNELS),
             maxConcurrentRuns: config.engine.maxConcurrentRuns,
             clock: container.resolve(AppToken.CLOCK),
@@ -94,18 +101,13 @@ export class EngineModule implements IModule {
     }
 
     async teardown(container: IContainer): Promise<void> {
-        const { engine, restore } = this;
+        const { engine } = this;
         this.engine = undefined;
-        this.restore = undefined;
 
-        try {
-            if (engine) {
-                // a no-op once createShutdown or runJob drained it
-                await engine.drain({ timeoutMs: container.resolve(AppToken.CONFIG).http.drainTimeoutMs });
-                await runHooks(container, 'drained');
-            }
-        } finally {
-            restore?.();
+        if (engine) {
+            // a no-op once createShutdown or runJob drained it
+            await engine.drain({ timeoutMs: container.resolve(AppToken.CONFIG).http.drainTimeoutMs });
+            await runHooks(container, 'drained');
         }
     }
 }

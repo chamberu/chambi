@@ -123,7 +123,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         try {
             await engine.putAgent(loaded.agent, { revision: hash });
         } catch (error) {
-            // refused before any store write (a subscription to an unknown channel): an issue until the content changes
+            // refused before any store write (a model that cannot resolve, a subscription to an unknown channel): an issue until the content changes
             if (error instanceof InvalidAgentDefinitionError) {
                 record(name, relativize(messageOf(error), root));
                 return 'done';

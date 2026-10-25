@@ -66,7 +66,6 @@ let harnesses: ModuleHarness[] = [];
 afterEach(async () => {
     await Promise.all(harnesses.map((h) => h.stop()));
     harnesses = [];
-    globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
 });
 
 describe('githubModule', () => {

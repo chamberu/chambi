@@ -33,7 +33,6 @@ export const AppToken = {
     LIFECYCLE_HOOKS: token('LIFECYCLE_HOOKS'),
     AGENT_ISSUES: token('AGENT_ISSUES'),
     AGENT_CHECKS: token('AGENT_CHECKS'),
-    MODEL_CHECK: token('MODEL_CHECK'),
 } as const;
 
 /**

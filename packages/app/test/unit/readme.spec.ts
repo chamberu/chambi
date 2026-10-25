@@ -6,24 +6,17 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { customProvider } from 'ai';
 import {
-    afterEach,
     describe,
     expect,
     it,
 } from 'vitest';
 import app from '../fixtures/readme-example.ts';
-import { textModel } from '../utils/model.ts';
 import { freePort } from '../utils/port.ts';
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
 describe('README example', () => {
-    afterEach(() => {
-        globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
-    });
-
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = Array.from(readme.matchAll(/```typescript\n([\s\S]*?)```/g), (m) => m[1]);
@@ -31,9 +24,6 @@ describe('README example', () => {
     });
 
     it('starts and stops', async () => {
-        // a preset default provider: chamvi leaves model strings to it
-        globalThis.AI_SDK_DEFAULT_PROVIDER = customProvider({ languageModels: { 'anthropic/claude-sonnet-5-5': textModel() } }) as never;
-
         const port = await freePort();
         await app.start({
             env: {
@@ -44,6 +34,8 @@ describe('README example', () => {
                 }]),
                 PORT: String(port),
                 HOST: '127.0.0.1',
+                // builds the anthropic provider; nothing calls the model
+                ANTHROPIC_API_KEY: 'sk-test',
             },
         });
 

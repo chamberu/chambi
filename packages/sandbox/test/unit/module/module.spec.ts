@@ -98,7 +98,6 @@ afterEach(async () => {
     managers = [];
     await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
     roots = [];
-    globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
 });
 
 async function harnessWith(module: IModule, options: {

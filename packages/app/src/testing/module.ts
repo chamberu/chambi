@@ -36,6 +36,8 @@ export function buildModuleHarness(options: ModuleHarnessOptions = {}): ModuleHa
         signal: controller.signal,
         report,
         models: options.models,
+        ...(options.model !== undefined && { model: options.model }),
+        ...(options.providers !== undefined && { providers: options.providers }),
         agents: options.agents ?? [],
     };
 

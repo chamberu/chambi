@@ -11,6 +11,7 @@ import type {
     IChannel,
     IClock,
     IStore,
+    ModelRef,
 } from '@chamvi/core';
 import type {
     AgentIssue,
@@ -22,7 +23,7 @@ import type { DataSource } from 'typeorm';
 import type { AppConfig } from '../config/types.ts';
 import type { Env } from '../env/types.ts';
 import type { ILogger } from '../logger/types.ts';
-import type { ModelCheck, ModelProviders } from '../models/types.ts';
+import type { ModelProviders, ProviderConfig } from '../models/types.ts';
 
 /** The container and module contracts a module factory is written against (eldin, orkos). */
 export type { IContainer } from 'eldin';
@@ -38,8 +39,12 @@ export type AppContext = {
     signal: AbortSignal;
     /** Logs through the app logger; during stop() also counts as a stop failure. */
     report(error: unknown, context?: Record<string, unknown>): void;
-    /** createApp's `models`. */
+    /** createApp's `models`: AI SDK providers by id, winning over every provider setting for their ids. */
     models?: ModelProviders;
+    /** createApp's `model`: the default model of agents without one (CHAMVI_MODEL and the config file win). */
+    model?: ModelRef;
+    /** createApp's `providers` (env and the config file win per field). */
+    providers?: Readonly<Record<string, ProviderConfig>>;
     /** createApp's agents (the code agents); the live set is `engine.listAgents()`. */
     agents: readonly Agent[];
 };
@@ -101,6 +106,4 @@ export type AppTokens = {
     AGENT_ISSUES: () => readonly AgentIssue[];
     /** A collection: every module's check of a folder agent before it is registered. */
     AGENT_CHECKS: AgentCheck;
-    /** Checks an agent registered after setup (a folder agent) like setup checks the code agents; a no-op with a preset default provider. */
-    MODEL_CHECK: ModelCheck;
 };

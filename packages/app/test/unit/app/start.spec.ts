@@ -53,7 +53,6 @@ let apps: IApp[] = [];
 afterEach(async () => {
     await Promise.all(apps.map((app) => app.stop().catch(() => {})));
     apps = [];
-    globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
 });
 
 function track(app: IApp): IApp {

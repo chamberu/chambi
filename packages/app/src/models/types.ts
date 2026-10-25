@@ -5,16 +5,11 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Agent, IModelResolver, ModelRef } from '@chamvi/core';
-import type { ProviderRegistryProvider, createProviderRegistry } from 'ai';
-import type { Env } from '../env/types.ts';
-import type { MODEL_SEPARATOR } from './constants.ts';
+import type { IModelResolver, ModelRef } from '@chamvi/core';
+import type { createProviderRegistry } from 'ai';
 
 /** createApp's `models`: providers by id, as `createProviderRegistry()` takes them. */
 export type ModelProviders = Parameters<typeof createProviderRegistry>[0];
-
-/** The registry model strings resolve through: `<provider>/<model>`. */
-export type ModelRegistry = ProviderRegistryProvider<ModelProviders, typeof MODEL_SEPARATOR>;
 
 /** What a provider is built with: the AI SDK package and factory behind a provider name. */
 export type ProviderType = 'anthropic' | 'openai' | 'openai-compatible' | 'google' | 'mistral' | 'xai' | 'gateway';
@@ -65,9 +60,9 @@ export type ModelIssue = {
     message: string;
 };
 
-/** A provider package `createModelRegistry()` discovers when it is installed. */
+/** A built-in provider id, its package and the bare env variables it reads. */
 export type BuiltinProvider = {
-    /** The registry id, the part of a model string before the first `/`. */
+    /** The provider name, the part of a model string before the first `/`. */
     id: string;
     /** The npm package. */
     package: string;
@@ -77,23 +72,6 @@ export type BuiltinProvider = {
     apiKey: string;
     /** The env variable holding a base URL, when the provider reads one. */
     baseUrl?: string;
-};
-
-export type ModelRegistryOptions = {
-    agents: readonly Agent[];
-    env: Env;
-    models?: ModelProviders;
-    /** Loads a provider package; default `(s) => import(s)`. */
-    importer?: (specifier: string) => Promise<unknown>;
-};
-
-/** Throws InvalidAgentDefinitionError when the agent's string model cannot resolve (a non-string model passes). */
-export type ModelCheck = (agent: Agent) => void;
-
-export type ResolvedModels = {
-    registry: ModelRegistry;
-    /** The check every agent of `agents` passed, for agents registered later (folder agents). */
-    check: ModelCheck;
 };
 
 /** createModelResolver's options. */

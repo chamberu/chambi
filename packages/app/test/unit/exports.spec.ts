@@ -18,9 +18,6 @@ describe('public api', () => {
         'readConfig',
         'approvalUrlOf',
         'createLogger',
-        'createModelRegistry',
-        'installDefaultProvider',
-        'resolveModels',
         'runHooks',
         'throwIfStopped',
         'envString',
@@ -54,9 +51,15 @@ describe('public api', () => {
         'inject',
         'tryInject',
         'agentPermission',
+        'resolveModel',
+        'checkAgentModel',
     ])('exports %s', (name) => {
         expect(app).toHaveProperty(name);
         expect(app[name as keyof typeof app]).toBeTypeOf('function');
+    });
+
+    it.each(['createModelRegistry', 'installDefaultProvider', 'resolveModels'])('does not export %s', (name) => {
+        expect(app).not.toHaveProperty(name);
     });
 
     it.each(['cron', 'http', 'webhook'])('exports the %s subscription builder', (name) => {
@@ -92,7 +95,6 @@ describe('public api', () => {
             'HTTP_ROUTES',
             'LIFECYCLE_HOOKS',
             'LOGGER',
-            'MODEL_CHECK',
             'SERVER',
             'SHUTDOWN',
             'STORE',

@@ -113,12 +113,10 @@ export class AgentsModule implements IModule {
     }
 }
 
-/** The model check, then every module's `AGENT_CHECKS` contribution. */
+/** Every module's `AGENT_CHECKS` contribution (the model is checked by `putAgent`, which refuses before any store write). */
 function createAgentCheck(container: IContainer): AgentCheck {
-    const model = container.has(AppToken.MODEL_CHECK) ? container.resolve(AppToken.MODEL_CHECK) : undefined;
     const checks = container.resolveAll(AppToken.AGENT_CHECKS);
     return (agent) => {
-        model?.(agent);
         for (const check of checks) check(agent);
     };
 }

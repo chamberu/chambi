@@ -116,4 +116,23 @@ describe('createApp', () => {
         expect(() => createApp({ agents: 'triage' } as never)).toThrow(InvalidAgentDefinitionError);
         expect(() => createApp(undefined as never)).toThrow(InvalidAgentDefinitionError);
     });
+
+    it.each([[''], [42], [null]])('throws for the model %j', (model) => {
+        expect(() => createApp({ model } as never)).toThrow(new InvalidAgentDefinitionError(
+            'createApp\'s model must be a "<provider>/<model>" string or a LanguageModel object.',
+        ));
+    });
+
+    it.each([['anthropic'], [[]], [null]])('throws for the providers %j', (providers) => {
+        expect(() => createApp({ providers } as never)).toThrow(new InvalidAgentDefinitionError(
+            'createApp\'s providers must be an object of provider configs by name.',
+        ));
+    });
+
+    it('takes a string model and providers', () => {
+        expect(() => createApp({
+            model: 'local/m',
+            providers: { local: { type: 'openai-compatible', baseURL: 'http://127.0.0.1:11434/v1' } },
+        })).not.toThrow();
+    });
 });
