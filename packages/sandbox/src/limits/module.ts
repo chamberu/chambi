@@ -43,7 +43,7 @@ export function parseMemory(value: string): number {
  * `undefined` value keeps the earlier one). Every given value is checked:
  * cpu, memory and storage parse to more than zero, pids is an integer of at
  * least 1, maxLifetimeMs an integer of at least 1_000 (exec timeouts are
- * capped separately). InvalidAgentDefinitionError otherwise.
+ * capped separately); the former `timeoutMs` is refused. InvalidAgentDefinitionError otherwise.
  */
 export function resolveLimits(...layers: Array<SandboxLimits | undefined>): Required<SandboxLimits> {
     const limits: Required<SandboxLimits> = { ...DEFAULT_LIMITS };
@@ -51,6 +51,10 @@ export function resolveLimits(...layers: Array<SandboxLimits | undefined>): Requ
         if (layer === undefined) continue;
         if (!isObject(layer)) {
             throw new InvalidAgentDefinitionError('limits must be an object.');
+        }
+        // renamed: dropping it silently would give a week-long workspace
+        if ((layer as { timeoutMs?: unknown }).timeoutMs !== undefined) {
+            throw new InvalidAgentDefinitionError('limits.timeoutMs was renamed: use limits.maxLifetimeMs (the workspace lifetime in ms).');
         }
         if (layer.cpu !== undefined) {
             assertPositiveQuantity('cpu', layer.cpu, parseCpu);
