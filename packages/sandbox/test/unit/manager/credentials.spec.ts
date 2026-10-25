@@ -16,7 +16,7 @@ import type {
     IGitCredentials,
     WorkspaceManagerOptions,
 } from '@chamvi/sandbox';
-import { INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
+import { INSTALL_CREDENTIALS_SCRIPT, READ_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { createFakeProvider } from '../../utils/provider.ts';
 import type { ScriptedWorkspace } from '../../utils/workspace.ts';
@@ -277,6 +277,39 @@ describe('workspace manager credentials', () => {
             clock.advance(60_000);
             await workspace.exec(['true']);
             expect(installs(raw)).toHaveLength(4);
+        });
+
+        it('redacts the tokens an earlier process wrote into a workspace found again', async () => {
+            const OLD = 'ghs_writtenByTheProcessBeforeTheRestart';
+            const file = `https://github.com/octo/demo\tx-access-token\t${OLD}\n`;
+            const {
+                manager, 
+                provider, 
+                build, 
+            } = setup({}, (argv) => (argv[0] === 'sh' && argv[2] === READ_CREDENTIALS_SCRIPT ? { stdout: file } : {}));
+            const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+            const raw = provider.workspaces.get(workspace.id)!;
+            // a workspace this process created has no earlier file to read
+            expect(raw.calls.filter((call) => call.argv[2] === READ_CREDENTIALS_SCRIPT)).toHaveLength(0);
+            raw.files.set('/workspace/notes.txt', `token ${OLD}`);
+
+            const found = await build().get('r1');
+            await expect(found.readFile('/workspace/notes.txt')).resolves.toBe('token [redacted]');
+            await expect(found.exec(['cat', 'notes.txt'])).resolves.toBeDefined();
+            expect(raw.calls.filter((call) => call.argv[2] === READ_CREDENTIALS_SCRIPT)).toHaveLength(1);
+        });
+
+        it('learns the earlier tokens in tools mode too, before the first exec', async () => {
+            const OLD = 'ghs_writtenByAnEarlierWorkspaceModeProcess';
+            const file = `https://github.com/octo/demo\tx-access-token\t${OLD}\n`;
+            const { manager, build } = setup({ credentialMode: 'tools' }, (argv) => {
+                if (argv[0] === 'sh' && argv[2] === READ_CREDENTIALS_SCRIPT) return { stdout: file };
+                if (argv[0] === 'cat') return { stdout: `leaked ${OLD}\n` };
+                return {};
+            });
+            await manager.acquire('r1', { repo: 'octo/demo' });
+            const found = await build().get('r1');
+            await expect(found.exec(['cat', 'notes.txt'])).resolves.toMatchObject({ stdout: 'leaked [redacted]\n' });
         });
 
         it('installs nothing in a workspace without a repository', async () => {

@@ -107,3 +107,9 @@ export const INSTALL_CREDENTIALS_SCRIPT = [
     'git config --global --replace-all credential.helper \'!sh "$HOME/.chamvi/git-credential"\' || exit 1',
     'git config --global credential.useHttpPath true',
 ].join('\n');
+
+/**
+ * Prints the workspace's credentials file (`$HOME/.chamvi/credentials`),
+ * nothing when there is none: the tokens an earlier process installed.
+ */
+export const READ_CREDENTIALS_SCRIPT = 'f=$HOME/.chamvi/credentials; test -f "$f" && cat "$f"; exit 0';

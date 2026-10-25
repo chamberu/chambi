@@ -253,7 +253,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             }
             entry.workspace = workspace;
             entry.image ??= workspace.info.image;
-            await credentials?.refresh(workspace);
+            await credentials?.refresh(workspace, { fresh: true });
             return workspace;
         })();
     };
