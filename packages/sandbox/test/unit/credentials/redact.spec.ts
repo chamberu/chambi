@@ -46,7 +46,7 @@ describe('createRedactor', () => {
     it('rebuilds an error whose message holds a secret as a SandboxError without its cause', () => {
         const redactor = createRedactor();
         redactor.add('ghs_secret1');
-        const error = redactor.redactError(new ValidationError('bad ghs_secret1', { cause: new Error('ghs_secret1') }));
+        const error = redactor.redactError(new SandboxError('bad ghs_secret1', { cause: new Error('ghs_secret1') }));
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toBe(`bad ${REDACTED}`);
         expect((error as Error).cause).toBeUndefined();

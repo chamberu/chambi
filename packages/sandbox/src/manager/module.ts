@@ -18,8 +18,11 @@ import type { GarbageCollectOptions, WorkspaceCreateOptions } from '../provider/
 import { assertGitRef, normalizeRepo } from '../repo/module.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 import { CLOSE_TIMEOUT_MS, GC_INTERVAL_MS, MAX_WORKSPACES_PER_RUN } from './constants.ts';
+import { createCredentialSupport } from './credentials.ts';
 import {
     assertManagerOptions,
+    authorEnv,
+    credentialSources,
     isExpired,
     isTerminal,
     toSandboxError,
@@ -89,6 +92,13 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
     let lastGcAt: number | undefined;
     let closed = false;
     let tools: ToolSet | undefined;
+    const sources = credentialSources(options.credentials);
+    const credentials = sources.length === 0 ? undefined : createCredentialSupport({
+        sources,
+        mode: options.credentialMode ?? 'workspace',
+        clock,
+        onError: (error) => onError(error),
+    });
 
     /** Every disposal started and not settled yet, with its workspace id: close() waits for them. */
     const disposals = new Map<Promise<void>, string>();
@@ -206,7 +216,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         const image = entry.image ?? options.image;
         if (image !== undefined) createOptions.image = image;
         if (entry.image !== undefined && entry.image !== options.image) createOptions.imageRequested = true;
-        if (options.env !== undefined) createOptions.env = options.env;
+        if (options.env !== undefined || options.author !== undefined) createOptions.env = { ...options.env, ...authorEnv(options.author) };
         if (options.limits !== undefined) createOptions.limits = options.limits;
         createOptions.deployment = deployment;
         entry.abort = new AbortController();
@@ -217,6 +227,15 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         return (async () => {
             let workspace: IWorkspace;
             try {
+                const credential = createOptions.repo === undefined || !credentials ?
+                    undefined :
+                    await credentials.lookup(createOptions.repo, 'read', runId, createOptions.signal);
+                if (credential || options.depth !== undefined) {
+                    createOptions.checkout = {
+                        ...(options.depth !== undefined && { depth: options.depth }),
+                        ...(credential && { credential }),
+                    };
+                }
                 workspace = await provider.create(createOptions);
             } catch (error) {
                 delete entry.pending;
@@ -233,6 +252,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             }
             entry.workspace = workspace;
             entry.image ??= workspace.info.image;
+            await credentials?.refresh(workspace);
             return workspace;
         })();
     };
@@ -301,7 +321,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         return pending;
     };
 
-    const acquire = async (runId: string, input: AcquireInput): Promise<AcquireResult> => {
+    const acquireRaw = async (runId: string, input: AcquireInput): Promise<AcquireResult> => {
         if (closed) throw new SandboxError('the workspace manager is closed.');
         const repo = input.repo === undefined ?
             undefined :
@@ -407,7 +427,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         throw goneOne ? deadError(goneOne) : new SandboxError(NOT_FOUND);
     };
 
-    const get = async (runId: string, workspaceId?: string): Promise<IWorkspace> => {
+    const getRaw = async (runId: string, workspaceId?: string): Promise<IWorkspace> => {
         const picked = pick(runId, workspaceId);
         if (!('miss' in picked)) return picked;
         await lookup(runId);
@@ -482,9 +502,18 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         return unsubscribe;
     };
 
+    /** What the manager hands out: with credentials the redacting, refreshing view of a workspace. */
+    const handOut = (workspace: IWorkspace): IWorkspace => (credentials ? credentials.wrap(workspace) : workspace);
+    const redacting = <T>(run: () => Promise<T>): Promise<T> => (credentials ?
+        run().catch((error: unknown) => { throw credentials.redactor.redactError(error); }) :
+        run());
+
     const manager: IWorkspaceManager = {
-        acquire,
-        get,
+        acquire: (runId, input) => redacting(async () => {
+            const result = await acquireRaw(runId, input);
+            return { ...result, workspace: handOut(result.workspace) };
+        }),
+        get: (runId, workspaceId) => redacting(async () => handOut(await getRaw(runId, workspaceId))),
         release,
         attach,
         tools: () => {

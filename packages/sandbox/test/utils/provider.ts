@@ -10,6 +10,8 @@ import { systemClock } from '@chamvi/core';
 import type { IClock } from '@chamvi/core';
 import { DEFAULT_DEPLOYMENT, DEFAULT_LIMITS } from '@chamvi/sandbox';
 import type {
+    ExecOptions,
+    ExecResult,
     GarbageCollectOptions,
     ISandboxProvider,
     IWorkspace,
@@ -60,7 +62,12 @@ export type FakeProvider = ISandboxProvider & {
  * With `image`, a create without one records that image (a container
  * provider's default), else none (like local).
  */
-export function createFakeProvider(options: { clock?: IClock; image?: string } = {}): FakeProvider {
+export function createFakeProvider(options: {
+    clock?: IClock;
+    image?: string;
+    /** Answers every exec of every workspace (default: exit 0, no output). */
+    onExec?: (argv: readonly string[], options: ExecOptions) => Partial<ExecResult>;
+} = {}): FakeProvider {
     const clock = options.clock ?? systemClock;
     let nextCreateError: Error | undefined;
     let nextGcError: Error | undefined;
@@ -107,7 +114,7 @@ export function createFakeProvider(options: { clock?: IClock; image?: string } =
                 throw error;
             }
             const now = clock.now();
-            const workspace = createScriptedWorkspace(undefined, {
+            const workspace = createScriptedWorkspace(options.onExec, {
                 runId: input.runId,
                 provider: 'fake',
                 repo: input.repo,
@@ -142,7 +149,7 @@ export function createFakeProvider(options: { clock?: IClock; image?: string } =
             const workspace = provider.workspaces.get(id)!;
             workspace.disposed = true;
             if (stopOptions.removed) return;
-            const restarted = createScriptedWorkspace(undefined, workspace.info, id);
+            const restarted = createScriptedWorkspace(options.onExec, workspace.info, id);
             for (const [path, content] of workspace.files) restarted.files.set(path, content);
             track(restarted);
         },
