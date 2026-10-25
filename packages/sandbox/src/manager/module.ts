@@ -72,7 +72,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
     const runs = new Map<string, Map<string, Entry>>();
     /** The lookup in flight per run; concurrent misses share it. */
     const lookups = new Map<string, Promise<void>>();
-    /** Bumped by every release of a whole run: a lookup that started before disposes what it found. */
+    /** Bumped by a release of a whole run while its lookup runs: that lookup disposes what it found. */
     const generations = new Map<string, number>();
     const subscriptions = new Set<() => void>();
     let lastGcAt: number | undefined;
@@ -260,7 +260,10 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         })();
         lookups.set(runId, pending);
         const done = () => {
-            if (lookups.get(runId) === pending) lookups.delete(runId);
+            if (lookups.get(runId) !== pending) return;
+            lookups.delete(runId);
+            // a release only bumps the generation while a lookup runs
+            generations.delete(runId);
         };
         pending.then(done, done);
         return pending;
@@ -377,7 +380,8 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             return;
         }
 
-        generations.set(runId, generationOf(runId) + 1);
+        // a lookup in flight disposes what it finds instead of adopting it
+        if (lookups.has(runId)) generations.set(runId, generationOf(runId) + 1);
         const entries = runs.get(runId) ?? new Map<string, Entry>();
         runs.delete(runId);
         // pending creates are aborted, see their run gone and dispose what they
