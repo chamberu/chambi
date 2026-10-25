@@ -46,7 +46,7 @@ The AI SDK runs the model and its tool loop, and stops there. An agent that reac
 | **Limits** | `stopWhen` per call | `maxSteps`, `maxTokens` and `timeoutMs` per run, settled as `completed` or `failed` |
 | **Shutdown** | Runs die with the process | `drain()` waits for in-flight runs, then marks the rest `interrupted` for another replica |
 
-Models, messages and tools stay AI SDK types: `defineAgent()` takes a `LanguageModel` and a plain `ToolSet` (tools built with `tool()`, or `defineTool()` for tools that read the run context), and nothing is wrapped in a chamvi type.
+Models, messages and tools stay AI SDK types: `defineAgent()` takes a `LanguageModel` (or a `'<provider>/<model id>'` string the engine resolves through `EngineOptions.models`) and a plain `ToolSet` (tools built with `tool()`, or `defineTool()` for tools that read the run context), and nothing is wrapped in a chamvi type.
 
 <p align="center">
     <img src="https://raw.githubusercontent.com/chamvi/chamvi/master/.github/assets/run-lifecycle.svg" alt="dispatch() stores a queued run, deduplicated by idempotency key. The engine claims it and runs it: every LLM or tool step is followed by a checkpoint in the store. A run ends completed, failed or cancelled. A tool that awaits approve() pauses the run in waiting; approving or denying it requeues the run, and the call runs again with the decision. drain() or a crashed process leaves a run interrupted or with an expired claim; recover() requeues it, and the next execution continues from the latest checkpoint." width="100%" />
@@ -340,6 +340,8 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 | `agents` | `Agent[]` | required | The agents this engine runs |
 | `channels` | `IChannel[]` | `[]` | Channels by unique name, started by `start()` and stopped first by `drain()`/`stop()`; tools reach them through `ctx.channels` |
 | `maxConcurrentRuns` | `number` | `4` | Runs executing at once in this process |
+| `model` | `ModelRef` | none | The model of agents without one; a string is checked through `models` at construction |
+| `models` | `IModelResolver` | none | Resolves `'<provider>/<model id>'` strings; registration checks every string ref through it, and without it a string goes to the AI SDK unchanged |
 | `claimTtlMs` | `number` | `60_000` | Lease on a running run, renewed every `claimTtlMs / 3`; the poll for new work, expired approvals and abandoned runs uses the same interval |
 | `owner` | `string` | `` `${hostname}-${pid}` `` | Identity of this replica in claims |
 | `clock` | `IClock` | `systemClock` | Time source, replaceable in tests |
@@ -350,7 +352,7 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `name` | `string` | required | Unique per app, lowercase words joined by `-` |
-| `model` | `LanguageModel` | required | Any AI SDK model |
+| `model` | `ModelRef` | `EngineOptions.model` | A `'<provider>/<model id>'` string resolved through `EngineOptions.models`, or any AI SDK `LanguageModel` |
 | `instructions` | `string` | required | System instructions |
 | `channels` | `ChannelSubscription[]` | none | Subscriptions to channels registered on the engine |
 | `tools` | `ToolSet \| (ctx) => ToolSet` | none | A plain tool set, or a factory called for each execution |
@@ -394,7 +396,7 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 | `ErrorCode` | object | The `code` of every error above |
 | `systemClock` | object | The default `IClock` |
 
-Types: `Agent`, `AgentDefinition`, `ToolContext`, `ContextKey`, `IContextProvider`, `ToolPolicy`, `AgentHooks`, `ToolCallInfo`, `TriggerEnvelope`, `Invoker`, `Run`, `RunStatus`, `Step`, `Checkpoint`, `WaitPoint`, `Budget`, `Usage`, `ApprovalRequestInput`, `ApprovalDecision`, `ApprovalAnswer`, `IStore` and its parts, `Artifact`, `ArtifactInput`, `IRunArtifacts`, `IChannel`, `ChannelSubscription`, `ChannelContext`, `ChannelMessage`, `ChannelSendOptions`, `ChannelHandle`, `EmitMessage`, `ConsoleChannelOptions`, `IAgentState`, `RunEvent`, `EngineOptions`, `IClock`.
+Types: `Agent`, `AgentDefinition`, `ToolContext`, `ContextKey`, `IContextProvider`, `ToolPolicy`, `AgentHooks`, `ToolCallInfo`, `TriggerEnvelope`, `Invoker`, `Run`, `RunStatus`, `Step`, `Checkpoint`, `WaitPoint`, `Budget`, `Usage`, `ApprovalRequestInput`, `ApprovalDecision`, `ApprovalAnswer`, `IStore` and its parts, `Artifact`, `ArtifactInput`, `IRunArtifacts`, `IChannel`, `ChannelSubscription`, `ChannelContext`, `ChannelMessage`, `ChannelSendOptions`, `ChannelHandle`, `EmitMessage`, `ConsoleChannelOptions`, `IAgentState`, `RunEvent`, `EngineOptions`, `ModelRef`, `IModelResolver`, `IClock`.
 
 Test helpers (`ControllableClock`, `describeStoreContract`) live in [`@chamvi/test-kit`](../test-kit).
 

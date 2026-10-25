@@ -22,7 +22,7 @@ The engine checks the rest when you construct it: agent names must be unique wit
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `name` | `string` | required | Unique per engine, lowercase words joined by `-`, at most 64 characters |
-| `model` | `LanguageModel` | required | Any AI SDK model |
+| `model` | `ModelRef` | `EngineOptions.model` | A `'<provider>/<model id>'` string resolved through `EngineOptions.models`, or any AI SDK `LanguageModel` |
 | `instructions` | `string` | required | System instructions |
 | `channels` | `ChannelSubscription[]` | none | From `http.on()`, `webhook.on()`, `cron.on()`, `github.on()`. See [Channels](/guide/channels) |
 | `tools` | `ToolSet \| (ctx) => ToolSet` | none | A plain tool set, or a factory called for each execution. See [Tools and their context](#tools-and-their-context) |
