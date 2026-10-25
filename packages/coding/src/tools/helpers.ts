@@ -12,7 +12,7 @@ import type { ToolContext } from '@chamvi/core';
 import { resolveWorkspacePath } from '@chamvi/sandbox';
 import type { ExecResult, IWorkspace } from '@chamvi/sandbox';
 import { isObject } from 'smob';
-import { GIT_ERROR_MAX_CHARS, WORKSPACE_PROPERTY } from './constants.ts';
+import { GIT_ERROR_MAX_CHARS, HOME_LOG_PATTERN, WORKSPACE_PROPERTY } from './constants.ts';
 import type { CodingWorkspaces } from './types.ts';
 
 /** The tool input as an object, else a ValidationError (a tool error the model can correct). */
@@ -66,6 +66,15 @@ export function optionalInteger(value: unknown, name: string, min: number, max: 
 /** A workspace-relative path ('.' for the root); ValidationError for escapes. */
 export function requirePath(value: unknown, name = 'path'): string {
     return resolveWorkspacePath(requireString(value, name));
+}
+
+/**
+ * The path below `$HOME` of an output log (`~/.chamvi/out/<id>.stdout.log`,
+ * `~/.chamvi/jobs/<id>/output`), undefined for any other path.
+ */
+export function homeLogPath(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    return HOME_LOG_PATTERN.exec(value)?.[1];
 }
 
 /** An optional workspace-relative path, '.' when omitted. */

@@ -37,3 +37,133 @@ export const WORKSPACE_PROPERTY: JSONSchema7 = {
     minLength: 1,
     description: 'The workspace id from create_workspace. Omit it when the run holds only one workspace.',
 };
+
+/** Bytes of the start of a stream a result shows when the output was cut. */
+export const EXCERPT_HEAD_BYTES = 8_192;
+
+/** Bytes of the end of a stream a result shows when the output was cut. */
+export const EXCERPT_TAIL_BYTES = 24_576;
+
+/**
+ * Log files `bash` keeps in `~/.chamvi/out/` (two per call, one per stream);
+ * older ones are deleted at each call.
+ */
+export const OUTPUT_LOGS_KEPT = 100;
+
+/** How long reading the logs of a command that timed out may take. */
+export const REPORT_TIMEOUT_MS = 30_000;
+
+/** The first line of a `bash` report on stdout. */
+export const REPORT_HEADER = 'chamvi-report';
+
+/** The first line of the stderr part of a `bash` report. */
+export const REPORT_STDERR_HEADER = 'chamvi-report-stderr';
+
+/** What the `bash` script prints instead of running when the explicit cwd is no directory. */
+export const CWD_MISSING = 'chamvi-cwd-missing';
+
+/** Ends a base64 block of a report. */
+export const BLOCK_END = '-';
+
+/**
+ * The inner shell of a `bash` call, run as `<bash or sh> -c INNER_SCRIPT
+ * chamvi <command> <cwd> <state dir>`: restores the exported variables
+ * (`export -p` of the last call) and the working directory (an explicit
+ * `cwd` wins and is not kept), runs the command with `eval` in this shell
+ * without positional parameters, and saves `pwd -P` and `export -p`
+ * atomically after it and in an EXIT trap, so an `exit` or `set -e` inside
+ * keeps the state consistent. Names start with `__chamvi_` so the command
+ * does not overwrite them by accident.
+ */
+export const INNER_SCRIPT = [
+    '__chamvi_c=$1; __chamvi_d=$2; __chamvi_s=$3; set --',
+    'if [ -f "$__chamvi_s/env" ]; then . "$__chamvi_s/env" 2>/dev/null; fi',
+    'if [ -n "$__chamvi_d" ]; then cd -- "$__chamvi_d" || exit 1; ' +
+    'elif [ -f "$__chamvi_s/cwd" ]; then IFS= read -r __chamvi_w < "$__chamvi_s/cwd"; cd -- "$__chamvi_w" 2>/dev/null; unset __chamvi_w; fi',
+    '__chamvi_save() {',
+    '  set +eu',
+    '  if [ -z "$__chamvi_d" ]; then pwd -P > "$__chamvi_s/cwd.t" 2>/dev/null && mv -f "$__chamvi_s/cwd.t" "$__chamvi_s/cwd"; fi',
+    '  export -p > "$__chamvi_s/env.t" 2>/dev/null && mv -f "$__chamvi_s/env.t" "$__chamvi_s/env"',
+    '}',
+    'trap \'__chamvi_st=$?; __chamvi_save; exit $__chamvi_st\' EXIT',
+    'eval "$__chamvi_c"',
+    '__chamvi_st=$?',
+    '__chamvi_save',
+    'exit $__chamvi_st',
+].join('\n');
+
+/**
+ * Prints the report of call `$n` (logs `$f.stdout.log` and `$f.stderr.log`):
+ * on stdout `REPORT_HEADER <status>`, the working directory the next call
+ * starts in (as `/workspace/...` below the root `$r`), then for stdout its
+ * size and log path and the base64 of its first `EXCERPT_HEAD_BYTES` and of
+ * the rest or its last `EXCERPT_TAIL_BYTES`, each block ended by a
+ * `BLOCK_END` line; the same for stderr on stderr after a
+ * `REPORT_STDERR_HEADER` line. Then deletes all but the newest
+ * `OUTPUT_LOGS_KEPT` logs.
+ */
+const REPORT_PART = [
+    'w=$r; if [ -f "$s/cwd" ]; then IFS= read -r w < "$s/cwd"; fi',
+    'case $w in "$r") w=/workspace;; "$r"/*) w="/workspace${w#"$r"}";; esac',
+    `printf '%s %s\\n%s\\n' ${REPORT_HEADER} "$st" "$w"`,
+    `printf '%s\\n' ${REPORT_STDERR_HEADER} >&2`,
+    'for k in stdout stderr; do',
+    '  g=$f.$k.log; z=0; if [ -f "$g" ]; then z=$(wc -c < "$g" | tr -d " "); fi',
+    '  {',
+    '    printf \'%s %s\\n\' "$z" "~/.chamvi/out/$n.$k.log"',
+    `    if [ "$z" -gt 0 ]; then head -c ${EXCERPT_HEAD_BYTES} "$g" | base64; fi; printf '%s\\n' ${BLOCK_END}`,
+    `    if [ "$z" -gt ${EXCERPT_HEAD_BYTES + EXCERPT_TAIL_BYTES} ]; then tail -c ${EXCERPT_TAIL_BYTES} "$g" | base64; ` +
+    `elif [ "$z" -gt ${EXCERPT_HEAD_BYTES} ]; then tail -c +${EXCERPT_HEAD_BYTES + 1} "$g" | base64; fi; printf '%s\\n' ${BLOCK_END}`,
+    '  } > "$o/.report.$n.$k"',
+    'done',
+    'cat "$o/.report.$n.stdout"; cat "$o/.report.$n.stderr" >&2; rm -f "$o/.report.$n.stdout" "$o/.report.$n.stderr"',
+    `ls -1t "$o" | tail -n +${OUTPUT_LOGS_KEPT + 1} | while IFS= read -r g; do rm -f -- "$o/$g"; done`,
+].join('\n');
+
+/** The folders of the shell state and the logs, `$c`, `$s` and `$o`, created when missing. */
+const STATE_PART = 'c=$HOME/.chamvi; s=$c/shell; o=$c/out; mkdir -p "$s" "$o" || exit 125; r=$(pwd -P)';
+
+/**
+ * The outer shell of a `bash` call, run in the workspace root as `sh -c
+ * BASH_SCRIPT sh <INNER_SCRIPT> <command> <id> <cwd or ''>`: it holds the
+ * exec's pipes while the inner shell (bash when the image has it, else sh)
+ * writes to the log files only, so a background job of the command never
+ * keeps the call open; then it prints the report.
+ */
+export const BASH_SCRIPT = [
+    STATE_PART,
+    'n=$3; f=$o/$n',
+    `if [ -n "$4" ] && [ ! -d "$4" ]; then printf '%s\\n' ${CWD_MISSING}; exit 0; fi`,
+    'if command -v bash >/dev/null 2>&1; then x=bash; else x=sh; fi',
+    '"$x" -c "$1" chamvi "$2" "$4" "$s" > "$f.stdout.log" 2> "$f.stderr.log" < /dev/null',
+    'st=$?',
+    REPORT_PART,
+    'exit $st',
+].join('\n');
+
+/**
+ * The report of call `$1` alone, run as `sh -c REPORT_SCRIPT sh <id>` after
+ * the call was killed (its timeout): the status reads `-`.
+ */
+export const REPORT_SCRIPT = [
+    STATE_PART,
+    'n=$1; f=$o/$n; st=-',
+    REPORT_PART,
+].join('\n');
+
+/**
+ * The files of `~/.chamvi/` the file and search tools may read besides the
+ * workspace: the output logs of `bash` and the output of a background job.
+ * Group 1 is the path below `$HOME`.
+ */
+export const HOME_LOG_PATTERN = /^~\/(\.chamvi\/(?:out\/[0-9a-f]{12}\.(?:stdout|stderr)\.log|jobs\/[0-9a-f]{12}\/output))$/;
+
+/**
+ * Prints lines `$2` to `$3` of `$HOME/$1` on stdout and the file's line
+ * count as the last line of stderr; exit 3 when it does not exist.
+ */
+export const READ_LOG_SCRIPT = [
+    'f=$HOME/$1',
+    'if [ ! -f "$f" ]; then exit 3; fi',
+    'awk -v s="$2" -v e="$3" \'NR >= s && NR <= e { print } END { print NR > "/dev/stderr" }\' "$f"',
+].join('\n');

@@ -49,6 +49,31 @@ export type ListFilesResult = {
     truncated: boolean;
 };
 
+export type BashResult = {
+    /** The command's exit status (124 or 137 after a timeout). */
+    exitCode: number;
+    /**
+     * Stdout, whole when it has at most `EXCERPT_HEAD_BYTES` +
+     * `EXCERPT_TAIL_BYTES` bytes, else its start and end around a
+     * `[... <n> bytes cut, full output in <stdoutLog>]` line.
+     */
+    stdout: string;
+    stderr: string;
+    /** True when the middle of stdout was cut (the whole of it is in `stdoutLog`). */
+    stdoutTruncated: boolean;
+    stderrTruncated: boolean;
+    /** Bytes the command wrote to stdout. */
+    stdoutBytes: number;
+    stderrBytes: number;
+    /** `~/.chamvi/out/<id>.stdout.log`: the whole stdout, readable with read_file, grep or bash. */
+    stdoutLog: string;
+    stderrLog: string;
+    /** The working directory the next call starts in (`/workspace/...` inside the workspace). */
+    cwd: string;
+    timedOut: boolean;
+    durationMs: number;
+};
+
 export type GitDiffResult = {
     /** `git status --short`. */
     status: string;

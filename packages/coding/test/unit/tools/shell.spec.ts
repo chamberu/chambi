@@ -15,7 +15,7 @@ import {
     it,
 } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
-import type { ExecResult } from '@chamvi/sandbox';
+import type { BashResult, ReadFileResult } from '@chamvi/coding';
 import type { GitFixture } from '@chamvi/test-kit';
 import { createFixture, setupCoding } from '../../utils/setup.ts';
 import type { CodingSetup } from '../../utils/setup.ts';
@@ -30,7 +30,7 @@ afterEach(async () => { await s.cleanup(); });
 
 describe('bash', () => {
     it('runs a command and reports the exit code', async () => {
-        const result = await s.call<ExecResult>('bash', { command: 'echo hi && exit 4' });
+        const result = await s.call<BashResult>('bash', { command: 'echo hi && exit 4' });
         expect(result).toMatchObject({
             exitCode: 4,
             stdout: 'hi\n',
@@ -42,9 +42,84 @@ describe('bash', () => {
         expect(result.durationMs).toBeGreaterThanOrEqual(0);
     });
 
-    it('runs in a cwd', async () => {
-        await expect(s.call('bash', { command: 'ls', cwd: 'src' })).resolves.toMatchObject({ stdout: 'a.ts\n' });
+    it('runs in a cwd for that call only', async () => {
+        await expect(s.call('bash', { command: 'ls', cwd: 'src' })).resolves.toMatchObject({ stdout: 'a.ts\n', cwd: '/workspace' });
+        await expect(s.call('bash', { command: 'ls src' })).resolves.toMatchObject({ stdout: 'a.ts\n' });
         await expect(s.call('bash', { command: 'ls', cwd: '../' })).rejects.toThrow(ValidationError);
+    });
+
+    it('refuses a cwd that is no directory', async () => {
+        await expect(s.call('bash', { command: 'ls', cwd: 'missing' })).rejects.toThrow('cwd /workspace/missing is no directory in the workspace.');
+    });
+
+    it('keeps the working directory and exported variables across calls', async () => {
+        await expect(s.call('bash', { command: 'cd src && export GREETING=hello && NOT_EXPORTED=1' })).resolves.toMatchObject({
+            exitCode: 0,
+            cwd: '/workspace/src',
+        });
+        await expect(s.call('bash', { command: 'ls; echo "$GREETING:$NOT_EXPORTED"' })).resolves.toMatchObject({
+            stdout: 'a.ts\nhello:\n',
+            cwd: '/workspace/src',
+        });
+        await expect(s.call('bash', { command: 'cd .. && pwd -P >/dev/null' })).resolves.toMatchObject({ cwd: '/workspace' });
+    });
+
+    it('keeps the state consistent after an exit or a failed cd', async () => {
+        await expect(s.call('bash', { command: 'cd src; export STEP=1; exit 3' })).resolves.toMatchObject({
+            exitCode: 3,
+            cwd: '/workspace/src',
+        });
+        const failed = await s.call<BashResult>('bash', { command: 'cd missing' });
+        expect(failed.exitCode).not.toBe(0);
+        expect(failed.stderr).toContain('missing');
+        expect(failed.cwd).toBe('/workspace/src');
+        await expect(s.call('bash', { command: 'echo "$STEP"; set -e; false; echo never' })).resolves.toMatchObject({
+            stdout: '1\n',
+            exitCode: 1,
+        });
+    });
+
+    it('does not hand the command its own text as positional parameters', async () => {
+        await expect(s.call('bash', { command: 'echo "[$1][$#]"' })).resolves.toMatchObject({ stdout: '[][0]\n' });
+    });
+
+    it('keeps the full output in a log file and returns its head and tail', async () => {
+        const result = await s.call<BashResult>('bash', { command: 'i=0; while [ $i -lt 5000 ]; do echo "line $i ............"; i=$((i+1)); done; echo oops >&2' });
+        expect(result.exitCode).toBe(0);
+        expect(result.stdoutTruncated).toBe(true);
+        expect(result.stderrTruncated).toBe(false);
+        expect(result.stderr).toBe('oops\n');
+        expect(result.stdoutBytes).toBeGreaterThan(90_000);
+        expect(result.stdoutLog).toMatch(/^~\/\.chamvi\/out\/[0-9a-f]{12}\.stdout\.log$/);
+        expect(result.stdout.startsWith('line 0 ')).toBe(true);
+        expect(result.stdout.endsWith('line 4999 ............\n')).toBe(true);
+        expect(result.stdout).toMatch(new RegExp(`\\[\\.\\.\\. \\d+ bytes cut, full output in ${result.stdoutLog.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`));
+        expect(Buffer.byteLength(result.stdout)).toBeLessThan(8_192 + 24_576 + 200);
+
+        const middle = await s.call<ReadFileResult>('read_file', {
+            path: result.stdoutLog, 
+            offset: 2500, 
+            limit: 2, 
+        });
+        expect(middle).toMatchObject({
+            content: 'line 2499 ............\nline 2500 ............',
+            startLine: 2500,
+            endLine: 2501,
+            totalLines: 5000,
+        });
+        const listed = await s.call<BashResult>('bash', { command: `wc -l < ${result.stdoutLog}` });
+        expect(listed.stdout.trim()).toBe('5000');
+    });
+
+    it('returns promptly when the command leaves a background job running', async () => {
+        const started = Date.now();
+        const result = await s.call<BashResult>('bash', { command: 'sleep 30 & echo started' });
+        expect(result).toMatchObject({
+            exitCode: 0, 
+            stdout: 'started\n', 
+            timedOut: false, 
+        });
+        expect(Date.now() - started).toBeLessThan(5_000);
     });
 
     it('refuses timeouts out of range', async () => {
@@ -53,8 +128,11 @@ describe('bash', () => {
         await expect(s.call('bash', { command: '' })).rejects.toThrow(ValidationError);
     });
 
-    it('times out', async () => {
-        await expect(s.call('bash', { command: 'sleep 30', timeoutMs: 300 })).resolves.toMatchObject({ timedOut: true });
+    it('times out and still returns the output so far', async () => {
+        await expect(s.call('bash', { command: 'echo before; sleep 30', timeoutMs: 500 })).resolves.toMatchObject({
+            timedOut: true,
+            stdout: 'before\n',
+        });
     });
 
     it('stops on abort', async () => {
