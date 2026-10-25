@@ -6,7 +6,7 @@
  */
 
 import type { Tool } from 'ai';
-import { ValidationError, defineTool } from '@chamvi/core';
+import { SandboxError, ValidationError, defineTool } from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
 import type { ExecResult } from '@chamvi/sandbox';
 import {
@@ -76,20 +76,33 @@ const LIMIT = {
 
 const ENGINES: readonly GrepEngine[] = ['ripgrep', 'git-grep', 'grep'];
 
+/** The notices ripgrep prints on stdout about a binary file, as `path: <notice>` lines. */
+const BINARY_NOTICE = /: (?:WARNING: stopped searching binary file|binary file matches)/;
+
 /**
  * The complete match records of the grep script's output: `path NUL line`
  * then `:` (ripgrep, grep) or NUL (git grep), then the text up to the
- * newline. A record cut by the output cap is dropped; `./` before a path
- * is removed.
+ * newline. A line that holds no record (a ripgrep binary notice) is
+ * skipped and counted in `unparsed` unless it is such a notice; a record
+ * cut by the output cap is dropped; `./` before a path is removed.
  */
-function parseMatches(output: string): GrepMatch[] {
+export function parseMatches(output: string): { matches: GrepMatch[]; unparsed: number } {
     const matches: GrepMatch[] = [];
+    let unparsed = 0;
     let position = 0;
     while (position < output.length) {
+        const lineEnd = output.indexOf('\n', position);
         const pathEnd = output.indexOf('\0', position);
-        if (pathEnd === -1) break;
-        const record = /^(\d+)[:\0]/.exec(output.slice(pathEnd + 1, pathEnd + 22));
-        if (!record) break;
+        const record = pathEnd === -1 || (lineEnd !== -1 && lineEnd < pathEnd) ?
+            undefined :
+            /^(\d+)[:\0]/.exec(output.slice(pathEnd + 1, pathEnd + 22));
+        if (!record) {
+            // a line without a record: skip it, a cut one at the end is dropped
+            if (lineEnd === -1) break;
+            if (!BINARY_NOTICE.test(output.slice(position, lineEnd))) unparsed++;
+            position = lineEnd + 1;
+            continue;
+        }
         const textStart = pathEnd + 1 + record[0].length;
         const textEnd = output.indexOf('\n', textStart);
         if (textEnd === -1) break;
@@ -101,17 +114,23 @@ function parseMatches(output: string): GrepMatch[] {
         });
         position = textEnd + 1;
     }
-    return matches;
+    return { matches, unparsed };
 }
 
-/** The grep script's result as matches; ValidationError for a pattern the engine refused. */
-function grepResult(result: ExecResult, limit: number, logPath: string | undefined): GrepResult {
+/**
+ * The grep script's result as matches; ValidationError for a pattern the
+ * engine refused, SandboxError for output that holds lines but no record
+ * (an engine or a tool that does not keep the NUL separators), never an
+ * empty success.
+ */
+export function grepResult(result: ExecResult, limit: number, logPath: string | undefined): GrepResult {
     const newline = result.stdout.indexOf('\n');
     const engine = result.stdout.slice(0, Math.max(newline, 0)) as GrepEngine;
     if (!ENGINES.includes(engine) || result.timedOut) {
         throw gitFailure('grep', result);
     }
-    const found = parseMatches(result.stdout.slice(newline + 1));
+    const output = result.stdout.slice(newline + 1);
+    const { matches: found, unparsed } = parseMatches(output);
     const matches = logPath === undefined ? found : found.map((match) => ({ ...match, path: logPath }));
     // grep and ripgrep exit 2 also for an unreadable file among matches; git grep 128 for a bad pattern
     const failed = engine === 'git-grep' ? result.exitCode === 128 : result.exitCode === 2;
@@ -120,6 +139,9 @@ function grepResult(result: ExecResult, limit: number, logPath: string | undefin
     }
     if (!failed && result.exitCode !== 0 && result.exitCode !== 1) {
         throw gitFailure('grep', result);
+    }
+    if (matches.length === 0 && unparsed > 0) {
+        throw new SandboxError(`grep output could not be parsed (${engine}): ${cutText(output.trim(), 200)}`);
     }
     return {
         matches: matches.slice(0, limit),

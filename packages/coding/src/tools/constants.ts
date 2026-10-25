@@ -277,7 +277,7 @@ export const IMAGE_MAX_BYTES = 5 * 1_048_576;
 /** Edits one `multi_edit` call takes at most. */
 export const MULTI_EDIT_MAX_EDITS = 100;
 
-/** Bytes of one match line the grep script keeps (`cut -c`), before the cut to `LINE_MAX_CHARS`. */
+/** Bytes of one match line the grep script keeps, before the cut to `LINE_MAX_CHARS`. */
 export const GREP_LINE_MAX_BYTES = 2_000;
 
 /**
@@ -286,25 +286,38 @@ export const GREP_LINE_MAX_BYTES = 2_000;
  * <home|''>`: with ripgrep when the image has it (hidden files too, `.git`
  * never, ignored files with `--no-ignore`), else `git grep` in a work tree
  * (`--no-exclude-standard` for ignored files), else `grep -r` without
- * `.git`. Prints the engine on the first line, then one `path NUL line
- * (':' or NUL) text` record per match, each cut at `GREP_LINE_MAX_BYTES`
- * (a minified line must not fill the output), and exits with the engine's
- * status.
+ * `.git`, or for a grep without `--null` (BusyBox) one `grep` per file
+ * that names the file itself. Prints the engine on the first line, then
+ * one `path NUL line (':' or NUL) text` record per match, each cut at
+ * `GREP_LINE_MAX_BYTES` (a minified line must not fill the output; ripgrep
+ * by `--max-columns`, the others by `cut` when it keeps NUL bytes, which
+ * BusyBox's does not), and exits with the engine's status.
  */
 export const GREP_SCRIPT = [
-    'pat=$1; p=$2; ic=$3; ig=$4; if [ "$5" = home ]; then p=$HOME/$2; fi',
+    'pat=$1; p=$2; ic=$3; ig=$4; if [ "$5" = home ]; then p=$HOME/$2; fi; nn=',
     'if command -v rg >/dev/null 2>&1; then',
-    '  e=ripgrep; set -- rg -n --null --no-heading --with-filename --color never --hidden --glob \'!.git\'',
+    `  e=ripgrep; set -- rg -n --null --no-heading --with-filename --color never --max-columns ${GREP_LINE_MAX_BYTES} --max-columns-preview --hidden --glob '!.git'`,
     '  if [ "$ig" = 1 ]; then set -- "$@" --no-ignore; fi',
     'elif [ "$5" != home ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then',
     '  e=git-grep; set -- git --literal-pathspecs grep -z -n -I --untracked --no-color -E',
     '  if [ "$ig" = 1 ]; then set -- "$@" --no-exclude-standard; fi',
-    'else',
+    'elif printf \'x\\n\' | grep --null -q -e x >/dev/null 2>&1; then',
     '  e=grep; set -- grep -r -n -I -H --null -E --exclude-dir=.git',
+    'else',
+    '  e=grep; nn=1; set -- grep -n -I -E',
     'fi',
     'if [ "$ic" = 1 ]; then set -- "$@" -i; fi',
-    'set -- "$@" -e "$pat" -- "$p"',
+    `if [ "$(printf 'a\\0b\\n' | cut -c 1-3 2>/dev/null | tr '\\0' Z)" = aZb ]; then cl() { cut -c 1-${GREP_LINE_MAX_BYTES}; }; else cl() { cat; }; fi`,
     'printf \'%s\\n\' "$e"',
-    `{ st=$( { { "$@"; echo $? >&3; } | cut -c 1-${GREP_LINE_MAX_BYTES} >&4; } 3>&1 ); } 4>&1`,
+    'if [ -n "$nn" ]; then',
+    // BusyBox compiles the pattern at the first line: one line shows a pattern it refuses
+    '  printf \'x\\n\' | "$@" -e "$pat" >/dev/null || [ $? -eq 1 ] || exit 2',
+    '  find "$p" -name .git -prune -o -type f -print | while IFS= read -r f; do',
+    '    "$@" -e "$pat" -- "$f" 2>/dev/null | while IFS= read -r l || [ -n "$l" ]; do printf \'%s\\0%s\\n\' "$f" "$l"; done',
+    '  done | cl',
+    '  exit 0',
+    'fi',
+    'set -- "$@" -e "$pat" -- "$p"',
+    '{ st=$( { { "$@"; echo $? >&3; } | cl >&4; } 3>&1 ); } 4>&1',
     'exit "$st"',
 ].join('\n');
