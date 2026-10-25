@@ -75,11 +75,15 @@ export const BLOCK_END = '-';
 /**
  * Takes `<command> <cwd> <state dir>`, drops the positional parameters,
  * restores the exported variables (`export -p` of the last call) and the
- * working directory (an explicit `cwd` wins).
+ * working directory (an explicit `cwd` wins). An env file that does not
+ * parse (`sh -n`) is removed instead of sourced, since a syntax error in a
+ * sourced file ends a POSIX shell such as dash before the command ran and
+ * before anything saved a whole one.
  */
 const RESTORE_PART = [
     '__chamvi_c=$1; __chamvi_d=$2; __chamvi_s=$3; set --',
-    'if [ -f "$__chamvi_s/env" ]; then . "$__chamvi_s/env" 2>/dev/null; fi',
+    'if [ -f "$__chamvi_s/env" ]; then if sh -n "$__chamvi_s/env" >/dev/null 2>&1; then . "$__chamvi_s/env" 2>/dev/null; ' +
+    'else rm -f "$__chamvi_s/env"; fi; fi',
     'if [ -n "$__chamvi_d" ]; then cd -- "$__chamvi_d" || exit 1; ' +
     'elif [ -f "$__chamvi_s/cwd" ]; then IFS= read -r __chamvi_w < "$__chamvi_s/cwd"; cd -- "$__chamvi_w" 2>/dev/null; unset __chamvi_w; fi',
 ].join('\n');
@@ -90,7 +94,9 @@ const RESTORE_PART = [
  * (`export -p` of the last call) and the working directory (an explicit
  * `cwd` wins and is not kept), runs the command with `eval` in this shell
  * without positional parameters, and saves `pwd -P` and `export -p`
- * atomically after it and in an EXIT trap, so an `exit` or `set -e` inside
+ * atomically after it and in an EXIT trap (each through a temporary file
+ * of its own process, so parallel calls of one step never write one file
+ * at once: the last rename wins), so an `exit` or `set -e` inside
  * keeps the state consistent. Names start with `__chamvi_` so the command
  * does not overwrite them by accident.
  */
@@ -98,8 +104,8 @@ export const INNER_SCRIPT = [
     RESTORE_PART,
     '__chamvi_save() {',
     '  set +eu',
-    '  if [ -z "$__chamvi_d" ]; then pwd -P > "$__chamvi_s/cwd.t" 2>/dev/null && mv -f "$__chamvi_s/cwd.t" "$__chamvi_s/cwd"; fi',
-    '  export -p > "$__chamvi_s/env.t" 2>/dev/null && mv -f "$__chamvi_s/env.t" "$__chamvi_s/env"',
+    '  if [ -z "$__chamvi_d" ]; then pwd -P > "$__chamvi_s/cwd.t.$$" 2>/dev/null && mv -f "$__chamvi_s/cwd.t.$$" "$__chamvi_s/cwd"; fi',
+    '  export -p > "$__chamvi_s/env.t.$$" 2>/dev/null && mv -f "$__chamvi_s/env.t.$$" "$__chamvi_s/env"',
     '}',
     'trap \'__chamvi_st=$?; __chamvi_save; exit $__chamvi_st\' EXIT',
     'eval "$__chamvi_c"',
