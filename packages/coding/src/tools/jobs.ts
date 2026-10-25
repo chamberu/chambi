@@ -44,6 +44,7 @@ type JobOutputInput = JobInput & { offset?: number };
 type JobState = {
     size: number;
     status: BashJobStatus;
+    capped: boolean;
     exitCode?: number;
     /** The rest of stdout after the header line. */
     rest: string;
@@ -70,7 +71,7 @@ function readState(job: string, result: ExecResult): JobState {
         throw new ValidationError(`There is no job ${job} in this workspace.`);
     }
     const newline = result.stdout.indexOf('\n');
-    const header = new RegExp(`^${JOB_HEADER} (\\d+) (running|exited|killed|lost) ?(\\d*)$`)
+    const header = new RegExp(`^${JOB_HEADER} (\\d+) (running|exited|killed|lost) ([01]) ?(\\d*)$`)
         .exec(newline === -1 ? '' : result.stdout.slice(0, newline));
     if (result.exitCode !== 0 || !header) {
         throw new SandboxError(`cannot read job ${job}: exit code ${result.exitCode}${result.stderr ? `: ${result.stderr.trim()}` : ''}`);
@@ -78,9 +79,10 @@ function readState(job: string, result: ExecResult): JobState {
     const state: JobState = {
         size: Number(header[1]),
         status: header[2] as BashJobStatus,
+        capped: header[3] === '1',
         rest: result.stdout.slice(newline + 1),
     };
-    if (header[3]) state.exitCode = Number(header[3]);
+    if (header[4]) state.exitCode = Number(header[4]);
     return state;
 }
 
@@ -88,14 +90,15 @@ function readState(job: string, result: ExecResult): JobState {
 export async function startJob(
     workspace: IWorkspace,
     input: {
-        command: string; 
-        cwd?: string; 
-        signal: AbortSignal 
+        command: string;
+        cwd?: string;
+        signal: AbortSignal;
+        outputLogMaxBytes: number;
     },
 ): Promise<BashJobResult> {
     const job = randomBytes(6).toString('hex');
     const result = await workspace.exec(
-        ['sh', '-c', JOB_START_SCRIPT, 'sh', JOB_INNER_SCRIPT, input.command, job, input.cwd ?? ''],
+        ['sh', '-c', JOB_START_SCRIPT, 'sh', JOB_INNER_SCRIPT, input.command, job, input.cwd ?? '', String(input.outputLogMaxBytes)],
         { signal: input.signal },
     );
     if (input.cwd !== undefined && result.stdout === `${CWD_MISSING}\n`) {
@@ -111,10 +114,11 @@ export async function startJob(
     };
 }
 
-export function bashOutputTool(workspaces: CodingWorkspaces): Tool<JobOutputInput, BashOutputResult> {
+export function bashOutputTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number): Tool<JobOutputInput, BashOutputResult> {
     return defineTool<JobOutputInput, BashOutputResult>({
         description: 'Read the output (stdout and stderr together) and status of a background job of bash: ' +
             `at most ${JOB_OUTPUT_MAX_BYTES} bytes from offset (default 0); pass nextOffset to read on. ` +
+            `A job whose output passes ${outputLogMaxBytes} bytes is killed with its processes (status killed, outputCapped: true). ` +
             'Status running, exited (with exitCode), killed or lost (its container restarted).',
         inputSchema: objectSchema<JobOutputInput>({
             job: JOB,
@@ -147,6 +151,7 @@ export function bashOutputTool(workspaces: CodingWorkspaces): Tool<JobOutputInpu
                 nextOffset,
                 size: state.size,
                 truncated: nextOffset < state.size,
+                outputCapped: state.capped,
             };
             if (state.exitCode !== undefined) answer.exitCode = state.exitCode;
             return answer;

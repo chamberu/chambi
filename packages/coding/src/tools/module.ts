@@ -50,7 +50,7 @@ export function codingTools(workspaces: CodingWorkspaces, options: CodingToolsOp
         list_files: listFilesTool(workspaces),
         glob: globTool(workspaces),
         bash: bashTool(workspaces, outputLogMaxBytes),
-        bash_output: bashOutputTool(workspaces),
+        bash_output: bashOutputTool(workspaces, outputLogMaxBytes),
         bash_kill: bashKillTool(workspaces),
         git_diff: gitDiffTool(workspaces),
     };

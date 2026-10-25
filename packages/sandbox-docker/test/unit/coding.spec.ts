@@ -23,7 +23,7 @@ import type {
     BashResult,
     GrepResult,
 } from '@chamvi/coding';
-import { MemoryStore, createAgentState } from '@chamvi/core';
+import { MemoryStore, SandboxError, createAgentState } from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
 import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { IWorkspaceManager } from '@chamvi/sandbox';
@@ -314,6 +314,19 @@ describeDocker('coding tools in a BusyBox image', () => {
         await expect(call('grep', { pattern: '(', path: run.stdoutLog })).rejects.toThrow(/grep failed: .*regex/);
     });
 
+    it.skipIf(offline)('leaves no zombie behind under a PID 1 that is no init', async () => {
+        for (let i = 0; i < 10; i++) {
+            await expect(call('bash', { command: 'echo hi' })).resolves.toMatchObject({ stdout: 'hi\n' });
+        }
+        const job = await call<BashJobResult>('bash', { command: 'exit 0', background: true });
+        await vi.waitFor(async () => {
+            await expect(call('bash_output', { job: job.job })).resolves.toMatchObject({ status: 'exited' });
+        }, { timeout: 5_000 });
+        // field 3 of /proc/<pid>/stat is the state; the names here hold no space
+        const zombies = await call<BashResult>('bash', { command: 'cat /proc/[0-9]*/stat 2>/dev/null | awk \'$3 == "Z" { print $2 }\'' });
+        expect(zombies).toMatchObject({ exitCode: 0, stdout: '' });
+    });
+
     it.skipIf(offline)('kills a command whose log passes the cap', async () => {
         await expect(call('bash', { command: 'yes', timeoutMs: 60_000 })).resolves.toMatchObject({
             outputCapped: true,
@@ -321,5 +334,37 @@ describeDocker('coding tools in a BusyBox image', () => {
             stdoutBytes: 1_048_576,
         });
         await expect(call('bash', { command: 'echo ok' })).resolves.toMatchObject({ stdout: 'ok\n', outputCapped: false });
+    });
+});
+
+describeDocker('coding tools with HOME on a small /tmp', () => {
+    const runId = `test-coding-hardened-${randomUUID()}`;
+    let manager: IWorkspaceManager;
+    let tools: ToolSet;
+    const call = caller(() => tools, runId);
+
+    beforeAll(async () => {
+        manager = createWorkspaceManager({
+            provider: createDockerSandbox({
+                ...dockerOptions,
+                user: '1000:1000',
+                readOnlyRoot: true,
+                tmpSize: '16Mi',
+            }),
+            gcIntervalMs: 0,
+        });
+        await manager.acquire(runId, {});
+        tools = codingTools(manager);
+    });
+
+    afterAll(async () => {
+        await manager?.close();
+    });
+
+    it('says the disk is full instead of answering with a broken report', async () => {
+        await expect(call('bash', { command: 'echo "$HOME"' })).resolves.toMatchObject({ stdout: '/tmp\n' });
+        await expect(call('bash', { command: 'head -c 33554432 /dev/zero > /tmp/fill; echo filled' })).rejects.toThrow(SandboxError);
+        await expect(call('bash', { command: 'echo hello' })).rejects.toThrow(/no space left/);
+        await expect(call('bash', { command: 'rm -f /tmp/fill; echo freed' })).resolves.toMatchObject({ exitCode: 0, stdout: 'freed\n' });
     });
 });

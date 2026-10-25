@@ -86,9 +86,35 @@ describe('background jobs', () => {
             nextOffset: 8,
             size: 8,
             truncated: false,
+            outputCapped: false,
         });
         const log = await s.call<{ content: string }>('read_file', { path: job.outputLog });
         expect(log.content).toBe('one\ntwo');
+    });
+
+    it('kills a job whose output passes the log cap and keeps the output at the cap', async () => {
+        const capped = await setupCoding(fixture, { outputLogMaxBytes: 1_048_576 });
+        try {
+            const job = await capped.call<BashJobResult>('bash', { command: 'echo $$ > job.pid; echo start; yes', background: true });
+            const pid = await vi.waitFor(async () => Number((await readFile(join(capped.root, capped.workspace.id, 'repo', 'job.pid'), 'utf8')).trim()), { timeout: 5_000 });
+            await vi.waitFor(async () => {
+                await expect(capped.call('bash_output', { job: job.job, offset: 1_048_576 })).resolves.toMatchObject({
+                    status: 'killed',
+                    size: 1_048_576,
+                    outputCapped: true,
+                    output: '',
+                });
+            }, { timeout: 15_000 });
+            await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 5_000 });
+            await expect(capped.call('bash_output', { job: job.job })).resolves.toMatchObject({ output: expect.stringMatching(/^start\ny\n/) });
+
+            const quiet = await capped.call<BashJobResult>('bash', { command: 'echo done', background: true });
+            await vi.waitFor(async () => {
+                await expect(capped.call('bash_output', { job: quiet.job })).resolves.toMatchObject({ status: 'exited', outputCapped: false });
+            }, { timeout: 5_000 });
+        } finally {
+            await capped.cleanup();
+        }
     });
 
     it('starts in the kept working directory with the kept variables', async () => {
