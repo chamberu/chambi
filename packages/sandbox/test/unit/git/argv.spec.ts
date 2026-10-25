@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { EXEC_TIMEOUT_MS } from '@chamvi/sandbox';
-import { SandboxError } from '@chamvi/core';
+import { SandboxError, ValidationError } from '@chamvi/core';
 import { GIT_AUTH_REFUSED_EXIT, GIT_AUTH_SCRIPT } from '../../../src/git/constants.ts';
 import { credentialKey, credentialsFileContent } from '../../../src/git/helpers.ts';
 import { gitArgv, runGit } from '../../../src/git/module.ts';
@@ -65,6 +65,12 @@ describe('runGit refusing a poisoned config', () => {
     it('keeps the exit code of a plain git call', async () => {
         const workspace = createScriptedWorkspace(() => ({ exitCode: GIT_AUTH_REFUSED_EXIT }));
         await expect(runGit(workspace, { url, args: ['fetch', url] })).resolves.toMatchObject({ exitCode: GIT_AUTH_REFUSED_EXIT });
+    });
+});
+
+describe('urlRepoPath of a malformed escape', () => {
+    it('throws a ValidationError, not a URIError', () => {
+        expect(() => credentialKey('https://gitlab.com/o/%zz.git')).toThrow(ValidationError);
     });
 });
 

@@ -23,6 +23,7 @@ import {
     NO_REPO_CHECKOUT,
     REPO_RULE,
 } from './constants.ts';
+import { decodeRepoPath } from '../credentials/helpers.ts';
 import { gitArgv } from '../git/module.ts';
 import {
     hasUnsafeCharacter,
@@ -59,6 +60,8 @@ export function normalizeRepo(input: string, options: NormalizeRepoOptions = {})
             if (url.hostname === '' || url.pathname === '/' || url.pathname === '') {
                 throw new ValidationError(REPO_RULE);
             }
+            // credential lookups decode the path: a malformed escape is refused here
+            decodeRepoPath(url.pathname);
         } else if (url.protocol === 'file:' && options.allowFileRepos === true) {
             if (url.host !== '' || !input.startsWith('file:///')) {
                 throw new ValidationError('A file repository must be file:///absolute/path.');

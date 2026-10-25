@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { InvalidAgentDefinitionError, SandboxError } from '@chamvi/core';
+import { InvalidAgentDefinitionError, SandboxError, ValidationError } from '@chamvi/core';
 import { staticGitCredentials } from '@chamvi/sandbox';
 import type { GitCredentialRequest } from '@chamvi/sandbox';
 import { credentialRequest, resolveGitCredential } from '../../../src/credentials/helpers.ts';
@@ -28,6 +28,10 @@ describe('credentialRequest', () => {
         });
         expect(request('https://git.example.com:8443/group/sub/repo/').host).toBe('git.example.com:8443');
         expect(request('https://git.example.com:8443/group/sub/repo/').path).toBe('group/sub/repo');
+    });
+
+    it('refuses a path with a malformed percent escape as a ValidationError', () => {
+        expect(() => request('https://gitlab.com/o/%zz.git')).toThrow(ValidationError);
     });
 
     it('asks for the host itself with an empty path', () => {
