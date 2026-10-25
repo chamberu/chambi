@@ -20,7 +20,9 @@ const GC_INTERVAL_MS: 600_000;
 const CLOSE_TIMEOUT_MS: 30_000;
 ```
 
-Throws `InvalidAgentDefinitionError` for a provider without `create` and `collectGarbage`, an empty `image`, invalid `env` or `limits`, an `allowRepo` or `onError` that is no function, a `maxWorkspacesPerRun` below 1 or a negative `gcIntervalMs`.
+Throws `InvalidAgentDefinitionError` for a provider without `create`, `find` and `collectGarbage`, an empty `image`, invalid `env` or `limits`, a `deployment` that is no label value, an `allowRepo`, `isSettled` or `onError` that is no function, a `maxWorkspacesPerRun` below 1 or a negative `gcIntervalMs`.
+
+On a miss (`get` without a held workspace that fits, `acquire` of a repository it does not hold) the manager asks `provider.find(runId, { deployment })` once per run at a time and adopts what it finds, so a run reaches its workspaces after a restart or on another replica. `release(runId)` (and `attach` for a settled run) disposes the held workspaces and every one `find` reports; `close()` disposes nothing a live run holds.
 
 <<< ../../../sandbox/src/manager/types.ts{ts}
 
@@ -45,10 +47,22 @@ function parseCpu(value: string): number;
 function parseMemory(value: string): number;
 function assertSandboxEnv(env: Record<string, string> | undefined): void;
 function prepareWorkspace(workspace: IWorkspace, input: { repo?: string; ref?: string; signal?: AbortSignal }): Promise<{ commit?: string }>;
+function readCheckoutCommit(workspace: IWorkspace, signal?: AbortSignal): Promise<string | undefined>;
 function createOutputCollector(maxBytes: number): IOutputCollector;
 ```
 
-`normalizeRepo`, `assertGitRef` and `resolveWorkspacePath` throw `ValidationError` (model input); `resolveLimits`, `parseCpu`, `parseMemory` and `assertSandboxEnv` throw `InvalidAgentDefinitionError` (configuration); `prepareWorkspace` throws `SandboxError` with git's stderr when a checkout step fails.
+For provider authors, the workspace metadata `find` rebuilds the info from:
+
+```ts
+function assertDeployment(value: unknown): string; // DEFAULT_DEPLOYMENT for undefined, else a label value or ValidationError
+function repoKey(repo: string): string;            // 32 hex of the URL's sha256, a label value
+function workspaceLabels(input: { id: string; runId: string; deployment: string; repo?: string }): Record<string, string>;
+function workspaceMetadata(info: WorkspaceInfo): Record<string, string>; // created, expiry, repo, ref, image
+function readWorkspaceInfo(values: Readonly<Record<string, string | undefined>>, provider: string): WorkspaceInfo | undefined;
+function createSettledCheck(isSettled?: (runId: string) => Promise<boolean>): (runId: string) => Promise<boolean | SandboxError>;
+```
+
+`normalizeRepo`, `assertGitRef` and `resolveWorkspacePath` throw `ValidationError` (model input); `resolveLimits`, `parseCpu`, `parseMemory` and `assertSandboxEnv` throw `InvalidAgentDefinitionError` (configuration); `prepareWorkspace` throws `SandboxError` with git's stderr when a checkout step fails and records the commit as `git config chamvi.commit`, which `readCheckoutCommit` reads back.
 
 ### Remote workspaces
 
@@ -82,7 +96,7 @@ function sandboxModule(options?: SandboxModuleOptions): SandboxModule; // name S
 const SANDBOX_PROVIDER_NAMES: readonly SandboxProviderName[]; // ['local', 'docker', 'kubernetes']
 ```
 
-The provider is `CHAMVI_SANDBOX_PROVIDER`, else `options.provider`, else `local`, read from `options.env ?? process.env` when the factory is called; `CHAMVI_SANDBOX_NAMESPACE` and `CHAMVI_SANDBOX_IMAGE` win over the options too. In start and job mode `setup` imports the provider package (`@chamvi/sandbox-local`, `@chamvi/sandbox-docker` or `@chamvi/sandbox-k8s`, installed beside `@chamvi/sandbox` and resolved from there; they are no declared peers, since every provider depends on `@chamvi/sandbox` and release-please refuses the cycle; a missing one throws `InvalidAgentDefinitionError` naming it, and under a strict layout that hides undeclared packages (Yarn PnP, pnpm with `hoist=false`) pass a built provider as `options.provider`), and the lifecycle hooks attach the manager to the engine, provide it (`engineCreated`) and close it after the engine drained; migrate mode does nothing. `@chamvi/app` is an optional peer: the main entry never imports it.
+The provider is `CHAMVI_SANDBOX_PROVIDER`, else `options.provider`, else `local`, read from `options.env ?? process.env` when the factory is called; `CHAMVI_SANDBOX_NAMESPACE`, `CHAMVI_SANDBOX_IMAGE` and `CHAMVI_DEPLOYMENT` (the manager's `deployment`) win over the options too. `isSettled` defaults to the engine's `getRun`: a missing or settled run's workspaces are collected. In start and job mode `setup` imports the provider package (`@chamvi/sandbox-local`, `@chamvi/sandbox-docker` or `@chamvi/sandbox-k8s`, installed beside `@chamvi/sandbox` and resolved from there; they are no declared peers, since every provider depends on `@chamvi/sandbox` and release-please refuses the cycle; a missing one throws `InvalidAgentDefinitionError` naming it, and under a strict layout that hides undeclared packages (Yarn PnP, pnpm with `hoist=false`) pass a built provider as `options.provider`), and the lifecycle hooks attach the manager to the engine, provide it (`engineCreated`) and close it after the engine drained; migrate mode does nothing. `@chamvi/app` is an optional peer: the main entry never imports it.
 
 <<< ../../../sandbox/src/module/types.ts#public{ts}
 
@@ -92,7 +106,7 @@ The provider is `CHAMVI_SANDBOX_PROVIDER`, else `options.provider`, else `local`
 function createLocalSandbox(options?: LocalSandboxOptions): ISandboxProvider; // name 'local'
 ```
 
-No isolation: development and tests only. Workspaces are folders under `root` (default `<os tmpdir>/chamvi-workspaces`); of the limits only `timeoutMs` applies.
+No isolation: development and tests only. Workspaces are folders under `root` (default `<os tmpdir>/chamvi-workspaces`); of the limits only `maxLifetimeMs` applies. `find` rebuilds a workspace from its `workspace.json`, so a restarted process reaches it.
 
 <<< ../../../sandbox-local/src/provider/types.ts{ts}
 
@@ -106,7 +120,7 @@ const CONTAINER_NAME_PREFIX: 'chamvi-ws-';
 const SANDBOX_USER: '1000:1000';
 ```
 
-One container per workspace, removed with its volume on dispose. Creating the provider contacts nothing.
+One container per workspace (`sleep infinity`: its lifetime follows the run), removed with its volume on dispose or by the garbage collection. `find` lists a run's containers by label and starts a stopped one again. Creating the provider contacts nothing.
 
 <<< ../../../sandbox-docker/src/provider/types.ts{ts}
 
@@ -123,7 +137,7 @@ const POLL_MS: 1_000;
 const FATAL_WAITING_REASONS: readonly string[];
 ```
 
-One pod per workspace. The Role needs `pods` `create`, `get`, `list`, `delete` and `pods/exec` `get` and `create` in the sandbox namespace. See [Kubernetes & Flux](/deployment/kubernetes#sandboxes-in-the-cluster).
+One pod per workspace, without `activeDeadlineSeconds` (its lifetime follows the run); `find` lists a run's running pods by label. The Role needs `pods` `create`, `get`, `list`, `delete` and `pods/exec` `get` and `create` in the sandbox namespace. See [Kubernetes & Flux](/deployment/kubernetes#sandboxes-in-the-cluster).
 
 <<< ../../../sandbox-k8s/src/provider/types.ts{ts}
 

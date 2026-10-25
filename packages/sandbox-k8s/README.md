@@ -6,8 +6,8 @@
 
 <p align="center">
     <b>One hardened pod per workspace, for chamvi agents on Kubernetes.</b><br>
-    Non-root, a read-only root, no capabilities, no service account token, resource limits<br>
-    and <code>activeDeadlineSeconds</code>: a pod that cleans up after itself.
+    Non-root, a read-only root, no capabilities, no service account token, resource limits,<br>
+    found again by label after a restart or on another replica.
 </p>
 
 <p align="center">
@@ -81,16 +81,16 @@ Each workspace is a bare pod `chamvi-ws-<id>` with one container `sandbox`:
 
 | Setting | Value |
 |---|---|
-| Pod | `restartPolicy: Never`, `automountServiceAccountToken: false`, `enableServiceLinks: false`, `activeDeadlineSeconds: <lifetime>`, `terminationGracePeriodSeconds: 5` |
+| Pod | `restartPolicy: Never`, `automountServiceAccountToken: false`, `enableServiceLinks: false`, no `activeDeadlineSeconds` (the lifetime follows the run), `terminationGracePeriodSeconds: 5` |
 | Pod security | `runAsNonRoot`, uid and gid 1000, `fsGroup: 1000`, seccomp `RuntimeDefault` |
 | Container security | `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, not privileged, all capabilities dropped |
-| Command | the image's entrypoint (`tini`) with `sleep <lifetime in seconds>` |
+| Command | the image's entrypoint (`tini`) with `sleep infinity` |
 | Resources | requests equal limits: `cpu`, `memory`, `ephemeral-storage` from `storage` |
 | `/workspace` | an emptyDir with `sizeLimit` from `storage` |
 | `/tmp` | a memory-backed emptyDir of 512 MiB |
 | Environment | `SANDBOX_ENV` plus `env`, nothing from chamvi's pod |
-| Labels | `podLabels`, then `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>` (the managed labels win; `podLabels` naming one throws; a `runId` that is no label value is a `ValidationError`, engine run ids are UUIDs) |
-| Annotation | `chamvi.dev/expires-at=<epoch ms>` |
+| Labels | `podLabels`, then `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>`, `chamvi.dev/deployment=<deployment>`, `chamvi.dev/repo-key=<hash>` (with a repository) (the managed labels win; `podLabels` naming one throws; a `runId` that is no label value is a `ValidationError`, engine run ids are UUIDs) |
+| Annotations | `chamvi.dev/created-at` and `chamvi.dev/expires-at` (epoch ms), `chamvi.dev/repo`, `chamvi.dev/ref`, `chamvi.dev/image` |
 
 A pod is used rather than a Job: exec needs a pod name known at create time, and a Job's controller, retries and generated names add nothing the pod spec does not already enforce.
 
@@ -108,13 +108,13 @@ The default image is `ghcr.io/chamvi/sandbox-node:24` (`DEFAULT_SANDBOX_IMAGE`),
 
 ## Timeouts and abort
 
-Every command runs as `timeout -k 5 <seconds> <argv>`, which signals its whole process group. A client-side guard stops waiting 15 s after the timeout and reports exit 137 with the output so far. Kubernetes sends an exec's exit status only once every process holding its output closed it, so the command reports its exit on stderr itself: one that exits while a background job it started holds its output (`node server.js & echo started`) returns about 2 s after its exit with its own exit code, and the job runs on until the pod is deleted. An abort (`signal`) **detaches**: the exec WebSocket closes, and the command runs on until its `timeout` fires or the pod is deleted. Every settled run disposes its workspaces (`manager.attach(engine)`), and a drain is followed by `manager.close()`. A dispose deletes the pod without a grace period.
+Every command runs as `timeout -k 5 <seconds> <argv>`, which signals its whole process group. A client-side guard stops waiting 15 s after the timeout and reports exit 137 with the output so far. Kubernetes sends an exec's exit status only once every process holding its output closed it, so the command reports its exit on stderr itself: one that exits while a background job it started holds its output (`node server.js & echo started`) returns about 2 s after its exit with its own exit code, and the job runs on until the pod is deleted. An abort (`signal`) **detaches**: the exec WebSocket closes, and the command runs on until its `timeout` fires or the pod is deleted. Every settled run disposes its workspaces (`manager.attach(engine)`). A dispose deletes the pod without a grace period.
 
 Stdin is closed only on the `v5.channel.k8s.io` exec protocol (Kubernetes 1.30+); on `v4` it is written but never closed, so a command waiting for stdin EOF hangs until its timeout. `writeFile` does not depend on it (`head -c <bytes>`).
 
 ## Garbage collection
 
-`collectGarbage()` lists the namespace's pods with the managed labels and deletes those past their `chamvi.dev/expires-at` annotation and those in phase `Failed` or `Succeeded` (open workspaces of this process are disposed first). The manager calls it from `acquire` at most every 10 minutes; `activeDeadlineSeconds` stops a pod at expiry even when no collection runs. A pod that cannot be removed does not stop the pass: the others go, and one `SandboxError` with the count and the first failure is thrown at the end.
+`find(runId, { deployment })` lists the run's pods by label and rebuilds the workspaces of the running ones (a pod that failed, finished or is being deleted is gone), so a run finds its workspace after a restart or on another replica. `collectGarbage({ deployment, isSettled })` lists the deployment's pods with the managed labels and deletes those past their `chamvi.dev/expires-at` annotation, those in phase `Failed` or `Succeeded` and, with `isSettled`, those of settled runs (open workspaces of this process are disposed first). The manager calls it from `acquire` at most every 10 minutes; it is the only reaper. A pod that cannot be removed does not stop the pass: the others go, and one `SandboxError` with the count and the first failure is thrown at the end.
 
 ## Options
 
@@ -127,7 +127,7 @@ Stdin is closed only on the `v5.channel.k8s.io` exec protocol (Kubernetes 1.30+)
 | `image` | `string` | `DEFAULT_SANDBOX_IMAGE` | The workspace image; pin a digest in production |
 | `imagePullPolicy` | `'IfNotPresent' \| 'Always'` | `'IfNotPresent'` | `'Always'` for a mutable tag |
 | `env` | `Record<string, string>` | none | Added after `SANDBOX_ENV` |
-| `limits` | `SandboxLimits` | `DEFAULT_LIMITS` | `cpu`, `memory`, `storage`, `timeoutMs` (`pids`: see above) |
+| `limits` | `SandboxLimits` | `DEFAULT_LIMITS` | `cpu`, `memory`, `storage`, `maxLifetimeMs` (`pids`: see above) |
 | `podLabels` | `Record<string, string>` | none | Extra labels, e.g. for a NetworkPolicy; may not name a managed label |
 | `startTimeoutMs` | `number` | `120_000` | How long `create` waits for the pod to run |
 | `pollMs` | `number` | `1_000` | Status poll interval while it waits |

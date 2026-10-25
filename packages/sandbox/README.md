@@ -47,7 +47,7 @@ ESM only, Node.js `>=22`. `@chamvi/core` and `ai` are peer dependencies. Install
 |---|---|---|
 | [`@chamvi/sandbox-local`](../sandbox-local) | A temporary directory on the host, as the host user | None: development and tests only |
 | [`@chamvi/sandbox-docker`](../sandbox-docker) | One container per workspace | uid 1000, read-only root, no capabilities, `no-new-privileges`, cpu, memory and pid limits |
-| [`@chamvi/sandbox-k8s`](../sandbox-k8s) | One pod per workspace | Non-root, read-only root, no capabilities, no service account token, resource limits, `activeDeadlineSeconds` |
+| [`@chamvi/sandbox-k8s`](../sandbox-k8s) | One pod per workspace | Non-root, read-only root, no capabilities, no service account token, resource limits |
 
 The coding tools (`read_file`, `edit_file`, `bash`, `git_diff`, ...) live in [`@chamvi/coding`](../coding).
 
@@ -79,14 +79,14 @@ export function createWorkspaces(
 }
 ```
 
-Give the agent `workspaces.tools()` (and usually `codingTools(workspaces)` from `@chamvi/coding`). At shutdown, close the manager **after** the engine drained, so runs still executing keep their workspaces:
+Give the agent `workspaces.tools()` (and usually `codingTools(workspaces)` from `@chamvi/coding`). At shutdown, close the manager **after** the engine drained. It disposes nothing a live run holds: a run waiting for an approval or interrupted by the drain finds its workspaces again after the restart.
 
 ```ts
 await engine.drain();
 await workspaces.close();
 ```
 
-`close()` aborts the creates still in flight and waits for them and for every disposal, also those a run that settled during `engine.drain()` started, at most `timeoutMs` (`CLOSE_TIMEOUT_MS`, 30 s): then it resolves and reports what is still being disposed to `onError`, so a hanging Docker daemon or Kubernetes API cannot stall the shutdown. `release(runId)` waits for the run's creates in flight the same way.
+`close()` aborts the creates still in flight (disposing what they made) and waits for them and for every disposal already started, also those a run that settled during `engine.drain()` started, at most `timeoutMs` (`CLOSE_TIMEOUT_MS`, 30 s): then it resolves and reports what is still being disposed to `onError`, so a hanging Docker daemon or Kubernetes API cannot stall the shutdown. `release(runId)` waits for the run's creates in flight the same way.
 
 ## Workspace tools
 
@@ -100,27 +100,26 @@ await workspaces.close();
 - `create_workspace` with a `repo` checks it out shallowly at `ref` (default: the default branch); without one the workspace is an empty `git init`-ed directory (for "install the published package and run a repro script"). Calling it again for the same repository returns the same workspace with `reused: true`; another `ref` of a held repository is an error telling the model to dispose it first.
 - A run holds at most `maxWorkspacesPerRun` (3) workspaces at once.
 - A workspace id of another run is "not found", never that workspace: ids land in stored steps that other readers may see.
-- Neither tool is an effect tool: a workspace lives in one process and dies with it, while an effect record would survive in the store and skip the redone step on a fresh workspace. A crashed run that recovers finds no workspace and is told to create a new one.
+- Neither tool is an effect tool: a workspace can be removed, expire or be collected, while an effect record would survive in the store and skip the redone step on a fresh workspace.
 
 ## Lifecycle
 
-A workspace is keyed by `(run, repository)` and lives until the first of:
+A workspace is keyed by `(run, repository)`. Its lifetime follows the run (containers sleep forever, pods have no deadline), and it lives until the first of:
 
-- the run settles (`completed`, `failed`, `cancelled`; through `attach(engine)`); it is kept while the run is `waiting` for an approval or `interrupted` on this replica,
+- the run settles (`completed`, `failed`, `cancelled`; through `attach(engine)`, which also disposes the run's workspaces another process created); it is kept while the run is `waiting` for an approval or `interrupted`,
 - `dispose_workspace` or `manager.release(runId, id?)`,
-- its expiry (`limits.timeoutMs`, default 30 minutes), checked on every `get` and `acquire`,
+- its hard cap (`limits.maxLifetimeMs`, default 7 days from its creation, never renewed), checked on every `get` and `acquire`,
 - it was found gone (`workspace.disposed`; see [Workspaces](#workspaces)), checked on every `get` and `acquire`,
-- `manager.close()`,
-- garbage collection: `acquire` runs `manager.collectGarbage()` at most every `gcIntervalMs` (10 minutes), which disposes the manager's expired workspaces and then calls the provider's `collectGarbage()` (expired containers, pods or directories left behind by crashed processes). Call it from your own timer too if runs are rare.
+- garbage collection: `acquire` runs `manager.collectGarbage()` at most every `gcIntervalMs` (10 minutes), which disposes the manager's expired workspaces, with `isSettled` releases the runs that settled, and then calls the provider's `collectGarbage({ deployment, isSettled })` (expired containers, pods or directories, and with `isSettled` those of settled or missing runs, also left behind by crashed processes). Call it from your own timer too if runs are rare.
 
-A run resumed on another replica or after a restart gets "workspace not found" and calls `create_workspace` again. Re-attaching by label is planned.
+**Finding workspaces again**: on a miss (`get` without a held workspace that fits, `acquire` of a repository it does not hold) the manager asks `provider.find(runId, { deployment })` (one lookup per run at a time) and adopts what it finds, so a run reaches its workspaces after an approval pause, a restart or on another replica of the same Docker host or cluster. `deployment` (default `'default'`) keeps deployments that share a host or namespace apart: `find` and the garbage collection only see their own. `isSettled(runId)` tells the garbage collection which runs settled (`sandboxModule()` answers it through the engine).
 
 ## Workspaces
 
 ```ts
 interface IWorkspace {
     readonly id: string;              // randomUUID()
-    readonly info: WorkspaceInfo;     // runId, provider, repo, ref, commit, createdAt, expiresAt
+    readonly info: WorkspaceInfo;     // runId, provider, repo, ref, commit, image, createdAt, expiresAt
     readonly disposed: boolean;       // disposed, or found gone
     exec(argv: readonly string[], options?: ExecOptions): Promise<ExecResult>;
     readFile(path: string): Promise<string>;
@@ -163,7 +162,7 @@ The checkout runs inside the workspace through its own `exec`, the same commands
 | `memory` | `'2Gi'` | not enforced | `Memory` (no swap on top) | requests and limits |
 | `storage` | `'4Gi'` | not enforced | not enforced (a default volume has no size) | emptyDir `sizeLimit`, `ephemeral-storage` |
 | `pids` | `512` | not enforced | `PidsLimit` | the kubelet's `podPidsLimit` |
-| `timeoutMs` | `1_800_000` | expiry | expiry, `sleep <lifetime>` | expiry, `activeDeadlineSeconds` |
+| `maxLifetimeMs` | `604_800_000` (7 days) | expiry | expiry (removed by the garbage collection) | expiry (removed by the garbage collection) |
 
 Quantities use Kubernetes notation (`'500m'`, `'1.5'`, `'512Mi'`, `'2G'`). `/tmp` is a 512 MiB tmpfs in containers and pods (`TMP_SIZE`).
 
@@ -177,7 +176,7 @@ No host environment reaches a workspace. Containers and pods get `SANDBOX_ENV` (
 
 ## Writing a provider
 
-A provider implements `ISandboxProvider` (`name`, `create(options)`, `collectGarbage()`). A container-like provider only needs an `IExecTransport` (`exec(argv, { stdin, stdout, stderr, signal })` that streams the output into the given sinks and resolves `{ exitCode }`, `remove()` and optionally `alive(signal)`, asked after a failed exec: `false` marks the workspace gone): `createRemoteWorkspace({ id, info, transport, clock })` adds the rest. It runs argv through `sh -c` with the working directory and the `timeout` wrapper and has the script report the exit status on stderr, so an exec returns 2 s after the command exited even when a background job holds the output; it adds the client-side guard, path checks, output caps, file reads and writes and dispose semantics. After creating, call `prepareWorkspace(workspace, { repo, ref, signal })` and set `info.commit`. `describeWorkspaceContract()` from `@chamvi/test-kit` is the Vitest suite every provider must pass.
+A provider implements `ISandboxProvider` (`name`, `create(options)`, `find(runId, { deployment, signal })`, `collectGarbage({ deployment, isSettled })`). Put `workspaceLabels()` and `workspaceMetadata()` on what you create and rebuild the info in `find` with `readWorkspaceInfo()` and `readCheckoutCommit()`; `createSettledCheck()` asks `isSettled` once per run in a pass. A container-like provider only needs an `IExecTransport` (`exec(argv, { stdin, stdout, stderr, signal })` that streams the output into the given sinks and resolves `{ exitCode }`, `remove()` and optionally `alive(signal)`, asked after a failed exec: `false` marks the workspace gone): `createRemoteWorkspace({ id, info, transport, clock })` adds the rest. It runs argv through `sh -c` with the working directory and the `timeout` wrapper and has the script report the exit status on stderr, so an exec returns 2 s after the command exited even when a background job holds the output; it adds the client-side guard, path checks, output caps, file reads and writes and dispose semantics. After creating, call `prepareWorkspace(workspace, { repo, ref, signal })` and set `info.commit`. `describeWorkspaceContract()` from `@chamvi/test-kit` is the Vitest suite every provider must pass.
 
 ## Context
 
