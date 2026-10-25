@@ -44,6 +44,16 @@ npm install @chamvi/sandbox @chamvi/coding @chamvi/sandbox-local    # developmen
 
 `@chamvi/core` and `ai` are peer dependencies of all of them. See [Workspaces & Coding](/guide/workspaces).
 
+## Web research tools
+
+Agents that read the web (pages, package registries, a search provider) add the web tools:
+
+```bash
+npm install @chamvi/tool-web
+```
+
+`@chamvi/core` and `ai` are peer dependencies. See [Web research tools](/guide/tools#web-research-tools).
+
 ## App and CLI
 
 An agent repository that runs as a service (HTTP, cron, the store from `DATABASE_URL`, a graceful shutdown) exports one `createApp()` and runs it with the `chamvi` bin:
@@ -67,6 +77,7 @@ npm install --save-dev tsdown   # only for chamvi build
 | `@chamvi/github` | Shipped (0.x), the GitHub channel (deliveries in, comments out) and tools |
 | `@chamvi/sandbox`, `@chamvi/sandbox-local`, `@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s` | Shipped (0.x), disposable workspaces |
 | `@chamvi/coding` | Shipped (0.x), coding tools over a workspace |
+| `@chamvi/tool-web` | Shipped (0.x), web fetch, package registry lookups and a pluggable search |
 | `@chamvi/channel-openclaw` | Shipped (0.x), the OpenClaw channel: messages and approval requests into a chat |
 | `@chamvi/ui` | Shipped (0.x), the dashboard |
 | `@chamvi/app`, `@chamvi/cli` | Shipped (0.x), `createApp()` and the `chamvi` bin |

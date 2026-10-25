@@ -47,7 +47,7 @@ ESM only, Node.js `>=22`. `@chamvi/core`, [`@chamvi/http`](../http) (it serves t
 One GitHub App per agent repository (or organisation):
 
 1. Create a GitHub App. Set the **webhook URL** to `https://<host><basePath>/channels/github` (the channel's name), the **content type to `application/json`** (a hook created by hand defaults to `application/x-www-form-urlencoded`, which the channel answers with `415`) and a **webhook secret**.
-2. Grant the permissions your tools need: *Issues* read and write for labels, comments and closing; *Pull requests* read; *Contents* read for `github_get_file` and `github_get_latest_release`. Subscribe to the events your subscriptions name (e.g. *Issues*).
+2. Grant the permissions your tools need: *Issues* read and write for labels, comments and closing; *Pull requests* read; *Contents* read for `github_get_file`, `github_get_latest_release`, `github_list_releases` and `github_compare`. Subscribe to the events your subscriptions name (e.g. *Issues*).
 3. Generate a private key and install the App on the repositories the agents may act on.
 4. Pass the App id, the private key (PKCS#1 or PKCS#8 PEM; a one-line env var with literal `\n` works) and the webhook secret to `createGithubApp()`. Set `slug` in production, so the bot login needs no `GET /app`.
 
@@ -239,6 +239,8 @@ Every tool acts as an installation: the delivery's for a run the `github` channe
 | `github_get_pull_request` | read | `repo`, `number` | `number`, `title`, `body`, `state`, `draft`, `merged`, `base`, `head`, `author`, `url`, `changedFiles` |
 | `github_get_file` | read | `repo`, `path`, `ref?` | `{ path, size, content, truncated }` (cut at 65 536 characters) or `{ path, entries }` for a directory |
 | `github_get_latest_release` | read | `repo` | `{ tag, name, publishedAt, url, body }` or `{ none: true }` |
+| `github_list_releases` | read | `repo`, `from?`, `to?`, `tagPrefix?` | `{ releases: [{ tag, name, publishedAt, url, prerelease, body, bodyTruncated }], truncated }`: published releases after `from` up to and including `to` (`v1.2.3` and `1.2.3` both match), oldest first, at most 20, notes cut at 8 000 characters; without `from` the newest 20; drafts skipped |
+| `github_compare` | read | `repo`, `base`, `head` | `{ status, aheadBy, behindBy, totalCommits, url, commits: [{ sha, message, author, date }], files: [{ path, status, additions, deletions }], truncated }`: commit first lines (at most 100) and changed files (at most 300) |
 | `github_add_labels` | effect | `repo`, `number`, `labels` (1 to 20) | `{ labels }`: once per run and input (labels are a set) |
 | `github_create_comment` | effect | `repo`, `number`, `body` | `{ id, url }`: **one comment per issue per model step** |
 | `github_close_issue` | effect | `repo`, `number`, `reason?` (`completed`, `not_planned`) | `{ number, state, stateReason }`; an issue already closed is not patched again |

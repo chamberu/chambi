@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+// #region public
 /** The package registries `package_info` reads. */
 export type PackageEcosystem = 'npm' | 'pypi' | 'crates' | 'packagist' | 'go' | 'rubygems';
 
@@ -62,6 +63,7 @@ export type PackageInfo = {
     /** The registry document this was read from. */
     source: string;
 };
+// #endregion public
 
 /** What an adapter gets: GETs against its registry base, a 404 (or 410) read as undefined. */
 export type RegistryContext = {

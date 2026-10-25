@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import domino from '@mixmark-io/domino';
+import { createRequire } from 'node:module';
 import TurndownService from 'turndown';
 import {
     BLOCK_ELEMENTS,
@@ -13,6 +13,14 @@ import {
     LINK_PROTOCOLS,
     TEXT_MEDIA_TYPES,
 } from './constants.ts';
+
+/**
+ * domino (turndown's own HTML parser) is CommonJS and its bundled types
+ * declare another module name, so it is required with the one function used.
+ */
+const domino = createRequire(import.meta.url)('@mixmark-io/domino') as {
+    createDocument(html?: string, force?: boolean): Document;
+};
 
 export type ConvertedPage = {
     title?: string;

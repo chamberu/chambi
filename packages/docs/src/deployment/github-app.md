@@ -69,6 +69,8 @@ Every tool acts as an installation: the delivery's for a run started by a delive
 | `github_get_pull_request` | read | One pull request with its branches |
 | `github_get_file` | read | A file (cut at 65 536 characters) or a directory listing |
 | `github_get_latest_release` | read | The latest release, or `{ none: true }` |
+| `github_list_releases` | read | The releases between two versions (`v1.2.3` and `1.2.3` both match, `tagPrefix` for a monorepo), oldest first, at most 20, notes cut at 8 000 characters |
+| `github_compare` | read | The commits (first lines, at most 100) and changed files (at most 300) between two refs, for a package without release notes |
 | `github_add_labels` | effect | Adds labels (a set, so naturally idempotent) |
 | `github_create_comment` | effect | One comment per issue per model step, found again by its marker |
 | `github_close_issue` | effect | Closes an issue; meant to sit behind an [approval](/guide/approvals#gating-tools-you-did-not-write) in a `beforeToolExecution` hook |

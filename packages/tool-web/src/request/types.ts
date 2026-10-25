@@ -7,6 +7,7 @@
 
 import type { IClock } from '@chamvi/core';
 
+// #region public
 /** One address a host name resolves to. */
 export type WebAddress = {
     address: string;
@@ -18,6 +19,7 @@ export type WebLookup = (hostname: string, signal: AbortSignal) => Promise<WebAd
 
 /** Decides a URL before the address check: true allows it (also on a non-public address), false refuses it, undefined applies the address check. */
 export type WebUrlPolicy = (url: URL) => boolean | undefined;
+// #endregion public
 
 /** What a transport gets for one hop: the address it must connect to. */
 export type TransportInit = {

@@ -28,7 +28,7 @@
 
 ---
 
-> chamvi is at an early stage. The engine, the cron, HTTP, GitHub and OpenClaw channels, the TypeORM store, sandbox, coding, dashboard, app and CLI packages exist; the base image, Helm chart and template repository are planned.
+> chamvi is at an early stage. The engine, the cron, HTTP, GitHub and OpenClaw channels, the TypeORM store, sandbox, coding, web tools, dashboard, app and CLI packages exist; the base image, Helm chart and template repository are planned.
 
 ## Why chamvi?
 
@@ -87,13 +87,14 @@ Pick one of the others when you want what chamvi does not have yet: a hosted ser
 | [`@chamvi/http`](./packages/http) | [![npm](https://img.shields.io/npm/v/@chamvi/http)](https://www.npmjs.com/package/@chamvi/http) | REST, server-sent events, an MCP endpoint, the `http`, `mcp` and `webhook` channels and the `/channels/<name>` mount, with bearer, authup and OIDC authentication |
 | [`@chamvi/channel-cron`](./packages/channel-cron) | [![npm](https://img.shields.io/npm/v/@chamvi/channel-cron)](https://www.npmjs.com/package/@chamvi/channel-cron) | The cron channel: fires `cron.on()` subscriptions once per tick across replicas, with overlap policies, timezones and one-shot jobs |
 | [`@chamvi/store-typeorm`](./packages/store-typeorm) | [![npm](https://img.shields.io/npm/v/@chamvi/store-typeorm)](https://www.npmjs.com/package/@chamvi/store-typeorm) | TypeORM store (PostgreSQL): durable runs, leases and agent state across replicas |
-| [`@chamvi/github`](./packages/github) | [![npm](https://img.shields.io/npm/v/@chamvi/github)](https://www.npmjs.com/package/@chamvi/github) | GitHub App authentication, the GitHub channel (verified deliveries in, deduplicated by delivery id; issue comments out), and issue, label, comment and search tools |
+| [`@chamvi/github`](./packages/github) | [![npm](https://img.shields.io/npm/v/@chamvi/github)](https://www.npmjs.com/package/@chamvi/github) | GitHub App authentication, the GitHub channel (verified deliveries in, deduplicated by delivery id; issue comments out), and issue, label, comment, search, release and compare tools |
 | [`@chamvi/channel-openclaw`](./packages/channel-openclaw) | [![npm](https://img.shields.io/npm/v/@chamvi/channel-openclaw)](https://www.npmjs.com/package/@chamvi/channel-openclaw) | The OpenClaw channel: messages and approval requests into an OpenClaw chat |
 | [`@chamvi/sandbox`](./packages/sandbox) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox)](https://www.npmjs.com/package/@chamvi/sandbox) | Sandbox contracts and the workspace manager: one workspace per run and repository, `create_workspace` / `dispose_workspace` tools, cleanup when the run settles |
 | [`@chamvi/sandbox-local`](./packages/sandbox-local) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox-local)](https://www.npmjs.com/package/@chamvi/sandbox-local) | Workspaces in a temporary directory, for development and tests (no isolation) |
 | [`@chamvi/sandbox-docker`](./packages/sandbox-docker) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox-docker)](https://www.npmjs.com/package/@chamvi/sandbox-docker) | One hardened container per workspace: non-root, read-only root, no capabilities, resource limits |
 | [`@chamvi/sandbox-k8s`](./packages/sandbox-k8s) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox-k8s)](https://www.npmjs.com/package/@chamvi/sandbox-k8s) | One hardened pod per workspace, without a service account token |
 | [`@chamvi/coding`](./packages/coding) | [![npm](https://img.shields.io/npm/v/@chamvi/coding)](https://www.npmjs.com/package/@chamvi/coding) | `read_file`, `write_file`, `edit_file`, `grep`, `list_files`, `bash` and `git_diff` inside a workspace |
+| [`@chamvi/tool-web`](./packages/tool-web) | [![npm](https://img.shields.io/npm/v/@chamvi/tool-web)](https://www.npmjs.com/package/@chamvi/tool-web) | `web_fetch` (any public page as markdown, behind an SSRF guard), `package_info` (npm, PyPI, crates.io, Packagist, Go, RubyGems) and `web_search` over your own search provider |
 | [`@chamvi/ui`](./packages/ui) | [![npm](https://img.shields.io/npm/v/@chamvi/ui)](https://www.npmjs.com/package/@chamvi/ui) | The dashboard: an agents overview with runs started from the agent page, runs with live steps, an approvals inbox, agent state and schedules, served by `uiRoutes()` |
 | [`@chamvi/app`](./packages/app) | [![npm](https://img.shields.io/npm/v/@chamvi/app)](https://www.npmjs.com/package/@chamvi/app) | `createApp()`: config, store, engine, channels and HTTP as modules booted from env |
 | [`@chamvi/cli`](./packages/cli) | [![npm](https://img.shields.io/npm/v/@chamvi/cli)](https://www.npmjs.com/package/@chamvi/cli) | The `chamvi` bin: `dev`, `build`, `start`, `run-job`, `migrate` |
