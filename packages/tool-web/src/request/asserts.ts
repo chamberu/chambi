@@ -91,7 +91,7 @@ export async function checkedAddresses(input: CheckInput): Promise<WebAddress[]>
     if (decision !== true) {
         for (const { address } of addresses) {
             if (isBlockedAddress(address)) {
-                throw new ValidationError(`${host} resolves to the non-public address ${address}; the web tools reach public addresses only.`);
+                throw new ValidationError(`${host} resolves to a non-public address; the web tools reach public addresses only.`);
             }
         }
     }

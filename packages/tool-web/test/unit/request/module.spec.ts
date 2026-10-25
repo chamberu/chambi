@@ -77,7 +77,9 @@ describe('createRequester', () => {
         const error = await failure(request('http://intranet.example/', { signal }));
 
         expect(error).toBeInstanceOf(ValidationError);
-        expect(error.message).toMatch(/non-public address 10\.0\.0\.5/);
+        expect(error.message).toBe('intranet.example resolves to a non-public address; the web tools reach public addresses only.');
+        // never the address: a redirect to an internal name must not reveal where it points
+        expect(error.message).not.toContain('10.0.0.5');
         expect(web.calls).toEqual([]);
     });
 
