@@ -7,7 +7,7 @@
 
 import type { KubeConfig } from '@kubernetes/client-node';
 import type { IClock } from '@chamvi/core';
-import type { SandboxLimits } from '@chamvi/sandbox';
+import type { SandboxLimits, WorkspaceInfo } from '@chamvi/sandbox';
 import type { IPodClient } from '../client/types.ts';
 
 export type ImagePullPolicy = 'Always' | 'IfNotPresent';
@@ -37,12 +37,12 @@ export type KubernetesSandboxOptions = {
 
 export type PodInput = {
     id: string;
-    runId: string;
+    deployment: string;
     namespace: string;
-    image: string;
+    /** Run, image, repo, ref and times: labels and annotations a provider's `find` rebuilds the info from. */
+    info: WorkspaceInfo & { image: string };
     env: Record<string, string>;
     limits: Required<SandboxLimits>;
-    expiresAt: Date;
     /** The `podLabels`; the managed labels win. */
     labels: Record<string, string>;
     imagePullPolicy: ImagePullPolicy;

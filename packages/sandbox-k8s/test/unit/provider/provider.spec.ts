@@ -78,13 +78,14 @@ describe('kubernetes sandbox', () => {
         const name = `chamvi-ws-${workspace.id}`;
         expect(client.created[0]!.metadata?.name).toBe(name);
         expect(client.created[0]!.metadata?.labels?.['chamvi.dev/run']).toBe('r1');
-        expect(client.execs.map((call) => call.name)).toEqual(Array(5).fill(name));
+        expect(client.execs.map((call) => call.name)).toEqual(Array(6).fill(name));
         expect(client.execs.map((call) => call.argv)).toEqual([
             wrapped(['git', 'init', '-q', '.']),
             wrapped(['git', 'remote', 'add', 'origin', REPO]),
             wrapped(['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'v1']),
             wrapped(['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']),
             wrapped(['git', 'rev-parse', 'HEAD']),
+            wrapped(['git', 'config', 'chamvi.commit', COMMIT]),
         ]);
         expect(workspace.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
         expect(workspace.info).toEqual({
@@ -93,8 +94,9 @@ describe('kubernetes sandbox', () => {
             repo: REPO,
             ref: 'v1',
             commit: COMMIT,
+            image: 'img',
             createdAt: new Date(START),
-            expiresAt: new Date(START + 1_800_000),
+            expiresAt: new Date(START + 604_800_000),
         });
         expect(client.deleted).toEqual([]);
     });
@@ -314,7 +316,7 @@ describe('kubernetes sandbox', () => {
         const container = pod.spec!.containers[0]!;
         expect(pod.metadata?.namespace).toBe('agents');
         expect(pod.metadata?.labels?.team).toBe('x');
-        expect(pod.spec?.activeDeadlineSeconds).toBe(60);
+        expect(pod.metadata?.annotations?.['chamvi.dev/expires-at']).toBe(String(START + 60_000));
         expect(container.image).toBe('other');
         expect(container.imagePullPolicy).toBe('Always');
         expect(container.resources?.limits).toEqual({
@@ -380,6 +382,8 @@ describe('kubernetes sandbox', () => {
     it.each([
         'chamvi.dev/run',
         'chamvi.dev/workspace',
+        'chamvi.dev/deployment',
+        'chamvi.dev/repo-key',
         'app.kubernetes.io/managed-by',
         'app.kubernetes.io/component',
     ])('rejects podLabels that override %s', (key) => {
@@ -417,5 +421,79 @@ describe('kubernetes sandbox', () => {
         await expect(provider.create({ runId: '' })).rejects.toThrow(/runId/);
         await expect(provider.create({ runId: 'r1', env: { 'A B': 'x' } })).rejects.toBeInstanceOf(InvalidAgentDefinitionError);
         expect(client.created).toHaveLength(0);
+    });
+
+    describe('find', () => {
+        const answerCommit: FakeExecHandler = (argv) => {
+            const command = unwrap(argv);
+            if (command[1] === 'rev-parse') return { stdout: `${COMMIT}\n` };
+            if (command[1] === 'config' && command[2] === '--get') return { stdout: `${COMMIT}\n` };
+            return {};
+        };
+
+        it('rebuilds a running pod\'s workspace in another provider from its labels and annotations', async () => {
+            const {
+                client, 
+                clock, 
+                provider, 
+            } = setup(answerCommit);
+            const created = await provider.create({
+                runId: 'r1', 
+                repo: REPO, 
+                ref: 'v1', 
+            });
+
+            const replica = createKubernetesSandbox({
+                namespace: 'agents',
+                image: 'img',
+                client,
+                clock,
+            });
+            client.selectors.length = 0;
+            const found = await replica.find('r1');
+            expect(client.selectors).toEqual(['app.kubernetes.io/managed-by=chamvi,app.kubernetes.io/component=sandbox,chamvi.dev/deployment=default,chamvi.dev/run=r1']);
+            expect(found.map((workspace) => workspace.id)).toEqual([created.id]);
+            expect(found[0]!.info).toEqual(created.info);
+            await expect(found[0]!.exec(['true'])).resolves.toMatchObject({ exitCode: 0 });
+            expect(client.execs.at(-1)!.name).toBe(`chamvi-ws-${created.id}`);
+        });
+
+        it('answers the instance it holds', async () => {
+            const { provider } = setup();
+            const workspace = await provider.create({ runId: 'r1' });
+            const [found] = await provider.find('r1');
+            expect(found).toBe(workspace);
+        });
+
+        it('skips pods that do not run, are being deleted, expired or belong to another deployment', async () => {
+            const {
+                client, 
+                clock, 
+                provider, 
+            } = setup();
+            const failed = await provider.create({ runId: 'r1' });
+            const deleting = await provider.create({ runId: 'r1' });
+            const expired = await provider.create({ runId: 'r1', limits: { maxLifetimeMs: 60_000 } });
+            await provider.create({ runId: 'r1', deployment: 'ci' });
+            const running = await provider.create({ runId: 'r1' });
+            client.pods.get(`chamvi-ws-${failed.id}`)!.status = { phase: 'Failed' };
+            client.pods.get(`chamvi-ws-${deleting.id}`)!.metadata!.deletionTimestamp = new Date();
+            clock.advance(60_000);
+
+            const replica = createKubernetesSandbox({
+                namespace: 'agents', 
+                client, 
+                clock, 
+            });
+            expect((await replica.find('r1')).map((workspace) => workspace.id)).toEqual([running.id]);
+            expect(expired.info.expiresAt.getTime()).toBe(START + 60_000);
+        });
+
+        it('finds nothing for a runId that is no label value, without a request', async () => {
+            const { client, provider } = setup();
+            expect(await provider.find('not a label!')).toEqual([]);
+            expect(client.selectors).toEqual([]);
+            await expect(provider.find('r1', { deployment: 'a b' })).rejects.toBeInstanceOf(ValidationError);
+        });
     });
 });

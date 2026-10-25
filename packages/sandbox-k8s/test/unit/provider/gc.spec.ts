@@ -17,6 +17,7 @@ const START = 1_000_000;
 const managed = {
     'app.kubernetes.io/managed-by': 'chamvi',
     'app.kubernetes.io/component': 'sandbox',
+    'chamvi.dev/deployment': 'default',
 };
 
 function pod(name: string, expiresAt: number, phase: string, labels: Record<string, string> = managed): V1Pod {
@@ -60,7 +61,7 @@ describe('kubernetes garbage collection', () => {
 
         await expect(provider.collectGarbage()).resolves.toBe(2);
         expect(client.deleted).toEqual(['expired', 'failed']);
-        expect(client.selectors).toEqual(['app.kubernetes.io/managed-by=chamvi,app.kubernetes.io/component=sandbox']);
+        expect(client.selectors).toEqual(['app.kubernetes.io/managed-by=chamvi,app.kubernetes.io/component=sandbox,chamvi.dev/deployment=default']);
         expect(client.pods.keys().toArray()).toEqual(['fresh', 'stranger']);
     });
 
@@ -104,6 +105,27 @@ describe('kubernetes garbage collection', () => {
         expect((error as Error).message).toMatch(/removed 2 .*1 failed.*etcd timeout/);
         expect(client.deleted).toEqual(['expired', 'failed']);
         expect(client.pods.keys().toArray()).toEqual(['stuck']);
+    });
+
+    it('deletes the pods of settled runs with isSettled, in its deployment only', async () => {
+        const { client, provider } = setup();
+        const done = await provider.create({ runId: 'done' });
+        const live = await provider.create({ runId: 'live' });
+        const other = await provider.create({ runId: 'done', deployment: 'ci' });
+        const failing = await provider.create({ runId: 'unknown' });
+
+        const error = await provider.collectGarbage({
+            isSettled: async (runId) => {
+                if (runId === 'unknown') throw new Error('store down');
+                return runId === 'done';
+            },
+        }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).toMatch(/removed 1 .*1 failed.*run unknown.*store down/);
+        expect(client.deleted).toEqual([`chamvi-ws-${done.id}`]);
+        expect(client.pods.has(`chamvi-ws-${live.id}`)).toBe(true);
+        expect(client.pods.has(`chamvi-ws-${other.id}`)).toBe(true);
+        expect(client.pods.has(`chamvi-ws-${failing.id}`)).toBe(true);
     });
 
     it('reports a failed list as SandboxError', async () => {
