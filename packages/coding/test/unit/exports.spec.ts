@@ -38,6 +38,7 @@ describe('public api', () => {
             'bash_output',
             'edit_file',
             'git_diff',
+            'glob',
             'grep',
             'list_files',
             'multi_edit',
