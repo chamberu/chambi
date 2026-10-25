@@ -18,7 +18,7 @@ import type {
 } from 'ai';
 import { NoSuchToolError, TypeValidationError, asSchema } from 'ai';
 import { isObject } from 'smob';
-import { assertNoNeedsApproval, assertToolsContext } from '../../agent/helpers.ts';
+import { assertNoNeedsApproval, assertToolsContext } from '../../agent/asserts.ts';
 import { toFilePart } from '../../artifact/helpers.ts';
 import { createRunArtifacts } from '../../artifact/module.ts';
 import { createToolChannels } from '../../channel/helpers.ts';

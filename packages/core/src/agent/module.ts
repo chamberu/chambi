@@ -13,7 +13,7 @@ import {
     NAME_MAX_LENGTH,
     NAME_PATTERN,
 } from './constants.ts';
-import { assertNoNeedsApproval, assertToolsContext } from './helpers.ts';
+import { assertNoNeedsApproval, assertToolsContext } from './asserts.ts';
 import type { Agent, AgentDefinition } from './types.ts';
 
 export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefinition<S>): Agent<S> {
