@@ -62,7 +62,7 @@ describe('createRequester', () => {
         expect(response.url).toBe('https://example.com/a');
         expect(new TextDecoder().decode(response.bytes)).toBe('<p>hi</p>');
         expect(response.truncated).toBe(false);
-        expect(web.calls).toEqual([expect.objectContaining({ url: 'https://example.com/a', address: PUBLIC })]);
+        expect(web.calls).toEqual([expect.objectContaining({ url: 'https://example.com/a', addresses: [PUBLIC] })]);
         expect(web.calls[0]!.headers['user-agent']).toMatch(/chamvi/);
     });
 
@@ -191,7 +191,7 @@ describe('createRequester', () => {
         web.routes.set('http://localhost:3000/', html('local'));
 
         expect((await request('http://localhost:3000/', { signal })).status).toBe(200);
-        expect(web.calls[0]!.address).toEqual({ address: '127.0.0.1', family: 4 });
+        expect(web.calls[0]!.addresses).toEqual([{ address: '127.0.0.1', family: 4 }]);
         await expect(request('https://blocked.example/', { signal })).rejects.toThrow(/not allowed/);
     });
 

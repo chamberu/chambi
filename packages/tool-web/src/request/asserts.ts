@@ -62,11 +62,11 @@ export type CheckInput = {
 };
 
 /**
- * The address to connect to for `url`: an IP literal as is, else every
- * address the host resolves to, each refused when it is not public (unless
- * `allowUrl` allows the URL or its origin is trusted); the first one wins.
+ * The addresses to connect to for `url`: an IP literal as is, else every
+ * address the host resolves to, the URL refused when one is not public
+ * (unless `allowUrl` allows the URL or its origin is trusted).
  */
-export async function checkedAddress(input: CheckInput): Promise<WebAddress> {
+export async function checkedAddresses(input: CheckInput): Promise<WebAddress[]> {
     const { url } = input;
     const decision = input.trusted.includes(url.origin) ? true : input.allowUrl?.(url);
     if (decision === false) {
@@ -95,7 +95,7 @@ export async function checkedAddress(input: CheckInput): Promise<WebAddress> {
             }
         }
     }
-    return addresses[0]!;
+    return addresses;
 }
 
 /** An error's message (its `code` for a bare system error). */

@@ -21,9 +21,9 @@ export type WebLookup = (hostname: string, signal: AbortSignal) => Promise<WebAd
 export type WebUrlPolicy = (url: URL) => boolean | undefined;
 // #endregion public
 
-/** What a transport gets for one hop: the address it must connect to. */
+/** What a transport gets for one hop: the checked addresses, the only ones it may connect to (in order). */
 export type TransportInit = {
-    address: WebAddress;
+    addresses: WebAddress[];
     headers: Record<string, string>;
     signal: AbortSignal;
 };

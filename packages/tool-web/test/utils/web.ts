@@ -9,7 +9,7 @@ import type { Transport, WebAddress, WebLookup } from '../../src/request/types.t
 
 export type FakeCall = {
     url: string;
-    address: WebAddress;
+    addresses: WebAddress[];
     headers: Record<string, string>;
 };
 
@@ -55,7 +55,7 @@ export function createFakeWeb(): FakeWeb {
         transport: async (url, init) => {
             calls.push({
                 url: url.href, 
-                address: init.address, 
+                addresses: init.addresses, 
                 headers: init.headers, 
             });
             return answer(url, init.signal);
@@ -64,7 +64,7 @@ export function createFakeWeb(): FakeWeb {
             const url = new URL(input instanceof Request ? input.url : input);
             calls.push({
                 url: url.href, 
-                address: { address: '', family: 4 }, 
+                addresses: [], 
                 headers: Object.fromEntries(new Headers(init?.headers)), 
             });
             return answer(url, init?.signal ?? new AbortController().signal);

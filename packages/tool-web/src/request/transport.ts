@@ -18,14 +18,18 @@ import type { Transport, WebAddress } from './types.ts';
 /** Statuses a web Response carries without a body. */
 const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
-/** A lookup that answers the checked address only, so DNS cannot swap it between check and connect. */
-function pinnedLookup(address: WebAddress): LookupFunction {
+/**
+ * A lookup that answers the checked addresses only, so DNS cannot swap them
+ * between check and connect; with `all` (Node's address family selection)
+ * every one is tried in order.
+ */
+function pinnedLookup(addresses: WebAddress[]): LookupFunction {
     return ((_hostname: string, options: { all?: boolean }, callback: (...args: unknown[]) => void) => {
         if (options.all) {
-            callback(null, [{ address: address.address, family: address.family }]);
+            callback(null, addresses.map(({ address, family }) => ({ address, family })));
             return;
         }
-        callback(null, address.address, address.family);
+        callback(null, addresses[0]!.address, addresses[0]!.family);
     }) as LookupFunction;
 }
 
@@ -64,7 +68,7 @@ function decodedBody(message: IncomingMessage, headers: Headers): Readable {
 
 /**
  * The default transport: one GET over `node:http`/`node:https` to the
- * checked address (TLS still verifies the host name), no redirect
+ * checked addresses (TLS still verifies the host name), no redirect
  * followed, the body decompressed.
  */
 export const pinnedTransport: Transport = (url, init) => new Promise<Response>((resolve, reject) => {
@@ -76,7 +80,7 @@ export const pinnedTransport: Transport = (url, init) => new Promise<Response>((
         path: `${url.pathname}${url.search}`,
         headers: { ...init.headers, 'accept-encoding': 'gzip, deflate, br' },
         signal: init.signal,
-        lookup: pinnedLookup(init.address),
+        lookup: pinnedLookup(init.addresses),
         ...(url.protocol === 'https:' && isIP(host) === 0 ? { servername: host } : {}),
     };
     const send = url.protocol === 'https:' ? httpsRequest : httpRequest;

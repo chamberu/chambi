@@ -54,7 +54,7 @@ describe('pinnedTransport', () => {
     });
 
     const init = (signal = new AbortController().signal) => ({
-        address: { address: '127.0.0.1', family: 4 as const },
+        addresses: [{ address: '127.0.0.1', family: 4 as const }],
         headers: { 'user-agent': 'test' },
         signal,
     });
@@ -66,6 +66,15 @@ describe('pinnedTransport', () => {
         expect(await response.text()).toBe(`hello example.test:${port}`);
         expect(seen[0]!.headers['user-agent']).toBe('test');
         expect(response.headers.get('set-cookie')).toContain('a=1');
+    });
+
+    it('falls back to the next checked address', async () => {
+        const response = await pinnedTransport(new URL(`http://example.test:${port}/`), {
+            ...init(),
+            addresses: [{ address: '::1', family: 6 }, { address: '127.0.0.1', family: 4 }],
+        });
+
+        expect(response.status).toBe(200);
     });
 
     it('decodes a gzip body', async () => {

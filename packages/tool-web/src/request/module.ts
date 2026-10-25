@@ -7,7 +7,7 @@
 
 import { ChamviError } from '@chamvi/core';
 import {
-    checkedAddress,
+    checkedAddresses,
     discard,
     messageOf,
     parseWebUrl,
@@ -24,7 +24,7 @@ import type {
 /**
  * The one way the web tools reach the network: per hop the URL is checked
  * (http(s), no credentials, `allowUrl`, every resolved address public unless
- * allowed or trusted) and the transport connects to the checked address;
+ * allowed or trusted) and the transport connects to the checked addresses only;
  * redirects are followed by hand (at most MAX_REDIRECTS, each hop checked
  * again), an error status fails, the body is read up to `maxBytes`, and the
  * whole request is bounded by `timeoutMs` on the clock.
@@ -43,7 +43,7 @@ export function createRequester(options: RequesterOptions): Requester {
 
         try {
             for (let hop = 0; ; hop++) {
-                const address = await checkedAddress({
+                const addresses = await checkedAddresses({
                     url,
                     lookup: options.lookup,
                     allowUrl: options.allowUrl,
@@ -51,7 +51,7 @@ export function createRequester(options: RequesterOptions): Requester {
                     signal,
                 });
                 const response = await options.transport(url, {
-                    address, 
+                    addresses,
                     headers, 
                     signal, 
                 });
