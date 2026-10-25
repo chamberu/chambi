@@ -329,6 +329,27 @@ describeDocker('docker sandbox', () => {
         expect((await second.exec(['sh', '-c', 'echo $npm_config_cache'])).stdout.trim()).toBe('/cache/npm');
     });
 
+    it('never runs a git or timeout another run planted in the shared cache', async () => {
+        const { workspace: planter } = await create();
+        const marker = randomUUID();
+        const evil = `/cache/evil-${marker}`;
+        // logs every call, then runs the real program, so a hijack stays unnoticed but for the log
+        await planter.writeFile('plant.sh', `#!/bin/sh\necho "$0 $*" >> /cache/${marker}\nexec /usr/bin/$(basename "$0") "$@"\n`);
+        const plant = await planter.exec(['sh', '-c', `for d in /cache/mise/shims ${evil}; do mkdir -p $d && ` +
+            'for n in git timeout; do cp plant.sh $d/$n && chmod +x $d/$n || exit 1; done; done']);
+        expect(plant.exitCode).toBe(0);
+        try {
+            // the image's PATH, and an operator PATH that names a cache folder
+            const { workspace: plain } = await create();
+            const { workspace: operator } = await create({ env: { PATH: `${evil}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` } });
+            expect((await plain.exec(['sh', '-c', 'command -v git; command -v timeout'])).stdout).toBe('/usr/bin/git\n/usr/bin/timeout\n');
+            expect((await operator.exec(['sh', '-c', 'command -v git; command -v timeout'])).stdout).toBe('/usr/bin/git\n/usr/bin/timeout\n');
+            expect((await planter.exec(['sh', '-c', `cat /cache/${marker} 2>/dev/null || echo none`])).stdout).toBe('none\n');
+        } finally {
+            await planter.exec(['rm', '-rf', '/cache/mise/shims', evil, `/cache/${marker}`]);
+        }
+    });
+
     it('keeps the cache of its own with cache false', async () => {
         const { workspace: first } = await create({ cache: false });
         const { workspace: second } = await create({ cache: false });

@@ -15,6 +15,21 @@ export const IMAGE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._\-/:@+]{0,254}$/;
 /** Where a container or pod workspace mounts its package cache. */
 export const CACHE_DIR = '/cache';
 
+/**
+ * Drops every `PATH` entry at or under `CACHE_DIR` before chamvi's own
+ * commands run (the image probe, the `timeout` wrapper of every exec, the
+ * checkout's `git`): the cache is shared by every run and agent and
+ * writable by each, so a `git` or `timeout` one run planted there must never
+ * be what another run's workspace executes. A PATH without such an entry
+ * stays as it is. One line, no trailing `;`.
+ */
+export const PATH_GUARD_SCRIPT = [
+    `case ":$PATH:" in *:${CACHE_DIR}:*|*:${CACHE_DIR}/*)`,
+    'p=; IFS=:; set -f;',
+    `for d in $PATH; do case $d in ${CACHE_DIR}|${CACHE_DIR}/*) ;; *) p=\${p:+$p:}$d;; esac; done;`,
+    'set +f; unset IFS; PATH=$p; export PATH;; esac',
+].join(' ');
+
 /** The package-cache variables, each a folder under the cache directory. */
 export const CACHE_FOLDERS: Readonly<Record<string, string>> = Object.freeze({
     XDG_CACHE_HOME: 'xdg',
@@ -61,6 +76,7 @@ export const IMAGE_PROBE_MISSING_EXIT = 3;
  * `IMAGE_PROBE_MISSING_EXIT` then, else 0.
  */
 export const IMAGE_PROBE_SCRIPT = [
+    PATH_GUARD_SCRIPT,
     'm=',
     'command -v git >/dev/null 2>&1 || m="$m git"',
     'if ! command -v timeout >/dev/null 2>&1; then m="$m timeout"; ' +

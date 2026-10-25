@@ -89,10 +89,13 @@ describeDocker('sandbox-dev image as root (the default)', () => {
         expect((await run(['sh', '-c', 'command -v node || command -v python3 || command -v go'])).exitCode).not.toBe(0);
     });
 
-    it('puts mise\'s shims on the PATH, inside the cache', async () => {
-        const result = await run(['sh', '-c', 'echo "$PATH" && echo "$MISE_DATA_DIR"']);
-        expect(result.stdout).toMatch(/^\/cache\/mise\/shims:/);
-        expect(result.stdout).toContain('/cache/mise\n');
+    it('keeps mise\'s shims out of the shared cache, behind the system tools on the PATH', async () => {
+        const result = await run(['sh', '-c', 'echo "$PATH" && echo "$MISE_SHIMS_DIR" && echo "$MISE_DATA_DIR"']);
+        const [path, shims, data] = result.stdout.split('\n');
+        expect(path!.split(':').some((entry) => entry === '/cache' || entry.startsWith('/cache/'))).toBe(false);
+        expect(path).toMatch(/:\/usr\/bin:.*:\/tmp\/mise\/shims$/);
+        expect(shims).toBe('/tmp/mise/shims');
+        expect(data).toBe('/cache/mise');
     });
 
     it('has a writable root filesystem', async () => {
@@ -155,6 +158,12 @@ describeDocker('sandbox-dev image in the hardened mode', () => {
         expect((await run(['id', '-u'])).stdout.trim()).toBe('1000');
         expect((await run(['grep', 'CapEff', '/proc/self/status'])).stdout).toMatch(/CapEff:\s+0000000000000000/);
         expect((await run(['touch', '/etc/probe'])).exitCode).not.toBe(0);
+    });
+
+    it('writes mise\'s shims to /tmp on the read-only root', async () => {
+        const result = await run(['sh', '-c', 'mise reshim && test -d /tmp/mise/shims']);
+        expect(result.stderr).toBe('');
+        expect(result.exitCode).toBe(0);
     });
 
     it('still writes to its cache and /tmp', async () => {
