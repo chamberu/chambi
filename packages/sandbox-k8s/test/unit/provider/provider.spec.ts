@@ -25,6 +25,9 @@ const REPO = 'https://github.com/octo/demo.git';
 
 const pending = { phase: 'Pending' };
 
+/** The image probe a create runs first, straight on the pod (no timeout wrapper). */
+const PROBE = ['sh', '-c', expect.stringContaining('command -v git')];
+
 const answerRevParse: FakeExecHandler = (argv) => (
     unwrap(argv)[1] === 'rev-parse' ? { stdout: `${COMMIT}\n` } : {}
 );
@@ -78,8 +81,9 @@ describe('kubernetes sandbox', () => {
         const name = `chamvi-ws-${workspace.id}`;
         expect(client.created[0]!.metadata?.name).toBe(name);
         expect(client.created[0]!.metadata?.labels?.['chamvi.dev/run']).toBe('r1');
-        expect(client.execs.map((call) => call.name)).toEqual(Array(6).fill(name));
+        expect(client.execs.map((call) => call.name)).toEqual(Array(7).fill(name));
         expect(client.execs.map((call) => call.argv)).toEqual([
+            PROBE,
             wrapped(['git', 'init', '-q', '.']),
             wrapped(['git', 'remote', 'add', 'origin', REPO]),
             wrapped(['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'v1']),
@@ -115,6 +119,7 @@ describe('kubernetes sandbox', () => {
         ));
         const workspace = await provider.create({ runId: 'r1' });
         expect(client.execs.map((call) => call.argv)).toEqual([
+            PROBE,
             wrapped(['git', 'init', '-q', '.']),
             wrapped(['git', 'config', 'chamvi.checkout', 'none']),
         ]);
@@ -137,6 +142,56 @@ describe('kubernetes sandbox', () => {
             stdoutTruncated: false,
             timedOut: false,
         });
+    });
+
+    it('refuses an image without git before the checkout and deletes the pod', async () => {
+        const { client, provider } = setup((argv) => (argv[0] === 'sh' && argv.length === 3 ? { exitCode: 3, stdout: 'git\n' } : {}));
+        const error = await provider.create({ runId: 'r1', repo: REPO }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).toContain('image img lacks what a workspace needs: git.');
+        expect(client.execs).toHaveLength(1);
+        expect(client.deleted).toEqual([client.created[0]!.metadata!.name]);
+    });
+
+    it('pulls a model-chosen image if not present, the provider\'s own as configured', async () => {
+        const { client, provider } = setup(answerRevParse, { imagePullPolicy: 'Always' });
+        await provider.create({ runId: 'r1' });
+        await provider.create({ runId: 'r2', image: 'python:3.13' });
+        expect(client.created.map((pod) => pod.spec?.containers[0]?.imagePullPolicy)).toEqual(['Always', 'IfNotPresent']);
+        expect(client.created[1]!.spec?.containers[0]?.image).toBe('python:3.13');
+    });
+
+    it('passes the privilege, cache and tmp options to the pod', async () => {
+        const { client, provider } = setup(answerRevParse, {
+            user: { uid: 1000, gid: 1000 },
+            readOnlyRoot: true,
+            cache: { claimName: 'chamvi-cache' },
+            tmpSize: '2Gi',
+        });
+        await provider.create({ runId: 'r1' });
+        const { spec } = client.created[0]!;
+        expect(spec?.securityContext?.runAsUser).toBe(1000);
+        expect(spec?.containers[0]?.securityContext?.readOnlyRootFilesystem).toBe(true);
+        expect(spec?.volumes).toContainEqual({ name: 'cache', persistentVolumeClaim: { claimName: 'chamvi-cache' } });
+        expect(spec?.volumes).toContainEqual({ name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: '2Gi' } });
+    });
+
+    it.each([
+        ['a negative uid', { user: { uid: -1, gid: 0 } }],
+        ['a fractional gid', { user: { uid: 0, gid: 1.5 } }],
+        ['a user that is no object', { user: '0:0' }],
+        ['a readOnlyRoot that is no boolean', { readOnlyRoot: 1 }],
+        ['a cache without a claim', { cache: {} }],
+        ['an invalid claim name', { cache: { claimName: 'Not_A_Name' } }],
+        ['cache false', { cache: false }],
+        ['a bad tmpSize', { tmpSize: 'lots' }],
+    ])('refuses %s', (_name, options) => {
+        expect(() => createKubernetesSandbox({
+            namespace: 'agents', 
+            client: createFakePodClient(), 
+            ...options, 
+        } as never))
+            .toThrow(InvalidAgentDefinitionError);
     });
 
     it('fails fast on an image pull error', async () => {
@@ -321,7 +376,8 @@ describe('kubernetes sandbox', () => {
         expect(pod.metadata?.labels?.team).toBe('x');
         expect(pod.metadata?.annotations?.['chamvi.dev/expires-at']).toBe(String(START + 60_000));
         expect(container.image).toBe('other');
-        expect(container.imagePullPolicy).toBe('Always');
+        // imagePullPolicy is the provider image's; another one is pulled if not present
+        expect(container.imagePullPolicy).toBe('IfNotPresent');
         expect(container.resources?.limits).toEqual({
             cpu: '2',
             memory: '1Gi',
