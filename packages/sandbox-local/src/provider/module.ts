@@ -41,8 +41,9 @@ import { LocalWorkspace } from './workspace.ts';
  * commands spawned as the host user. **No isolation**: for development and
  * tests, never for untrusted code. Of the limits only `maxLifetimeMs` (the
  * expiry) applies. `find` rebuilds a workspace from its `workspace.json`
- * (run, deployment, repo, ref, env, times), so another provider over the
- * same root (a restarted process) reaches it.
+ * (run, deployment, repo, ref, env, times; owner-only, as the env may hold
+ * tokens), so another provider over the same root (a restarted process)
+ * reaches it.
  */
 export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxProvider {
     if (options.root !== undefined && (typeof options.root !== 'string' || options.root.length === 0)) {
@@ -81,10 +82,13 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
             const dir = join(root, id);
             const info = buildWorkspaceInfo(input, LOCAL_PROVIDER_NAME, clock.now(), limits.maxLifetimeMs);
             try {
+                await mkdir(root, { recursive: true });
+                // owner only: the record holds the create's env (tokens)
+                await mkdir(dir, { mode: 0o700 });
                 for (const sub of [REPO_DIR, 'home', 'tmp']) {
-                    await mkdir(join(dir, sub), { recursive: true });
+                    await mkdir(join(dir, sub));
                 }
-                await writeFile(join(dir, WORKSPACE_RECORD), JSON.stringify(toRecord(info, deployment, input.env)));
+                await writeFile(join(dir, WORKSPACE_RECORD), JSON.stringify(toRecord(info, deployment, input.env)), { mode: 0o600 });
             } catch (error) {
                 await rm(dir, { recursive: true, force: true }).catch(() => undefined);
                 throw new SandboxError(`cannot create the workspace directory (${errnoCode(error) ?? 'unknown error'}).`, { cause: error });

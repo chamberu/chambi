@@ -47,7 +47,7 @@ export function createDevWorkspaces(root?: string): IWorkspaceManager {
 }
 ```
 
-Each workspace is a folder `<root>/<id>/` (`root` defaults to `<os tmpdir>/chamvi-workspaces`) with `repo/` (the model's `/workspace`), `home/`, `tmp/` and a `workspace.json` record (run id, deployment, repository, ref, `env`, creation and expiry) that `find` rebuilds the workspace from and the garbage collection reads, so a restarted process reaches a run's workspace again. `dispose()` removes the folder.
+Each workspace is a folder `<root>/<id>/` (`root` defaults to `<os tmpdir>/chamvi-workspaces`) with `repo/` (the model's `/workspace`), `home/`, `tmp/` and a `workspace.json` record (run id, deployment, repository, ref, `env`, creation and expiry) that `find` rebuilds the workspace from and the garbage collection reads, so a restarted process reaches a run's workspace again. The create's `env` is written to that record on disk, so the folder is `0700` and the record `0600` (owner only). `dispose()` removes the folder.
 
 ## What it does and does not do
 

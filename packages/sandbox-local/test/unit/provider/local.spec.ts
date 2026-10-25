@@ -11,6 +11,7 @@ import {
     readFile,
     readdir,
     rm,
+    stat,
     writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -397,5 +398,13 @@ describe('local sandbox', () => {
         });
         await workspace.dispose();
         expect(await readdir(root)).toEqual([]);
+    });
+
+    it('keeps the record, which holds the create env, readable by the owner only', async () => {
+        const workspace = await createLocalSandbox({ root }).create({ runId: 'r1', env: { NPM_TOKEN: 'npm_SECRET123' } });
+        const dir = join(root, workspace.id);
+        expect((await stat(dir)).mode & 0o777).toBe(0o700);
+        expect((await stat(join(dir, 'workspace.json'))).mode & 0o777).toBe(0o600);
+        await workspace.dispose();
     });
 });

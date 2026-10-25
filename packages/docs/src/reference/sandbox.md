@@ -106,7 +106,7 @@ The provider is `CHAMVI_SANDBOX_PROVIDER`, else `options.provider`, else `local`
 function createLocalSandbox(options?: LocalSandboxOptions): ISandboxProvider; // name 'local'
 ```
 
-No isolation: development and tests only. Workspaces are folders under `root` (default `<os tmpdir>/chamvi-workspaces`); of the limits only `maxLifetimeMs` applies. `find` rebuilds a workspace from its `workspace.json`, so a restarted process reaches it.
+No isolation: development and tests only. Workspaces are folders under `root` (default `<os tmpdir>/chamvi-workspaces`); of the limits only `maxLifetimeMs` applies. `find` rebuilds a workspace from its `workspace.json`, so a restarted process reaches it; the record holds the create's `env` on disk, so the folder is `0700` and the record `0600`.
 
 <<< ../../../sandbox-local/src/provider/types.ts{ts}
 
