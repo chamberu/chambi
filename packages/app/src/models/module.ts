@@ -152,11 +152,22 @@ export async function createModelRegistry(options: ModelRegistryOptions): Promis
  * registry; with a provider set before, nothing changes and restore is a no-op.
  */
 export function installDefaultProvider(registry: ModelRegistry): () => void {
+    type DefaultProvider = NonNullable<typeof globalThis.AI_SDK_DEFAULT_PROVIDER>;
     if (globalThis.AI_SDK_DEFAULT_PROVIDER !== undefined) {
         return () => undefined;
     }
 
-    const installed = registry as NonNullable<typeof globalThis.AI_SDK_DEFAULT_PROVIDER>;
+    // Registry methods already return V4 models. Without this provider contract
+    // marker the SDK treats the registry as V2 and converts those models again.
+    const installed = {
+        specificationVersion: 'v4' as const,
+        languageModel: (id: string) => registry.languageModel(id as `${string}/${string}`),
+        embeddingModel: (id: string) => registry.embeddingModel(id as `${string}/${string}`),
+        imageModel: (id: string) => registry.imageModel(id as `${string}/${string}`),
+        transcriptionModel: (id: string) => registry.transcriptionModel(id as `${string}/${string}`),
+        speechModel: (id: string) => registry.speechModel(id as `${string}/${string}`),
+        rerankingModel: (id: string) => registry.rerankingModel(id as `${string}/${string}`),
+    } satisfies DefaultProvider;
     globalThis.AI_SDK_DEFAULT_PROVIDER = installed;
 
     return () => {
