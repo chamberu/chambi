@@ -7,6 +7,7 @@
 
 import type { ToolSet } from 'ai';
 import {
+    SandboxError,
     ToolDeniedError,
     ValidationError,
     approve,
@@ -164,10 +165,20 @@ export function createGitTools(context: GitToolsContext): ToolSet {
         });
     };
 
-    const defaultBranchOf = async (t: Target, signal?: AbortSignal): Promise<string | undefined> => {
-        if (t.name === 'origin') return t.workspace.info.defaultBranch;
+    /**
+     * The default branch of the remote, read from it at push time (never
+     * `info.defaultBranch`, which a found workspace reads back from the
+     * model-writable repository config). SandboxError when it cannot be read,
+     * so the default-branch rule fails closed.
+     */
+    const defaultBranchOf = async (t: Target, signal?: AbortSignal): Promise<string> => {
         const result = await remoteGit(t, 'read', ['ls-remote', '--symref', t.url, 'HEAD'], signal);
-        return result.exitCode === 0 ? parseDefaultBranch(result.stdout) : undefined;
+        const branch = result.exitCode === 0 && !result.timedOut ? parseDefaultBranch(result.stdout) : undefined;
+        if (branch === undefined) {
+            const detail = result.stderr.trim().slice(0, 500);
+            throw new SandboxError(`git_push could not read the default branch of ${t.url}, so it does not push${detail ? `: ${detail}` : '.'} Try again later.`);
+        }
+        return branch;
     };
 
     const fetchRefspec = (t: Target, refspec: string | undefined): string => {

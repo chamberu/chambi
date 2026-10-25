@@ -100,7 +100,7 @@ Private repositories and pushes need credentials. The manager asks its `credenti
 
 Either way the git tools put the repository URL on the command line and look the credential up for it, never trusting `remote.*.url` (the repository or the model can rewrite it); another repository (a fork's head branch) passes `normalizeRepo` and `allowRepo` and gets its own lookup. Hooks are off for authenticated calls, SSH URLs are refused.
 
-The push policy (`push` on the manager): `mode: 'auto'` pushes, `'approve'` asks through [`approve()`](/guide/approvals) first (the run's source channel when it has an `out`, e.g. a PR comment, else `push.channel`, else the inbox), with the commit list in the body; a denial is a `ToolDeniedError`. Without `allowBranch` the repository's default branch is refused and every other branch allowed; `allowForce: true` allows `force: true`, always as `--force-with-lease`. `author: { name, email }` sets `GIT_AUTHOR_*` and `GIT_COMMITTER_*` in every workspace.
+The push policy (`push` on the manager): `mode: 'auto'` pushes, `'approve'` asks through [`approve()`](/guide/approvals) first (the run's source channel when it has an `out`, e.g. a PR comment, else `push.channel`, else the inbox), with the commit list in the body; a denial is a `ToolDeniedError`. Without `allowBranch` the repository's default branch (read from the remote at push time; a push whose remote does not answer it fails) is refused and every other branch allowed; `allowForce: true` allows `force: true`, always as `--force-with-lease`. `author: { name, email }` sets `GIT_AUTHOR_*` and `GIT_COMMITTER_*` in every workspace.
 
 ## Lifecycle
 
