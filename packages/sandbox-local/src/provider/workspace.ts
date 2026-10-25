@@ -140,6 +140,16 @@ export class LocalWorkspace implements IWorkspace {
     }
 
     async readFile(path: string): Promise<string> {
+        const { shown, bytes } = await this.readRaw(path);
+        return decodeUtf8File(bytes, shown);
+    }
+
+    async readBytes(path: string): Promise<Uint8Array> {
+        return (await this.readRaw(path)).bytes;
+    }
+
+    /** The bytes of the workspace file `path` (at most FILE_MAX_BYTES) and its path as the model sees it. */
+    protected async readRaw(path: string): Promise<{ shown: string; bytes: Uint8Array }> {
         this.assertUsable();
         const relative = resolveWorkspacePath(path);
         const shown = absoluteWorkspacePath(relative);
@@ -184,19 +194,19 @@ export class LocalWorkspace implements IWorkspace {
             throw new SandboxError(`${shown} has more than the ${FILE_MAX_BYTES} bytes a file may have.`);
         }
 
-        return decodeUtf8File(buffer.subarray(0, length), shown);
+        return { shown, bytes: new Uint8Array(buffer.subarray(0, length)) };
     }
 
-    async writeFile(path: string, content: string): Promise<void> {
+    async writeFile(path: string, content: string | Uint8Array): Promise<void> {
         this.assertUsable();
         const relative = resolveWorkspacePath(path);
         if (relative === '.') {
             throw new ValidationError('path must name a file, not the workspace root.');
         }
-        if (typeof content !== 'string') {
-            throw new ValidationError('content must be a string.');
+        if (typeof content !== 'string' && !(content instanceof Uint8Array)) {
+            throw new ValidationError('content must be a string or bytes.');
         }
-        const size = Buffer.byteLength(content, 'utf8');
+        const size = typeof content === 'string' ? Buffer.byteLength(content, 'utf8') : content.length;
         if (size > FILE_MAX_BYTES) {
             throw new ValidationError(`content has ${size} bytes, more than the ${FILE_MAX_BYTES} a file may have.`);
         }
@@ -210,7 +220,7 @@ export class LocalWorkspace implements IWorkspace {
         try {
             await mkdir(dirname(file), { recursive: true });
             const mode = await stat(file).then((stats) => stats.mode & 0o7777, () => undefined);
-            await writeFile(temporary, content, 'utf8');
+            await writeFile(temporary, content);
             if (mode !== undefined) await chmod(temporary, mode);
             await rename(temporary, file);
         } catch (error) {

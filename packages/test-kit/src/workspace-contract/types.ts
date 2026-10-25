@@ -31,7 +31,8 @@ export type ContractWorkspace = {
         durationMs: number;
     }>;
     readFile(path: string): Promise<string>;
-    writeFile(path: string, content: string): Promise<void>;
+    readBytes(path: string): Promise<Uint8Array>;
+    writeFile(path: string, content: string | Uint8Array): Promise<void>;
     dispose(): Promise<void>;
 };
 

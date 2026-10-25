@@ -123,6 +123,7 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
             },
             exec: remote.exec,
             readFile: remote.readFile,
+            readBytes: remote.readBytes,
             writeFile: remote.writeFile,
             async dispose() {
                 await remote.dispose();
