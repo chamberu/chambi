@@ -90,7 +90,7 @@ export function readFileTool(workspaces: CodingWorkspaces): Tool<ReadFileInput, 
             const path = requirePath(body.path);
             const offset = optionalInteger(body.offset, 'offset', 1, Number.MAX_SAFE_INTEGER) ?? 1;
             const limit = optionalInteger(body.limit, 'limit', 1, READ_MAX_LINES) ?? READ_MAX_LINES;
-            const workspace = workspaceOf(workspaces, body, context);
+            const workspace = await workspaceOf(workspaces, body, context);
 
             const lines = linesOf(await workspace.readFile(path));
             const totalLines = lines.length;
@@ -132,7 +132,7 @@ export function writeFileTool(workspaces: CodingWorkspaces, queue: FileQueue): T
             const body = inputObject(input);
             const path = requirePath(body.path);
             const content = requireText(body.content, 'content');
-            const workspace = workspaceOf(workspaces, body, context);
+            const workspace = await workspaceOf(workspaces, body, context);
 
             await queue(fileKey(workspace.id, path), () => workspace.writeFile(path, content));
             return { path, bytes: Buffer.byteLength(content, 'utf8') };
@@ -163,7 +163,7 @@ export function editFileTool(workspaces: CodingWorkspaces, queue: FileQueue): To
             if (oldString === newString) {
                 throw new ValidationError('oldString and newString are the same: nothing to change.');
             }
-            const workspace = workspaceOf(workspaces, body, context);
+            const workspace = await workspaceOf(workspaces, body, context);
 
             // read, change and write in one turn of the file's queue
             return queue(fileKey(workspace.id, path), async () => {

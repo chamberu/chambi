@@ -74,12 +74,12 @@ export function optionalPath(value: unknown, name = 'path'): string {
     return requirePath(value, name);
 }
 
-/** The calling run's workspace named by `input.workspace`, or its only one. */
-export function workspaceOf(
+/** The calling run's workspace named by `input.workspace`, or its only one (found again after a restart). */
+export async function workspaceOf(
     workspaces: CodingWorkspaces,
     body: Record<string, unknown>,
     context: ToolContext,
-): IWorkspace {
+): Promise<IWorkspace> {
     const id = optionalString(body.workspace, 'workspace');
     return workspaces.get(context.run.runId, id);
 }
