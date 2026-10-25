@@ -142,6 +142,15 @@ export function optionalString(value: unknown, name: string): string | undefined
     return value;
 }
 
+/** A boolean or undefined, else a ValidationError. */
+export function optionalBoolean(value: unknown, name: string): boolean | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value !== 'boolean') {
+        throw new ValidationError(`${name} must be a boolean.`);
+    }
+    return value;
+}
+
 /** The tool input as an object, else a ValidationError. */
 export function inputObject(input: unknown): Record<string, unknown> {
     if (!isObject(input)) {

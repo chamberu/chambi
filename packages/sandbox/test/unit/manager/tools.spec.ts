@@ -109,7 +109,7 @@ describe('workspace tools', () => {
 
     it('are chamvi tools and not effect tools', () => {
         const { tools } = setup();
-        expect(Object.keys(tools).sort()).toEqual(['create_workspace', 'dispose_workspace']);
+        expect(Object.keys(tools).sort()).toEqual(['create_workspace', 'dispose_workspace', 'git_fetch', 'git_pull', 'git_push']);
         for (const tool of Object.values(tools)) {
             expect(tool.contextSchema).toBe(toolContextSchema);
             expect(EFFECT in tool).toBe(false);
