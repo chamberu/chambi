@@ -94,9 +94,9 @@ describe('prepareWorkspace', () => {
         const workspace = remote();
         await prepareWorkspace(workspace, { repo: url, credential: { username: 'x-access-token', password: 'ghs_secret' } });
         const authenticated = workspace.calls.filter((call) => call.argv[0] === 'sh');
-        expect(authenticated.map((call) => call.argv.slice(4, 7))).toEqual([
-            ['https://github.com', 'octo/demo', 'ls-remote'],
-            ['https://github.com', 'octo/demo', 'fetch'],
+        expect(authenticated.map((call) => call.argv.slice(4, 8))).toEqual([
+            [url, 'https://github.com', 'octo/demo', 'ls-remote'],
+            [url, 'https://github.com', 'octo/demo', 'fetch'],
         ]);
         for (const call of workspace.calls) {
             expect(call.argv.join(' ')).not.toContain('ghs_secret');

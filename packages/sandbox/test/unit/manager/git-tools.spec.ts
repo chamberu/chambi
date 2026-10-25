@@ -44,9 +44,9 @@ type Remote = {
     push: Partial<ExecResult>;
 };
 
-/** The git arguments of an exec: after the auth script's `sh origin path`, the reset `-c` pairs, or plain `git`. */
+/** The git arguments of an exec: after the auth script's `sh url origin path`, the reset `-c` pairs, or plain `git`. */
 function gitArgs(argv: readonly string[]): string[] | undefined {
-    if (argv[0] === 'sh' && argv[2] === GIT_AUTH_SCRIPT) return argv.slice(6);
+    if (argv[0] === 'sh' && argv[2] === GIT_AUTH_SCRIPT) return argv.slice(7);
     if (argv[0] !== 'git') return undefined;
     if (argv[1] === '-c' && argv[2] === 'credential.helper=') return argv.slice(5);
     return argv.slice(1);
@@ -170,7 +170,7 @@ describe('git tools', () => {
             const from = workspace.calls.length;
             const result = await call<GitPushResult>('git_push', {});
             const push = workspace.calls.find((entry) => gitArgs(entry.argv)?.[0] === 'push')!;
-            expect(push.argv.slice(0, 6)).toEqual(['sh', '-c', GIT_AUTH_SCRIPT, 'sh', 'https://github.com', 'octo/demo']);
+            expect(push.argv.slice(0, 7)).toEqual(['sh', '-c', GIT_AUTH_SCRIPT, 'sh', REPO, 'https://github.com', 'octo/demo']);
             expect(gitArgs(push.argv)).toEqual(['push', '--porcelain', REPO, `${LOCAL}:refs/heads/feature`]);
             expect(push.options.stdin).toBe('x-access-token\nwrite-secret-token\n');
             expect(requests.at(-1)).toMatchObject({
@@ -282,7 +282,7 @@ describe('git tools', () => {
             await expect(call('git_push', { remote: 'alice/demo', branch: 'trunk' })).rejects.toThrow(ToolDeniedError);
             await expect(call('git_push', { remote: 'alice/demo' })).resolves.toMatchObject({ remote: 'https://github.com/alice/demo.git', pushed: true });
             const push = workspace.calls.filter((entry) => gitArgs(entry.argv)?.[0] === 'push').at(-1)!;
-            expect(push.argv.slice(4, 6)).toEqual(['https://github.com', 'alice/demo']);
+            expect(push.argv.slice(4, 7)).toEqual(['https://github.com/alice/demo.git', 'https://github.com', 'alice/demo']);
         });
 
         describe('approve mode', () => {

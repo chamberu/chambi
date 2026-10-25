@@ -7,7 +7,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { EXEC_TIMEOUT_MS } from '@chamvi/sandbox';
-import { GIT_AUTH_SCRIPT } from '../../../src/git/constants.ts';
+import { SandboxError } from '@chamvi/core';
+import { GIT_AUTH_REFUSED_EXIT, GIT_AUTH_SCRIPT } from '../../../src/git/constants.ts';
 import { credentialKey, credentialsFileContent } from '../../../src/git/helpers.ts';
 import { gitArgv, runGit } from '../../../src/git/module.ts';
 import { createScriptedWorkspace } from '../../utils/workspace.ts';
@@ -21,7 +22,7 @@ describe('gitArgv', () => {
 
     it('hands a credential over stdin to the one-shot helper, never in argv', () => {
         const { argv, stdin } = gitArgv(url, ['push', url, 'HEAD:refs/heads/x'], { username: 'x-access-token', password: 'ghs_secret' });
-        expect(argv).toEqual(['sh', '-c', GIT_AUTH_SCRIPT, 'sh', 'https://github.com', 'octo/demo', 'push', url, 'HEAD:refs/heads/x']);
+        expect(argv).toEqual(['sh', '-c', GIT_AUTH_SCRIPT, 'sh', url, 'https://github.com', 'octo/demo', 'push', url, 'HEAD:refs/heads/x']);
         expect(stdin).toBe('x-access-token\nghs_secret\n');
         expect(argv.join(' ')).not.toContain('ghs_secret');
     });
@@ -43,6 +44,27 @@ describe('runGit', () => {
             timeoutMs: EXEC_TIMEOUT_MS, 
             signal: controller.signal, 
         });
+    });
+});
+
+describe('runGit refusing a poisoned config', () => {
+    it('throws a SandboxError with the script\'s message when it refused to send the credential', async () => {
+        const workspace = createScriptedWorkspace(() => ({
+            exitCode: GIT_AUTH_REFUSED_EXIT,
+            stderr: 'chamvi: the git config sets http.proxy for https://github.com/octo/demo.git; ...\n',
+        }));
+        const run = runGit(workspace, {
+            url,
+            args: ['push', url, 'HEAD:refs/heads/x'],
+            credential: { username: 'u', password: 'secret-1' },
+        });
+        await expect(run).rejects.toThrow(SandboxError);
+        await expect(run).rejects.toThrow(/http\.proxy/);
+    });
+
+    it('keeps the exit code of a plain git call', async () => {
+        const workspace = createScriptedWorkspace(() => ({ exitCode: GIT_AUTH_REFUSED_EXIT }));
+        await expect(runGit(workspace, { url, args: ['fetch', url] })).resolves.toMatchObject({ exitCode: GIT_AUTH_REFUSED_EXIT });
     });
 });
 
