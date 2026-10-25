@@ -44,7 +44,7 @@ describe('workspace tools', () => {
             repo: 'https://github.com/octo/demo.git',
             ref: 'v1',
             commit: FAKE_COMMIT,
-            expiresAt: new Date(1_000_000 + 1_800_000).toISOString(),
+            expiresAt: new Date(1_000_000 + 604_800_000).toISOString(),
             reused: false,
         });
     });
@@ -85,7 +85,7 @@ describe('workspace tools', () => {
         const result = await callTool(tools, 'dispose_workspace', { workspace }, toolContext('r1'));
         expect(result).toEqual({ workspace, disposed: true });
         expect(provider.disposed).toEqual([workspace]);
-        expect(() => manager.get('r1', workspace)).toThrow(SandboxError);
+        await expect(manager.get('r1', workspace)).rejects.toThrow(SandboxError);
     });
 
     it('dispose_workspace without an id disposes the only workspace', async () => {

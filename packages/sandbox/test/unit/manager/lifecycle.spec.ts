@@ -121,6 +121,12 @@ function fakeEngine() {
 /** Lets already-queued callbacks settle; not a sleep. */
 const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
 
+/** Flushes until `condition` holds (a lookup and a create each take a tick); at most 20 rounds. */
+async function until(condition: () => boolean): Promise<void> {
+    for (let round = 0; round < 20 && !condition(); round++) await flush();
+    expect(condition()).toBe(true);
+}
+
 describe('workspace manager: run lifecycle', () => {
     it('disposes when the run completes', async () => {
         const { provider, run: done } = await run({ script: [call('create_workspace'), text('done')] });
@@ -151,7 +157,7 @@ describe('workspace manager: run lifecycle', () => {
         expect(waiting?.status).toBe('waiting');
         expect(provider.disposed).toEqual([]);
         const [id] = provider.workspaces.keys();
-        expect(manager.get(runId).id).toBe(id);
+        expect((await manager.get(runId)).id).toBe(id);
     });
 
     it('reports dispose failures', async () => {
@@ -172,7 +178,8 @@ describe('workspace manager: run lifecycle', () => {
         expect(errors).toHaveLength(1);
         expect(errors[0]).toBeInstanceOf(SandboxError);
         expect((errors[0] as SandboxError).cause).toBe(failure);
-        expect(() => manager.get(runId)).toThrow(/not found|create_workspace/);
+        // the workspace still exists, so a lookup finds it again
+        expect((await manager.get(runId)).disposed).toBe(false);
     });
 
     it('disposes only on completed, failed and cancelled', async () => {
@@ -199,7 +206,7 @@ describe('workspace manager: run lifecycle', () => {
         }
     });
 
-    it('close() disposes everything and unsubscribes', async () => {
+    it('close() keeps the workspaces of live runs and unsubscribes', async () => {
         const {
             provider,
             manager,
@@ -212,13 +219,12 @@ describe('workspace manager: run lifecycle', () => {
         const unsubscribe = manager.attach(engine);
         expect(engine.listeners.size).toBe(1);
         await manager.close();
-        const [id] = provider.workspaces.keys();
-        expect(provider.disposed).toEqual([id]);
+        expect(provider.disposed).toEqual([]);
         expect(engine.listeners.size).toBe(0);
-        expect(() => manager.get(runId)).toThrow(SandboxError);
+        await expect(manager.get(runId)).rejects.toThrow(/closed/);
         engine.emit({ id: runId, status: RunStatus.COMPLETED });
         await flush();
-        expect(provider.disposed).toEqual([id]);
+        expect(provider.disposed).toEqual([]);
         unsubscribe();
         await expect(manager.close()).resolves.toBeUndefined();
     });
@@ -251,7 +257,7 @@ describe('workspace manager: run lifecycle', () => {
         const expiring = await gated('r2');
         engine.emit({ id: 'r1', status: RunStatus.COMPLETED });
         Object.assign(expiring.info, { expiresAt: new Date(clock.now().getTime()) });
-        expect(() => manager.get('r2')).toThrow(/expired/);
+        await expect(manager.get('r2')).rejects.toThrow(/expired/);
 
         let closed = false;
         const closing = manager.close().then(() => { closed = true; });
@@ -281,8 +287,7 @@ describe('workspace manager: run lifecycle', () => {
         const gate = Promise.withResolvers<void>();
         provider.gate = gate.promise;
         const acquiring = manager.acquire('r1', {}).catch((error: unknown) => error);
-        await flush();
-        expect(provider.created).toHaveLength(1);
+        await until(() => provider.created.length === 1);
         engine.emit({ id: 'r1', status: RunStatus.CANCELLED });
 
         let closed = false;
@@ -313,7 +318,7 @@ describe('workspace manager: run lifecycle', () => {
 
         provider.gate = new Promise<void>(() => {});
         void manager.acquire('r1', {}).catch(() => undefined);
-        await flush();
+        await until(() => provider.created.length === 1);
         engine.emit({ id: 'r1', status: RunStatus.COMPLETED });
 
         let closed = false;
@@ -346,11 +351,10 @@ describe('workspace manager: run lifecycle', () => {
         const first = Promise.withResolvers<void>();
         provider.gate = first.promise;
         void manager.acquire('r1', {}).catch(() => undefined);
-        await flush();
+        await until(() => provider.created.length === 1);
         provider.gate = new Promise<void>(() => {});
         void manager.acquire('r1', { repo: 'octo/demo' }).catch(() => undefined);
-        await flush();
-        expect(provider.created).toHaveLength(2);
+        await until(() => provider.created.length === 2);
         engine.emit({ id: 'r1', status: RunStatus.COMPLETED });
 
         let closed = false;

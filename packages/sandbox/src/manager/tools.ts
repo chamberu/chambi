@@ -67,7 +67,7 @@ export function createWorkspaceTools(manager: IWorkspaceManager): ToolSet {
                 const body = inputObject(input);
                 const id = optionalString(body.workspace, 'workspace');
                 const { runId } = context.run;
-                const workspace = manager.get(runId, id);
+                const workspace = await manager.get(runId, id);
                 await manager.release(runId, workspace.id);
                 return { workspace: workspace.id, disposed: true };
             },

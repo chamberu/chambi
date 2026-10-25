@@ -16,7 +16,7 @@ import {
 } from '@chamvi/core';
 import { isObject } from 'smob';
 import { assertSandboxEnv, resolveLimits } from '../limits/module.ts';
-import { assertImageOption } from '../provider/module.ts';
+import { assertDeployment, assertImageOption } from '../provider/module.ts';
 import { WORKSPACE_ROOT } from '../workspace/constants.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 import type { WorkspaceManagerOptions, WorkspaceToolResult } from './types.ts';
@@ -30,9 +30,20 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
     if (
         !isObject(provider) ||
         typeof provider.create !== 'function' ||
+        typeof provider.find !== 'function' ||
         typeof provider.collectGarbage !== 'function'
     ) {
-        throw new InvalidAgentDefinitionError('provider must be an ISandboxProvider (create, collectGarbage).');
+        throw new InvalidAgentDefinitionError('provider must be an ISandboxProvider (create, find, collectGarbage).');
+    }
+    if (options.deployment !== undefined) {
+        try {
+            assertDeployment(options.deployment);
+        } catch (error) {
+            throw new InvalidAgentDefinitionError((error as Error).message);
+        }
+    }
+    if (options.isSettled !== undefined && typeof options.isSettled !== 'function') {
+        throw new InvalidAgentDefinitionError('isSettled must be a function.');
     }
     assertImageOption(options.image);
     assertSandboxEnv(options.env);

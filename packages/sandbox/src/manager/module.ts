@@ -12,7 +12,8 @@ import {
     systemClock,
 } from '@chamvi/core';
 import type { ToolSet } from 'ai';
-import type { WorkspaceCreateOptions } from '../provider/types.ts';
+import { DEFAULT_DEPLOYMENT } from '../provider/constants.ts';
+import type { GarbageCollectOptions, WorkspaceCreateOptions } from '../provider/types.ts';
 import { assertGitRef, normalizeRepo } from '../repo/module.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 import { CLOSE_TIMEOUT_MS, GC_INTERVAL_MS, MAX_WORKSPACES_PER_RUN } from './constants.ts';
@@ -42,14 +43,20 @@ type Entry = {
     abort?: AbortController;
 };
 
-const NOT_FOUND = 'workspace not found in this run (disposed, expired or never created here); call create_workspace for a new one.';
+const NOT_FOUND = 'workspace not found in this run (disposed, expired or never created); call create_workspace for a new one.';
+
+/** What `pick` answers when the run holds no workspace that fits: look the run up, then pick again. */
+const MISS = Symbol('miss');
 
 /**
  * Run-scoped workspaces over `provider`: one per (run, repository), created
  * on `acquire`, disposed on `release`, on expiry (checked on every get), once
  * found gone (`IWorkspace.disposed`, dropped on every get and acquire), when
- * the run settles (`attach`), on `close()` and by garbage collection. A run
- * can only ever reach its own workspaces.
+ * the run settles (`attach`, also the ones another process created) and by
+ * garbage collection. On a miss the manager asks `provider.find` (one lookup
+ * per run at a time) and adopts what it finds, so a run reaches its
+ * workspaces after a restart or on another replica. `close()` disposes
+ * nothing a live run holds. A run can only ever reach its own workspaces.
  */
 export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorkspaceManager {
     assertManagerOptions(options);
@@ -57,10 +64,16 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
     const clock = options.clock ?? systemClock;
     const maxPerRun = options.maxWorkspacesPerRun ?? MAX_WORKSPACES_PER_RUN;
     const gcIntervalMs = options.gcIntervalMs ?? GC_INTERVAL_MS;
+    const deployment = options.deployment ?? DEFAULT_DEPLOYMENT;
+    const { isSettled } = options;
     // eslint-disable-next-line no-console
     const onError = options.onError ?? ((error: unknown) => console.error('[chamvi]', error));
 
     const runs = new Map<string, Map<string, Entry>>();
+    /** The lookup in flight per run; concurrent misses share it. */
+    const lookups = new Map<string, Promise<void>>();
+    /** Bumped by every release of a whole run: a lookup that started before disposes what it found. */
+    const generations = new Map<string, number>();
     const subscriptions = new Set<() => void>();
     let lastGcAt: number | undefined;
     let closed = false;
@@ -140,7 +153,22 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         for (const result of disposed) {
             if (result.status === 'rejected') onError(result.reason);
         }
-        return counted + await provider.collectGarbage();
+        let settled = 0;
+        if (isSettled) {
+            for (const runId of runs.keys().toArray()) {
+                try {
+                    if (!await isSettled(runId)) continue;
+                } catch (error) {
+                    onError(error);
+                    continue;
+                }
+                settled += heldEntries(runId).length;
+                await release(runId).catch(onError);
+            }
+        }
+        const gcOptions: GarbageCollectOptions = { deployment };
+        if (isSettled) gcOptions.isSettled = isSettled;
+        return counted + settled + await provider.collectGarbage(gcOptions);
     };
 
     const maybeCollectGarbage = (): void => {
@@ -157,6 +185,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         if (options.image !== undefined) createOptions.image = options.image;
         if (options.env !== undefined) createOptions.env = options.env;
         if (options.limits !== undefined) createOptions.limits = options.limits;
+        createOptions.deployment = deployment;
         entry.abort = new AbortController();
         createOptions.signal = input.signal === undefined ?
             entry.abort.signal :
@@ -184,6 +213,59 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         })();
     };
 
+    /** Holds what a lookup found: one workspace per repository key, never over one held or being created. */
+    const adopt = (runId: string, found: readonly IWorkspace[]): void => {
+        const now = clock.now();
+        let entries = runs.get(runId);
+        for (const workspace of found) {
+            if (workspace.info.runId !== runId || workspace.disposed || isExpired(workspace, now)) continue;
+            const key = workspace.info.repo ?? '';
+            // a second workspace of one key (a crash between two creates) stays
+            // unused; the release of the settled run disposes it
+            if (entries?.has(key)) continue;
+            if (!entries) {
+                entries = new Map();
+                runs.set(runId, entries);
+            }
+            const entry: Entry = { key, workspace };
+            if (workspace.info.ref !== undefined) entry.ref = workspace.info.ref;
+            entries.set(key, entry);
+        }
+    };
+
+    const generationOf = (runId: string): number => generations.get(runId) ?? 0;
+
+    /** Asks the provider for the run's workspaces and adopts them; concurrent callers share one lookup. */
+    const lookup = (runId: string): Promise<void> => {
+        if (closed) return Promise.reject(new SandboxError('the workspace manager is closed.'));
+        const inFlight = lookups.get(runId);
+        if (inFlight) return inFlight;
+
+        const generation = generationOf(runId);
+        const pending = (async () => {
+            let found: IWorkspace[];
+            try {
+                found = await provider.find(runId, { deployment });
+            } catch (error) {
+                throw toSandboxError(error, 'workspace lookup failed');
+            }
+            if (generationOf(runId) !== generation) {
+                // the run was released (settled) meanwhile: what it still had goes
+                for (const workspace of found) disposeInBackground(workspace);
+                throw new SandboxError('workspace released while it was looked up; call create_workspace again.');
+            }
+            // closed meanwhile: the workspaces stay for their runs
+            if (closed) throw new SandboxError('the workspace manager is closed.');
+            adopt(runId, found);
+        })();
+        lookups.set(runId, pending);
+        const done = () => {
+            if (lookups.get(runId) === pending) lookups.delete(runId);
+        };
+        pending.then(done, done);
+        return pending;
+    };
+
     const acquire = async (runId: string, input: AcquireInput): Promise<AcquireResult> => {
         if (closed) throw new SandboxError('the workspace manager is closed.');
         const repo = input.repo === undefined ?
@@ -199,16 +281,24 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         maybeCollectGarbage();
         for (const workspace of sweep(runId)) disposeInBackground(workspace);
 
-        let entries = runs.get(runId);
-        const existing = entries?.get(key);
-        if (existing) {
+        const reuse = async (existing: Entry): Promise<AcquireResult> => {
             if (existing.ref !== ref) {
                 throw new SandboxError(`This run already has a workspace of ${repo ?? 'no repository'} at ${existing.ref ?? 'the default branch'}; ` +
                     `dispose it first (dispose_workspace) to check out ${ref ?? 'the default branch'}.`);
             }
             const workspace = existing.workspace ?? await existing.pending!;
             return { workspace, reused: true };
-        }
+        };
+
+        const held = runs.get(runId)?.get(key);
+        if (held) return reuse(held);
+
+        // another process (a replica, or this one before a restart) may hold it
+        await lookup(runId);
+        if (closed) throw new SandboxError('the workspace manager is closed.');
+        let entries = runs.get(runId);
+        const existing = entries?.get(key);
+        if (existing) return reuse(existing);
 
         if (entries && entries.size >= maxPerRun) {
             throw new SandboxError(`A run holds at most ${maxPerRun} workspaces; dispose one first (dispose_workspace).`);
@@ -228,7 +318,8 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         `workspace ${workspace.id} is gone (disposed, or its container, pod or directory stopped or was removed); call create_workspace for a new one.` :
         `workspace ${workspace.id} expired at ${workspace.info.expiresAt.toISOString()} and was disposed; call create_workspace for a new one.`);
 
-    const get = (runId: string, workspaceId?: string): IWorkspace => {
+    /** The workspace `get` answers from what the run holds, or MISS when only a lookup can tell. */
+    const pick = (runId: string, workspaceId: string | undefined, looked: boolean): IWorkspace | typeof MISS => {
         let entry: Entry | undefined;
         if (workspaceId === undefined) {
             // only live workspaces count when picking the run's one workspace
@@ -239,6 +330,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             const held = heldEntries(runId);
             if (held.length === 0) {
                 if (dead) throw dead;
+                if (!looked) return MISS;
                 throw new SandboxError('This run has no workspace; call create_workspace first.');
             }
             if (held.length > 1) {
@@ -248,7 +340,10 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             [entry] = held;
         } else {
             entry = heldEntries(runId).find((e) => e.workspace!.id === workspaceId);
-            if (!entry) throw new SandboxError(NOT_FOUND);
+            if (!entry) {
+                if (!looked) return MISS;
+                throw new SandboxError(NOT_FOUND);
+            }
         }
 
         const workspace = entry!.workspace!;
@@ -261,17 +356,29 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         return workspace;
     };
 
+    const get = async (runId: string, workspaceId?: string): Promise<IWorkspace> => {
+        const picked = pick(runId, workspaceId, false);
+        if (picked !== MISS) return picked;
+        await lookup(runId);
+        return pick(runId, workspaceId, true) as IWorkspace;
+    };
+
     const release = async (runId: string, workspaceId?: string): Promise<void> => {
         if (workspaceId !== undefined) {
-            const entry = heldEntries(runId).find((e) => e.workspace!.id === workspaceId);
+            const held = () => heldEntries(runId).find((e) => e.workspace!.id === workspaceId);
+            let entry = held();
+            if (!entry) {
+                await lookup(runId);
+                entry = held();
+            }
             if (!entry) throw new SandboxError(NOT_FOUND);
             forget(runId, entry);
             await disposeOrThrow(entry.workspace!);
             return;
         }
 
-        const entries = runs.get(runId);
-        if (!entries) return;
+        generations.set(runId, generationOf(runId) + 1);
+        const entries = runs.get(runId) ?? new Map<string, Entry>();
         runs.delete(runId);
         // pending creates are aborted, see their run gone and dispose what they
         // get; waiting for them keeps a container from outliving the release
@@ -285,7 +392,16 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         const results = await Promise.allSettled(held.map((workspace) => disposeOrThrow(workspace)));
         // their rejections belong to their acquire callers
         await Promise.allSettled(pending);
-        const failed = results.find((result) => result.status === 'rejected');
+
+        // what other processes created for the run (or this one before a restart)
+        const ids = new Set(held.map((workspace) => workspace.id));
+        const rest = await provider.find(runId, { deployment }).then(
+            (found) => Promise.allSettled(found
+                .filter((workspace) => !ids.has(workspace.id) && workspace.info.runId === runId)
+                .map((workspace) => disposeOrThrow(workspace))),
+            (error: unknown) => [{ status: 'rejected', reason: toSandboxError(error, 'workspace lookup failed') } as PromiseRejectedResult],
+        );
+        const failed = [...results, ...rest].find((result) => result.status === 'rejected');
         if (failed) throw failed.reason;
     };
 
@@ -346,11 +462,16 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             // abort cleanup or the dispose of what they got anyway
             const creating = releasedCreates.entries().toArray()
                 .map(([pending, label]) => track([label], pending));
-            const work = runs.entries().toArray().map(([runId, entries]) => {
-                const labels = entries.values().toArray()
-                    .map((entry) => entry.workspace?.id ?? `a workspace of run ${runId} still being created`);
-                return track(labels, release(runId).catch(onError));
-            });
+            // the workspaces of live runs stay (their runs resume after a
+            // restart or on another replica and find them); creates in flight
+            // are aborted and what they made anyway is disposed
+            const work = runs.entries().toArray().flatMap(([runId, entries]) => entries.values().toArray()
+                .flatMap((entry) => {
+                    if (!entry.pending) return [];
+                    entry.abort?.abort();
+                    return [track([`a workspace of run ${runId} still being created`], entry.pending.catch(() => undefined))];
+                }));
+            runs.clear();
 
             let timer: { clear(): void } | undefined;
             const timedOut = await Promise.race([
