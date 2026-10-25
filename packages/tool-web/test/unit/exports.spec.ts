@@ -16,6 +16,7 @@ describe('public api', () => {
         expect(web.WEB_TIMEOUT_MS).toBe(30_000);
         expect(web.MAX_REDIRECTS).toBe(5);
         expect(web.WEB_REQUEST_ERROR_CODE).toBe('web_request');
+        expect(web.WEB_SEARCH_MAX_RESULTS).toBe(20);
         expect(web.PACKAGE_VERSIONS_MAX).toBe(100);
         expect(web.PACKAGE_DEPENDENCIES_MAX).toBe(200);
         expect(Object.keys(web.DEFAULT_REGISTRIES)).toEqual(['npm', 'pypi', 'crates', 'packagist', 'go', 'rubygems']);
@@ -31,6 +32,7 @@ describe('public api', () => {
             'WEB_FETCH_MAX_BYTES',
             'WEB_FETCH_MAX_CHARS',
             'WEB_REQUEST_ERROR_CODE',
+            'WEB_SEARCH_MAX_RESULTS',
             'WEB_TIMEOUT_MS',
             'webTools',
         ]);

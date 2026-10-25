@@ -9,7 +9,21 @@ import type { IClock } from '@chamvi/core';
 import type { PackageEcosystem } from '../registry/types.ts';
 import type { WebLookup, WebUrlPolicy } from '../request/types.ts';
 
+/** One search hit. */
+export type SearchResult = {
+    title: string;
+    url: string;
+    snippet?: string;
+};
+
+/** A web search backend (no built-in one ships); `web_search` exists only with one. */
+export interface ISearchProvider {
+    search(query: string, options: { limit: number; signal: AbortSignal }): Promise<SearchResult[]>;
+}
+
 export type WebToolsOptions = {
+    /** Adds `web_search`. */
+    search?: ISearchProvider;
     /** Replaces the default transport (node:http(s) pinned to the checked address); it must pin addresses itself to keep DNS rebinding out. */
     fetch?: typeof globalThis.fetch;
     /** Resolves host names (default `dns.lookup`, every address). */

@@ -22,10 +22,11 @@ import type { Requester } from '../request/types.ts';
 import { DEFAULT_REGISTRIES } from '../registry/constants.ts';
 import type { PackageEcosystem } from '../registry/types.ts';
 import { TIMER_MAX_MS } from './constants.ts';
-import type { WebToolsOptions } from './types.ts';
+import type { ISearchProvider, WebToolsOptions } from './types.ts';
 
 export type ResolvedWebOptions = {
     request: Requester;
+    search?: ISearchProvider;
     registries: Record<PackageEcosystem, string>;
     clock: IClock;
     timeoutMs: number;
@@ -78,6 +79,9 @@ export function resolveOptions(options: WebToolsOptions): ResolvedWebOptions {
     optionalFunction(options.fetch, 'fetch');
     optionalFunction(options.lookup, 'lookup');
     optionalFunction(options.allowUrl, 'allowUrl');
+    if (options.search !== undefined && (!isObject(options.search) || typeof options.search.search !== 'function')) {
+        throw new InvalidAgentDefinitionError('webTools() search must be a search provider with search().');
+    }
     const clock = options.clock ?? systemClock;
     if (!isObject(clock) || typeof clock.now !== 'function' || typeof clock.setTimeout !== 'function') {
         throw new InvalidAgentDefinitionError('webTools() clock must have now() and setTimeout().');
@@ -95,6 +99,7 @@ export function resolveOptions(options: WebToolsOptions): ResolvedWebOptions {
     return {
         request,
         registries: resolveRegistries(options.registries),
+        search: options.search,
         clock,
         timeoutMs,
     };

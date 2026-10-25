@@ -5,6 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export { WEB_FETCH_MAX_CHARS } from './constants.ts';
+export { WEB_FETCH_MAX_CHARS, WEB_SEARCH_MAX_RESULTS } from './constants.ts';
 export * from './module.ts';
 export type * from './types.ts';
