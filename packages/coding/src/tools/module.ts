@@ -8,7 +8,8 @@
 import type { ToolSet } from 'ai';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
 import { isObject } from 'smob';
-import { editFileTool, readFileTool, writeFileTool } from './files.ts';
+import { editFileTool, multiEditTool } from './edit.ts';
+import { readFileTool, writeFileTool } from './files.ts';
 import { gitDiffTool } from './git.ts';
 import { createKeyedQueue } from './helpers.ts';
 import { bashKillTool, bashOutputTool } from './jobs.ts';
@@ -34,6 +35,7 @@ export function codingTools(workspaces: CodingWorkspaces): ToolSet {
         read_file: readFileTool(workspaces),
         write_file: writeFileTool(workspaces, queue),
         edit_file: editFileTool(workspaces, queue),
+        multi_edit: multiEditTool(workspaces, queue),
         grep: grepTool(workspaces),
         list_files: listFilesTool(workspaces),
         bash: bashTool(workspaces),

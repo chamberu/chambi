@@ -55,6 +55,7 @@ describe('README example', () => {
             'git_diff',
             'grep',
             'list_files',
+            'multi_edit',
             'read_file',
             'write_file',
         ]);
