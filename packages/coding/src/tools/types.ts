@@ -22,6 +22,25 @@ export type ReadFileResult = {
     truncated: boolean;
 };
 
+/** `read_file` with `encoding: 'base64'`. */
+export type ReadFileBinaryResult = {
+    path: string;
+    encoding: 'base64';
+    /** The file's bytes, base64. */
+    content: string;
+    bytes: number;
+};
+
+/** `read_file` of a png, jpeg, gif or webp image: the model gets it as an image part. */
+export type ReadFileImageResult = {
+    path: string;
+    type: 'image';
+    mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+    bytes: number;
+    /** The image, base64. */
+    data: string;
+};
+
 export type WriteFileResult = {
     path: string;
     bytes: number;
@@ -29,6 +48,14 @@ export type WriteFileResult = {
 
 export type EditFileResult = {
     path: string;
+    replacements: number;
+};
+
+export type MultiEditResult = {
+    path: string;
+    /** How many edits were applied (all of them). */
+    edits: number;
+    /** Replacements of all edits together. */
     replacements: number;
 };
 

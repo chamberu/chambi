@@ -31,6 +31,13 @@ export const LINE_MAX_CHARS = 500;
 /** Characters of git's stderr an error message carries. */
 export const GIT_ERROR_MAX_CHARS = 2_000;
 
+/** The `path` property of the file tools. */
+export const FILE_PATH_PROPERTY: JSONSchema7 = {
+    type: 'string',
+    minLength: 1,
+    description: 'A file path relative to the workspace root, or starting with /workspace/.',
+};
+
 /** The `workspace` property every coding tool takes. */
 export const WORKSPACE_PROPERTY: JSONSchema7 = {
     type: 'string',
@@ -260,3 +267,12 @@ export const JOB_KILL_SCRIPT = [
     'fi',
     `printf '%s %s %s %s\\n' ${JOB_HEADER} "$z" "$t" "$e"`,
 ].join('\n');
+
+/** Bytes a `read_file` with `encoding: 'base64'` returns at most. */
+export const BINARY_MAX_BYTES = 1_048_576;
+
+/** Bytes of an image `read_file` hands the model as an image part at most. */
+export const IMAGE_MAX_BYTES = 5 * 1_048_576;
+
+/** Edits one `multi_edit` call takes at most. */
+export const MULTI_EDIT_MAX_EDITS = 100;
