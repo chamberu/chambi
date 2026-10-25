@@ -46,8 +46,8 @@ ESM only, Node.js `>=22`. `@chamvi/core` and `ai` are peer dependencies. Install
 | Package | Where commands run | Isolation |
 |---|---|---|
 | [`@chamvi/sandbox-local`](../sandbox-local) | A temporary directory on the host, as the host user | None: development and tests only |
-| [`@chamvi/sandbox-docker`](../sandbox-docker) | One container per workspace | uid 1000, read-only root, no capabilities, `no-new-privileges`, cpu, memory and pid limits |
-| [`@chamvi/sandbox-k8s`](../sandbox-k8s) | One pod per workspace | Non-root, read-only root, no capabilities, no service account token, resource limits |
+| [`@chamvi/sandbox-docker`](../sandbox-docker) | One container per workspace | Root inside with a writable root and only the package-manager capabilities, `no-new-privileges`, cpu, memory and pid limits; a hardened mode (uid 1000, read-only root, no capability) |
+| [`@chamvi/sandbox-k8s`](../sandbox-k8s) | One pod per workspace | The same, plus no service account token; the hardened mode fits Pod Security `restricted` |
 
 The coding tools (`read_file`, `edit_file`, `bash`, `git_diff`, ...) live in [`@chamvi/coding`](../coding).
 
@@ -94,10 +94,11 @@ await workspaces.close();
 
 | Tool | Input | Result |
 |---|---|---|
-| `create_workspace` | `{ repo?, ref? }` | `{ workspace, root: '/workspace', repo, ref, commit, expiresAt, reused }` |
+| `create_workspace` | `{ repo?, ref?, image? }` | `{ workspace, root: '/workspace', repo, ref, commit, image, expiresAt, reused }` |
 | `dispose_workspace` | `{ workspace? }` | `{ workspace, disposed: true }` |
 
-- `create_workspace` with a `repo` checks it out shallowly at `ref` (default: the default branch); without one the workspace is an empty `git init`-ed directory (for "install the published package and run a repro script"). Calling it again for the same repository returns the same workspace with `reused: true`; another `ref` of a held repository is an error telling the model to dispose it first.
+- `create_workspace` with a `repo` checks it out shallowly at `ref` (default: the default branch); without one the workspace is an empty `git init`-ed directory (for "install the published package and run a repro script"). Calling it again for the same repository returns the same workspace with `reused: true`; another `ref` or `image` of a held repository is an error telling the model to dispose it first.
+- `image` picks any container image (`python:3.13`, `rust:1`); the manager's `allowImage(image)` narrows it, and a refused or malformed reference is a `ValidationError`. The image needs `sh`, `git` and a GNU `timeout` that takes `-k`; the provider probes them before the checkout and names what is missing. Without it the workspace runs the manager's `image`, else the provider's (`sandbox-dev`, where `mise use -g node@22` installs any toolchain).
 - A run holds at most `maxWorkspacesPerRun` (3) workspaces at once.
 - A workspace id of another run is "not found", never that workspace: ids land in stored steps that other readers may see.
 - Neither tool is an effect tool: a workspace can be removed, expire or be collected, while an effect record would survive in the store and skip the redone step on a fresh workspace.
@@ -163,13 +164,15 @@ The checkout runs inside the workspace through its own `exec`, the same commands
 | `pids` | `512` | not enforced | `PidsLimit` | the kubelet's `podPidsLimit` |
 | `maxLifetimeMs` | `604_800_000` (7 days) | expiry | expiry (removed by the garbage collection) | expiry (removed by the garbage collection) |
 
-Quantities use Kubernetes notation (`'500m'`, `'1.5'`, `'512Mi'`, `'2G'`). `/tmp` is a 512 MiB tmpfs in containers and pods (`TMP_SIZE`).
+Quantities use Kubernetes notation (`'500m'`, `'1.5'`, `'512Mi'`, `'2G'`). `/tmp` is a 1 GiB tmpfs in containers and pods (`TMP_SIZE`, the providers' `tmpSize`).
 
-No host environment reaches a workspace. Containers and pods get `SANDBOX_ENV` (`HOME=/tmp`, `GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`, `safe.directory=/workspace`, `NPM_CONFIG_UPDATE_NOTIFIER=false`, `CI=true`) plus the configured `env`; local gets the host `PATH`, its own `HOME` and `TMPDIR` and the same git settings. `env` keys match `^[A-Za-z_][A-Za-z0-9_]*$`, values carry no NUL. Never put secrets there: whatever runs in the workspace can read them.
+No host environment reaches a workspace. Containers and pods get `SANDBOX_ENV` (`HOME=/tmp`, `GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`, `safe.directory=/workspace`, `NPM_CONFIG_UPDATE_NOTIFIER=false`, `CI=true`) and the cache variables (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `CARGO_HOME`, `COMPOSER_CACHE_DIR`, `MISE_DATA_DIR`, all under `/cache`, a volume the provider mounts and by default shares between workspaces) plus the configured `env`; local gets the host `PATH`, its own `HOME` and `TMPDIR`, the same git settings and the cache variables under `<root>/.cache`. `env` keys match `^[A-Za-z_][A-Za-z0-9_]*$`, values carry no NUL. Never put secrets there: whatever runs in the workspace can read them.
 
 ## Security
 
 - **Untrusted code**: the model decides what runs, and an issue body or a README it reads can steer it (prompt injection). Run untrusted repositories on Docker or Kubernetes, never local, and put `bash` behind an approval where a human should see each command: a `beforeToolExecution` hook on the agent that calls `approve()` for `toolName === 'bash'` (see [`@chamvi/coding`](../coding#usage)).
+- **Permissive inside, strict at the edge**: Docker and Kubernetes workspaces run as root with a writable root filesystem by default, so `apt` and every package manager work; the container is the boundary (no privileged mode, only the package-manager capabilities, `no-new-privileges`, no host mount but the cache). The providers' `user` and `readOnlyRoot` restore the hardened mode.
+- **Shared cache**: the default cache volume is shared by every run and agent of a host (or a claim): a malicious package one run fetched can sit in another run's cache. Turn it off per provider (`cache: false` on Docker, no `cache` claim on Kubernetes, `cache: false` locally) where runs must not influence each other.
 - **No credentials**: repository URLs with credentials are refused, `credential.helper` is reset for the fetch, and no token, service account or host variable enters a workspace. Private repositories are not supported yet.
 - **Not a network boundary**: a container sandbox stops code from touching the host, not from reaching the network. On a Docker `bridge` network a workspace reaches the host gateway (the chamvi API, Postgres), other containers and cloud metadata (`169.254.169.254`); on Kubernetes every cluster service by DNS. Add an egress firewall or a NetworkPolicy (the Helm chart's is planned), and narrow `allowRepo`.
 
@@ -223,6 +226,7 @@ export default createApp({ agents: [coder], modules: [sandboxModule({ provider: 
 | `limits` | `SandboxLimits` | the provider's | Passed to every `create` |
 | `allowFileRepos` | `boolean` | `false` | Accept `file:///absolute/path` repositories |
 | `allowRepo` | `(url) => boolean` | every https URL | Narrows the accepted repositories (gets the normalized URL) |
+| `allowImage` | `(image) => boolean` | every image | Narrows the images `create_workspace` may ask for |
 | `maxWorkspacesPerRun` | `number` | `3` | Workspaces one run may hold at once |
 | `gcIntervalMs` | `number` | `600_000` | Minimum interval between the collections `acquire` starts; `0` disables them |
 | `clock` | `IClock` | `systemClock` | Expiry and the collection interval |
@@ -241,11 +245,13 @@ Misconfiguration throws core `InvalidAgentDefinitionError`.
 | `normalizeRepo`, `assertGitRef` | function | Repository and ref rules |
 | `resolveWorkspacePath` | function | Path rule |
 | `resolveLimits`, `parseCpu`, `parseMemory`, `assertSandboxEnv` | function | Limits and environment rules |
+| `assertImage`, `probeImage`, `cacheEnv`, `isRootUser` | function | Image reference rule, the image probe, the cache variables under a folder, the root check |
 | `createOutputCollector` | function | A capped output stream collector |
 | `WORKSPACE_ROOT`, `OUTPUT_MAX_BYTES`, `FILE_MAX_BYTES`, `EXEC_TIMEOUT_MS`, `EXEC_TIMEOUT_MAX_MS`, `SANDBOX_ENV` | constant | Workspace rules |
 | `DEFAULT_LIMITS`, `DEFAULT_SANDBOX_IMAGE`, `TMP_SIZE`, `SANDBOX_LABELS`, `RUN_LABEL`, `WORKSPACE_LABEL`, `EXPIRES_AT_KEY` | constant | Provider defaults and labels |
 | `MAX_WORKSPACES_PER_RUN`, `GC_INTERVAL_MS`, `CLOSE_TIMEOUT_MS` | constant | Manager defaults |
 | `TIMEOUT_KILL_AFTER_SECONDS`, `EXEC_GRACE_MS`, `ALIVE_PROBE_TIMEOUT_MS` | constant | Remote timeout handling and the liveness probe bound |
+| `CACHE_DIR`, `CACHE_ENV`, `ROOT_CAPABILITIES`, `IMAGE_REQUIREMENTS`, `IMAGE_PROBE_TIMEOUT_MS` | constant | The cache mount and variables, the root capability set, the image probe |
 
 Types: `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult`, `ISandboxProvider`, `WorkspaceCreateOptions`, `SandboxLimits`, `IExecTransport`, `TransportExecOptions`, `TransportExecResult`, `RemoteWorkspaceInput`, `IWorkspaceManager`, `WorkspaceManagerOptions`, `AcquireInput`, `AcquireResult`, `CloseOptions`, `WorkspaceToolResult`, `DisposeWorkspaceResult`, `IOutputCollector`, `NormalizeRepoOptions`.
 
