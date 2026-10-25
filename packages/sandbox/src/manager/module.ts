@@ -493,10 +493,15 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             const creating = releasedCreates.entries().toArray()
                 .map(([pending, label]) => track([label], pending));
             // the workspaces of live runs stay (their runs resume after a
-            // restart or on another replica and find them); creates in flight
-            // are aborted and what they made anyway is disposed
+            // restart or on another replica and find them) unless `dispose`;
+            // creates in flight are aborted and what they made anyway is disposed
             const work = runs.entries().toArray().flatMap(([runId, entries]) => entries.values().toArray()
                 .flatMap((entry) => {
+                    if (entry.workspace) {
+                        if (!closeOptions.dispose) return [];
+                        const { workspace } = entry;
+                        return [track([`workspace ${workspace.id} of run ${runId}`], disposeOrThrow(workspace).catch(onError))];
+                    }
                     if (!entry.pending) return [];
                     entry.abort?.abort();
                     return [track([`a workspace of run ${runId} still being created`], entry.pending.catch(() => undefined))];

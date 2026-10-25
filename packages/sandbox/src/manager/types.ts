@@ -52,6 +52,11 @@ export type AcquireInput = {
 export type CloseOptions = {
     /** How long close() waits for disposals and creates in flight. Default CLOSE_TIMEOUT_MS (30 s). */
     timeoutMs?: number;
+    /**
+     * Also dispose the workspaces of live runs (default false: they stay for
+     * their runs to find again). For a store nothing resumes from, a MemoryStore.
+     */
+    dispose?: boolean;
 };
 
 export type AcquireResult = {
@@ -108,7 +113,8 @@ export interface IWorkspaceManager {
     /**
      * Unsubscribes every attach, aborts the creates in flight (disposing what
      * they made) and forgets the held workspaces without disposing them: they
-     * belong to live runs, which find them again after a restart. Waits for
+     * belong to live runs, which find them again after a restart (with
+     * `dispose: true` it disposes them too). Waits for
      * the creates, for disposals started earlier and for the creates in
      * flight of runs released before (call after engine.drain()); afterwards
      * acquire, get and lookups reject and attach subscribes nothing. Resolves

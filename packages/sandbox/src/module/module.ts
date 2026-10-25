@@ -7,7 +7,7 @@
 
 import { AppToken, envOneOf, envString } from '@chamvi/app';
 import type { AppContext, IContainer, IModule } from '@chamvi/app';
-import { InvalidAgentDefinitionError } from '@chamvi/core';
+import { InvalidAgentDefinitionError, MemoryStore } from '@chamvi/core';
 import type { Engine } from '@chamvi/core';
 import { isObject } from 'smob';
 import { provideSandboxContext } from '../context/module.ts';
@@ -37,7 +37,8 @@ import type {
  * Run-scoped workspaces (`.manager`, built when the factory is called). In
  * start and job mode `setup` loads the provider package and contributes the
  * lifecycle hook that attaches the manager to the engine and closes it after
- * the engine drained; migrate mode does nothing.
+ * the engine drained (disposing the held workspaces too when the store is a
+ * MemoryStore, whose runs no restart resumes); migrate mode does nothing.
  */
 export class SandboxModule implements IModule {
     readonly name: string = SANDBOX_MODULE_NAME;
@@ -138,7 +139,9 @@ export class SandboxModule implements IModule {
                 drained: async () => {
                     detach?.();
                     detach = undefined;
-                    await this.manager.close();
+                    // no run of a memory store resumes after this process: its
+                    // workspaces would only wait for maxLifetimeMs
+                    await this.manager.close({ dispose: this.engine?.store instanceof MemoryStore });
                 },
             },
         });

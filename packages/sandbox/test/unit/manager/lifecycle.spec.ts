@@ -229,6 +229,21 @@ describe('workspace manager: run lifecycle', () => {
         await expect(manager.close()).resolves.toBeUndefined();
     });
 
+    it('close({ dispose: true }) disposes the workspaces of live runs too', async () => {
+        const {
+            provider,
+            manager,
+            errors,
+        } = await run({
+            script: [call('create_workspace'), call('dispose_workspace')],
+            gate: 'dispose_workspace',
+        });
+        expect(provider.disposed).toEqual([]);
+        await manager.close({ dispose: true });
+        expect(provider.disposed).toHaveLength(1);
+        expect(errors).toEqual([]);
+    });
+
     it('close() waits for disposals the settled runs started', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const provider = createFakeProvider({ clock });

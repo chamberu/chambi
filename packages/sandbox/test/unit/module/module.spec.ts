@@ -10,10 +10,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     InvalidAgentDefinitionError,
+    MemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { Agent, Engine, Run } from '@chamvi/core';
+import type {
+    Agent,
+    Engine,
+    IStore,
+    Run,
+} from '@chamvi/core';
 import { createWorkspaceManager, injectSandboxContext, provideSandboxContext } from '@chamvi/sandbox';
 import type { ISandboxProvider, IWorkspaceManager } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
@@ -70,10 +76,12 @@ class RecordingSandboxModule extends SandboxModule {
     }
 }
 
-function fakeManager(events: string[]): IWorkspaceManager & { engines: unknown[] } {
+function fakeManager(events: string[]): IWorkspaceManager & { engines: unknown[]; closes: unknown[] } {
     const engines: unknown[] = [];
+    const closes: unknown[] = [];
     return {
         engines,
+        closes,
         acquire: async () => { throw new Error('not used'); },
         get: async () => { throw new Error('not used'); },
         release: async () => undefined,
@@ -84,7 +92,10 @@ function fakeManager(events: string[]): IWorkspaceManager & { engines: unknown[]
         },
         tools: () => ({}),
         collectGarbage: async () => 0,
-        close: async () => { events.push('close'); },
+        close: async (options) => {
+            closes.push(options);
+            events.push('close');
+        },
     };
 }
 
@@ -114,7 +125,8 @@ afterEach(async () => {
 async function harnessWith(module: IModule, options: {
     mode?: AppMode;
     agents?: Agent[];
-    events?: string[]
+    events?: string[];
+    store?: IStore;
 } = {}) {
     const harness = await createModuleHarness({
         mode: options.mode ?? 'start',
@@ -122,7 +134,7 @@ async function harnessWith(module: IModule, options: {
         agents: options.agents ?? [agent()],
         modules: [
             configModule({ logger: createRecordingLogger() }),
-            storeModule(),
+            storeModule(options.store ? { store: options.store } : {}),
             engineModule(),
             module,
         ],
@@ -216,6 +228,39 @@ describe('sandboxModule', () => {
 
         await harness.stop();
         expect(events).toEqual(['attach', 'drain', 'detach', 'close']);
+    });
+
+    it('disposes the held workspaces after drained when the store is a MemoryStore', async () => {
+        // nothing resumes a run of a memory store after the restart
+        const manager = fakeManager([]);
+        await (await harnessWith(sandboxModule({ manager, env: {} }))).stop();
+        expect(manager.closes).toEqual([{ dispose: true }]);
+    });
+
+    it('keeps the held workspaces after drained when the store persists', async () => {
+        const memory = new MemoryStore();
+        // a store of its own kind: the runs outlive the process
+        const store = new Proxy({}, {
+            get: (_target, key) => {
+                const value: unknown = Reflect.get(memory, key);
+                return typeof value === 'function' ? value.bind(memory) : value;
+            },
+        }) as IStore;
+        const manager = fakeManager([]);
+        await (await harnessWith(sandboxModule({ manager, env: {} }), { store })).stop();
+        expect(manager.closes).toEqual([{ dispose: false }]);
+    });
+
+    it('a MemoryStore app disposes a live run\'s workspace on stop', async () => {
+        const root = await mkdtemp(join(tmpdir(), 'chamvi-sandbox-module-'));
+        roots.push(root);
+        const module = sandboxModule({ env: {}, provider: createLocalSandbox({ root }), gcIntervalMs: 0 });
+        const harness = await harnessWith(module);
+        const { workspace } = await module.manager.acquire('run-1', {});
+        expect(await readdir(root)).toHaveLength(1);
+        await harness.stop();
+        expect(workspace.disposed).toBe(true);
+        expect(await readdir(root)).toEqual([]);
     });
 
     it('job mode attaches too', async () => {
