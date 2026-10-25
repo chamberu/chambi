@@ -202,8 +202,10 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         const createOptions: WorkspaceCreateOptions = { runId };
         if (entry.key !== '') createOptions.repo = entry.key;
         if (entry.ref !== undefined) createOptions.ref = entry.ref;
+        // entry.image is the run's request here (a created or found workspace never comes back)
         const image = entry.image ?? options.image;
         if (image !== undefined) createOptions.image = image;
+        if (entry.image !== undefined && entry.image !== options.image) createOptions.imageRequested = true;
         if (options.env !== undefined) createOptions.env = options.env;
         if (options.limits !== undefined) createOptions.limits = options.limits;
         createOptions.deployment = deployment;

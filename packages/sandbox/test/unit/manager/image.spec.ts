@@ -41,6 +41,14 @@ describe('workspace manager: images', () => {
         expect(workspace.info.image).toBe('python:3.13');
     });
 
+    it('marks a requested image for the provider\'s pull rule, never the manager\'s own', async () => {
+        const { provider, manager } = setup({ image: 'operator:1' });
+        await manager.acquire('r1', { image: 'python:3.13' });
+        await manager.acquire('r2', {});
+        await manager.acquire('r3', { image: 'operator:1' });
+        expect(provider.created.map((input) => input.imageRequested)).toEqual([true, undefined, undefined]);
+    });
+
     it('keeps the manager\'s image without a request', async () => {
         const { provider, manager } = setup({ image: 'operator:1' });
         await manager.acquire('r1', {});

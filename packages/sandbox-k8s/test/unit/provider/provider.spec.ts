@@ -153,11 +153,21 @@ describe('kubernetes sandbox', () => {
         expect(client.deleted).toEqual([client.created[0]!.metadata!.name]);
     });
 
-    it('pulls a model-chosen image if not present, the provider\'s own as configured', async () => {
+    it('pulls a model-chosen image if not present, the provider\'s own and the operator\'s as configured', async () => {
         const { client, provider } = setup(answerRevParse, { imagePullPolicy: 'Always' });
         await provider.create({ runId: 'r1' });
-        await provider.create({ runId: 'r2', image: 'python:3.13' });
-        expect(client.created.map((pod) => pod.spec?.containers[0]?.imagePullPolicy)).toEqual(['Always', 'IfNotPresent']);
+        await provider.create({
+            runId: 'r2', 
+            image: 'python:3.13', 
+            imageRequested: true, 
+        });
+        await provider.create({ runId: 'r3', image: 'registry.local/acme/builder:2' });
+        await provider.create({
+            runId: 'r4', 
+            image: 'img', 
+            imageRequested: true, 
+        });
+        expect(client.created.map((pod) => pod.spec?.containers[0]?.imagePullPolicy)).toEqual(['Always', 'IfNotPresent', 'Always', 'Always']);
         expect(client.created[1]!.spec?.containers[0]?.image).toBe('python:3.13');
     });
 
@@ -376,8 +386,8 @@ describe('kubernetes sandbox', () => {
         expect(pod.metadata?.labels?.team).toBe('x');
         expect(pod.metadata?.annotations?.['chamvi.dev/expires-at']).toBe(String(START + 60_000));
         expect(container.image).toBe('other');
-        // imagePullPolicy is the provider image's; another one is pulled if not present
-        expect(container.imagePullPolicy).toBe('IfNotPresent');
+        // an image the model did not ask for follows the configured policy
+        expect(container.imagePullPolicy).toBe('Always');
         expect(container.resources?.limits).toEqual({
             cpu: '2',
             memory: '1Gi',

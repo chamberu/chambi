@@ -21,7 +21,9 @@ export type DockerSandboxOptions = {
     network?: string;
     /**
      * `'missing'` (default) pulls once when the image is not present, `'always'`
-     * before every create (a mutable tag then follows its rebuilds), `'never'` never.
+     * before every create (a mutable tag then follows its rebuilds), `'never'`
+     * never. It covers the provider's `image` and the manager's; an image a
+     * run asked for (`create_workspace({ image })`) is pulled when missing.
      */
     pull?: 'missing' | 'always' | 'never';
     /** Added to every workspace's environment, after `SANDBOX_ENV` and `CACHE_ENV`. */

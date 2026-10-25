@@ -109,7 +109,7 @@ A pod is used rather than a Job: exec needs a pod name known at create time, and
 
 The default image is `ghcr.io/chamvi/sandbox-dev:trixie` (`DEFAULT_SANDBOX_IMAGE`): Debian, git, build tools, ripgrep, jq and mise for any toolchain, built for `linux/amd64` and `linux/arm64` from [`images/sandbox-dev`](../../images/sandbox-dev); tags `trixie` (rebuilt on changes and weekly) and `trixie-<short sha>`. `imagePullPolicy` (the provider image's) defaults to `'IfNotPresent'`; use `'Always'` to follow the mutable tag, or pin a digest in production (`image: 'ghcr.io/chamvi/sandbox-dev@sha256:...'`).
 
-A run may pick any image (`create_workspace({ image })`, narrowed by the manager's `allowImage`); one other than the provider's is pulled if not present. An image needs `sh`, `git` and a GNU `timeout` that takes `-k`: `create` probes them once the pod runs and fails with a `SandboxError` naming what is missing, before any checkout (and deletes the pod).
+A run may pick any image (`create_workspace({ image })`, narrowed by the manager's `allowImage`); one it asked for is pulled if not present, while the provider's and the manager's image follow `imagePullPolicy`. An image needs `sh`, `git` and a GNU `timeout` that takes `-k`: `create` probes them once the pod runs and fails with a `SandboxError` naming what is missing, before any checkout (and deletes the pod).
 
 ## Cache
 
