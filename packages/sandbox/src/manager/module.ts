@@ -349,7 +349,8 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         if (existing) return reuse(existing);
 
         if (entries && entries.size >= maxPerRun) {
-            throw new SandboxError(`A run holds at most ${maxPerRun} workspaces; dispose one first (dispose_workspace).`);
+            throw new SandboxError(`A run holds at most ${maxPerRun} workspace${maxPerRun === 1 ? '' : 's'}; dispose one first ` +
+                '(dispose_workspace), or have the operator raise maxWorkspacesPerRun of the workspace manager.');
         }
         if (!entries) {
             entries = new Map();
