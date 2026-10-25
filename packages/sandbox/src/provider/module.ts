@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto';
 import { InvalidAgentDefinitionError, SandboxError, ValidationError } from '@chamvi/core';
 import { isObject } from 'smob';
-import { assertSandboxEnv } from '../limits/module.ts';
+import { assertSandboxEnv, parseMemory } from '../limits/module.ts';
 import { isNormalizedRepo } from '../repo/helpers.ts';
 import type { WorkspaceInfo } from '../workspace/types.ts';
 import {
@@ -56,6 +56,23 @@ export function abortedCreate(cause?: unknown): SandboxError {
 export function assertImageOption(image: unknown): void {
     if (image !== undefined && !isName(image)) {
         throw new InvalidAgentDefinitionError('image must be a non-empty string.');
+    }
+}
+
+/**
+ * A `tmpSize` option (the `/tmp` tmpfs of a container or pod workspace) is
+ * undefined or a memory quantity above zero; InvalidAgentDefinitionError otherwise.
+ */
+export function assertTmpSizeOption(value: unknown): void {
+    if (value === undefined) return;
+    let bytes = 0;
+    try {
+        bytes = parseMemory(value as string);
+    } catch {
+        // reported below
+    }
+    if (!(bytes > 0)) {
+        throw new InvalidAgentDefinitionError(`tmpSize must be a positive memory quantity like "1Gi" or "512Mi", got ${JSON.stringify(value)}.`);
     }
 }
 

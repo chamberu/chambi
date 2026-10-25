@@ -28,6 +28,7 @@ describe('public api', () => {
         'assertCreateInput',
         'abortedCreate',
         'assertImageOption',
+        'assertTmpSizeOption',
         'assertClockOption',
         'buildWorkspaceInfo',
         'isExpiredAt',
