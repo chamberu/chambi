@@ -6,21 +6,24 @@
  */
 
 import { KubeConfig } from '@kubernetes/client-node';
-import type { V1Pod } from '@kubernetes/client-node';
+import type { V1Pod, V1Volume } from '@kubernetes/client-node';
 import { ChamviError, InvalidAgentDefinitionError, SandboxError } from '@chamvi/core';
 import {
+    CACHE_DIR,
+    CACHE_ENV,
     DEPLOYMENT_LABEL,
     EXPIRES_AT_KEY,
     REPO_KEY_LABEL,
+    ROOT_CAPABILITIES,
     RUN_LABEL,
     SANDBOX_ENV,
     SANDBOX_LABELS,
-    TMP_SIZE,
     WORKSPACE_LABEL,
     WORKSPACE_ROOT,
     assertClockOption,
     assertImageOption,
     assertSandboxEnv,
+    assertTmpSizeOption,
     isExpiredAt,
     resolveLimits,
     workspaceLabels,
@@ -33,9 +36,6 @@ import {
     POD_NAME_PREFIX,
 } from './constants.ts';
 import type { KubernetesSandboxOptions, PodInput } from './types.ts';
-
-/** uid and gid of every workspace process (the image's `node` user). */
-const SANDBOX_UID = 1000;
 
 const PULL_POLICIES = ['Always', 'IfNotPresent'];
 
@@ -65,6 +65,11 @@ function isLabelKey(key: string): boolean {
 /** True for a Kubernetes label value: empty or a label name. */
 export function isLabelValue(value: unknown): boolean {
     return typeof value === 'string' && (value === '' || LABEL_NAME.test(value));
+}
+
+/** A uid or gid: an integer of at least 0. */
+function isId(value: unknown): boolean {
+    return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function assertPositiveInteger(name: string, value: unknown): void {
@@ -112,6 +117,17 @@ export function assertKubernetesOptions(options: KubernetesSandboxOptions): void
             }
         }
     }
+    const { user, cache } = options;
+    if (user !== undefined && (!isObject(user) || !isId(user.uid) || !isId(user.gid))) {
+        throw new InvalidAgentDefinitionError('user must be { uid, gid } with integers of at least 0.');
+    }
+    if (options.readOnlyRoot !== undefined && typeof options.readOnlyRoot !== 'boolean') {
+        throw new InvalidAgentDefinitionError('readOnlyRoot must be a boolean.');
+    }
+    if (cache !== undefined && (!isObject(cache) || typeof cache.claimName !== 'string' || !DNS_SUBDOMAIN.test(cache.claimName) || cache.claimName.length > 253)) {
+        throw new InvalidAgentDefinitionError('cache must be { claimName } naming a PersistentVolumeClaim (a DNS-1123 subdomain).');
+    }
+    assertTmpSizeOption(options.tmpSize);
     assertPositiveInteger('startTimeoutMs', options.startTimeoutMs);
     assertPositiveInteger('pollMs', options.pollMs);
     assertClockOption(clock);
@@ -120,17 +136,29 @@ export function assertKubernetesOptions(options: KubernetesSandboxOptions): void
 }
 
 /**
- * The pod of one workspace: non-root (uid 1000) with a RuntimeDefault
- * seccomp profile, no service account token, no service links, no
- * privilege escalation, a read-only root, no capabilities, equal requests
- * and limits, an emptyDir `/workspace` and an in-memory `/tmp`, and only
- * `SANDBOX_ENV` plus the configured `env` (never the host's). It sleeps
+ * The pod of one workspace: the user (root by default, then with only the
+ * `ROOT_CAPABILITIES`; a non-root user gets none, `runAsNonRoot` and its
+ * `fsGroup`), a RuntimeDefault seccomp profile, no service account token, no
+ * service links, no privilege escalation, a writable root unless
+ * `readOnlyRoot`, equal requests and limits, an emptyDir `/workspace`, an
+ * in-memory `/tmp`, the cache at `/cache` (the shared claim, or an emptyDir
+ * of its own) and only `SANDBOX_ENV`, `CACHE_ENV` and the configured `env`
+ * (never the host's). No host path, no privileged mode. It sleeps
  * forever and has no `activeDeadlineSeconds`: its lifetime follows the run,
  * and only the garbage collection (expiry, settled run) deletes it. Its
  * labels and annotations hold everything `find` rebuilds the info from.
  */
 export function buildPod(input: PodInput): V1Pod {
-    const env = { ...SANDBOX_ENV, ...input.env };
+    const env = {
+        ...SANDBOX_ENV, 
+        ...CACHE_ENV, 
+        ...input.env, 
+    };
+    const { uid, gid } = input.user;
+    const root = uid === 0;
+    const cache: V1Volume = input.cacheClaim === undefined ?
+        { name: 'cache', emptyDir: {} } :
+        { name: 'cache', persistentVolumeClaim: { claimName: input.cacheClaim } };
     const resources = {
         cpu: input.limits.cpu,
         memory: input.limits.memory,
@@ -160,10 +188,11 @@ export function buildPod(input: PodInput): V1Pod {
             enableServiceLinks: false,
             terminationGracePeriodSeconds: 5,
             securityContext: {
-                runAsNonRoot: true,
-                runAsUser: SANDBOX_UID,
-                runAsGroup: SANDBOX_UID,
-                fsGroup: SANDBOX_UID,
+                ...(!root && { runAsNonRoot: true }),
+                runAsUser: uid,
+                runAsGroup: gid,
+                // a non-root user owns its volumes through the group
+                ...(!root && { fsGroup: gid }),
                 seccompProfile: { type: 'RuntimeDefault' },
             },
             containers: [{
@@ -176,10 +205,10 @@ export function buildPod(input: PodInput): V1Pod {
                 env: Object.entries(env).map(([name, value]) => ({ name, value })),
                 securityContext: {
                     allowPrivilegeEscalation: false,
-                    readOnlyRootFilesystem: true,
+                    readOnlyRootFilesystem: input.readOnlyRoot,
                     privileged: false,
-                    runAsNonRoot: true,
-                    capabilities: { drop: ['ALL'] },
+                    ...(!root && { runAsNonRoot: true }),
+                    capabilities: root ? { drop: ['ALL'], add: [...ROOT_CAPABILITIES] } : { drop: ['ALL'] },
                 },
                 resources: {
                     limits: { ...resources },
@@ -188,11 +217,13 @@ export function buildPod(input: PodInput): V1Pod {
                 volumeMounts: [
                     { name: 'workspace', mountPath: WORKSPACE_ROOT },
                     { name: 'tmp', mountPath: '/tmp' },
+                    { name: 'cache', mountPath: CACHE_DIR },
                 ],
             }],
             volumes: [
                 { name: 'workspace', emptyDir: { sizeLimit: input.limits.storage } },
-                { name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: TMP_SIZE } },
+                { name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: input.tmpSize } },
+                cache,
             ],
         },
     };
