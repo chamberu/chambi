@@ -114,6 +114,7 @@ describe('public api', () => {
 
     it('exports the manager constants', () => {
         expect(sandbox.MAX_WORKSPACES_PER_RUN).toBe(3);
+        expect(sandbox.CREDENTIAL_INSTALL_TIMEOUT_MS).toBe(30_000);
         expect(sandbox.GC_INTERVAL_MS).toBe(600_000);
         expect(sandbox.CLOSE_TIMEOUT_MS).toBe(30_000);
     });
