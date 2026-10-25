@@ -9,7 +9,7 @@ import type { ToolSet } from 'ai';
 import { ChamviError, systemClock } from '@chamvi/core';
 import { GITHUB_USER_AGENT } from '../auth/constants.ts';
 import { normalizePrivateKey } from '../auth/helpers.ts';
-import { createInstallationTokens } from '../auth/module.ts';
+import { createInstallationTokens, withAppTimeout } from '../auth/module.ts';
 import {
     PaginatedOctokit,
     normalizeAppId,
@@ -18,11 +18,18 @@ import {
     normalizeSecrets,
     normalizeSlug,
 } from './helpers.ts';
+import { toolError } from '../tools/helpers.ts';
 import { createReadTools } from '../tools/read.ts';
 import { GITHUB_REQUEST_ERROR_CODE } from '../tools/constants.ts';
 import { createWriteTools } from '../tools/write.ts';
 import { verifySignature } from '../webhook/helpers.ts';
-import type { GithubAppOptions, GithubOctokit, IGithubApp } from './types.ts';
+import type {
+    GithubAppOptions,
+    GithubBotIdentity,
+    GithubOctokit,
+    GithubRepositoryToken,
+    IGithubApp,
+} from './types.ts';
 
 /**
  * A GitHub App: installation Octokits over an `IClock`-based token cache
@@ -48,6 +55,7 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
     });
 
     let login: Promise<string> | undefined = slug ? Promise.resolve(`${slug}[bot]`) : undefined;
+    let identity: Promise<GithubBotIdentity> | undefined;
 
     const app: IGithubApp = {
         appId,
@@ -78,6 +86,41 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
                     });
             }
             return login;
+        },
+        botIdentity(): Promise<GithubBotIdentity> {
+            if (!identity) {
+                identity = (async () => {
+                    const name = await app.botLogin();
+                    // a public endpoint: the App's JWT cannot read users, and no installation is needed
+                    const octokit = withAppTimeout(new PaginatedOctokit({
+                        baseUrl, 
+                        userAgent: GITHUB_USER_AGENT, 
+                        request, 
+                    }), clock);
+                    const { data } = await octokit.request('GET /users/{username}', { username: name });
+                    if (typeof data?.id !== 'number') {
+                        throw new ChamviError({ message: `GET /users/${name} answered without a user id.`, code: GITHUB_REQUEST_ERROR_CODE });
+                    }
+                    return { name, email: `${data.id}+${name}@users.noreply.github.com` };
+                })().catch((error: unknown) => {
+                    identity = undefined;
+                    throw toolError(error);
+                });
+            }
+            return identity;
+        },
+        async repositoryToken(target, tokenOptions): Promise<GithubRepositoryToken | undefined> {
+            const { owner, repo } = target;
+            const installation = await tokens.app().then((octokit) => octokit.request('GET /repos/{owner}/{repo}/installation', { owner, repo }))
+                .then(({ data }) => data.id, (error: unknown) => {
+                    if ((error as { status?: number })?.status === 404) return undefined;
+                    throw toolError(error);
+                });
+            if (installation === undefined) return undefined;
+            const scoped = await tokens.repository(installation, repo, tokenOptions.permissions).catch((error: unknown) => {
+                throw toolError(error);
+            });
+            return { token: scoped.token, expiresAt: new Date(scoped.expiresAt) };
         },
         verifySignature(body: Uint8Array, signature: string | null): boolean {
             return verifySignature(secrets, body, signature);

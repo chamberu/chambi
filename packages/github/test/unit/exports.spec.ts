@@ -11,6 +11,7 @@ import * as pkg from '@chamvi/github';
 describe('public api', () => {
     it.each([
         'createGithubApp',
+        'githubAppCredentials',
         'githubChannel',
         'injectGithubContext',
         'provideGithubContext',
@@ -29,6 +30,8 @@ describe('public api', () => {
         expect(pkg.GITHUB_CHANNEL_TIMEOUT_MS).toBe(30_000);
         expect(pkg.COMMENT_BODY_MAX_LENGTH).toBe(60_000);
         expect(pkg.DEFAULT_GITHUB_API_URL).toBe('https://api.github.com');
+        expect(pkg.DEFAULT_GITHUB_GIT_HOST).toBe('github.com');
+        expect(pkg.GITHUB_TOKEN_USERNAME).toBe('x-access-token');
     });
 
     it('exports the request error code and the repository pattern', () => {
@@ -53,6 +56,7 @@ describe('public api', () => {
         'verifySignature',
         'createAppJwt',
         'createInstallationTokens',
+        'withAppTimeout',
         'createWebhookRoute',
         'receiveDelivery',
         'GITHUB_CONTEXT',
