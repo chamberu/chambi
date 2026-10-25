@@ -9,6 +9,7 @@ import type { Agent } from '../agent/types.ts';
 import type { ArtifactInput } from '../artifact/types.ts';
 import type { IChannel } from '../channel/types.ts';
 import type { IClock } from '../clock/index.ts';
+import type { IModelResolver, ModelRef } from '../model/types.ts';
 import type { Run, Step } from '../run/types.ts';
 import type { IStore } from '../store/types.ts';
 import type { Invoker, TriggerEnvelope } from '../trigger/types.ts';
@@ -46,6 +47,17 @@ export type EngineOptions = {
      * them after the first recover, drain() and stop() stop them first.
      */
     channels?: IChannel<any, any>[];
+    /**
+     * The default model of agents without one; a string default is checked
+     * through `models` at construction.
+     */
+    model?: ModelRef;
+    /**
+     * Resolves `'<provider>/<model id>'` strings. Registration (constructor,
+     * putAgent) checks every string ref through it; without it strings pass
+     * unchecked.
+     */
+    models?: IModelResolver;
     /** Default `${hostname}-${pid}`. */
     owner?: string;
     /** Default 4. */

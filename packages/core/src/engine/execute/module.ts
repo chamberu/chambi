@@ -7,6 +7,7 @@
 
 import { ToolLoopAgent, isStepCount } from 'ai';
 import type {
+    LanguageModel,
     ModelMessage,
     StepResult,
     StopCondition,
@@ -385,7 +386,8 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     if (budget.maxTokens !== undefined) stopWhen.push(tokensExceeded(budget.maxTokens, spentTokens));
 
     const loop = new ToolLoopAgent({
-        model: agent.definition.model,
+        // TODO(models): resolve agent.definition.model ?? the engine default through EngineOptions.models
+        model: agent.definition.model as LanguageModel,
         instructions: agent.definition.instructions,
         tools,
         activeTools,

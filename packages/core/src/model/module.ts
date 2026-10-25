@@ -1,0 +1,43 @@
+/*
+ * Copyright (c) 2026.
+ * Author Peter Placzek (tada5hi)
+ * For the full copyright and license information,
+ * view the LICENSE file that was distributed with this source code.
+ */
+
+import { isObject } from 'smob';
+import type { Agent } from '../agent/types.ts';
+import { InvalidAgentDefinitionError } from '../errors/index.ts';
+import type { ModelCheckOptions, ModelRef } from './types.ts';
+
+const SHAPE = 'must be a "<provider>/<model>" string or a LanguageModel object.';
+
+function isModelRef(value: unknown): value is ModelRef {
+    return (typeof value === 'string' && value.length > 0) || isObject(value);
+}
+
+/**
+ * Refuses the default model (EngineOptions.model) when it is neither a
+ * non-empty string nor an object, or a string the resolver refuses.
+ */
+export function checkDefaultModel(options: ModelCheckOptions): void {
+    const { model, models } = options;
+    if (model === undefined) return;
+    if (!isModelRef(model)) throw new InvalidAgentDefinitionError(`The default model ${SHAPE}`);
+    if (typeof model === 'string' && models) models.check(model);
+}
+
+/**
+ * Refuses an agent the engine could not run: no model and no default, a
+ * model that is neither a non-empty string nor an object, or a string the
+ * resolver refuses (InvalidAgentDefinitionError). Objects are never checked;
+ * without a resolver strings pass.
+ */
+export function checkAgentModel(agent: Agent, options: ModelCheckOptions): void {
+    const ref: unknown = agent.definition.model ?? options.model;
+    if (ref === undefined || ref === null) {
+        throw new InvalidAgentDefinitionError(`Agent "${agent.name}" has no model and the app sets no default (CHAMVI_MODEL).`);
+    }
+    if (!isModelRef(ref)) throw new InvalidAgentDefinitionError(`Agent "${agent.name}": model ${SHAPE}`);
+    if (typeof ref === 'string' && options.models) options.models.check(ref, agent.name);
+}
