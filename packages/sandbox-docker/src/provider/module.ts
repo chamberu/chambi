@@ -41,13 +41,13 @@ import { createDockerTransport } from '../transport/module.ts';
 import { openCache } from './cache.ts';
 import {
     CACHE_OPEN_USER,
-    DEFAULT_CACHE_VOLUME,
     DEFAULT_NETWORK,
     DEFAULT_USER,
 } from './constants.ts';
 import {
     assertDockerOptions,
     buildContainerOptions,
+    defaultCacheVolume,
     dockerMessage,
     isMissingImage,
     isStatus,
@@ -79,7 +79,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
     const pull = options.pull ?? 'missing';
     const user = options.user ?? DEFAULT_USER;
     const readOnlyRoot = options.readOnlyRoot ?? false;
-    const cacheVolume = options.cache === false ? undefined : (options.cache?.volume ?? DEFAULT_CACHE_VOLUME);
+    const cacheVolume = options.cache === false ? undefined : (options.cache?.volume ?? defaultCacheVolume(user));
     const tmpSize = options.tmpSize ?? TMP_SIZE;
     const clock = options.clock ?? systemClock;
     const live = new Map<string, IWorkspace>();
