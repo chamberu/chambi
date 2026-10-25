@@ -47,7 +47,7 @@ ESM only, Node.js `>=22`. `@chamvi/core`, [`@chamvi/http`](../http) (it serves t
 One GitHub App per agent repository (or organisation):
 
 1. Create a GitHub App. Set the **webhook URL** to `https://<host><basePath>/channels/github` (the channel's name), the **content type to `application/json`** (a hook created by hand defaults to `application/x-www-form-urlencoded`, which the channel answers with `415`) and a **webhook secret**.
-2. Grant the permissions your tools need: *Issues* read and write for labels, comments and closing; *Pull requests* read; *Contents* read for `github_get_file` and `github_get_latest_release`. Subscribe to the events your subscriptions name (e.g. *Issues*).
+2. Grant the permissions your tools need: *Issues* read and write for labels, comments and closing; *Pull requests* read; *Contents* read for `github_get_file` and `github_get_latest_release` (read and write for workspaces that push, *Workflows* write to push changes under `.github/workflows`). Subscribe to the events your subscriptions name (e.g. *Issues*).
 3. Generate a private key and install the App on the repositories the agents may act on.
 4. Pass the App id, the private key (PKCS#1 or PKCS#8 PEM; a one-line env var with literal `\n` works) and the webhook secret to `createGithubApp()`. Set `slug` in production, so the bot login needs no `GET /app`.
 
@@ -256,6 +256,20 @@ Gate destructive tools (`github_close_issue`) with an approval in `hooks.beforeT
 - `requireToolPermission()` from `@chamvi/core` denies every tool to runs without an invoker, and delivery runs have none. GitHub agents use `requireToolPermission({ withoutInvoker: 'allow' })` or wrap it.
 - Webhook secrets can be rotated: pass `webhookSecret: [old, new]` while GitHub switches over.
 
+## Git credentials for workspaces
+
+`githubAppCredentials(app, { permissions? })` lets the workspaces of `@chamvi/sandbox` check out and push the App's repositories with short-lived tokens limited to the one repository: `contents: read` to read, `contents: write` plus `permissions` to push. It answers nothing for another host or a repository the App is not installed on, so the next source (or an anonymous checkout) follows. It is typed structurally, so this package does not depend on `@chamvi/sandbox`.
+
+```ts
+const workspaces = createWorkspaceManager({
+    provider,
+    credentials: githubAppCredentials(gh, { permissions: { workflows: 'write' } }),
+    author: await gh.botIdentity(), // { name: '<slug>[bot]', email: '<id>+<slug>[bot]@users.noreply.github.com' }
+});
+```
+
+`gh.repositoryToken({ owner, repo }, { permissions })` is the same token for your own code, cached until 5 minutes before it expires.
+
 ## Context
 
 `provideGithubContext(engine, gh)` provides the App on the engine; a tool or a tools factory reads it with `injectGithubContext(ctx)`, so the tools need no closure over the instance:
@@ -277,7 +291,7 @@ A missing App throws `ContextNotProvidedError` naming `github` (in the factory t
 
 ## With @chamvi/app
 
-`githubModule({ channel? })` from `@chamvi/github/module` builds the App from `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_SLUG` and `GITHUB_API_URL` when it is called (`.app` at once), contributes `githubChannel()` (the `channel` options, the approval link from `CHAMVI_PUBLIC_URL` unless `channel.approvalUrl` is given, the app's clock) to the app's channels, which the http module serves at `/channels/github`, and provides the App on the engine. `@chamvi/app` is an optional peer; the main entry never imports it.
+`githubModule({ channel? })` from `@chamvi/github/module` builds the App from `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_SLUG` and `GITHUB_API_URL` when it is called (`.app` at once), contributes `githubChannel()` (the `channel` options, the approval link from `CHAMVI_PUBLIC_URL` unless `channel.approvalUrl` is given, the app's clock) to the app's channels, which the http module serves at `/channels/github`, contributes `githubAppCredentials()` (the `credentials` options; `credentials: false` turns it off) for `sandboxModule()`'s workspaces, and provides the App on the engine. `@chamvi/app` is an optional peer; the main entry never imports it.
 
 ```ts
 import { createApp } from '@chamvi/app';
@@ -322,7 +336,9 @@ Every option is checked when `githubChannel()` is called; a bad one throws `Inva
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `createGithubApp` | function | The App: `octokit(installationId)`, `botLogin()`, `verifySignature()`, `readTools()`, `writeTools()` |
+| `createGithubApp` | function | The App: `octokit(installationId)`, `botLogin()`, `botIdentity()`, `repositoryToken()`, `verifySignature()`, `readTools()`, `writeTools()` |
+| `githubAppCredentials` | function | Repository-scoped git credentials for `@chamvi/sandbox` workspaces |
+| `DEFAULT_GITHUB_GIT_HOST`, `GITHUB_TOKEN_USERNAME` | constant | `'github.com'`, `'x-access-token'` |
 | `githubChannel` | function | The channel: deliveries `in`, comments `out`, plus `on()` and `to()` bound to its name |
 | `github` | object | `github.on(events, options?)` subscriptions and `github.to({ repo, number })` addresses for the channel named `github` |
 | `GITHUB_CHANNEL_NAME`, `GITHUB_CHANNEL_TIMEOUT_MS`, `COMMENT_BODY_MAX_LENGTH` | constant | `'github'`, `30_000`, `60_000` |
@@ -331,7 +347,7 @@ Every option is checked when `githubChannel()` is called; a bad one throws `Inva
 | `provideGithubContext`, `injectGithubContext` | function | Provide the App on the engine, read it from a `ToolContext` |
 | `REPO_PATTERN` | constant | The `owner/name` pattern the tools accept (a regular expression source; `.` and `..` segments never match) |
 
-Types: `GithubAppOptions`, `IGithubApp`, `GithubOctokit`, `GithubChannel`, `GithubChannelOptions`, `GithubApprovalRef`, `GithubEvent`, `GithubPayload`, `GithubSubscriber`, `GithubSubscriptionOptions`, `GithubTarget`, `GithubWebhookResult`, `GithubIssue`, `GithubIssueSearch`, `GithubLabel`, `GithubPullRequest`, `GithubFile`, `GithubDirectory`, `GithubRelease`, `GithubComment`, `GithubIssueLabels`, `GithubClosedIssue`.
+Types: `GithubAppOptions`, `IGithubApp`, `GithubOctokit`, `GithubPermissions`, `GithubRepositoryToken`, `GithubBotIdentity`, `IGithubGitCredentials`, `GithubGitCredentialRequest`, `GithubGitCredential`, `GithubAppCredentialsOptions`, `GithubChannel`, `GithubChannelOptions`, `GithubApprovalRef`, `GithubEvent`, `GithubPayload`, `GithubSubscriber`, `GithubSubscriptionOptions`, `GithubTarget`, `GithubWebhookResult`, `GithubIssue`, `GithubIssueSearch`, `GithubLabel`, `GithubPullRequest`, `GithubFile`, `GithubDirectory`, `GithubRelease`, `GithubComment`, `GithubIssueLabels`, `GithubClosedIssue`.
 
 `@chamvi/github/module`: `githubModule`, `GithubModule`, `GITHUB_MODULE_NAME`, types `GithubModuleOptions`, `GithubModuleChannelOptions`.
 

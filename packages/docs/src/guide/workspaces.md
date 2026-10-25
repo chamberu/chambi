@@ -1,6 +1,6 @@
 # Workspaces & Coding
 
-An agent that reproduces a bug, runs tests or fixes code needs a place to run commands. chamvi gives each run **disposable workspaces**: a directory, optionally a shallow checkout of a git repository, in which the model runs commands and edits files through tools. Workspaces come from a **sandbox provider** and are held by a **workspace manager** that disposes them when the run settles.
+An agent that reproduces a bug, runs tests or fixes code needs a place to run commands. chamvi gives each run **disposable workspaces**: a directory, optionally a checkout of a git repository with its history, in which the model runs commands and edits files through tools. Workspaces come from a **sandbox provider** and are held by a **workspace manager** that disposes them when the run settles.
 
 ```bash
 npm install @chamvi/sandbox @chamvi/coding @chamvi/sandbox-docker
@@ -55,12 +55,15 @@ chamvi's own commands never run from the cache: every workspace command starts w
 
 The coding tools are not yours to edit, so the approval for `bash` sits in the agent's `beforeToolExecution` hook: `approve()` there pauses the run (keeping its workspaces on this replica) until someone answers, and a refused command reaches the model as a `ToolDeniedError` tool error. See [Approvals & Hooks](/guide/approvals#gating-tools-you-did-not-write).
 
-`workspaces.tools()` gives the model two tools; `codingTools(workspaces)` adds eleven more. Every tool resolves its workspace with the calling run's id, so a run can only reach its own workspaces.
+`workspaces.tools()` gives the model five tools; `codingTools(workspaces)` adds eleven more. Every tool resolves its workspace with the calling run's id, so a run can only reach its own workspaces.
 
 | Tool | Package | What it does |
 |---|---|---|
-| `create_workspace` | sandbox | `{ repo?, ref?, image? }`: a shallow checkout of `repo` at `ref`, or an empty git repository, in the image asked for; the same repository again returns the same workspace (`reused: true`) |
+| `create_workspace` | sandbox | `{ repo?, ref?, image? }`: a checkout of `repo` at `ref` with its history and the default branch beside it (`defaultBranch`), or an empty git repository, in the image asked for; the same repository again returns the same workspace (`reused: true`) |
 | `dispose_workspace` | sandbox | `{ workspace? }`: disposes one workspace |
+| `git_fetch` | sandbox | `{ remote?, refspec? }`: fetches with the run's credentials, every branch into `origin/*` by default |
+| `git_pull` | sandbox | `{ remote?, branch?, rebase? }`: fetches a branch and merges it, or rebases onto it; conflicts come back in the result |
+| `git_push` | sandbox | `{ remote?, branch?, force?, setUpstream? }`: pushes under the [push policy](#git-and-credentials) |
 | `read_file` | coding | A line range of a text file (at most 2000 lines, 65 536 characters, files up to 16 MiB); an image as an image the model sees; any file up to 1 MiB as base64; the output logs of `bash` |
 | `write_file` | coding | Replaces a file (text, or bytes as base64), creating directories |
 | `edit_file` | coding | Replaces an exact string, once (or every match with `replaceAll`); edits and writes of one file run one after the other, so several in one step all apply |
@@ -78,6 +81,26 @@ The coding tools take an optional `workspace` id; omitted, they use the run's on
 With [`@chamvi/app`](/guide/app#modules), `sandboxModule()` (`@chamvi/sandbox/module`) builds the manager, attaches and closes it and provides it on the engine: a tools factory takes it with `injectSandboxContext(ctx)` and builds `manager.tools()` and `codingTools(manager)` per execution, without importing the module instance (see [Context](/guide/tools#context-shared-instances-for-tools)). A hand-built engine calls `provideSandboxContext(engine, manager)` once after `new Engine()`.
 
 A run may hold `maxWorkspacesPerRun` (3) workspaces at once; raise it on the manager (`createWorkspaceManager({ maxWorkspacesPerRun })`), and the tool error says so. Repositories are `owner/name` (GitHub) or an `https:` URL without credentials, query or fragment; `allowRepo` narrows them, `allowFileRepos` adds `file:///absolute/path` for development. Refs are plain branch, tag or commit names that git can never read as an option or a range.
+
+## Git and credentials
+
+A checkout has the full history of `ref` and the remote's default branch fetched next to it (`origin/<defaultBranch>`), so the model can merge or rebase onto the base branch; a branch is checked out tracking `origin/<branch>`, a tag or commit detached. `depth` on the manager makes it shallow for huge repositories.
+
+Private repositories and pushes need credentials. The manager asks its `credentials` sources in order, the first answer wins, none is anonymous:
+
+<<< @/snippets/workspaces.ts#credentials
+
+- `staticGitCredentials([{ host, path?, username?, token }])`: personal access tokens of GitHub (`x-access-token`), GitLab (`oauth2`, also project and deploy tokens) or any https host; `path` narrows a token to an owner or a repository, the longest match wins. `sandboxModule()` also reads them as JSON from `CHAMVI_GIT_TOKENS`.
+- `githubAppCredentials(app, { permissions? })` (`@chamvi/github`): a token of the App's installation limited to the one repository, `contents: read` to read, `contents: write` plus `permissions` (e.g. `{ workflows: 'write' }`, which a change under `.github/workflows` needs) to push, cached until shortly before it expires. `githubModule()` contributes it to `sandboxModule()` on its own (`credentials: false` turns that off), and `app.botIdentity()` gives the bot's commit identity for `author`.
+
+`credentialMode` decides how a token reaches git:
+
+- **`workspace` (default)**: plain git in `bash` works, private dependencies of the same host included. chamvi writes a credential helper and a 0600 credentials file under the workspace's `$HOME/.chamvi/` after the create, and rewrites the file before a command once a token in it expires within ten minutes (GitHub App tokens live an hour), also in a workspace found again after a restart. The model can read the token, so every tool result, file read and error passes through a redaction of the issued tokens (`[redacted]`). In this mode the push policy binds `git_push` only: a `git push` in `bash` is held only by the token's own scope and the host's branch protection.
+- **`tools`**: no credential ever enters the workspace. Only the checkout and `git_fetch`, `git_pull` and `git_push` authenticate, each through a one-shot credential helper that reads the token from that command's stdin; a plain `git fetch` in `bash` works for public repositories only. While that one git process runs, a root process in the same container could read its memory: keep tokens short-lived and narrow.
+
+Either way the git tools put the repository URL on the command line and look the credential up for it, never trusting `remote.*.url` (the repository or the model can rewrite it); another repository (a fork's head branch) passes `normalizeRepo` and `allowRepo` and gets its own lookup. Hooks are off for authenticated calls, SSH URLs are refused.
+
+The push policy (`push` on the manager): `mode: 'auto'` pushes, `'approve'` asks through [`approve()`](/guide/approvals) first (the run's source channel when it has an `out`, e.g. a PR comment, else `push.channel`, else the inbox), with the commit list in the body; a denial is a `ToolDeniedError`. Without `allowBranch` the repository's default branch is refused and every other branch allowed; `allowForce: true` allows `force: true`, always as `--force-with-lease`. `author: { name, email }` sets `GIT_AUTHOR_*` and `GIT_COMMITTER_*` in every workspace.
 
 ## Lifecycle
 
@@ -122,13 +145,13 @@ Servers and watchers run as **background jobs**: `bash({ command: 'npm run dev',
 
 `write_file`, `edit_file`, `bash`, `create_workspace` and `dispose_workspace` change state, yet they are plain [`defineTool()`](/guide/tools) tools, not [effect tools](/guide/effect-tools). An effect record lives in the store forever; a workspace can be removed, expire or be collected. A redone step could then run on a fresh workspace, where a recorded "applied" result would skip the write and leave the workspace and the history out of step. Effect tools would also merge two identical calls of one step (`npm test` twice) into one.
 
-Re-applying is safe instead: `write_file` is idempotent, `edit_file` and `multi_edit` fail with "oldString not found" when it already applied (the model sees that), and `bash` runs in a disposable sandbox. Nothing outside the workspace changes; pushing is not part of these tools.
+Re-applying is safe instead: `write_file` is idempotent, `edit_file` and `multi_edit` fail with "oldString not found" when it already applied (the model sees that), and `bash` runs in a disposable sandbox. Nothing outside the workspace changes. `git_fetch`, `git_pull` and `git_push` are plain tools too: fetching or pushing the same commit again changes nothing, and a remote that moved refuses a stale push.
 
 ## Security model
 
 - **The model runs untrusted code.** Whatever it reads (an issue body, a README, a test's output) can steer what it runs: prompt injection. Run untrusted repositories on Docker or Kubernetes, never local, narrow `allowRepo`, and put `bash` behind an [approval](/guide/approvals#gating-tools-you-did-not-write) (a `beforeToolExecution` hook calling `approve()`, as above) where a human should see each command.
 - **Local isolates nothing.** Commands run as the host user with your files and network in reach. It only keeps the host environment out (just `PATH`, its own `HOME` and `TMPDIR`) and kills process groups. Background jobs die with the process (on its `exit`): after a restart a local workspace keeps its files but not its jobs, and a process killed with SIGKILL leaves them running.
 - **Docker and Kubernetes enforce** the container boundary: no privileged mode, only the package-manager capabilities (none in the hardened mode, which also drops root and makes the root filesystem read-only), no privilege escalation, no host mount but the cache, cpu and memory limits (pids on Docker, the kubelet's `podPidsLimit` on Kubernetes; storage on Kubernetes), a hard lifetime cap through the garbage collection, and no host or chamvi environment. Kubernetes mounts no service account token.
-- **No credentials enter a workspace.** URLs with credentials are refused (and never echoed in an error), git's credential helpers are reset for the fetch, and only `SANDBOX_ENV`, the cache variables and your configured `env` reach a command. Private repositories are not supported yet.
+- **Credentials stay out of URLs, the environment, logs and steps.** URLs with credentials are refused (and never echoed in an error), every configured credential helper is reset for chamvi's own git calls, and only `SANDBOX_ENV`, the cache variables, the commit identity and your configured `env` reach a command. In `credentialMode: 'workspace'` a short-lived token lives in a 0600 file of the workspace, redacted from everything the model or the store sees; `tools` keeps it out entirely (see [Git and credentials](#git-and-credentials)). Redaction replaces whole token values: a token a command transforms (reversed, split across two `bash_output` reads) can slip through.
 - **A sandbox is a code-execution boundary, not a network boundary.** On a Docker bridge a workspace reaches the host gateway (the chamvi API, Postgres, an MCP server), other containers and cloud metadata (`169.254.169.254`); on Kubernetes every service in the cluster. Until the Helm chart's NetworkPolicy ships, add one yourself (select `app.kubernetes.io/component=sandbox`, allow only GitHub and the npm registry, deny the chamvi namespace and the metadata address), or on Docker a network with `enable_icc=false` plus host firewall rules.
 - **Docker socket access is root on the host.** Give chamvi a socket proxy or rootless Docker rather than the raw socket.

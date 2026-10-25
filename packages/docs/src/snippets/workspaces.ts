@@ -8,7 +8,9 @@ import {
 } from '@chamvi/core';
 import { http, httpChannel } from '@chamvi/http';
 import { codingTools } from '@chamvi/coding';
-import { createWorkspaceManager } from '@chamvi/sandbox';
+import { githubAppCredentials } from '@chamvi/github';
+import type { IGithubApp } from '@chamvi/github';
+import { createWorkspaceManager, staticGitCredentials } from '@chamvi/sandbox';
 import type { ISandboxProvider } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 
@@ -69,6 +71,26 @@ export function development() {
         allowFileRepos: true,
     });
     // #endregion local
+
+    return workspaces;
+}
+
+export async function privateRepositories(provider: ISandboxProvider, app: IGithubApp) {
+    // #region credentials
+    const workspaces = createWorkspaceManager({
+        provider,
+        credentials: [
+            // a GitLab project token for one group
+            staticGitCredentials([{ host: 'gitlab.example.com', path: 'platform', token: process.env.GITLAB_TOKEN! }]),
+            // the GitHub App's repository-scoped tokens, allowed to touch workflows
+            githubAppCredentials(app, { permissions: { workflows: 'write' } }),
+        ],
+        // default 'workspace': plain git in bash works, tokens redacted from every result
+        credentialMode: 'workspace',
+        author: await app.botIdentity(),
+        push: { mode: 'approve', allowForce: true },
+    });
+    // #endregion credentials
 
     return workspaces;
 }
