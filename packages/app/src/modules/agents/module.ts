@@ -5,18 +5,16 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { resolve } from 'node:path';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
 import { AppToken, ModuleName } from '../../module/constants.ts';
 import {
     AGENTS_WATCHER_HOOK_NAME,
-    DEFAULT_AGENTS_DIR,
     NO_AGENTS_MESSAGE,
     NO_DIRECTORY_MESSAGE,
 } from './constants.ts';
-import { isDirectory } from './helpers.ts';
+import { isDirectory, resolveAgentsRoot } from './helpers.ts';
 import type { AgentCheck } from '../../module/types.ts';
 import type { IAgentsWatcher } from './types.ts';
 import { createAgentsWatcher } from './watcher.ts';
@@ -49,13 +47,8 @@ export class AgentsModule implements IModule {
         }
 
         const { dir } = container.resolve(AppToken.CONFIG).agents;
-        if (dir !== undefined) {
-            // checked in onReady: a dir named explicitly must exist
-            this.root = resolve(process.cwd(), dir);
-        } else {
-            const fallback = resolve(process.cwd(), DEFAULT_AGENTS_DIR);
-            this.root = await isDirectory(fallback) ? fallback : undefined;
-        }
+        // a dir named explicitly must exist, checked in onReady
+        this.root = await resolveAgentsRoot(dir, process.cwd());
         if (this.root === undefined) {
             if (context.agents.length === 0) {
                 container.resolve(AppToken.LOGGER).warn(NO_AGENTS_MESSAGE);

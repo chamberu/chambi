@@ -14,6 +14,8 @@ import { Application } from 'orkos';
 import type { IModule } from 'orkos';
 import { isObject } from 'smob';
 import type { Env } from '../env/types.ts';
+import { inspectApp } from '../inspect/module.ts';
+import type { AppReport } from '../inspect/types.ts';
 import type { ModelProviders, ProviderConfig } from '../models/types.ts';
 import { AppToken } from '../module/constants.ts';
 import { createStoppedError, reportingModule, runHooks } from '../module/helpers.ts';
@@ -98,6 +100,18 @@ export class App implements IApp {
         const lifecycle = this.begin('start', options, options.dev ?? false);
         lifecycle.done = this.setup(lifecycle);
         await lifecycle.done;
+    }
+
+    /** Read-only (no lifecycle, no container): never marks the app used. */
+    async inspect(options: AppLifecycleOptions = {}): Promise<AppReport> {
+        return inspectApp({
+            env: options.env ?? process.env,
+            cwd: process.cwd(),
+            agents: this.agents,
+            ...(this.model !== undefined && { model: this.model }),
+            ...(this.providers !== undefined && { providers: this.providers }),
+            ...(this.models !== undefined && { models: this.models }),
+        });
     }
 
     async runJob(options: AppRunJobOptions): Promise<AppRunJobResult> {

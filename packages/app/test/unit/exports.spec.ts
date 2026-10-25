@@ -6,10 +6,21 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    expectTypeOf,
+    it,
+} from 'vitest';
 import * as app from '@chamvi/app';
 import * as authup from '@chamvi/app/authup';
 import * as testing from '@chamvi/app/testing';
+import type {
+    AgentReport,
+    AppReport,
+    IApp,
+    ProviderReport,
+} from '@chamvi/app';
 
 describe('public api', () => {
     it.each([
@@ -132,6 +143,13 @@ describe('public api', () => {
             'openai',
             'xai',
         ]);
+    });
+
+    it('exports the inspect report types', () => {
+        expectTypeOf<IApp['inspect']>().returns.resolves.toEqualTypeOf<AppReport>();
+        expectTypeOf<AppReport['agents']>().toEqualTypeOf<AgentReport[]>();
+        expectTypeOf<AppReport['providers']>().toEqualTypeOf<ProviderReport[]>();
+        expect(app.createApp({}).inspect).toBeTypeOf('function');
     });
 
     it('exports the app brand', () => {
