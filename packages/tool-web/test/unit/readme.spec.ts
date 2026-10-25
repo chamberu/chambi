@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Engine, MemoryStore } from '@chamvi/core';
+import { httpChannel } from '@chamvi/http';
 import { createResearchAgent } from '../fixtures/readme-example.ts';
 import { mockModel } from '../utils/model.ts';
 
@@ -28,6 +29,11 @@ describe('README example', () => {
         expect(Object.keys(searching.definition.tools as object).sort()).toEqual(['package_info', 'web_fetch', 'web_search']);
     });
 
+    it('subscribes to the http channel, so REST and MCP can start it', () => {
+        const agent = createResearchAgent(mockModel([]));
+        expect(agent.definition.channels?.map((subscription) => subscription.channel)).toEqual(['http']);
+    });
+
     it('answers a refused URL as a tool error the model reads', async () => {
         const agent = createResearchAgent(mockModel([
             {
@@ -40,13 +46,13 @@ describe('README example', () => {
             },
             { parts: [{ type: 'text', text: 'That address is not reachable.' }] },
         ]));
-        const engine = new Engine({ store: new MemoryStore(), agents: [agent] });
+        const engine = new Engine({ store: new MemoryStore(), agents: [agent], channels: [httpChannel()] });
         await engine.start();
 
         const { runId } = await engine.dispatch({
             agent: agent.name,
-            trigger: 'manual',
-            channel: 'manual',
+            trigger: 'http',
+            channel: 'http',
             payload: {},
         });
         await engine.idle();
