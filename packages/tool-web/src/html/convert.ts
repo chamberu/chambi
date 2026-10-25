@@ -7,9 +7,9 @@
 
 import { Worker } from 'node:worker_threads';
 import { requestError } from '../request/asserts.ts';
-import { nestingDepth } from './asserts.ts';
+import { isConvertReply, nestingDepth } from './asserts.ts';
 import { CONVERT_MAX_HEAP_MB, HTML_MAX_DEPTH } from './constants.ts';
-import type { ConvertOptions, ConvertReply, ConvertedPage } from './types.ts';
+import type { ConvertOptions, ConvertedPage } from './types.ts';
 
 /**
  * The worker script: next to the sources (run with type stripping) or, once
@@ -47,11 +47,13 @@ export async function convertHtml(options: ConvertOptions): Promise<ConvertedPag
     try {
         return await new Promise<ConvertedPage>((resolve, reject) => {
             const failed = (message: string) => reject(requestError(`Could not convert ${options.baseUrl}: ${message}`));
-            worker.once('message', (reply: ConvertReply) => {
-                if ('page' in reply) resolve(reply.page);
-                else failed(reply.error);
+            // node posts its own messages from a worker too (node --watch: one per import)
+            worker.on('message', (message: unknown) => {
+                if (!isConvertReply(message)) return;
+                if ('page' in message) resolve(message.page);
+                else failed(message.error || 'the converter failed without a message.');
             });
-            worker.on('error', (error) => failed(error.message));
+            worker.on('error', (error) => failed(error.message || error.name || 'the converter failed.'));
             worker.once('exit', (code) => failed(`the converter exited with code ${code}.`));
             timer = options.clock.setTimeout(() => {
                 reject(requestError(`Converting ${options.baseUrl} took longer than ${options.timeoutMs}ms.`));

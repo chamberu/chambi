@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { isObject } from 'smob';
 import {
     FOREIGN_BREAKOUT_ELEMENTS,
     FOREIGN_ELEMENTS,
@@ -13,6 +14,7 @@ import {
     RAW_TEXT_ELEMENTS,
     VOID_ELEMENTS,
 } from './constants.ts';
+import type { ConvertReply } from './types.ts';
 
 type Scope = {
     name: string,
@@ -87,4 +89,15 @@ export function nestingDepth(html: string): number {
             index = close;
         }
     }
+}
+
+/**
+ * Whether a message of the conversion worker is its ConvertReply. Node posts
+ * messages of its own from every worker (`{ 'watch:import': [...] }` under
+ * `node --watch`, which `chamvi dev` runs), so the caller skips any other.
+ */
+export function isConvertReply(message: unknown): message is ConvertReply {
+    if (!isObject(message)) return false;
+    if ('page' in message) return isObject(message.page) && typeof message.page.content === 'string';
+    return 'error' in message && typeof message.error === 'string';
 }

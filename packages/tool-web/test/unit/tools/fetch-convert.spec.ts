@@ -132,6 +132,21 @@ describe('web_fetch conversion', () => {
         expect(performance.now() - started).toBeLessThan(1_500);
     });
 
+    it('reads the worker reply past the messages node --watch posts from every worker', async () => {
+        // chamvi dev runs the app under node --watch, which sets this for its workers
+        vi.stubEnv('WATCH_REPORT_DEPENDENCIES', '1');
+        try {
+            const { web, fetchPage } = setup();
+            web.routes.set('https://example.com/', html('<title>Watched</title><main><p>hi</p></main>'));
+
+            const result = await fetchPage({ url: 'https://example.com/' });
+            expect(result.title).toBe('Watched');
+            expect(result.content).toBe('hi');
+        } finally {
+            vi.unstubAllEnvs();
+        }
+    });
+
     it('refuses a page nested deeper than HTML_MAX_DEPTH elements before parsing it', async () => {
         const { web, fetchPage } = setup();
         web.routes.set('https://example.com/deep', html(nested(HTML_MAX_DEPTH + 1)));

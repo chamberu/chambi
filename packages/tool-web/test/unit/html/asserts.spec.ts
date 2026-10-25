@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { nestingDepth } from '../../../src/html/asserts.ts';
+import { isConvertReply, nestingDepth } from '../../../src/html/asserts.ts';
 
 describe('nestingDepth', () => {
     it('counts nested elements', () => {
@@ -55,5 +55,20 @@ describe('nestingDepth', () => {
         nestingDepth('<!--'.repeat(262_144));
         nestingDepth(`<script>${'<div>'.repeat(200_000)}`);
         expect(performance.now() - started).toBeLessThan(1_000);
+    });
+});
+
+describe('isConvertReply', () => {
+    it('takes a page or an error and skips the messages node posts itself', () => {
+        expect(isConvertReply({ page: { content: 'hi' } })).toBe(true);
+        expect(isConvertReply({ page: { title: 'T', content: '' } })).toBe(true);
+        expect(isConvertReply({ error: 'broken' })).toBe(true);
+
+        expect(isConvertReply({ 'watch:import': ['file:///app/worker.mjs'] })).toBe(false);
+        expect(isConvertReply({ 'watch:require': ['/app/a.cjs'] })).toBe(false);
+        expect(isConvertReply({ page: 'hi' })).toBe(false);
+        expect(isConvertReply({ error: undefined })).toBe(false);
+        expect(isConvertReply(undefined)).toBe(false);
+        expect(isConvertReply('page')).toBe(false);
     });
 });
