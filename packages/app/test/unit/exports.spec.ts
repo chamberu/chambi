@@ -89,6 +89,7 @@ describe('public api', () => {
             'CONTEXT',
             'DATA_SOURCE',
             'ENGINE',
+            'GIT_CREDENTIALS',
             'HTTP_ROUTES',
             'LIFECYCLE_HOOKS',
             'LOGGER',
