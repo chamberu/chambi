@@ -16,6 +16,25 @@ export type ModelProviders = Parameters<typeof createProviderRegistry>[0];
 /** The registry model strings resolve through: `<provider>/<model>`. */
 export type ModelRegistry = ProviderRegistryProvider<ModelProviders, typeof MODEL_SEPARATOR>;
 
+/** What a provider is built with: the AI SDK package and factory behind a provider name. */
+export type ProviderType = 'anthropic' | 'openai' | 'openai-compatible' | 'google' | 'mistral' | 'xai' | 'gateway';
+
+/** A secret: a literal, an env variable of the app's env, or a file (relative to the cwd, one trailing newline trimmed). */
+export type SecretValue = string | { env: string } | { file: string };
+
+/** A named provider, as createApp's `providers` and the config file declare it. */
+export type ProviderConfig = {
+    type: ProviderType;
+    apiKey?: SecretValue;
+    /** Absolute http(s) URL without credentials, query or fragment; default the type's public URL. */
+    baseURL?: string;
+    /** Header names match `^[a-z0-9]+(-[a-z0-9]+)*$` (lower-cased first). */
+    headers?: Record<string, SecretValue>;
+};
+
+/** Where a setting came from: an env variable, the config file, createApp's options, or a bare provider variable. */
+export type SettingSource = 'env' | 'file' | 'code' | 'implicit';
+
 /** A provider package `createModelRegistry()` discovers when it is installed. */
 export type BuiltinProvider = {
     /** The registry id, the part of a model string before the first `/`. */
