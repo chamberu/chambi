@@ -47,8 +47,9 @@ async function buildFixtureImage(docker: Docker, fixture: string, tag: string): 
     });
 }
 
-/** Writes into the cache folders of `CACHE_ENV` as the workspace user would (npm's logs, Go's module cache). */
-const WRITE_CACHE = 'mkdir -p "$npm_config_cache/_logs" "$GOMODCACHE" && touch "$npm_config_cache/_logs/probe" "$GOMODCACHE/probe" /cache/probe';
+/** Writes into the cache folders of `CACHE_ENV` and into HOME as the workspace user would (npm's logs, Go's module cache, cargo's home). */
+const WRITE_CACHE = 'mkdir -p "$npm_config_cache/_logs" "$GOMODCACHE" "$HOME/.cargo" && ' +
+    'touch "$npm_config_cache/_logs/probe" "$GOMODCACHE/probe" /cache/probe "$HOME/.cargo/probe"';
 
 function statusCode(error: unknown): number | undefined {
     return (error as { statusCode?: number } | undefined)?.statusCode;
@@ -127,7 +128,7 @@ describeDocker('docker sandbox', () => {
         expect((await workspace.exec(['git', 'config', '--unset', 'chamvi.checkout'])).exitCode).toBe(0);
         await docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`).stop({ t: 0 });
 
-        expect(await createDockerSandbox({ image: dockerImage }).find(runId)).toEqual([]);
+        expect(await createDockerSandbox({ ...dockerOptions }).find(runId)).toEqual([]);
     });
 
     it('restarts the stopped container of a workspace the manager still holds', async () => {
@@ -168,14 +169,14 @@ describeDocker('docker sandbox', () => {
             .map((item) => ({ ...item, State: 'exited' }));
         client.listContainers = list as Docker['listContainers'];
 
-        const found = await createDockerSandbox({ image: dockerImage, docker: client }).find(runId);
+        const found = await createDockerSandbox({ ...dockerOptions, docker: client }).find(runId);
         workspaces.push(...found);
         expect(found.map((item) => item.id)).toEqual([workspace.id]);
         expect(await found[0]!.readFile('kept.txt')).toBe('work');
     });
 
     it('restarts the stopped container of a held workspace on find and keeps the handle', async () => {
-        const provider = createDockerSandbox({ image: dockerImage });
+        const provider = createDockerSandbox({ ...dockerOptions });
         const runId = `test-${randomUUID()}`;
         const workspace = await provider.create({ runId });
         workspaces.push(workspace);
@@ -189,6 +190,46 @@ describeDocker('docker sandbox', () => {
         expect(await workspace.readFile('kept.txt')).toBe('work');
         expect(workspace.disposed).toBe(false);
     });
+
+    it('keeps HOME on disk: more than tmpSize fits, outside the memory limit', async () => {
+        const { workspace } = await create({ tmpSize: '32Mi', limits: { memory: '256Mi' } });
+        // cargo's registry, rustup's toolchains, ~/.m2 and ~/.gradle land in $HOME
+        const result = await workspace.exec(['sh', '-c', 'mkdir -p "$HOME/.cargo/registry" && ' +
+            'head -c 100000000 /dev/zero > "$HOME/.cargo/registry/blob" && stat -f -c %T "$HOME"']);
+        expect(result.stderr).toBe('');
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout.trim()).not.toBe('tmpfs');
+    });
+
+    it('keeps HOME and the mise shims across a restart of a stopped container', async () => {
+        const { runId, workspace } = await create();
+        // a shim `mise use -g` would make, and the global config it writes
+        const prepared = await workspace.exec(['sh', '-c', 'mkdir -p "$MISE_SHIMS_DIR" "$HOME/.config/mise" && ' +
+            'printf \'#!/bin/sh\\necho shimmed\\n\' > "$MISE_SHIMS_DIR/probe-tool" && chmod +x "$MISE_SHIMS_DIR/probe-tool" && ' +
+            'echo kept > "$HOME/.config/mise/config.toml" && probe-tool']);
+        expect(prepared.stderr).toBe('');
+        expect(prepared.stdout.trim()).toBe('shimmed');
+        await docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`).stop({ t: 0 });
+
+        const [found] = await createDockerSandbox({ ...dockerOptions }).find(runId);
+        workspaces.push(found!);
+        const result = await found!.exec(['sh', '-c', 'probe-tool && cat "$HOME/.config/mise/config.toml"']);
+        expect(result.stderr).toBe('');
+        expect(result.stdout).toBe('shimmed\nkept\n');
+    });
+
+    it.skipIf(offline)('resolves a mise tool installed with `mise use -g` after a restart', async () => {
+        const { runId, workspace } = await create();
+        const installed = await workspace.exec(['sh', '-c', 'mise use -g node@22 >/dev/null && node --version'], { timeoutMs: 170_000 });
+        expect(installed.exitCode).toBe(0);
+        await docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`).stop({ t: 0 });
+
+        const [found] = await createDockerSandbox({ ...dockerOptions }).find(runId);
+        workspaces.push(found!);
+        const result = await found!.exec(['sh', '-c', 'node --version']);
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toMatch(/^v22\./);
+    }, 180_000);
 
     it('never finds a workspace again that it is disposing', async () => {
         const provider = createDockerSandbox({ ...dockerOptions });
@@ -217,13 +258,18 @@ describeDocker('docker sandbox', () => {
     it('dispose removes container and volume', async () => {
         const { workspace } = await create();
         const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
-        const volume = (await container.inspect()).Mounts[0]?.Name as string;
-        expect(volume).toBeTruthy();
+        // the workspace and the home volume; the named cache volume outlives the container
+        const volumes = (await container.inspect()).Mounts
+            .filter((mount) => mount.Destination !== '/cache')
+            .map((mount) => mount.Name as string);
+        expect(volumes).toHaveLength(2);
 
         await workspace.dispose();
 
         await expect(container.inspect()).rejects.toSatisfy((error) => statusCode(error) === 404);
-        await expect(docker.getVolume(volume).inspect()).rejects.toSatisfy((error) => statusCode(error) === 404);
+        for (const volume of volumes) {
+            await expect(docker.getVolume(volume).inspect()).rejects.toSatisfy((error) => statusCode(error) === 404);
+        }
     });
 
     it('survives stdin the command never read when the container goes', async () => {
@@ -378,6 +424,7 @@ describeDocker('docker sandbox', () => {
         expect((await workspace.exec(['touch', '/etc/probe'])).exitCode).not.toBe(0);
         await workspace.writeFile('a.txt', 'hardened');
         expect(await workspace.readFile('a.txt')).toBe('hardened');
+        expect((await workspace.exec(['sh', '-c', 'mkdir -p "$HOME/.cargo" && touch "$HOME/.cargo/probe"'])).exitCode).toBe(0);
     });
 
     it('reaps the orphans of an image without an init', async () => {

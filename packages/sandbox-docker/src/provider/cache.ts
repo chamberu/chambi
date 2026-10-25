@@ -6,7 +6,12 @@
  */
 
 import { ChamviError, SandboxError } from '@chamvi/core';
-import { CACHE_DIR, CACHE_ENV, abortedCreate } from '@chamvi/sandbox';
+import {
+    CACHE_DIR,
+    CACHE_ENV,
+    WORKSPACE_HOME,
+    abortedCreate,
+} from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
 import { CACHE_OPEN_TIMEOUT_MS } from './constants.ts';
 
@@ -23,19 +28,21 @@ function cacheFolders(): string[] {
 }
 
 /**
- * Makes `CACHE_DIR` and every `CACHE_ENV` folder (made when missing) world
- * writable with the sticky bit, each only when root owns it (another
- * user's folder is left as it is); a failing `chmod` exits 1.
+ * Makes `WORKSPACE_HOME`, `CACHE_DIR` and every `CACHE_ENV` folder (made
+ * when missing) world writable with the sticky bit, each only when root
+ * owns it (another user's folder is left as it is); a failing `chmod`
+ * exits 1.
  */
-export const CACHE_OPEN_SCRIPT = `for d in ${cacheFolders().join(' ')}; do ` +
+export const CACHE_OPEN_SCRIPT = `for d in ${[WORKSPACE_HOME, ...cacheFolders()].join(' ')}; do ` +
     'mkdir -p "$d" 2>/dev/null; if [ -O "$d" ]; then chmod 1777 "$d" || exit 1; fi; done';
 
 /**
- * Opens the package cache to a non-root workspace user, through `root` (a
+ * Opens the package cache and HOME to a non-root workspace user, through `root` (a
  * workspace over the same container whose commands run as
  * `CACHE_OPEN_USER`, so the PATH guard and the `timeout` wrapper apply):
  * Docker makes the mount point of an image without `/cache` root-owned
- * 0755 (and a root workspace sharing the volume leaves the top-level
+ * 0755 (the same for the `WORKSPACE_HOME` volume of an image without that
+ * folder; and a root workspace sharing the volume leaves the top-level
  * folders so), where every install of the hardened user would fail. Only
  * those folders: what a root workspace made below them (npm's `_cacache`,
  * mise's installs) stays root's, which is why a non-root user gets a

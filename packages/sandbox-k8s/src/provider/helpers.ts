@@ -18,6 +18,7 @@ import {
     RUN_LABEL,
     SANDBOX_ENV,
     SANDBOX_LABELS,
+    WORKSPACE_HOME,
     WORKSPACE_LABEL,
     WORKSPACE_ROOT,
     assertClockOption,
@@ -142,7 +143,7 @@ export function assertKubernetesOptions(options: KubernetesSandboxOptions): void
  * service links, a shared process namespace (the pause container reaps
  * orphans as pid 1), no privilege escalation, a writable root unless
  * `readOnlyRoot`, equal requests and limits, an emptyDir `/workspace`, an
- * in-memory `/tmp`, the cache at `/cache` (the shared claim, or an emptyDir
+ * in-memory `/tmp`, a disk emptyDir `WORKSPACE_HOME`, the cache at `/cache` (the shared claim, or an emptyDir
  * of its own) and only `SANDBOX_ENV`, `CACHE_ENV` and the configured `env`
  * (never the host's). No host path, no privileged mode. It sleeps
  * forever and has no `activeDeadlineSeconds`: its lifetime follows the run,
@@ -222,12 +223,15 @@ export function buildPod(input: PodInput): V1Pod {
                 volumeMounts: [
                     { name: 'workspace', mountPath: WORKSPACE_ROOT },
                     { name: 'tmp', mountPath: '/tmp' },
+                    { name: 'home', mountPath: WORKSPACE_HOME },
                     { name: 'cache', mountPath: CACHE_DIR },
                 ],
             }],
             volumes: [
                 { name: 'workspace', emptyDir: { sizeLimit: input.limits.storage } },
                 { name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: input.tmpSize } },
+                // HOME on the node's disk, counted in the pod's ephemeral-storage, never in memory
+                { name: 'home', emptyDir: {} },
                 cache,
             ],
         },

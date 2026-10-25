@@ -49,9 +49,9 @@ jobs:
                   docker run --rm --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add FSETID \
                       --cap-add SETUID --cap-add SETGID --cap-add KILL --security-opt no-new-privileges:true "$IMAGE" \
                       sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends file >/dev/null && file --version && mise use -g node@22 && node --version && test -d /cache/mise/installs/node'
-                  # the hardened mode: uid 1000 on a read-only root writes /workspace and /cache
-                  docker run --rm --user 1000:1000 --read-only --tmpfs /tmp -v /workspace -v /cache "$IMAGE" \
-                      sh -c 'touch /workspace/probe && mkdir -p /cache/npm && touch /tmp/probe'
+                  # the hardened mode: uid 1000 on a read-only root writes /workspace, HOME and /cache
+                  docker run --rm --user 1000:1000 --read-only --tmpfs /tmp -v /workspace -v /home/sandbox -v /cache "$IMAGE" \
+                      sh -c 'touch /workspace/probe && mkdir -p /cache/npm /home/sandbox/.cargo && touch /tmp/probe && mise reshim && test -d "$MISE_SHIMS_DIR"'
                   echo 'smoke ok'
 
             # trixie-<short sha> only for the push of a commit: a scheduled or

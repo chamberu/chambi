@@ -93,8 +93,9 @@ describeDocker('sandbox-dev image as root (the default)', () => {
         const result = await run(['sh', '-c', 'echo "$PATH" && echo "$MISE_SHIMS_DIR" && echo "$MISE_DATA_DIR"']);
         const [path, shims, data] = result.stdout.split('\n');
         expect(path!.split(':').some((entry) => entry === '/cache' || entry.startsWith('/cache/'))).toBe(false);
-        expect(path).toMatch(/:\/usr\/bin:.*:\/tmp\/mise\/shims$/);
-        expect(shims).toBe('/tmp/mise/shims');
+        expect(path).toMatch(/:\/usr\/bin:.*:\/home\/sandbox\/\.local\/share\/mise\/shims$/);
+        // in the workspace's disk-backed HOME, never the memory-backed /tmp
+        expect(shims).toBe('/home/sandbox/.local/share/mise/shims');
         expect(data).toBe('/cache/mise');
     });
 
@@ -104,8 +105,8 @@ describeDocker('sandbox-dev image as root (the default)', () => {
         expect(result.exitCode).toBe(0);
     });
 
-    it('writes to /workspace, /cache and /tmp', async () => {
-        const result = await run(['sh', '-c', 'touch /workspace/probe && mkdir -p /cache/npm && touch /tmp/probe']);
+    it('writes to /workspace, HOME, /cache and /tmp', async () => {
+        const result = await run(['sh', '-c', 'touch /workspace/probe "$HOME/probe" && mkdir -p /cache/npm && touch /tmp/probe']);
         expect(result.stderr).toBe('');
         expect(result.exitCode).toBe(0);
     });
@@ -161,14 +162,14 @@ describeDocker('sandbox-dev image in the hardened mode', () => {
         expect((await run(['touch', '/etc/probe'])).exitCode).not.toBe(0);
     });
 
-    it('writes mise\'s shims to /tmp on the read-only root', async () => {
-        const result = await run(['sh', '-c', 'mise reshim && test -d /tmp/mise/shims']);
+    it('writes mise\'s shims to HOME on the read-only root', async () => {
+        const result = await run(['sh', '-c', 'mise reshim && test -d "$MISE_SHIMS_DIR" && test -d "$HOME/.local/share/mise/shims"']);
         expect(result.stderr).toBe('');
         expect(result.exitCode).toBe(0);
     });
 
-    it('still writes to its cache and /tmp', async () => {
-        const result = await run(['sh', '-c', 'mkdir -p /cache/npm && touch /cache/npm/probe && touch /tmp/probe']);
+    it('still writes to its cache, HOME and /tmp', async () => {
+        const result = await run(['sh', '-c', 'mkdir -p /cache/npm "$HOME/.cargo" && touch /cache/npm/probe "$HOME/.cargo/probe" /tmp/probe']);
         expect(result.stderr).toBe('');
         expect(result.exitCode).toBe(0);
     });

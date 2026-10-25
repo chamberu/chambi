@@ -11,6 +11,7 @@ import {
     CACHE_ENV,
     ROOT_CAPABILITIES,
     SANDBOX_ENV,
+    WORKSPACE_HOME,
     WORKSPACE_ROOT,
     abortedCreate,
     assertClockOption,
@@ -176,7 +177,7 @@ export async function pullImage(docker: Dockerode, image: string, signal?: Abort
  * then with only the `ROOT_CAPABILITIES`, else none), a writable root unless
  * `readOnlyRoot`, no-new-privileges, docker-init as pid 1 (it reaps the
  * orphans of any image), pid/memory/cpu limits, a `/tmp` tmpfs,
- * an anonymous `/workspace` volume, the cache at `/cache` (the shared named
+ * anonymous `/workspace` and `WORKSPACE_HOME` volumes, the cache at `/cache` (the shared named
  * volume, or an anonymous one) and only `SANDBOX_ENV`, `CACHE_ENV` and the
  * configured `env` (never the host's). No host mount, no privileged mode. It sleeps forever: its lifetime follows the
  * run, and only the garbage collection (expiry, settled run) removes it.
@@ -230,6 +231,11 @@ export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.C
                 Type: 'volume',
                 Source: '',
                 Target: WORKSPACE_ROOT,
+            }, {
+                // HOME on disk (never the memory-backed /tmp), anonymous like /workspace
+                Type: 'volume',
+                Source: '',
+                Target: WORKSPACE_HOME,
             }, {
                 // a named volume outlives the container; an anonymous one goes with it
                 Type: 'volume',

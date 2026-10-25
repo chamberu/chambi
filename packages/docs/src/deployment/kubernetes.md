@@ -35,7 +35,7 @@ Each agent repository gets:
 
 - root (uid and gid 0) with a writable root filesystem, every capability dropped but `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID` and `KILL`, seccomp `RuntimeDefault`, no privilege escalation, not privileged; the hardened mode (`user: { uid: 1000, gid: 1000 }`, `readOnlyRoot: true`) runs non-root on a read-only root without any capability
 - `automountServiceAccountToken: false`, `enableServiceLinks: false`, no chamvi Secrets or environment
-- requests equal to limits for `cpu`, `memory` and `ephemeral-storage`; `/workspace` an emptyDir with a `sizeLimit`, `/tmp` a 1 GiB memory emptyDir (`tmpSize`), `/cache` the ReadWriteMany claim of `cache: { claimName }` shared by every workspace (else an emptyDir per pod) with the package-cache variables pointing into it; pids through the kubelet's `podPidsLimit`
+- requests equal to limits for `cpu`, `memory` and `ephemeral-storage`; `/workspace` an emptyDir with a `sizeLimit`, `/tmp` a 1 GiB memory emptyDir (`tmpSize`), HOME `/home/sandbox` a disk emptyDir, `/cache` the ReadWriteMany claim of `cache: { claimName }` shared by every workspace (else an emptyDir per pod) with the package-cache variables pointing into it; pids through the kubelet's `podPidsLimit`
 - `restartPolicy: Never` and no `activeDeadlineSeconds`: a workspace pod lives as long as its run (through approval pauses and chamvi restarts) and is found again by label, up to the hard cap `limits.maxLifetimeMs` (7 days)
 - labels `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>` plus your `podLabels`; the expiry as the annotation `chamvi.dev/expires-at`
 
