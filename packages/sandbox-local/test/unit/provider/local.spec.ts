@@ -379,6 +379,22 @@ describe('local sandbox', () => {
         await workspace.dispose();
     });
 
+    it('kills its background jobs once it finds its directory gone, since nothing disposes it then', async () => {
+        const workspace = await createLocalSandbox({ root }).create({ runId: 'r1' });
+        const pidFile = join(tmp, 'pid');
+        try {
+            await workspace.exec(['sh', '-c', 'sleep 60 > /dev/null 2>&1 & echo $! > "$1"', 'sh', pidFile]);
+            const pid = Number((await readFile(pidFile, 'utf8')).trim());
+            expect(isAlive(pid)).toBe(true);
+
+            await rm(join(root, workspace.id), { recursive: true, force: true });
+            await expect(workspace.exec(['true'])).rejects.toThrow(/is gone/);
+            await waitFor(async () => (isAlive(pid) ? undefined : true), 2_000);
+        } finally {
+            await workspace.dispose();
+        }
+    }, 30_000);
+
     it('reads a vanished directory as gone on write and read too', async () => {
         const sandbox = createLocalSandbox({ root });
         const writer = await sandbox.create({ runId: 'r1' });

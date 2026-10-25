@@ -295,11 +295,16 @@ export class LocalWorkspace implements IWorkspace {
         return join(real, ...rest);
     }
 
-    /** Marks the workspace gone and throws when its directory no longer exists. */
+    /**
+     * Marks the workspace gone and throws when its directory no longer
+     * exists. Its background jobs are killed then: the manager forgets a gone
+     * workspace without disposing it.
+     */
     protected async assertRoot(): Promise<void> {
         const stats = await stat(this.root).catch(() => undefined);
         if (stats?.isDirectory() || this.disposing) return;
         this.gone = true;
+        this.killLingering();
         throw new SandboxError(this.goneMessage());
     }
 
