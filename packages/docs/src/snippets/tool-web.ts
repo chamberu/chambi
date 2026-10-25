@@ -14,8 +14,18 @@ export function createUpgradeResearch(model: LanguageModel) {
                 signal,
                 headers: { authorization: `Bearer ${process.env.SEARCH_API_KEY}` },
             });
-            const body = await response.json() as { results: Array<{ title: string; link: string; summary?: string }> };
-            return body.results.map((hit) => ({ title: hit.title, url: hit.link, snippet: hit.summary }));
+            const body = await response.json() as {
+                results: Array<{
+                    title: string; 
+                    link: string; 
+                    summary?: string 
+                }> 
+            };
+            return body.results.map((hit) => ({
+                title: hit.title, 
+                url: hit.link, 
+                snippet: hit.summary, 
+            }));
         },
     };
     // #endregion provider
