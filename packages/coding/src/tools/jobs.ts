@@ -25,6 +25,7 @@ import {
     inputObject,
     objectSchema,
     optionalInteger,
+    redactText,
     requireString,
     signalOf,
     workspaceOf,
@@ -146,7 +147,8 @@ export function bashOutputTool(workspaces: CodingWorkspaces, outputLogMaxBytes: 
             const answer: BashOutputResult = {
                 job,
                 status: state.status,
-                output: new TextDecoder().decode(kept),
+                // decoded here, so the workspace's exec redaction never saw it
+                output: redactText(workspace, new TextDecoder().decode(kept)),
                 offset,
                 nextOffset,
                 size: state.size,

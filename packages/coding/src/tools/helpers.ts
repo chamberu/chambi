@@ -172,3 +172,8 @@ export function objectSchema<T>(properties: Record<string, JSONSchema7>, require
         additionalProperties: false,
     });
 }
+
+/** `text` through the workspace's credential redaction (`IWorkspace.redact`), when it has one. */
+export function redactText(workspace: IWorkspace, text: string): string {
+    return workspace.redact ? workspace.redact(text) : text;
+}
