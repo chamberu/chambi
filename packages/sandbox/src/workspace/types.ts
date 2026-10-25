@@ -15,6 +15,8 @@ export type WorkspaceInfo = {
     ref?: string;
     /** HEAD after the checkout. */
     commit?: string;
+    /** The remote's default branch (its HEAD), fetched next to `ref`: the base of a merge or rebase. */
+    defaultBranch?: string;
     /** The image of a container or pod workspace. */
     image?: string;
     createdAt: Date;

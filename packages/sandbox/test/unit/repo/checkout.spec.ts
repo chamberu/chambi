@@ -24,30 +24,90 @@ const immediateClock: IClock = {
     },
 };
 
+const head = `ref: refs/heads/main\tHEAD\n${sha}\tHEAD\n`;
+const NO_CREDENTIAL = ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null'];
+
+/** A remote whose default branch is main and whose branches are `branches`. */
+function remote(branches: string[] = ['main']) {
+    return createScriptedWorkspace((argv) => {
+        if (argv.includes('ls-remote')) return { stdout: head };
+        if (argv[1] === 'rev-parse' && argv[2] === '-q') return { exitCode: branches.includes(argv[4]!.replace('refs/remotes/origin/', '')) ? 0 : 1 };
+        if (argv[1] === 'rev-parse') return { stdout: `${sha}\n` };
+        return {};
+    });
+}
+
 describe('prepareWorkspace', () => {
-    it('checks out a ref', async () => {
-        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'rev-parse' ? { stdout: `${sha}\n` } : {}));
-        const result = await prepareWorkspace(workspace, { repo: url, ref: 'v1' });
+    it('checks out a branch with full history, tracking origin, and reports the default branch', async () => {
+        const workspace = remote(['main', 'feature']);
+        const result = await prepareWorkspace(workspace, { repo: url, ref: 'feature' });
         expect(workspace.calls.map((call) => call.argv)).toEqual([
             ['git', 'init', '-q', '.'],
             ['git', 'remote', 'add', 'origin', url],
-            ['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'v1'],
-            ['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD'],
+            [...NO_CREDENTIAL, 'ls-remote', '--symref', url, 'HEAD'],
+            [...NO_CREDENTIAL, 'fetch', '-q', 'origin', 'feature', 'main'],
+            ['git', 'rev-parse', '-q', '--verify', 'refs/remotes/origin/feature'],
+            ['git', 'checkout', '-q', '-B', 'feature', '--track', 'origin/feature'],
             ['git', 'rev-parse', 'HEAD'],
+            ['git', 'config', 'chamvi.defaultBranch', 'main'],
             ['git', 'config', 'chamvi.checkout', sha],
         ]);
+        expect(result).toEqual({ commit: sha, defaultBranch: 'main' });
+    });
+
+    it('checks out the default branch without a ref', async () => {
+        const workspace = remote();
+        await prepareWorkspace(workspace, { repo: url });
+        const argvs = workspace.calls.map((call) => call.argv);
+        expect(argvs[3]).toEqual([...NO_CREDENTIAL, 'fetch', '-q', 'origin', 'main']);
+        expect(argvs[5]).toEqual(['git', 'checkout', '-q', '-B', 'main', '--track', 'origin/main']);
+    });
+
+    it('detaches at a tag or commit, fetching the default branch too', async () => {
+        const workspace = remote();
+        const result = await prepareWorkspace(workspace, { repo: url, ref: 'v1' });
+        const argvs = workspace.calls.map((call) => call.argv);
+        expect(argvs[3]).toEqual([...NO_CREDENTIAL, 'fetch', '-q', 'origin', 'v1', 'main']);
+        expect(argvs[5]).toEqual(['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']);
+        expect(result.defaultBranch).toBe('main');
+    });
+
+    it('fetches shallow with depth', async () => {
+        const workspace = remote();
+        await prepareWorkspace(workspace, { repo: url, depth: 50 });
+        expect(workspace.calls[3]?.argv).toEqual([...NO_CREDENTIAL, 'fetch', '-q', '--depth', '50', 'origin', 'main']);
+        await expect(prepareWorkspace(remote(), { repo: url, depth: 0 })).rejects.toThrow(ValidationError);
+    });
+
+    it('fetches HEAD of a remote without a default branch', async () => {
+        const workspace = createScriptedWorkspace((argv) => {
+            if (argv[1] !== 'rev-parse') return {};
+            return argv[2] === '-q' ? { exitCode: 1 } : { stdout: sha };
+        });
+        const result = await prepareWorkspace(workspace, { repo: url });
+        expect(workspace.calls[3]?.argv).toEqual([...NO_CREDENTIAL, 'fetch', '-q', 'origin', 'HEAD']);
+        expect(workspace.calls[4]?.argv).toEqual(['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']);
         expect(result).toEqual({ commit: sha });
     });
 
-    it('fetches HEAD without a ref', async () => {
-        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'rev-parse' ? { stdout: `${sha}\n` } : {}));
-        await prepareWorkspace(workspace, { repo: url });
-        expect(workspace.calls[2]?.argv).toEqual(['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'HEAD']);
+    it('authenticates ls-remote and fetch with a credential on stdin only', async () => {
+        const workspace = remote();
+        await prepareWorkspace(workspace, { repo: url, credential: { username: 'x-access-token', password: 'ghs_secret' } });
+        const authenticated = workspace.calls.filter((call) => call.argv[0] === 'sh');
+        expect(authenticated.map((call) => call.argv.slice(4, 7))).toEqual([
+            ['https://github.com', 'octo/demo', 'ls-remote'],
+            ['https://github.com', 'octo/demo', 'fetch'],
+        ]);
+        for (const call of workspace.calls) {
+            expect(call.argv.join(' ')).not.toContain('ghs_secret');
+            if (call.argv[0] === 'sh') expect(call.options.stdin).toBe('x-access-token\nghs_secret\n');
+            else expect(call.options.stdin).toBeUndefined();
+        }
     });
 
     it('runs every command with the exec timeout and the signal', async () => {
         const controller = new AbortController();
-        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'rev-parse' ? { stdout: sha } : {}));
+        const workspace = remote();
         await prepareWorkspace(workspace, { repo: url, signal: controller.signal });
         for (const call of workspace.calls) {
             expect(call.options.timeoutMs).toBe(EXEC_TIMEOUT_MS);
@@ -56,8 +116,8 @@ describe('prepareWorkspace', () => {
     });
 
     it('accepts a file repository', async () => {
-        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'rev-parse' ? { stdout: sha } : {}));
-        await expect(prepareWorkspace(workspace, { repo: 'file:///tmp/r' })).resolves.toEqual({ commit: sha });
+        const workspace = remote();
+        await expect(prepareWorkspace(workspace, { repo: 'file:///tmp/r' })).resolves.toEqual({ commit: sha, defaultBranch: 'main' });
         expect(workspace.calls[1]?.argv).toEqual(['git', 'remote', 'add', 'origin', 'file:///tmp/r']);
     });
 
@@ -78,8 +138,8 @@ describe('prepareWorkspace', () => {
             {}));
         const promise = prepareWorkspace(workspace, { repo: url, ref: 'v9' });
         await expect(promise).rejects.toThrow(SandboxError);
-        await expect(promise).rejects.toThrow(/couldn't find remote ref v9/);
-        expect(workspace.calls).toHaveLength(3);
+        await expect(promise).rejects.toThrow(/git fetch exited with 128: fatal: couldn't find remote ref v9/);
+        expect(workspace.calls).toHaveLength(4);
     });
 
     it('cuts git\'s stderr to 2000 characters', async () => {
@@ -102,8 +162,20 @@ describe('prepareWorkspace', () => {
     });
 
     it('fails when rev-parse prints no commit', async () => {
-        const workspace = createScriptedWorkspace(() => ({ stdout: 'not a sha\n' }));
-        await expect(prepareWorkspace(workspace, { repo: url })).rejects.toThrow(SandboxError);
+        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'rev-parse' && argv[2] === '-q' ? { exitCode: 1 } : { stdout: 'not a sha\n' }));
+        await expect(prepareWorkspace(workspace, { repo: url })).rejects.toThrow(/printed no commit/);
+    });
+
+    it('ignores a default branch git would refuse and checks out the remote HEAD detached', async () => {
+        const workspace = createScriptedWorkspace((argv) => {
+            if (argv.includes('ls-remote')) return { stdout: `ref: refs/heads/--upload-pack=x\tHEAD\n${sha}\tHEAD\n` };
+            if (argv[1] === 'rev-parse' && argv[2] === 'HEAD') return { stdout: `${sha}\n` };
+            return {};
+        });
+        await expect(prepareWorkspace(workspace, { repo: url })).resolves.toEqual({ commit: sha });
+        const argvs = workspace.calls.map((call) => call.argv);
+        expect(argvs[3]).toEqual([...NO_CREDENTIAL, 'fetch', '-q', 'origin', 'HEAD']);
+        expect(argvs[4]).toEqual(['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']);
     });
 
     it('validates before running', async () => {
@@ -119,20 +191,25 @@ describe('prepareWorkspace', () => {
 });
 
 describe('readCheckout', () => {
-    const answering = (value: string, repo?: string) => {
-        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'config' ? { stdout: `${value}\n` } : {}));
+    const answering = (stdout: string, repo?: string) => {
+        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'config' ? { stdout } : {}));
         if (repo !== undefined) workspace.info.repo = repo;
         return workspace;
     };
 
-    it('reads the commit a finished checkout recorded', async () => {
-        const workspace = answering(sha, url);
-        await expect(readCheckout(workspace)).resolves.toEqual({ commit: sha });
-        expect(workspace.calls[0]?.argv).toEqual(['git', 'config', '--get', 'chamvi.checkout']);
+    it('reads the commit and the default branch a finished checkout recorded', async () => {
+        const workspace = answering(`chamvi.checkout ${sha}\nchamvi.defaultbranch main\n`, url);
+        await expect(readCheckout(workspace)).resolves.toEqual({ commit: sha, defaultBranch: 'main' });
+        expect(workspace.calls[0]?.argv).toEqual(['git', 'config', '--get-regexp', '^chamvi\\.']);
     });
 
     it('reads a finished repo-less checkout', async () => {
-        await expect(readCheckout(answering('none'))).resolves.toEqual({});
+        await expect(readCheckout(answering('chamvi.checkout none\n'))).resolves.toEqual({});
+    });
+
+    it('keeps only a valid default branch', async () => {
+        await expect(readCheckout(answering(`chamvi.checkout ${sha}\nchamvi.defaultbranch ..\n`, url))).resolves.toEqual({ commit: sha });
+        await expect(readCheckout(answering(`chamvi.checkout ${sha}\n`, url))).resolves.toEqual({ commit: sha });
     });
 
     it('is undefined for a checkout that never finished (a create that died during the fetch)', async () => {
@@ -141,12 +218,14 @@ describe('readCheckout', () => {
         const halfRepo = createScriptedWorkspace(() => ({ exitCode: 1 }));
         halfRepo.info.repo = url;
         await expect(readCheckout(halfRepo)).resolves.toBeUndefined();
+        // the default branch is recorded before the checkout record
+        await expect(readCheckout(answering('chamvi.defaultbranch main\n', url))).resolves.toBeUndefined();
     });
 
     it('is undefined when the record does not fit the workspace, and for a failed exec', async () => {
-        await expect(readCheckout(answering('none', url))).resolves.toBeUndefined();
-        await expect(readCheckout(answering(sha))).resolves.toBeUndefined();
-        await expect(readCheckout(answering('nope', url))).resolves.toBeUndefined();
+        await expect(readCheckout(answering('chamvi.checkout none\n', url))).resolves.toBeUndefined();
+        await expect(readCheckout(answering(`chamvi.checkout ${sha}\n`))).resolves.toBeUndefined();
+        await expect(readCheckout(answering('chamvi.checkout nope\n', url))).resolves.toBeUndefined();
         const broken = createScriptedWorkspace();
         broken.exec = async () => { throw new SandboxError('workspace disposed'); };
         await expect(readCheckout(broken, undefined, immediateClock)).resolves.toBeUndefined();
@@ -160,7 +239,7 @@ describe('readCheckout', () => {
 
     it('retries a read that failed, e.g. right after a container restart', async () => {
         let failures = 2;
-        const workspace = createScriptedWorkspace(() => ({ stdout: `${sha}\n` }), { repo: url });
+        const workspace = createScriptedWorkspace(() => ({ stdout: `chamvi.checkout ${sha}\n` }), { repo: url });
         const exec = workspace.exec.bind(workspace);
         workspace.exec = async (argv, options) => {
             if (failures-- > 0) throw new SandboxError('exec failed: container is not running');

@@ -113,6 +113,7 @@ export function createFakeProvider(options: { clock?: IClock; image?: string } =
                 repo: input.repo,
                 ref: input.ref,
                 commit: input.repo ? FAKE_COMMIT : undefined,
+                ...(input.repo !== undefined && { defaultBranch: 'main' }),
                 ...((input.image ?? options.image) !== undefined && { image: input.image ?? options.image }),
                 createdAt: now,
                 expiresAt: new Date(now.getTime() + (input.limits?.maxLifetimeMs ?? DEFAULT_LIMITS.maxLifetimeMs)),

@@ -217,12 +217,13 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                     });
                     await openCache(root, user, input.signal);
                 }
-                const { commit } = await prepareWorkspace(workspace, {
+                // the commit and the default branch, each only when known
+                Object.assign(info, await prepareWorkspace(workspace, {
+                    ...input.checkout,
                     repo: input.repo,
                     ref: input.ref,
                     signal: input.signal,
-                });
-                if (commit !== undefined) info.commit = commit;
+                }));
             } catch (error) {
                 await workspace.dispose().catch(() => undefined);
                 if (error instanceof ChamviError) throw error;
@@ -277,7 +278,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                     live.delete(id);
                     continue;
                 }
-                if (checkout.commit !== undefined) info.commit = checkout.commit;
+                Object.assign(info, checkout);
                 found.push(workspace);
             }
             return found;

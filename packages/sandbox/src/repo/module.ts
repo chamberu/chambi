@@ -11,6 +11,7 @@ import { delay } from '../clock/module.ts';
 import { EXEC_TIMEOUT_MS } from '../workspace/constants.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 import {
+    CHECKOUT_DEFAULT_BRANCH_KEY,
     CHECKOUT_KEY,
     CHECKOUT_READ_ATTEMPTS,
     CHECKOUT_READ_RETRY_MS,
@@ -20,16 +21,17 @@ import {
     GITHUB_SHORTHAND_PATTERN,
     GITHUB_URL,
     NO_REPO_CHECKOUT,
-    REF_PATTERN,
     REPO_RULE,
 } from './constants.ts';
+import { gitArgv } from '../git/module.ts';
 import {
-    checkoutCommands,
     hasUnsafeCharacter,
+    isGitRef,
     isNormalizedRepo,
+    parseDefaultBranch,
     parseUrl,
 } from './helpers.ts';
-import type { NormalizeRepoOptions } from './types.ts';
+import type { CheckoutOptions, NormalizeRepoOptions } from './types.ts';
 
 /**
  * The clone URL of `input`: `owner/name` becomes
@@ -79,41 +81,40 @@ export function normalizeRepo(input: string, options: NormalizeRepoOptions = {})
  * component starting with `.`, a trailing `/` or `.`, or a `.lock` suffix.
  */
 export function assertGitRef(ref: string): void {
-    if (
-        typeof ref !== 'string' ||
-        !REF_PATTERN.test(ref) ||
-        ref.includes('..') ||
-        ref.includes('//') ||
-        ref.includes('@{') ||
-        ref.includes('/.') ||
-        ref.endsWith('/') ||
-        ref.endsWith('.') ||
-        ref.endsWith('.lock')
-    ) {
+    if (!isGitRef(ref)) {
         throw new ValidationError('ref must be a branch, tag or commit name (letters, digits and . _ / + -, starting with a letter or digit, at most 255 characters).');
     }
 }
 
 /**
- * Runs the checkout inside `workspace` through its own exec: `git init`, and
- * with a repo a shallow fetch of `ref` (default HEAD) and a detached
- * checkout, then records the end of the checkout as `git config
- * chamvi.checkout` (`readCheckout`). Returns HEAD. ValidationError before any exec for a bad ref (or
- * a ref without a repo); SandboxError with git's stderr when a step fails.
- * The caller disposes the workspace on failure.
+ * Runs the checkout inside `workspace` through its own exec: `git init`,
+ * the remote `origin`, the default branch from the remote's HEAD
+ * (`ls-remote --symref`), one fetch of `ref` (default: the default branch)
+ * and the default branch, with full history unless `depth` is given; a
+ * branch is checked out as a local branch tracking `origin/<ref>`, a tag or
+ * commit detached. With a `credential`, `ls-remote` and the fetch get it over
+ * stdin (`GIT_AUTH_SCRIPT`). Records the default branch, then, as the last
+ * step, the end of the checkout as `git config chamvi.checkout` (the commit,
+ * `none` for a repo-less workspace; `readCheckout`). Returns HEAD and the
+ * default branch.
+ * ValidationError before any exec for a bad ref (or a ref without a repo)
+ * or depth; SandboxError with git's stderr when a step fails. The caller
+ * disposes the workspace on failure.
  */
 export async function prepareWorkspace(
     workspace: IWorkspace,
-    input: {
-        repo?: string; 
-        ref?: string; 
-        signal?: AbortSignal 
+    input: CheckoutOptions & {
+        repo?: string;
+        ref?: string;
+        signal?: AbortSignal;
     },
-): Promise<{ commit?: string }> {
+): Promise<{ commit?: string; defaultBranch?: string }> {
     const {
-        repo, 
-        ref, 
-        signal, 
+        repo,
+        ref,
+        depth,
+        credential,
+        signal,
     } = input;
     if (repo === undefined && ref !== undefined) {
         throw new ValidationError('ref needs a repo.');
@@ -122,62 +123,92 @@ export async function prepareWorkspace(
         throw new ValidationError('repo must be a normalized https or file URL (see normalizeRepo).');
     }
     if (ref !== undefined) assertGitRef(ref);
-
-    let stdout = '';
-    for (const argv of checkoutCommands(repo, ref)) {
-        const result = await workspace.exec(argv, { timeoutMs: EXEC_TIMEOUT_MS, signal });
-        if (result.exitCode !== 0 || result.timedOut) {
-            const reason = result.timedOut ? 'timed out' : `exited with ${result.exitCode}`;
-            const stderr = result.stderr.trim().slice(0, CHECKOUT_STDERR_MAX_LENGTH);
-            throw new SandboxError(`checkout failed: git ${argv[argv[1] === '-c' ? 3 : 1]} ${reason}${stderr ? `: ${stderr}` : ''}`);
-        }
-        ({ stdout } = result);
+    if (depth !== undefined && (!Number.isSafeInteger(depth) || depth < 1)) {
+        throw new ValidationError('depth must be an integer of at least 1.');
     }
 
-    let commit: string | undefined;
-    if (repo !== undefined) {
-        commit = stdout.trim();
-        if (!COMMIT_PATTERN.test(commit)) {
-            throw new SandboxError('checkout failed: git rev-parse printed no commit.');
+    const step = async (name: string, argv: string[], stdin?: string, allowFailure = false) => {
+        const result = await workspace.exec(argv, {
+            timeoutMs: EXEC_TIMEOUT_MS,
+            signal,
+            ...(stdin !== undefined && { stdin }),
+        });
+        if ((result.exitCode !== 0 && !allowFailure) || result.timedOut) {
+            const reason = result.timedOut ? 'timed out' : `exited with ${result.exitCode}`;
+            const stderr = result.stderr.trim().slice(0, CHECKOUT_STDERR_MAX_LENGTH);
+            throw new SandboxError(`checkout failed: git ${name} ${reason}${stderr ? `: ${stderr}` : ''}`);
         }
+        return result;
+    };
+    const remoteStep = (name: string, args: string[]) => {
+        const { argv, stdin } = gitArgv(repo!, args, credential);
+        return step(name, argv, stdin);
+    };
+
+    await step('init', ['git', 'init', '-q', '.']);
+    if (repo === undefined) {
+        // the last step (see below)
+        await step('config', ['git', 'config', CHECKOUT_KEY, NO_REPO_CHECKOUT]);
+        return {};
+    }
+    await step('remote', ['git', 'remote', 'add', 'origin', repo]);
+
+    const announced = parseDefaultBranch((await remoteStep('ls-remote', ['ls-remote', '--symref', repo, 'HEAD'])).stdout);
+    // a name git would refuse (or read as an option) is no default branch
+    const defaultBranch = announced !== undefined && isGitRef(announced) ? announced : undefined;
+    const target = ref ?? defaultBranch;
+    const refs = target === undefined ? ['HEAD'] : [target];
+    if (defaultBranch !== undefined && defaultBranch !== target) refs.push(defaultBranch);
+    await remoteStep('fetch', ['fetch', '-q', ...(depth === undefined ? [] : ['--depth', String(depth)]), 'origin', ...refs]);
+
+    const isBranch = target !== undefined &&
+        (await step('rev-parse', ['git', 'rev-parse', '-q', '--verify', `refs/remotes/origin/${target}`], undefined, true)).exitCode === 0;
+    await step('checkout', isBranch ?
+        ['git', 'checkout', '-q', '-B', target, '--track', `origin/${target}`] :
+        ['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']);
+
+    const commit = (await step('rev-parse', ['git', 'rev-parse', 'HEAD'])).stdout.trim();
+    if (!COMMIT_PATTERN.test(commit)) {
+        throw new SandboxError('checkout failed: git rev-parse printed no commit.');
+    }
+    if (defaultBranch !== undefined) {
+        await step('config', ['git', 'config', CHECKOUT_DEFAULT_BRANCH_KEY, defaultBranch]);
     }
     // the last step, recorded with the workspace: a provider's find skips a
     // workspace without it (a create that died before here) and rebuilds
-    // info.commit from it
-    const recorded = await workspace.exec(['git', 'config', CHECKOUT_KEY, commit ?? NO_REPO_CHECKOUT], { timeoutMs: EXEC_TIMEOUT_MS, signal });
-    if (recorded.exitCode !== 0 || recorded.timedOut) {
-        throw new SandboxError(`checkout failed: git config ${recorded.timedOut ? 'timed out' : `exited with ${recorded.exitCode}`}`);
-    }
-    return commit === undefined ? {} : { commit };
+    // info.commit and info.defaultBranch from it
+    await step('config', ['git', 'config', CHECKOUT_KEY, commit]);
+    return defaultBranch === undefined ? { commit } : { commit, defaultBranch };
 }
 
 /**
  * The checkout `prepareWorkspace` finished in `workspace`, read back from its
- * git config (`chamvi.checkout`): `{ commit }` for a workspace of a
- * repository, `{}` for a repo-less one. Undefined when the record is missing
- * (a create that died before its checkout finished, e.g. a process killed
- * during the fetch: git exits 1) or does not fit `workspace.info.repo`: such
- * a workspace is not found again. A read that fails otherwise (the exec
- * throws, another exit code, a timeout; a container restarted a moment ago)
- * is retried on `clock` every `CHECKOUT_READ_RETRY_MS`, at most
- * `CHECKOUT_READ_ATTEMPTS` reads, then undefined too.
+ * git config: `{ commit, defaultBranch? }` for a workspace of a repository
+ * (`chamvi.checkout`, `chamvi.defaultBranch`, the latter left out when
+ * missing or invalid), `{}` for a repo-less one. Undefined when the record
+ * `chamvi.checkout` is missing (a create that died before its checkout
+ * finished, e.g. a process killed during the fetch: git exits 1) or does not
+ * fit `workspace.info.repo`: such a workspace is not found again. A read that
+ * fails otherwise (the exec throws, another exit code, a timeout; a container
+ * restarted a moment ago) is retried on `clock` every `CHECKOUT_READ_RETRY_MS`,
+ * at most `CHECKOUT_READ_ATTEMPTS` reads, then undefined too.
  */
 export async function readCheckout(
     workspace: IWorkspace,
     signal?: AbortSignal,
     clock: IClock = systemClock,
-): Promise<{ commit?: string } | undefined> {
-    let value: string | undefined;
-    for (let attempt = 1; value === undefined; attempt++) {
+): Promise<{ commit?: string; defaultBranch?: string } | undefined> {
+    let stdout: string | undefined;
+    for (let attempt = 1; stdout === undefined; attempt++) {
         try {
-            const result = await workspace.exec(['git', 'config', '--get', CHECKOUT_KEY], { timeoutMs: CHECKOUT_READ_TIMEOUT_MS, signal });
+            const result = await workspace.exec(['git', 'config', '--get-regexp', '^chamvi\\.'], { timeoutMs: CHECKOUT_READ_TIMEOUT_MS, signal });
             // exit 1 without output: no record, a create that died before its checkout finished
             if (result.exitCode === 1 && !result.timedOut && result.stdout.trim() === '') return undefined;
-            if (result.exitCode === 0 && !result.timedOut) value = result.stdout.trim();
+            if (result.exitCode === 0 && !result.timedOut) ({ stdout } = result);
         } catch {
             // the exec itself failed: read again below
         }
-        if (value !== undefined) break;
+        if (stdout !== undefined) break;
         if (attempt >= CHECKOUT_READ_ATTEMPTS || signal?.aborted) return undefined;
         try {
             await delay(clock, CHECKOUT_READ_RETRY_MS, signal, () => new SandboxError('checkout read aborted'));
@@ -185,6 +216,19 @@ export async function readCheckout(
             return undefined;
         }
     }
-    if (workspace.info.repo === undefined) return value === NO_REPO_CHECKOUT ? {} : undefined;
-    return COMMIT_PATTERN.test(value) ? { commit: value } : undefined;
+    let checkout: string | undefined;
+    let defaultBranch: string | undefined;
+    for (const line of stdout.split('\n')) {
+        const space = line.indexOf(' ');
+        if (space < 0) continue;
+        // git prints the variable names lower-cased
+        const key = line.slice(0, space);
+        const value = line.slice(space + 1).trim();
+        if (key === CHECKOUT_KEY) checkout = value;
+        if (key === CHECKOUT_DEFAULT_BRANCH_KEY.toLowerCase() && isGitRef(value)) defaultBranch = value;
+    }
+    if (checkout === undefined) return undefined;
+    if (workspace.info.repo === undefined) return checkout === NO_REPO_CHECKOUT ? {} : undefined;
+    if (!COMMIT_PATTERN.test(checkout)) return undefined;
+    return defaultBranch === undefined ? { commit: checkout } : { commit: checkout, defaultBranch };
 }

@@ -46,8 +46,11 @@ function resolveLimits(...layers: Array<SandboxLimits | undefined>): Required<Sa
 function parseCpu(value: string): number;
 function parseMemory(value: string): number;
 function assertSandboxEnv(env: Record<string, string> | undefined): void;
-function prepareWorkspace(workspace: IWorkspace, input: { repo?: string; ref?: string; signal?: AbortSignal }): Promise<{ commit?: string }>;
-function readCheckout(workspace: IWorkspace, signal?: AbortSignal, clock?: IClock): Promise<{ commit?: string } | undefined>;
+function prepareWorkspace(
+    workspace: IWorkspace,
+    input: { repo?: string; ref?: string; depth?: number; credential?: GitCredential; signal?: AbortSignal },
+): Promise<{ commit?: string; defaultBranch?: string }>;
+function readCheckout(workspace: IWorkspace, signal?: AbortSignal): Promise<{ commit?: string; defaultBranch?: string } | undefined>;
 function createOutputCollector(maxBytes: number): IOutputCollector;
 ```
 
@@ -62,7 +65,7 @@ function readWorkspaceInfo(values: Readonly<Record<string, string | undefined>>,
 function createSettledCheck(isSettled?: (runId: string) => Promise<boolean>): (runId: string) => Promise<boolean | SandboxError>;
 ```
 
-`normalizeRepo`, `assertGitRef` and `resolveWorkspacePath` throw `ValidationError` (model input); `resolveLimits`, `parseCpu`, `parseMemory` and `assertSandboxEnv` throw `InvalidAgentDefinitionError` (configuration); `prepareWorkspace` throws `SandboxError` with git's stderr when a checkout step fails and, as its last step, records the checkout as `git config chamvi.checkout` (the commit, or `none` without a repo). `readCheckout` reads it back: `{ commit }`, `{}` for a repo-less workspace, `undefined` for a create that died before its checkout finished, which `find` must skip. A read that fails otherwise (a container restarted a moment ago) is retried on the provider's clock, 5 reads 500 ms apart, before it counts as missing.
+`normalizeRepo`, `assertGitRef` and `resolveWorkspacePath` throw `ValidationError` (model input); `resolveLimits`, `parseCpu`, `parseMemory` and `assertSandboxEnv` throw `InvalidAgentDefinitionError` (configuration); `prepareWorkspace` throws `SandboxError` with git's stderr when a checkout step fails, records the default branch as `git config chamvi.defaultBranch` and, as its last step, the checkout as `git config chamvi.checkout` (the commit, or `none` without a repo). `readCheckout` reads both back: `{ commit, defaultBranch? }`, `{}` for a repo-less workspace, `undefined` for a create that died before its checkout finished, which `find` must skip.
 
 ### Images, privileges and the cache
 

@@ -115,6 +115,7 @@ export function toToolResult(workspace: IWorkspace, reused: boolean): WorkspaceT
         repo: info.repo ?? null,
         ref: info.ref ?? null,
         commit: info.commit ?? null,
+        defaultBranch: info.defaultBranch ?? null,
         image: info.image ?? null,
         expiresAt: info.expiresAt.toISOString(),
         reused,
