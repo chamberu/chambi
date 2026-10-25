@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { SandboxError } from '@chamvi/core';
+import { SandboxError, ValidationError } from '@chamvi/core';
 import { isObject } from 'smob';
 import { REDACTED, REDACT_MIN_LENGTH } from './constants.ts';
 import type {
@@ -29,13 +29,25 @@ export function trimRepoPath(path: string): string {
     return path.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.git$/, '');
 }
 
+/**
+ * A URL pathname decoded as git's credential helpers see it.
+ * ValidationError for a malformed percent escape (never echoing it).
+ */
+export function decodeRepoPath(pathname: string): string {
+    try {
+        return decodeURIComponent(pathname);
+    } catch {
+        throw new ValidationError('repo has a malformed percent escape in its path (a % not followed by two hex digits of UTF-8).');
+    }
+}
+
 /** The request for `url` (a normalized https repository URL, or `https://host/`). */
 export function credentialRequest(url: string, access: GitAccess, runId: string, signal?: AbortSignal): GitCredentialRequest {
     const parsed = new URL(url);
     const request: GitCredentialRequest = {
         url: parsed.href,
         host: parsed.host.toLowerCase(),
-        path: trimRepoPath(decodeURIComponent(parsed.pathname)),
+        path: trimRepoPath(decodeRepoPath(parsed.pathname)),
         access,
         runId,
     };

@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { trimRepoPath } from '../credentials/helpers.ts';
+import { decodeRepoPath, trimRepoPath } from '../credentials/helpers.ts';
 import type { GitCredential } from '../credentials/types.ts';
 
 /** `https://host[:port]` of a URL. */
@@ -14,9 +14,9 @@ export function urlOrigin(url: string): string {
     return `${parsed.protocol}//${parsed.host}`;
 }
 
-/** The repository path of a URL as git's credential helpers see it: decoded, without `/` ends and `.git`. */
+/** The repository path of a URL as git's credential helpers see it: decoded, without `/` ends and `.git`. ValidationError for a malformed escape. */
 export function urlRepoPath(url: string): string {
-    return trimRepoPath(decodeURIComponent(new URL(url).pathname));
+    return trimRepoPath(decodeRepoPath(new URL(url).pathname));
 }
 
 /** The credentials file key of a repository URL (`<origin>/<path>`), or of a host (`<origin>/`). */
