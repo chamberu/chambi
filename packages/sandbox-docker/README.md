@@ -63,7 +63,8 @@ Each workspace is a container `chamvi-ws-<id>`:
 | Setting | Value |
 |---|---|
 | User | `user`, default `0:0` (`DEFAULT_USER`), also of every command |
-| Command | `sleep infinity`: the lifetime follows the run; the garbage collection removes it |
+| Command | `sleep infinity` under the image's entrypoint: the lifetime follows the run; the garbage collection removes it |
+| Init | `Init: true`: docker-init is pid 1 and reaps orphaned processes (background jobs, the trees an exec timeout kills) for any image, also one without an init, whose zombies would otherwise fill `PidsLimit` |
 | Root filesystem | writable; read-only with `readOnlyRoot` |
 | Capabilities | all dropped; a root user gets back `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `KILL` (`ROOT_CAPABILITIES`); `no-new-privileges:true`, not privileged |
 | Limits | `NanoCpus` from `cpu`, `Memory` and `MemorySwap` (no swap) from `memory`, `PidsLimit` from `pids` |

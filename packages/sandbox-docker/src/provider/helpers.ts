@@ -174,7 +174,8 @@ export async function pullImage(docker: Dockerode, image: string, signal?: Abort
 /**
  * The create options of one workspace container: the user (root by default,
  * then with only the `ROOT_CAPABILITIES`, else none), a writable root unless
- * `readOnlyRoot`, no-new-privileges, pid/memory/cpu limits, a `/tmp` tmpfs,
+ * `readOnlyRoot`, no-new-privileges, docker-init as pid 1 (it reaps the
+ * orphans of any image), pid/memory/cpu limits, a `/tmp` tmpfs,
  * an anonymous `/workspace` volume, the cache at `/cache` (the shared named
  * volume, or an anonymous one) and only `SANDBOX_ENV`, `CACHE_ENV` and the
  * configured `env` (never the host's). No host mount, no privileged mode. It sleeps forever: its lifetime follows the
@@ -213,6 +214,10 @@ export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.C
             ...(isRootUser(input.user) && { CapAdd: [...ROOT_CAPABILITIES] }),
             SecurityOpt: ['no-new-privileges:true'],
             Privileged: false,
+            // docker-init (Docker's tini) as pid 1 above the image's entrypoint:
+            // an image without an init would make `sleep` pid 1, which reaps no
+            // orphan, and the zombies would fill `PidsLimit`
+            Init: true,
             PidsLimit: input.limits.pids,
             Memory: memory,
             // equal to Memory: no swap on top

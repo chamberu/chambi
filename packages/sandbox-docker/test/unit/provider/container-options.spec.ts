@@ -83,6 +83,8 @@ describe('buildContainerOptions', () => {
             CapAdd: [...ROOT_CAPABILITIES],
             SecurityOpt: ['no-new-privileges:true'],
             Privileged: false,
+            // docker-init as pid 1 reaps the orphans of every image, also one without an init
+            Init: true,
             PidsLimit: 256,
             Memory: 1_073_741_824,
             MemorySwap: 1_073_741_824,

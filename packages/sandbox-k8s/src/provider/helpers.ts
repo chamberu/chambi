@@ -139,7 +139,8 @@ export function assertKubernetesOptions(options: KubernetesSandboxOptions): void
  * The pod of one workspace: the user (root by default, then with only the
  * `ROOT_CAPABILITIES`; a non-root user gets none, `runAsNonRoot` and its
  * `fsGroup`), a RuntimeDefault seccomp profile, no service account token, no
- * service links, no privilege escalation, a writable root unless
+ * service links, a shared process namespace (the pause container reaps
+ * orphans as pid 1), no privilege escalation, a writable root unless
  * `readOnlyRoot`, equal requests and limits, an emptyDir `/workspace`, an
  * in-memory `/tmp`, the cache at `/cache` (the shared claim, or an emptyDir
  * of its own) and only `SANDBOX_ENV`, `CACHE_ENV` and the configured `env`
@@ -186,6 +187,10 @@ export function buildPod(input: PodInput): V1Pod {
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
             enableServiceLinks: false,
+            // the pause container is pid 1 and reaps orphans: an image without
+            // an init would make `sleep` pid 1, and the zombies would fill the
+            // kubelet's pid limit
+            shareProcessNamespace: true,
             terminationGracePeriodSeconds: 5,
             securityContext: {
                 ...(!root && { runAsNonRoot: true }),
@@ -199,7 +204,7 @@ export function buildPod(input: PodInput): V1Pod {
                 name: CONTAINER_NAME,
                 image: input.info.image,
                 imagePullPolicy: input.imagePullPolicy,
-                // the image's entrypoint (tini) stays
+                // the image's entrypoint (sandbox-dev: tini) stays
                 args: ['sleep', 'infinity'],
                 workingDir: WORKSPACE_ROOT,
                 env: Object.entries(env).map(([name, value]) => ({ name, value })),
