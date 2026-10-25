@@ -11,8 +11,8 @@ npm install @chamvi/sandbox @chamvi/coding @chamvi/sandbox-docker
 | Provider | Package | A workspace is | Isolation |
 |---|---|---|---|
 | local | [`@chamvi/sandbox-local`](/reference/sandbox#chamvi-sandbox-local) | a temporary directory on the host | **none**: development and tests only |
-| Docker | [`@chamvi/sandbox-docker`](/reference/sandbox#chamvi-sandbox-docker) | one container | uid 1000, read-only root, no capabilities, `no-new-privileges`, cpu, memory and pid limits |
-| Kubernetes | [`@chamvi/sandbox-k8s`](/reference/sandbox#chamvi-sandbox-k8s) | one pod | non-root, read-only root, no capabilities, no service account token, resource limits |
+| Docker | [`@chamvi/sandbox-docker`](/reference/sandbox#chamvi-sandbox-docker) | one container | root inside with a writable root and only the package-manager capabilities, `no-new-privileges`, cpu, memory and pid limits |
+| Kubernetes | [`@chamvi/sandbox-k8s`](/reference/sandbox#chamvi-sandbox-k8s) | one pod | the same, no service account token, resource limits |
 
 All three pass the same workspace contract (`describeWorkspaceContract` from `@chamvi/test-kit`): argv-only exec, path checks, output caps, process-group kills on timeout, and dispose semantics.
 
@@ -20,7 +20,32 @@ All three pass the same workspace contract (`describeWorkspaceContract` from `@c
 
 <<< @/snippets/sandbox-providers.ts#k8s
 
-The container providers use `ghcr.io/chamvi/sandbox-node:24` by default (Node.js 24, npm, git, `tini`, GNU coreutils), built for `linux/amd64` and `linux/arm64`. Pin a digest in production. See [Docker Image](/deployment/docker#sandbox-image).
+The container providers use `ghcr.io/chamvi/sandbox-dev:trixie` by default (Debian, git, curl, ripgrep, jq, build-essential, `tini` and [mise](https://mise.jdx.dev)), built for `linux/amd64` and `linux/arm64`. It ships no language toolchain: the model installs what the repository needs, `mise use -g node@22` or `mise install` (which reads `.tool-versions`, `mise.toml`, `.nvmrc` and `.python-version`), and system packages with `apt-get`. Pin a digest in production. See [Docker Image](/deployment/docker#sandbox-image).
+
+### Usable inside, strict at the edge
+
+Inside a Docker or Kubernetes workspace the model may do what a developer does on a throwaway machine: it runs as **root** with a **writable root filesystem**, so `apt-get install`, `npm install -g` and any installer work without an approval. The container is the boundary: no privileged mode, every capability dropped but `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID` and `KILL`, `no-new-privileges`, the cpu, memory and pid limits, and no host mount but the package cache.
+
+Where that is too much, the providers' **hardened mode** restores a non-root user and a read-only root (no capability at all; toolchains still install into the cache through mise, `apt` does not work):
+
+```ts
+createDockerSandbox({ user: '1000:1000', readOnlyRoot: true });
+createKubernetesSandbox({ namespace: 'agents-sandbox', user: { uid: 1000, gid: 1000 }, readOnlyRoot: true });
+```
+
+On Kubernetes the default needs a namespace whose Pod Security admits root pods (`baseline`); the hardened mode fits `restricted`. See [Kubernetes](/deployment/kubernetes#pod-security).
+
+### Any image
+
+`create_workspace({ image })` lets the model pick any image (`python:3.13`, `rust:1`, `ghcr.io/acme/builder:2`); the manager's `allowImage(image)` narrows it (default: every image), and the model never gets more cpu, memory, lifetime or workspaces than you configured. A model-chosen image is pulled when missing. It needs `sh`, `git` and a GNU `timeout` that takes `-k`: the provider probes them before the checkout and fails with a message naming what is missing (busybox images lack a `timeout -k` on old versions, `debian:*-slim` lacks git).
+
+### The package cache
+
+Every container and pod mounts `/cache` and sets `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `CARGO_HOME`, `COMPOSER_CACHE_DIR` and `MISE_DATA_DIR` into it (local: `<root>/.cache`), so installs and toolchains are fetched once. On Docker it is one named volume per host by default (`chamvi-sandbox-cache`); on Kubernetes a ReadWriteMany claim you name (`cache: { claimName }`), else an emptyDir per pod. `/tmp` is a 1 GiB tmpfs (`tmpSize`).
+
+::: warning A shared cache is shared trust
+Workspaces of different runs and agents share the cache. A malicious package one run fetched can sit in another run's cache: npm verifies integrity hashes, pip, Go's build cache and others less. Turn sharing off per provider (`cache: false` on Docker and local, no claim on Kubernetes), or give each trust level its own volume.
+:::
 
 ## The manager and its tools
 
@@ -32,7 +57,7 @@ The coding tools are not yours to edit, so the approval for `bash` sits in the a
 
 | Tool | Package | What it does |
 |---|---|---|
-| `create_workspace` | sandbox | `{ repo?, ref? }`: a shallow checkout of `repo` at `ref`, or an empty git repository; the same repository again returns the same workspace (`reused: true`) |
+| `create_workspace` | sandbox | `{ repo?, ref?, image? }`: a shallow checkout of `repo` at `ref`, or an empty git repository, in the image asked for; the same repository again returns the same workspace (`reused: true`) |
 | `dispose_workspace` | sandbox | `{ workspace? }`: disposes one workspace |
 | `read_file` | coding | A line range of a text file (at most 2000 lines, 65 536 characters) |
 | `write_file` | coding | Replaces a file, creating directories |
@@ -87,7 +112,7 @@ Re-applying is safe instead: `write_file` is idempotent, `edit_file` fails with 
 
 - **The model runs untrusted code.** Whatever it reads (an issue body, a README, a test's output) can steer what it runs: prompt injection. Run untrusted repositories on Docker or Kubernetes, never local, narrow `allowRepo`, and put `bash` behind an [approval](/guide/approvals#gating-tools-you-did-not-write) (a `beforeToolExecution` hook calling `approve()`, as above) where a human should see each command.
 - **Local isolates nothing.** Commands run as the host user with your files and network in reach. It only keeps the host environment out (just `PATH`, its own `HOME` and `TMPDIR`) and kills process groups. Background jobs die with the process (on its `exit`): after a restart a local workspace keeps its files but not its jobs, and a process killed with SIGKILL leaves them running.
-- **Docker and Kubernetes enforce** a non-root user, a read-only root filesystem, no capabilities, no privilege escalation, cpu and memory limits (pids on Docker, the kubelet's `podPidsLimit` on Kubernetes; storage on Kubernetes), a hard lifetime cap through the garbage collection, and no host or chamvi environment. Kubernetes mounts no service account token.
-- **No credentials enter a workspace.** URLs with credentials are refused (and never echoed in an error), git's credential helpers are reset for the fetch, and only `SANDBOX_ENV` plus your configured `env` reach a command. Private repositories are not supported yet.
+- **Docker and Kubernetes enforce** the container boundary: no privileged mode, only the package-manager capabilities (none in the hardened mode, which also drops root and makes the root filesystem read-only), no privilege escalation, no host mount but the cache, cpu and memory limits (pids on Docker, the kubelet's `podPidsLimit` on Kubernetes; storage on Kubernetes), a hard lifetime cap through the garbage collection, and no host or chamvi environment. Kubernetes mounts no service account token.
+- **No credentials enter a workspace.** URLs with credentials are refused (and never echoed in an error), git's credential helpers are reset for the fetch, and only `SANDBOX_ENV`, the cache variables and your configured `env` reach a command. Private repositories are not supported yet.
 - **A sandbox is a code-execution boundary, not a network boundary.** On a Docker bridge a workspace reaches the host gateway (the chamvi API, Postgres, an MCP server), other containers and cloud metadata (`169.254.169.254`); on Kubernetes every service in the cluster. Until the Helm chart's NetworkPolicy ships, add one yourself (select `app.kubernetes.io/component=sandbox`, allow only GitHub and the npm registry, deny the chamvi namespace and the metadata address), or on Docker a network with `enable_icc=false` plus host firewall rules.
 - **Docker socket access is root on the host.** Give chamvi a socket proxy or rootless Docker rather than the raw socket.
