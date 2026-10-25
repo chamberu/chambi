@@ -48,6 +48,7 @@ describe('public api', () => {
         'cacheEnv',
         'isRootUser',
         'probeImage',
+        'staticGitCredentials',
     ])('exports %s', (name) => {
         expect(sandbox).toHaveProperty(name);
         expect(sandbox[name as keyof typeof sandbox]).toBeTypeOf('function');
@@ -71,6 +72,14 @@ describe('public api', () => {
             CI: 'true',
         });
         expect(sandbox.SANDBOX_ENV.GIT_CONFIG_NOSYSTEM).toBe('1');
+    });
+
+    it('exports the credential constants', () => {
+        expect(sandbox.REDACTED).toBe('[redacted]');
+        expect(sandbox.CREDENTIAL_REFRESH_MS).toBe(600_000);
+        expect(sandbox.CREDENTIAL_RETRY_MS).toBe(60_000);
+        expect(sandbox.CREDENTIALS_FILE).toBe('.chamvi/credentials');
+        expect(sandbox.REDACT_MIN_LENGTH).toBe(4);
     });
 
     it('exports the provider constants', () => {
