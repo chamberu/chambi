@@ -17,9 +17,9 @@ import { ControllableClock } from '../../utils/clock.ts';
 import { callTool, toolContext } from '../../utils/context.ts';
 import { createFakeProvider } from '../../utils/provider.ts';
 
-function setup(options: Partial<WorkspaceManagerOptions> = {}) {
+function setup(options: Partial<WorkspaceManagerOptions> = {}, providerImage?: string) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const provider = createFakeProvider({ clock });
+    const provider = createFakeProvider({ clock, image: providerImage });
     const manager = createWorkspaceManager({
         provider,
         clock,
@@ -117,6 +117,31 @@ describe('workspace manager: images', () => {
         });
         await expect(other.acquire('r1', { repo: 'octo/demo', image: 'python:3.13' })).rejects.toThrow(/dispose it first/);
         await expect(other.acquire('r1', { repo: 'octo/demo', image: 'node:24' })).resolves.toMatchObject({ reused: true });
+    });
+
+    it('reuses a workspace still being created for a request of the image it gets', async () => {
+        const { provider, manager } = setup({}, 'provider:1');
+        const gate = Promise.withResolvers<void>();
+        provider.gate = gate.promise;
+        const first = manager.acquire('r1', { repo: 'octo/demo' });
+        const second = manager.acquire('r1', { repo: 'octo/demo', image: 'provider:1' });
+        const other = manager.acquire('r1', { repo: 'octo/demo', image: 'python:3.13' }).catch((error: unknown) => error);
+        gate.resolve();
+        const [a, b] = await Promise.all([first, second]);
+        expect(b).toMatchObject({ reused: true });
+        expect(b.workspace.id).toBe(a.workspace.id);
+        expect(await other).toBeInstanceOf(SandboxError);
+        expect(((await other) as Error).message).toMatch(/on the image provider:1; dispose it first/);
+        expect(provider.created).toHaveLength(1);
+    });
+
+    it('reuses a workspace that records no image (local) for any request', async () => {
+        const { provider, manager } = setup();
+        const first = await manager.acquire('r1', { repo: 'octo/demo' });
+        const again = await manager.acquire('r1', { repo: 'octo/demo', image: 'python:3.13' });
+        expect(again).toMatchObject({ reused: true });
+        expect(again.workspace.id).toBe(first.workspace.id);
+        expect(provider.created).toHaveLength(1);
     });
 
     it('create_workspace takes an image and reports it', async () => {
