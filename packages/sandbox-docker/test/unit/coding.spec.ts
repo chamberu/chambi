@@ -134,8 +134,8 @@ describeDocker('coding tools in a container', () => {
         await manager?.close();
     });
 
-    it('runs with HOME on /root, outside the workspace', async () => {
-        await expect(call('bash', { command: 'echo "$HOME"; pwd' })).resolves.toMatchObject({ stdout: '/root\n/workspace\n', cwd: '/workspace' });
+    it('runs with HOME on the home volume, outside the workspace', async () => {
+        await expect(call('bash', { command: 'echo "$HOME"; pwd' })).resolves.toMatchObject({ stdout: '/home/sandbox\n/workspace\n', cwd: '/workspace' });
     });
 
     it('keeps the working directory and exports, also through an exit', async () => {
