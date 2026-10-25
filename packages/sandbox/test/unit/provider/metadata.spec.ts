@@ -6,9 +6,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ValidationError } from '@chamvi/core';
+import { SandboxError, ValidationError } from '@chamvi/core';
 import {
     assertDeployment,
+    createSettledCheck,
     readWorkspaceInfo,
     repoKey,
     workspaceLabels,
@@ -111,5 +112,26 @@ describe('workspaceMetadata and readWorkspaceInfo', () => {
             [key]: value,
         };
         expect(readWorkspaceInfo(values, 'docker')).toBeUndefined();
+    });
+});
+
+describe('createSettledCheck', () => {
+    it('asks once per run and answers false without isSettled', async () => {
+        const asked: string[] = [];
+        const check = createSettledCheck(async (runId) => {
+            asked.push(runId);
+            return runId === 'done';
+        });
+        expect(await check('done')).toBe(true);
+        expect(await check('done')).toBe(true);
+        expect(await check('live')).toBe(false);
+        expect(asked).toEqual(['done', 'live']);
+        expect(await createSettledCheck(undefined)('done')).toBe(false);
+    });
+
+    it('turns a rejection into a SandboxError naming the run', async () => {
+        const answer = await createSettledCheck(async () => { throw new Error('store down'); })('r1');
+        expect(answer).toBeInstanceOf(SandboxError);
+        expect((answer as Error).message).toBe('cannot tell whether run r1 settled: store down');
     });
 });

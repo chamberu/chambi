@@ -6,7 +6,7 @@
  */
 
 import type { IClock } from '@chamvi/core';
-import type { SandboxLimits } from '@chamvi/sandbox';
+import type { SandboxLimits, WorkspaceInfo } from '@chamvi/sandbox';
 import type Dockerode from 'dockerode';
 
 export type DockerSandboxOptions = {
@@ -32,10 +32,10 @@ export type DockerSandboxOptions = {
 
 export type ContainerOptionsInput = {
     id: string;
-    runId: string;
-    image: string;
+    deployment: string;
+    /** Run, image, repo, ref and times: labels a provider's `find` rebuilds the info from. */
+    info: WorkspaceInfo & { image: string };
     network: string;
     env: Record<string, string>;
     limits: Required<SandboxLimits>;
-    expiresAt: Date;
 };

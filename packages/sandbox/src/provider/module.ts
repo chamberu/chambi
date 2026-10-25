@@ -30,7 +30,7 @@ import {
     isName,
     readEpoch,
 } from './helpers.ts';
-import type { WorkspaceCreateOptions } from './types.ts';
+import type { GarbageCollectOptions, WorkspaceCreateOptions } from './types.ts';
 
 /**
  * Checks a create input: a non-empty `runId`, with `image: true` an
@@ -183,4 +183,28 @@ export function readWorkspaceInfo(values: Readonly<Record<string, string | undef
     if (isName(values[REF_KEY])) info.ref = values[REF_KEY];
     if (isName(values[IMAGE_KEY])) info.image = values[IMAGE_KEY];
     return info;
+}
+
+/**
+ * `isSettled` for one garbage collection pass, asked once per run: true or
+ * false, or a SandboxError naming the run when it rejected (the workspace is
+ * kept and the failure reported). Always false without `isSettled`.
+ */
+export function createSettledCheck(isSettled: GarbageCollectOptions['isSettled']): (runId: string) => Promise<boolean | SandboxError> {
+    const answers = new Map<string, Promise<boolean | SandboxError>>();
+    return (runId) => {
+        if (!isSettled) return Promise.resolve(false);
+        let answer = answers.get(runId);
+        if (!answer) {
+            answer = isSettled(runId).then(
+                (settled) => settled === true,
+                (error: unknown) => new SandboxError(
+                    `cannot tell whether run ${runId} settled: ${error instanceof Error ? error.message : String(error)}`,
+                    { cause: error },
+                ),
+            );
+            answers.set(runId, answer);
+        }
+        return answer;
+    };
 }

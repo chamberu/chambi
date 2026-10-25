@@ -7,12 +7,8 @@
 
 import { InvalidAgentDefinitionError, SandboxError } from '@chamvi/core';
 import {
-    EXPIRES_AT_KEY,
-    RUN_LABEL,
     SANDBOX_ENV,
-    SANDBOX_LABELS,
     TMP_SIZE,
-    WORKSPACE_LABEL,
     WORKSPACE_ROOT,
     abortedCreate,
     assertClockOption,
@@ -21,6 +17,8 @@ import {
     parseCpu,
     parseMemory,
     resolveLimits,
+    workspaceLabels,
+    workspaceMetadata,
 } from '@chamvi/sandbox';
 import type Dockerode from 'dockerode';
 import { isObject } from 'smob';
@@ -136,8 +134,9 @@ export async function pullImage(docker: Dockerode, image: string, signal?: Abort
  * The create options of one workspace container: uid 1000, read-only root,
  * no capabilities, no-new-privileges, pid/memory/cpu limits, a `/tmp` tmpfs,
  * an anonymous `/workspace` volume and only `SANDBOX_ENV` plus the configured
- * `env` (never the host's). It sleeps for its lifetime, so an expired
- * container stops by itself even when nothing collects it.
+ * `env` (never the host's). It sleeps forever: its lifetime follows the
+ * run, and only the garbage collection (expiry, settled run) removes it.
+ * Its labels hold everything `find` rebuilds the info from.
  */
 export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.ContainerCreateOptions {
     // Docker takes whole bytes; a quantity like '1.1Gi' is fractional
@@ -146,16 +145,19 @@ export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.C
 
     return {
         name: `${CONTAINER_NAME_PREFIX}${input.id}`,
-        Image: input.image,
-        Cmd: ['sleep', String(Math.ceil(input.limits.timeoutMs / 1000))],
+        Image: input.info.image,
+        Cmd: ['sleep', 'infinity'],
         User: SANDBOX_USER,
         WorkingDir: WORKSPACE_ROOT,
         Env: Object.entries(env).map(([key, value]) => `${key}=${value}`),
         Labels: {
-            ...SANDBOX_LABELS,
-            [RUN_LABEL]: input.runId,
-            [WORKSPACE_LABEL]: input.id,
-            [EXPIRES_AT_KEY]: String(input.expiresAt.getTime()),
+            ...workspaceLabels({
+                id: input.id,
+                runId: input.info.runId,
+                deployment: input.deployment,
+                repo: input.info.repo,
+            }),
+            ...workspaceMetadata(input.info),
         },
         HostConfig: {
             NetworkMode: input.network,

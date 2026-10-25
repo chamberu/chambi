@@ -15,6 +15,7 @@ import {
 import { SandboxError } from '@chamvi/core';
 import type { IWorkspace } from '@chamvi/sandbox';
 import { CONTAINER_NAME_PREFIX, createDockerSandbox } from '@chamvi/sandbox-docker';
+import { ControllableClock } from '@chamvi/test-kit';
 import { describeDocker, dockerImage } from '../../utils/docker.ts';
 
 const offline = Boolean(process.env.CHAMVI_OFFLINE);
@@ -75,6 +76,34 @@ describeDocker('docker sandbox', () => {
         await expect(workspace.exec(['true'])).rejects.toThrow(/is gone/);
         expect(workspace.disposed).toBe(true);
         await workspace.dispose();
+    });
+
+    it('a second provider finds the workspace again and restarts its stopped container', async () => {
+        const { runId, workspace } = await create();
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        // the host restarted: the container stopped, its volume holds the work
+        await container.stop({ t: 0 });
+
+        const found = await createDockerSandbox({ image: dockerImage }).find(runId);
+        workspaces.push(...found);
+        expect(found.map((item) => item.id)).toEqual([workspace.id]);
+        expect(found[0]!.info).toEqual({ ...workspace.info, image: dockerImage });
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('finds the instance it holds, never another deployment\'s or an expired one', async () => {
+        const provider = createDockerSandbox({ image: dockerImage });
+        const runId = `test-${randomUUID()}`;
+        const workspace = await provider.create({ runId, deployment: 'test-a' });
+        workspaces.push(workspace);
+        expect(await provider.find(runId, { deployment: 'test-a' })).toEqual([workspace]);
+        expect((await provider.find(runId, { deployment: 'test-a' }))[0]).toBe(workspace);
+        expect(await provider.find(runId)).toEqual([]);
+
+        const later = new ControllableClock(new Date(workspace.info.expiresAt.getTime()));
+        expect(await createDockerSandbox({ image: dockerImage, clock: later }).find(runId, { deployment: 'test-a' })).toEqual([]);
     });
 
     it('dispose removes container and volume', async () => {

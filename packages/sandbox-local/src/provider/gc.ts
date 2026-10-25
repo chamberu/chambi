@@ -9,7 +9,7 @@ import { readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { IClock } from '@chamvi/core';
 import { SandboxError } from '@chamvi/core';
-import { collectionError } from '@chamvi/sandbox';
+import { collectionError, createSettledCheck } from '@chamvi/sandbox';
 import type { GarbageCollectOptions, IWorkspace } from '@chamvi/sandbox';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_RECORD } from './constants.ts';
 import { errnoCode, parseRecord } from './helpers.ts';
@@ -64,24 +64,14 @@ export async function collectExpired(
     const now = clock.now().getTime();
     let count = 0;
     const failures: SandboxError[] = [];
-    const settled = new Map<string, Promise<boolean>>();
+    const isSettled = createSettledCheck(options.isSettled);
     for (const { id: name, record } of records) {
         if (record.deployment !== options.deployment) continue;
         const dir = join(root, name);
         if (record.info.expiresAt.getTime() > now) {
-            if (!options.isSettled) continue;
-            let answer = settled.get(record.runId);
-            if (!answer) {
-                answer = options.isSettled(record.runId);
-                settled.set(record.runId, answer);
-            }
-            try {
-                if (!await answer) continue;
-            } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                failures.push(new SandboxError(`cannot tell whether run ${record.runId} settled: ${message}`, { cause: error }));
-                continue;
-            }
+            const answer = await isSettled(record.runId);
+            if (answer instanceof SandboxError) failures.push(answer);
+            if (answer !== true) continue;
         }
 
         const workspace = live.get(name);

@@ -38,6 +38,7 @@ describe('public api', () => {
         'readWorkspaceInfo',
         'repoKey',
         'readCheckoutCommit',
+        'createSettledCheck',
         'createSinkStream',
         'delay',
         'injectSandboxContext',
