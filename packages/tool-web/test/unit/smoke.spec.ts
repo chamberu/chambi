@@ -11,5 +11,6 @@ import * as web from '@chamvi/tool-web';
 describe('package entry', () => {
     it('resolves', () => {
         expect(web).toBeDefined();
+        expect(web.webTools).toBeTypeOf('function');
     });
 });

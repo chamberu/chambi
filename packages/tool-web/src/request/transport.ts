@@ -94,3 +94,13 @@ export const pinnedTransport: Transport = (url, init) => new Promise<Response>((
     request.on('error', reject);
     request.end();
 });
+
+/** A transport over a `fetch` (webTools({ fetch })): redirects by hand; it connects on its own, so it must pin addresses itself. */
+export function fetchTransport(fetch: typeof globalThis.fetch): Transport {
+    return (url, init) => fetch(url, {
+        method: 'GET',
+        headers: init.headers,
+        redirect: 'manual',
+        signal: init.signal,
+    });
+}
