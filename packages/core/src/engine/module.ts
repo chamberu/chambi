@@ -867,6 +867,8 @@ export class Engine implements IContextProvider {
             engine: this,
             run,
             agent,
+            model: agent.definition.model ?? this.model,
+            models: this.models,
             store: this.store,
             clock: this.clock,
             signal,

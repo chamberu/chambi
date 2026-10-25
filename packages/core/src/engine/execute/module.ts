@@ -20,6 +20,7 @@ import {
     IncompleteResponseError,
     InvalidAgentDefinitionError,
 } from '../../errors/index.ts';
+import { toLanguageModel } from '../../model/asserts.ts';
 import { RunStatus } from '../../run/constants.ts';
 import type { RunContext, Step, Usage } from '../../run/types.ts';
 import {
@@ -130,7 +131,9 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     // while the pending calls run they belong to the checkpoint's step, later ones to the step being made
     let replaying = pending.length > 0;
     let assembled: ReturnType<typeof assembleTools>;
+    let model: LanguageModel;
     try {
+        model = toLanguageModel(ctx.model, ctx.models, agent.name);
         assembled = assembleTools(ctx, runContext, (request) => {
             suspended.push(request);
         }, () => (replaying ? checkpoint!.stepIndex : stepIndex));
@@ -386,8 +389,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     if (budget.maxTokens !== undefined) stopWhen.push(tokensExceeded(budget.maxTokens, spentTokens));
 
     const loop = new ToolLoopAgent({
-        // TODO(models): resolve agent.definition.model ?? the engine default through EngineOptions.models
-        model: agent.definition.model as LanguageModel,
+        model,
         instructions: agent.definition.instructions,
         tools,
         activeTools,
