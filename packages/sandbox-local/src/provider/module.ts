@@ -55,7 +55,7 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
 
             const id = randomUUID();
             const dir = join(root, id);
-            const info = buildWorkspaceInfo(input, LOCAL_PROVIDER_NAME, clock.now(), limits.timeoutMs);
+            const info = buildWorkspaceInfo(input, LOCAL_PROVIDER_NAME, clock.now(), limits.maxLifetimeMs);
             try {
                 for (const sub of [REPO_DIR, 'home', 'tmp']) {
                     await mkdir(join(dir, sub), { recursive: true });

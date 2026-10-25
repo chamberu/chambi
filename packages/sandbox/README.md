@@ -68,7 +68,7 @@ export function createWorkspaces(
         provider,
         // at most two workspaces per run, each gone after 15 minutes
         maxWorkspacesPerRun: 2,
-        limits: { timeoutMs: 15 * 60_000 },
+        limits: { maxLifetimeMs: 15 * 60_000 },
         // only repositories of your own organisation
         allowRepo: (url) => url.startsWith('https://github.com/acme/'),
     });

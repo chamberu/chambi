@@ -18,7 +18,7 @@ export async function serve(store: IStore, model: LanguageModel, provider: ISand
         provider,
         // only your own repositories; the model cannot clone anything else
         allowRepo: (url) => url.startsWith('https://github.com/acme/'),
-        limits: { timeoutMs: 20 * 60_000 },
+        limits: { maxLifetimeMs: 20 * 60_000 },
     });
 
     const repro = defineAgent({

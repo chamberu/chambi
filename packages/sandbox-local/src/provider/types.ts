@@ -14,7 +14,7 @@ export type LocalSandboxOptions = {
     /** Added to every workspace's environment (after the defaults, so it wins). */
     env?: Record<string, string>;
     /** The only limit local enforces: the workspace lifetime (expiry). */
-    limits?: Pick<SandboxLimits, 'timeoutMs'>;
+    limits?: Pick<SandboxLimits, 'maxLifetimeMs'>;
     clock?: IClock;
 };
 

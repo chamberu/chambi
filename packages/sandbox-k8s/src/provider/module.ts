@@ -102,7 +102,7 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
 
             const id = randomUUID();
             const name = `${POD_NAME_PREFIX}${id}`;
-            const info = buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.timeoutMs);
+            const info = buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.maxLifetimeMs);
 
             const remote = createRemoteWorkspace({
                 id,

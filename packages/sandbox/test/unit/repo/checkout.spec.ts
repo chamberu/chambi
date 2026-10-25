@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
-import { EXEC_TIMEOUT_MS, prepareWorkspace } from '@chamvi/sandbox';
+import { EXEC_TIMEOUT_MS, prepareWorkspace, readCheckoutCommit } from '@chamvi/sandbox';
 import { createScriptedWorkspace } from '../../utils/workspace.ts';
 
 const url = 'https://github.com/octo/demo.git';
@@ -23,6 +23,7 @@ describe('prepareWorkspace', () => {
             ['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'v1'],
             ['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD'],
             ['git', 'rev-parse', 'HEAD'],
+            ['git', 'config', 'chamvi.commit', sha],
         ]);
         expect(result).toEqual({ commit: sha });
     });
@@ -99,5 +100,21 @@ describe('prepareWorkspace', () => {
         await expect(prepareWorkspace(workspace, { repo: 'https://user:token@github.com/o/r' })).rejects.toThrow(ValidationError);
         await expect(prepareWorkspace(workspace, { repo: 'https://github.com/o/r?x=1' })).rejects.toThrow(ValidationError);
         expect(workspace.calls).toHaveLength(0);
+    });
+});
+
+describe('readCheckoutCommit', () => {
+    it('reads the commit the checkout recorded', async () => {
+        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'config' ? { stdout: `${sha}\n` } : {}));
+        await expect(readCheckoutCommit(workspace)).resolves.toBe(sha);
+        expect(workspace.calls[0]?.argv).toEqual(['git', 'config', '--get', 'chamvi.commit']);
+    });
+
+    it('is undefined without a recorded commit, for no commit and for a failed exec', async () => {
+        await expect(readCheckoutCommit(createScriptedWorkspace(() => ({ exitCode: 1 })))).resolves.toBeUndefined();
+        await expect(readCheckoutCommit(createScriptedWorkspace(() => ({ stdout: 'nope\n' })))).resolves.toBeUndefined();
+        const broken = createScriptedWorkspace();
+        broken.exec = async () => { throw new SandboxError('workspace disposed'); };
+        await expect(readCheckoutCommit(broken)).resolves.toBeUndefined();
     });
 });

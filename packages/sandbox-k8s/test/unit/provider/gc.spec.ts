@@ -70,8 +70,8 @@ describe('kubernetes garbage collection', () => {
             clock,
             provider,
         } = setup();
-        const first = await provider.create({ runId: 'r1', limits: { timeoutMs: 60_000 } });
-        const second = await provider.create({ runId: 'r1', limits: { timeoutMs: 120_000 } });
+        const first = await provider.create({ runId: 'r1', limits: { maxLifetimeMs: 60_000 } });
+        const second = await provider.create({ runId: 'r1', limits: { maxLifetimeMs: 120_000 } });
         clock.advance(60_000);
 
         await expect(provider.collectGarbage()).resolves.toBe(1);

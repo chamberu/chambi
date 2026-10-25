@@ -12,7 +12,7 @@ export const DEFAULT_LIMITS: Readonly<Required<SandboxLimits>> = Object.freeze({
     memory: '2Gi',
     storage: '4Gi',
     pids: 512,
-    timeoutMs: 1_800_000,
+    maxLifetimeMs: 604_800_000,
 });
 
 export const DEFAULT_SANDBOX_IMAGE = 'ghcr.io/chamvi/sandbox-node:24';
@@ -33,5 +33,26 @@ export const RUN_LABEL = 'chamvi.dev/run';
 
 export const WORKSPACE_LABEL = 'chamvi.dev/workspace';
 
+/** The deployment a workspace belongs to (`find` and garbage collection see only their own). */
+export const DEPLOYMENT_LABEL = 'chamvi.dev/deployment';
+
+/** The deployment of a manager or provider call without one. */
+export const DEFAULT_DEPLOYMENT = 'default';
+
+/** `repoKey()` of the workspace's repository (a label value; the URL itself may be longer). */
+export const REPO_KEY_LABEL = 'chamvi.dev/repo-key';
+
 /** Expiry in epoch milliseconds: a Docker label, a Kubernetes annotation. */
 export const EXPIRES_AT_KEY = 'chamvi.dev/expires-at';
+
+/** Creation in epoch milliseconds: a Docker label, a Kubernetes annotation. */
+export const CREATED_AT_KEY = 'chamvi.dev/created-at';
+
+/** The normalized repository URL: a Docker label, a Kubernetes annotation. */
+export const REPO_URL_KEY = 'chamvi.dev/repo';
+
+/** The requested ref: a Docker label, a Kubernetes annotation. */
+export const REF_KEY = 'chamvi.dev/ref';
+
+/** The image: a Docker label, a Kubernetes annotation. */
+export const IMAGE_KEY = 'chamvi.dev/image';

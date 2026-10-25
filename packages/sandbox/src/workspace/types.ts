@@ -15,6 +15,8 @@ export type WorkspaceInfo = {
     ref?: string;
     /** HEAD after the checkout. */
     commit?: string;
+    /** The image of a container or pod workspace. */
+    image?: string;
     createdAt: Date;
     expiresAt: Date;
 };

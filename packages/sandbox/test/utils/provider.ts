@@ -36,8 +36,8 @@ export type FakeProvider = ISandboxProvider & {
 
 /**
  * An in-memory provider: scripted workspaces with uuid ids, `info.commit`
- * set when a repo is given, expiry `limits.timeoutMs` (default
- * DEFAULT_LIMITS.timeoutMs) after the clock's now.
+ * set when a repo is given, expiry `limits.maxLifetimeMs` (default
+ * DEFAULT_LIMITS.maxLifetimeMs) after the clock's now.
  */
 export function createFakeProvider(options: { clock?: IClock } = {}): FakeProvider {
     const clock = options.clock ?? systemClock;
@@ -73,7 +73,7 @@ export function createFakeProvider(options: { clock?: IClock } = {}): FakeProvid
                 ref: input.ref,
                 commit: input.repo ? FAKE_COMMIT : undefined,
                 createdAt: now,
-                expiresAt: new Date(now.getTime() + (input.limits?.timeoutMs ?? DEFAULT_LIMITS.timeoutMs)),
+                expiresAt: new Date(now.getTime() + (input.limits?.timeoutMs ?? DEFAULT_LIMITS.maxLifetimeMs)),
             }, randomUUID());
             const dispose = workspace.dispose.bind(workspace);
             workspace.dispose = async () => {

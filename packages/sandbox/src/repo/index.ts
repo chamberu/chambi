@@ -5,5 +5,10 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export { assertGitRef, normalizeRepo, prepareWorkspace } from './module.ts';
+export {
+    assertGitRef,
+    normalizeRepo,
+    prepareWorkspace,
+    readCheckoutCommit,
+} from './module.ts';
 export type * from './types.ts';

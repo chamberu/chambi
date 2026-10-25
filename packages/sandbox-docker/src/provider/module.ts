@@ -101,7 +101,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             const imageName = input.image ?? image;
 
             const id = randomUUID();
-            const info = buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.timeoutMs);
+            const info = buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.maxLifetimeMs);
             const container = await createContainer(buildContainerOptions({
                 id,
                 runId: input.runId,

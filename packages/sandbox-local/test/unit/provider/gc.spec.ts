@@ -40,8 +40,8 @@ describe('local garbage collection', () => {
     it('deletes expired workspaces only', async () => {
         const clock = new ControllableClock();
         const provider = createLocalSandbox({ root, clock });
-        const first = await provider.create({ runId: 'r1', limits: { timeoutMs: 1_000 } });
-        const second = await provider.create({ runId: 'r2', limits: { timeoutMs: 60_000 } });
+        const first = await provider.create({ runId: 'r1', limits: { maxLifetimeMs: 1_000 } });
+        const second = await provider.create({ runId: 'r2', limits: { maxLifetimeMs: 60_000 } });
         const foreign = join(root, 'not-a-workspace');
         await mkdir(foreign);
 

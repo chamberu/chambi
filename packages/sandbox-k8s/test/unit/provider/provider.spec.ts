@@ -307,7 +307,7 @@ describe('kubernetes sandbox', () => {
             runId: 'r1',
             image: 'other',
             env: { B: '2' },
-            limits: { cpu: '2', timeoutMs: 60_000 },
+            limits: { cpu: '2', maxLifetimeMs: 60_000 },
         });
 
         const pod = client.created[0]!;

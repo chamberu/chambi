@@ -89,17 +89,17 @@ describe('resolveLimits', () => {
         { pids: 0 },
         { pids: 1.5 },
         { pids: NaN },
-        { timeoutMs: 999 },
-        { timeoutMs: 1500.5 },
-        { timeoutMs: Infinity },
+        { maxLifetimeMs: 999 },
+        { maxLifetimeMs: 1500.5 },
+        { maxLifetimeMs: Infinity },
         { cpu: 1 as unknown as string },
         { pids: '4' as unknown as number },
     ])('rejects %j', (layer) => {
         expect(() => resolveLimits(DEFAULT_LIMITS, layer)).toThrow(InvalidAgentDefinitionError);
     });
 
-    it.each([1_000, 86_400_000])('accepts timeoutMs %d', (timeoutMs) => {
-        expect(resolveLimits({ timeoutMs }).timeoutMs).toBe(timeoutMs);
+    it.each([1_000, 86_400_000, 2_592_000_000])('accepts maxLifetimeMs %d', (maxLifetimeMs) => {
+        expect(resolveLimits({ maxLifetimeMs }).maxLifetimeMs).toBe(maxLifetimeMs);
     });
 
     it('rejects a layer that is no object', () => {

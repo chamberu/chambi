@@ -18,3 +18,9 @@ export const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 export const CHECKOUT_STDERR_MAX_LENGTH = 2_000;
 
 export const REPO_RULE = 'repo must be "owner/name" or an https URL without credentials, query or fragment.';
+
+/** The git config key `prepareWorkspace` records the checked out commit under. */
+export const CHECKOUT_COMMIT_KEY = 'chamvi.commit';
+
+/** Exec timeout of `readCheckoutCommit`. */
+export const COMMIT_READ_TIMEOUT_MS = 30_000;

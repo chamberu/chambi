@@ -9,8 +9,10 @@ import { SandboxError, ValidationError } from '@chamvi/core';
 import { EXEC_TIMEOUT_MS } from '../workspace/constants.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 import {
+    CHECKOUT_COMMIT_KEY,
     CHECKOUT_STDERR_MAX_LENGTH,
     COMMIT_PATTERN,
+    COMMIT_READ_TIMEOUT_MS,
     GITHUB_SHORTHAND_PATTERN,
     GITHUB_URL,
     REF_PATTERN,
@@ -131,5 +133,25 @@ export async function prepareWorkspace(
     if (!COMMIT_PATTERN.test(commit)) {
         throw new SandboxError('checkout failed: git rev-parse printed no commit.');
     }
+    // recorded with the workspace, so a provider's find rebuilds info.commit
+    const recorded = await workspace.exec(['git', 'config', CHECKOUT_COMMIT_KEY, commit], { timeoutMs: EXEC_TIMEOUT_MS, signal });
+    if (recorded.exitCode !== 0 || recorded.timedOut) {
+        throw new SandboxError(`checkout failed: git config ${recorded.timedOut ? 'timed out' : `exited with ${recorded.exitCode}`}`);
+    }
     return { commit };
+}
+
+/**
+ * The commit `prepareWorkspace` checked out, read back from the workspace's
+ * git config (`chamvi.commit`); undefined for a repo-less workspace, one the
+ * record was removed from, or a failed exec.
+ */
+export async function readCheckoutCommit(workspace: IWorkspace, signal?: AbortSignal): Promise<string | undefined> {
+    try {
+        const result = await workspace.exec(['git', 'config', '--get', CHECKOUT_COMMIT_KEY], { timeoutMs: COMMIT_READ_TIMEOUT_MS, signal });
+        const commit = result.stdout.trim();
+        return result.exitCode === 0 && COMMIT_PATTERN.test(commit) ? commit : undefined;
+    } catch {
+        return undefined;
+    }
 }

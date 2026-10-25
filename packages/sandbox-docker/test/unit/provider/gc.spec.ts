@@ -50,7 +50,7 @@ describeDocker('docker garbage collection', () => {
         const provider = createDockerSandbox({
             image: dockerImage, 
             clock, 
-            limits: { timeoutMs: 600_000 }, 
+            limits: { maxLifetimeMs: 600_000 }, 
         });
 
         const first = await provider.create({ runId: `test-${randomUUID()}` });

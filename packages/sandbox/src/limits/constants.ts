@@ -22,4 +22,5 @@ export const MEMORY_UNITS: Record<string, number> = {
 
 export const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-export const TIMEOUT_MIN_MS = 1_000;
+/** Lower bound of `limits.maxLifetimeMs`. */
+export const LIFETIME_MIN_MS = 1_000;

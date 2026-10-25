@@ -316,7 +316,7 @@ describe('local sandbox', () => {
         const workspace = await createLocalSandbox({
             root,
             clock,
-            limits: { timeoutMs: 60_000 },
+            limits: { maxLifetimeMs: 60_000 },
         }).create({ runId: 'r1' });
         try {
             expect(workspace.info.expiresAt.getTime() - workspace.info.createdAt.getTime()).toBe(60_000);
@@ -334,7 +334,7 @@ describe('local sandbox', () => {
         const workspace = await createLocalSandbox({
             root,
             clock,
-            limits: { timeoutMs: 2_000 },
+            limits: { maxLifetimeMs: 2_000 },
         }).create({ runId: 'r1' });
         try {
             const pending = workspace.exec(['sleep', '30'], { timeoutMs: 60_000 });
@@ -382,7 +382,7 @@ describe('local sandbox', () => {
 
     it('rejects invalid options', () => {
         expect(() => createLocalSandbox({ env: { 'A-B': 'x' } })).toThrow(InvalidAgentDefinitionError);
-        expect(() => createLocalSandbox({ limits: { timeoutMs: 10 } })).toThrow(InvalidAgentDefinitionError);
+        expect(() => createLocalSandbox({ limits: { maxLifetimeMs: 10 } })).toThrow(InvalidAgentDefinitionError);
         expect(() => createLocalSandbox({ root: '' })).toThrow(InvalidAgentDefinitionError);
     });
 

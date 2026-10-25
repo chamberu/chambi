@@ -212,7 +212,7 @@ describe('workspace manager: acquire', () => {
             clock, 
             provider, 
             manager, 
-        } = setup({ limits: { timeoutMs: 60_000 } });
+        } = setup({ limits: { maxLifetimeMs: 60_000 } });
         const { workspace } = await manager.acquire('r1', {});
         clock.advance(59_999);
         expect(manager.get('r1', workspace.id)).toBe(workspace);
@@ -227,7 +227,7 @@ describe('workspace manager: acquire', () => {
     });
 
     it('reports an expired workspace as expired', async () => {
-        const { clock, manager } = setup({ limits: { timeoutMs: 60_000 } });
+        const { clock, manager } = setup({ limits: { maxLifetimeMs: 60_000 } });
         const { workspace } = await manager.acquire('r1', {});
         clock.advance(60_000);
         expect(() => manager.get('r1', workspace.id)).toThrow(/expired/);
@@ -238,7 +238,7 @@ describe('workspace manager: acquire', () => {
             clock, 
             provider, 
             manager, 
-        } = setup({ limits: { timeoutMs: 60_000 } });
+        } = setup({ limits: { maxLifetimeMs: 60_000 } });
         const first = await manager.acquire('r1', {});
         clock.advance(60_000);
         const second = await manager.acquire('r1', {});
@@ -283,7 +283,7 @@ describe('workspace manager: acquire', () => {
             clock, 
             provider, 
             manager, 
-        } = setup({ limits: { timeoutMs: 60_000 }, gcIntervalMs: 0 });
+        } = setup({ limits: { maxLifetimeMs: 60_000 }, gcIntervalMs: 0 });
         const { workspace } = await manager.acquire('r1', {});
         clock.advance(60_000);
         await expect(manager.collectGarbage()).resolves.toBe(1);
@@ -295,7 +295,7 @@ describe('workspace manager: acquire', () => {
             clock,
             provider,
             manager,
-        } = setup({ limits: { timeoutMs: 60_000 }, gcIntervalMs: 0 });
+        } = setup({ limits: { maxLifetimeMs: 60_000 }, gcIntervalMs: 0 });
         const { workspace } = await manager.acquire('r1', {});
         clock.advance(60_000);
         const collect = provider.collectGarbage.bind(provider);
@@ -314,7 +314,7 @@ describe('workspace manager: acquire', () => {
             provider,
             manager,
             errors,
-        } = setup({ limits: { timeoutMs: 60_000 }, gcIntervalMs: 0 });
+        } = setup({ limits: { maxLifetimeMs: 60_000 }, gcIntervalMs: 0 });
         const old = await manager.acquire('r1', { repo: 'octo/demo' });
         clock.advance(30_000);
         const live = await manager.acquire('r1', { repo: 'octo/other' });
@@ -326,7 +326,7 @@ describe('workspace manager: acquire', () => {
     });
 
     it('reports the only workspace as expired when get has no id', async () => {
-        const { clock, manager } = setup({ limits: { timeoutMs: 60_000 } });
+        const { clock, manager } = setup({ limits: { maxLifetimeMs: 60_000 } });
         await manager.acquire('r1', {});
         clock.advance(60_000);
         expect(() => manager.get('r1')).toThrow(/expired/);
