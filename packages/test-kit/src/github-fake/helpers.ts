@@ -119,6 +119,11 @@ export function addRepoRoutes(fake: FakeGithub, botLogin: string, clock: IClock)
             }));
         return entries.length > 0 ? { status: 200, body: entries } : NOT_FOUND;
     });
+    fake.route('GET', '/repos/:owner/:repo/releases', ({ params, query }) => page(
+        `/repos/${params.owner}/${params.repo}/releases`,
+        query,
+        (fake.releases.get(`${params.owner}/${params.repo}`) ?? []).toReversed(),
+    ));
     fake.route('GET', '/repos/:owner/:repo/releases/latest', ({ params }) => {
         const release = fake.releases.get(`${params.owner}/${params.repo}`)?.at(-1);
         return release ? { status: 200, body: release } : NOT_FOUND;

@@ -35,6 +35,21 @@ describe('createFakeGithub', () => {
         expect(fake.tokenInstallations).toEqual([42]);
     });
 
+    it('lists releases newest first, a page at a time', async () => {
+        const clock = new ControllableClock(new Date('2026-10-21T09:00:00Z'));
+        const fake = createFakeGithub({ appId: '123', clock });
+        const exchange = await fake.fetch('https://api.github.com/app/installations/42/access_tokens', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${appJwt(fake.privateKey, '123', clock.now())}` },
+        });
+        const { token } = await exchange.json() as { token: string };
+        fake.releases.set('octo/demo', [{ tag_name: 'v1' }, { tag_name: 'v2' }, { tag_name: 'v3' }]);
+
+        const response = await fake.fetch('https://api.github.com/repos/octo/demo/releases?per_page=2', { headers: { authorization: `token ${token}` } });
+        expect(await response.json()).toEqual([{ tag_name: 'v3' }, { tag_name: 'v2' }]);
+        expect(response.headers.get('link')).toContain('page=2');
+    });
+
     it('refuses a JWT of another app', async () => {
         const clock = new ControllableClock(new Date('2026-10-21T09:00:00Z'));
         const fake = createFakeGithub({ appId: '123', clock });

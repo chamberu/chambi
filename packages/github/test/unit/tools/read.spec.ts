@@ -53,11 +53,13 @@ describe('read tools', () => {
     it('offers the read tools only', () => {
         const { gh } = createGithubFixture();
         expect(Object.keys(gh.readTools()).sort()).toEqual([
+            'github_compare',
             'github_get_file',
             'github_get_issue',
             'github_get_latest_release',
             'github_get_pull_request',
             'github_list_labels',
+            'github_list_releases',
             'github_search_issues',
         ]);
     });
@@ -226,6 +228,230 @@ describe('read tools', () => {
             publishedAt: '2026-10-01T00:00:00Z',
             url: 'https://github.com/octo/demo/releases/tag/v1.2.0',
             body: 'Notes',
+        });
+    });
+
+    describe('github_list_releases', () => {
+        const release = (tag: string, day: number, extra: Record<string, unknown> = {}) => ({
+            tag_name: tag,
+            name: tag,
+            draft: false,
+            prerelease: false,
+            published_at: `2026-0${Math.ceil(day / 28)}-${String(((day - 1) % 28) + 1).padStart(2, '0')}T00:00:00Z`,
+            html_url: `https://github.com/octo/demo/releases/tag/${tag}`,
+            body: `Notes for ${tag}`,
+            ...extra,
+        });
+
+        function withReleases() {
+            const fixture = setup();
+            fixture.fake.releases.set('octo/demo', [
+                release('0.9.0', 1),
+                release('v1.0.0', 2),
+                release('1.1.0', 3),
+                release('v1.2.0-rc.1', 4, { prerelease: true }),
+                release('v1.2.0', 5),
+                release('v1.3.0', 6, { draft: true }),
+                release('nightly', 7),
+                release('v1.3.0', 8),
+            ]);
+            return fixture;
+        }
+
+        it('returns the releases after from up to and including to, oldest first', async () => {
+            const { call } = withReleases();
+
+            const result = await call<{ releases: Array<{ tag: string; prerelease: boolean }>; truncated: boolean }>(
+                'github_list_releases',
+                {
+                    repo: 'octo/demo', 
+                    from: '1.0.0', 
+                    to: 'v1.2.0', 
+                },
+            );
+            expect(result.truncated).toBe(false);
+            expect(result.releases.map((r) => r.tag)).toEqual(['1.1.0', 'v1.2.0-rc.1', 'v1.2.0']);
+            expect(result.releases[1]!.prerelease).toBe(true);
+            expect(result.releases[2]).toEqual({
+                tag: 'v1.2.0',
+                name: 'v1.2.0',
+                publishedAt: '2026-01-05T00:00:00Z',
+                url: 'https://github.com/octo/demo/releases/tag/v1.2.0',
+                prerelease: false,
+                body: 'Notes for v1.2.0',
+                bodyTruncated: false,
+            });
+        });
+
+        it('skips drafts and, with bounds, tags that are no version', async () => {
+            const { call } = withReleases();
+
+            const result = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', { repo: 'octo/demo', from: 'v1.2.0' });
+            expect(result.releases.map((r) => r.tag)).toEqual(['v1.3.0']);
+        });
+
+        it('returns the newest releases without bounds, oldest first', async () => {
+            const { call } = withReleases();
+
+            const result = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', { repo: 'octo/demo' });
+            expect(result.releases.map((r) => r.tag)).toEqual(['0.9.0', 'v1.0.0', '1.1.0', 'v1.2.0-rc.1', 'v1.2.0', 'nightly', 'v1.3.0']);
+        });
+
+        it('reads a monorepo package by tag prefix', async () => {
+            const { fake, call } = setup();
+            fake.releases.set('octo/demo', [
+                release('@octo/a@1.0.0', 1),
+                release('@octo/b@2.0.0', 2),
+                release('@octo/a@1.1.0', 3),
+            ]);
+
+            const result = await call<{ releases: Array<{ tag: string }> }>(
+                'github_list_releases',
+                {
+                    repo: 'octo/demo', 
+                    tagPrefix: '@octo/a@', 
+                    from: '1.0.0', 
+                },
+            );
+            expect(result.releases.map((r) => r.tag)).toEqual(['@octo/a@1.1.0']);
+        });
+
+        it('caps the bodies and the number of releases', async () => {
+            const { fake, call } = setup();
+            fake.releases.set('octo/demo', Array.from({ length: 25 }, (_, i) => release(`v1.${i}.0`, i + 1, { body: 'x'.repeat(9_000) })));
+
+            const result = await call<{
+                releases: Array<{
+                    tag: string; 
+                    body: string; 
+                    bodyTruncated: boolean 
+                }>;
+                truncated: boolean 
+            }>(
+                'github_list_releases',
+                { repo: 'octo/demo', from: 'v1.0.0' },
+            );
+            expect(result.truncated).toBe(true);
+            expect(result.releases).toHaveLength(20);
+            expect(result.releases[0]!.tag).toBe('v1.1.0');
+            expect(result.releases[0]!.body).toHaveLength(8_000);
+            expect(result.releases[0]!.bodyTruncated).toBe(true);
+        });
+
+        it('pages through the releases', async () => {
+            const { fake, call } = setup();
+            fake.releases.set('octo/demo', Array.from({ length: 150 }, (_, i) => release(`v0.${i}.0`, (i % 28) + 1)));
+
+            const result = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', {
+                repo: 'octo/demo', 
+                from: 'v0.0.0', 
+                to: 'v0.2.0', 
+            });
+            expect(result.releases.map((r) => r.tag)).toEqual(['v0.1.0', 'v0.2.0']);
+            expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(2);
+        });
+    });
+
+    describe('github_compare', () => {
+        function withComparison(commits = 2, files = 1) {
+            const fixture = setup();
+            fixture.fake.route('GET', '/repos/:owner/:repo/compare/:basehead', ({ params }) => ({
+                status: 200,
+                body: {
+                    status: 'ahead',
+                    ahead_by: commits,
+                    behind_by: 0,
+                    total_commits: commits,
+                    html_url: `https://github.com/${params.owner}/${params.repo}/compare/${params.basehead}`,
+                    commits: Array.from({ length: commits }, (_, i) => ({
+                        sha: `sha${i}`,
+                        commit: { message: `feat: change ${i}\n\nlong body`, author: { name: 'Alice', date: '2026-10-01T00:00:00Z' } },
+                        author: { login: 'alice' },
+                    })),
+                    files: Array.from({ length: files }, (_, i) => ({
+                        filename: `src/f${i}.ts`, 
+                        status: 'modified', 
+                        additions: 3, 
+                        deletions: 1, 
+                        changes: 4, 
+                        patch: '@@',
+                    })),
+                },
+            }));
+            return fixture;
+        }
+
+        it('returns the commits and changed files between two refs', async () => {
+            const { fake, call } = withComparison();
+
+            expect(await call('github_compare', {
+                repo: 'octo/demo', 
+                base: 'v1.0.0', 
+                head: 'v1.1.0', 
+            })).toEqual({
+                status: 'ahead',
+                aheadBy: 2,
+                behindBy: 0,
+                totalCommits: 2,
+                url: 'https://github.com/octo/demo/compare/v1.0.0...v1.1.0',
+                commits: [
+                    {
+                        sha: 'sha0', 
+                        message: 'feat: change 0', 
+                        author: 'alice', 
+                        date: '2026-10-01T00:00:00Z',
+                    },
+                    {
+                        sha: 'sha1', 
+                        message: 'feat: change 1', 
+                        author: 'alice', 
+                        date: '2026-10-01T00:00:00Z',
+                    },
+                ],
+                files: [{
+                    path: 'src/f0.ts', 
+                    status: 'modified', 
+                    additions: 3, 
+                    deletions: 1,
+                }],
+                truncated: false,
+            });
+            expect(fake.requests.at(-1)!.path).toBe('/repos/octo/demo/compare/v1.0.0...v1.1.0');
+        });
+
+        it('caps commits and files', async () => {
+            const { call } = withComparison(120, 310);
+
+            const result = await call<{
+                commits: unknown[]; 
+                files: unknown[]; 
+                truncated: boolean 
+            }>(
+                'github_compare',
+                {
+                    repo: 'octo/demo', 
+                    base: 'a', 
+                    head: 'b', 
+                },
+            );
+            expect(result.commits).toHaveLength(100);
+            expect(result.files).toHaveLength(300);
+            expect(result.truncated).toBe(true);
+        });
+
+        it('refuses refs that are no refs', async () => {
+            const { call } = withComparison();
+
+            await expect(call('github_compare', {
+                repo: 'octo/demo', 
+                base: 'a...b', 
+                head: 'c', 
+            })).rejects.toBeInstanceOf(ValidationError);
+            await expect(call('github_compare', {
+                repo: 'octo/demo', 
+                base: 'a b', 
+                head: 'c', 
+            })).rejects.toBeInstanceOf(ValidationError);
         });
     });
 
