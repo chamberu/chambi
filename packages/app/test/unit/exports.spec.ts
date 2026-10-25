@@ -208,6 +208,7 @@ describe('package.json', () => {
             '@ai-sdk/google',
             '@ai-sdk/mistral',
             '@ai-sdk/openai',
+            '@ai-sdk/openai-compatible',
             '@ai-sdk/xai',
             '@authup/core-http-kit',
             '@authup/server-adapter-kit',

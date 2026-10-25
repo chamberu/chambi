@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Agent, ModelRef } from '@chamvi/core';
+import type { Agent, IModelResolver, ModelRef } from '@chamvi/core';
 import type { ProviderRegistryProvider, createProviderRegistry } from 'ai';
 import type { Env } from '../env/types.ts';
 import type { MODEL_SEPARATOR } from './constants.ts';
@@ -94,4 +94,18 @@ export type ResolvedModels = {
     registry: ModelRegistry;
     /** The check every agent of `agents` passed, for agents registered later (folder agents). */
     check: ModelCheck;
+};
+
+/** createModelResolver's options. */
+export type ModelResolverOptions = {
+    /** AI SDK providers by id; they win over the settings for their ids (no package imported). */
+    models?: ModelProviders;
+    /** Loads a provider package; default `(s) => import(s)`. */
+    importer?: (specifier: string) => Promise<unknown>;
+};
+
+/** The app's IModelResolver, with the providers that could not be built. */
+export type ModelResolver = IModelResolver & {
+    /** Per provider name: why it could not be built (a package that is not installed). */
+    errors: ReadonlyMap<string, string>;
 };
