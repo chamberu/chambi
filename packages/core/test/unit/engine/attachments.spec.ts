@@ -19,7 +19,9 @@ import {
     Engine,
     ErrorCode,
     ValidationError,
+    artifactFilePart,
     defineAgent,
+    defineTool,
 } from '@chamvi/core';
 import type {
     AgentDefinition,
@@ -405,5 +407,132 @@ describe('tool artifacts', () => {
         expect(await ofB!.get(saved.id)).toBeUndefined();
         expect(await ofB!.get('missing')).toBeUndefined();
         await expect(ofA!.put({ mediaType: 'nope', data: new Uint8Array() })).rejects.toBeInstanceOf(ValidationError);
+    });
+});
+
+describe('artifacts in tool results', () => {
+    type ToolResultPrompt = { type: string; output?: { type: string; value?: PromptPart[] } };
+
+    /** The file items of the tool results the model got on call `i`. */
+    function toolFilesOf(model: ReturnType<typeof mockModel>, i: number): PromptPart[] {
+        const prompt = model.doStreamCalls[i]!.prompt as Array<{ role: string; content: unknown }>;
+        return prompt
+            .filter((m) => m.role === 'tool' && Array.isArray(m.content))
+            .flatMap((m) => m.content as ToolResultPrompt[])
+            .flatMap((p) => (p.output?.type === 'content' ? p.output.value ?? [] : []))
+            .filter((p) => p.type === 'file');
+    }
+
+    const screenshot = defineTool<{ name: string }, { artifactId: string; mediaType: string }>({
+        inputSchema: z.object({ name: z.string() }),
+        execute: async ({ name }, { context }) => {
+            const artifact = await context.artifacts.put({
+                mediaType: 'image/png', 
+                filename: name, 
+                data: PNG, 
+            });
+            return { artifactId: artifact.id, mediaType: artifact.mediaType };
+        },
+        toModelOutput: ({ output }) => ({
+            type: 'content',
+            value: [
+                { type: 'text', text: 'the screenshot' },
+                artifactFilePart({ id: output.artifactId, mediaType: output.mediaType }),
+            ],
+        }),
+    });
+
+    it('hands the next model call the bytes while steps and checkpoints keep the id', async () => {
+        const ctx = setup([
+            {
+                parts: [{
+                    type: 'tool-call', 
+                    toolName: 'screenshot', 
+                    input: { name: 'shot.png' }, 
+                }], 
+            },
+            {
+                parts: [{
+                    type: 'tool-call', 
+                    toolName: 'screenshot', 
+                    input: { name: 'again.png' }, 
+                }], 
+            },
+            text('seen'),
+        ], { definition: { tools: { screenshot } } });
+        await ctx.engine.start();
+        const { runId } = await ctx.engine.dispatch(env());
+        await ctx.engine.idle();
+
+        expect((await ctx.store.getRun(runId))?.status).toBe('completed');
+        const [first] = toolFilesOf(ctx.model, 1);
+        expect(first).toMatchObject({ mediaType: 'image/png' });
+        expect(bytesOf(first!)).toEqual(Array.from(PNG));
+        const later = toolFilesOf(ctx.model, 2);
+        expect(later).toHaveLength(2);
+        for (const part of later) expect(bytesOf(part)).toEqual(Array.from(PNG));
+
+        const checkpoint = JSON.stringify((await ctx.store.latestCheckpoint(runId))!.messages);
+        expect(checkpoint).toMatch(/"data":"chamvi-artifact:[0-9a-f-]+"/);
+        expect(checkpoint).not.toContain(Buffer.from(PNG).toString('base64'));
+        const steps = await ctx.store.listSteps(runId);
+        expect(steps.filter((s) => s.kind === 'tool').map((s) => Object.keys(s.output as object))).toEqual([
+            ['artifactId', 'mediaType'],
+            ['artifactId', 'mediaType'],
+        ]);
+    });
+
+    it('hydrates a tool result file from the checkpoint after an approval resume', async () => {
+        const deploy = tool({
+            inputSchema: z.object({ env: z.string() }),
+            execute: async () => 'deployed',
+        });
+        const ctx = setup([
+            {
+                parts: [{
+                    type: 'tool-call', 
+                    toolName: 'screenshot', 
+                    input: { name: 'shot.png' }, 
+                }], 
+            },
+            {
+                parts: [{
+                    type: 'tool-call', 
+                    toolName: 'deploy', 
+                    input: { env: 'prod' }, 
+                }], 
+            },
+            text('done'),
+        ], {
+            definition: {
+                tools: () => ({ screenshot, deploy }),
+                hooks: gateTool('deploy'),
+            },
+        });
+        await ctx.engine.start();
+        const { runId } = await ctx.engine.dispatch(env());
+        await ctx.engine.idle();
+        expect((await ctx.store.getRun(runId))?.status).toBe('waiting');
+
+        await ctx.engine.approve(runId, { approvalId: ctx.notifier.calls[0]!.approvalId, approved: true });
+        await ctx.engine.idle();
+
+        expect((await ctx.store.getRun(runId))?.status).toBe('completed');
+        const [part] = toolFilesOf(ctx.model, 2);
+        expect(bytesOf(part!)).toEqual(Array.from(PNG));
+    });
+
+    it('builds the marker file part of an artifact', () => {
+        expect(artifactFilePart({
+            id: 'a1', 
+            mediaType: 'image/png', 
+            filename: 'x.png', 
+        })).toEqual({
+            type: 'file',
+            mediaType: 'image/png',
+            filename: 'x.png',
+            data: { type: 'data', data: 'chamvi-artifact:a1' },
+        });
+        expect(artifactFilePart({ id: 'a1', mediaType: 'image/png' })).not.toHaveProperty('filename');
     });
 });
