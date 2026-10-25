@@ -81,7 +81,11 @@ export async function privateRepositories(provider: ISandboxProvider, app: IGith
         provider,
         credentials: [
             // a GitLab project token for one group
-            staticGitCredentials([{ host: 'gitlab.example.com', path: 'platform', token: process.env.GITLAB_TOKEN! }]),
+            staticGitCredentials([{
+                host: 'gitlab.example.com',
+                path: 'platform',
+                token: process.env.GITLAB_TOKEN!,
+            }]),
             // the GitHub App's repository-scoped tokens, allowed to touch workflows
             githubAppCredentials(app, { permissions: { workflows: 'write' } }),
         ],
