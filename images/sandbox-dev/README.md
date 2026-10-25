@@ -7,7 +7,7 @@ The default workspace image of chamvi's container sandboxes (`@chamvi/sandbox-do
 - `debian:trixie-slim`
 - `git`, `ca-certificates`, `curl`, `jq`, `ripgrep`, `unzip`, `xz-utils`
 - `build-essential` (gcc, make, libc headers), so native packages compile
-- [mise](https://mise.jdx.dev) from its apt repository, with its shims on the `PATH`
+- [mise](https://mise.jdx.dev) from its apt repository, with its shims (in `/tmp`, per workspace) at the end of the `PATH`
 - `tini` as the entrypoint (pid 1 reaps orphaned processes and forwards signals)
 - GNU coreutils `timeout`, which the providers wrap every command in
 - `/workspace` (the working directory) and `/cache` (the package cache), writable by any user
@@ -33,10 +33,11 @@ The providers run the container as root with a writable root filesystem and only
 | `CI` | `true` | Non-interactive tools. |
 | `GIT_TERMINAL_PROMPT` | `0` | git never waits for credentials. |
 | `MISE_DATA_DIR` | `/cache/mise` | Toolchains in the shared cache. |
+| `MISE_SHIMS_DIR` | `/tmp/mise/shims` | Shims per workspace, never in the shared cache, where any run could plant a `git`. |
 | `MISE_YES` | `1` | mise never asks. |
 | `MISE_TRUSTED_CONFIG_PATHS` | `/workspace` | mise reads the repository's `mise.toml` without a trust prompt. |
 | `MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS` | `node,python,ruby,go,java` | mise reads `.nvmrc`, `.python-version` and friends. |
-| `PATH` | `/cache/mise/shims:...` | Installed tools are plain commands. |
+| `PATH` | `...:/tmp/mise/shims` | Installed tools are plain commands; the system's `sh`, `git` and `timeout` come first. |
 
 The providers add `SANDBOX_ENV` and the cache variables of `@chamvi/sandbox` (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `CARGO_HOME`, `COMPOSER_CACHE_DIR`, `MISE_DATA_DIR`, all under `/cache`). No secrets, tokens or credentials are baked in or passed to a workspace.
 

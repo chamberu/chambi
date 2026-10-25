@@ -45,6 +45,8 @@ Every container and pod mounts `/cache` and sets `XDG_CACHE_HOME`, `npm_config_c
 
 ::: warning A shared cache is shared trust
 Workspaces of different runs and agents share the cache. A malicious package one run fetched can sit in another run's cache: npm verifies integrity hashes, pip, Go's build cache and others less. Turn sharing off per provider (`cache: false` on Docker and local, no claim on Kubernetes), or give each trust level its own volume.
+
+chamvi's own commands never run from the cache: every workspace command starts with every `/cache` folder dropped from `PATH`, so a `git` or `timeout` one run planted there is not what the next workspace's checkout runs, and `sandbox-dev` keeps mise's shims in `/tmp`. Toolchains mise installed into `/cache/mise` are shared like packages. Never put a `/cache` folder on an image's or the `env`'s `PATH` (the container runtime resolves the first `sh` with it).
 :::
 
 ## The manager and its tools

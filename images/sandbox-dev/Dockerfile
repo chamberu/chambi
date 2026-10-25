@@ -25,17 +25,22 @@ RUN apt-get update \
 # hardened mode (user 1000) can write them too
 RUN mkdir -m 0777 /workspace && mkdir -m 1777 /cache
 
-# the cache variables of @chamvi/sandbox's CACHE_ENV for mise, and mise's
-# shims on the PATH, so `mise use -g node@22` makes node a plain command;
-# mise trusts the repository's config and reads .nvmrc and .python-version
+# the cache variables of @chamvi/sandbox's CACHE_ENV for mise (its
+# toolchains in the shared cache), and mise's shims at the end of the PATH,
+# so `mise use -g node@22` makes node a plain command. The shims live in
+# /tmp (per workspace, writable in the hardened mode too), never in the
+# cache: every run can write there, and a `git` one run planted on the PATH
+# would run in every later workspace. mise trusts the repository's config
+# and reads .nvmrc and .python-version
 ENV DEBIAN_FRONTEND=noninteractive \
     CI=true \
     GIT_TERMINAL_PROMPT=0 \
     MISE_DATA_DIR=/cache/mise \
+    MISE_SHIMS_DIR=/tmp/mise/shims \
     MISE_YES=1 \
     MISE_TRUSTED_CONFIG_PATHS=/workspace \
     MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node,python,ruby,go,java \
-    PATH=/cache/mise/shims:$PATH
+    PATH=$PATH:/tmp/mise/shims
 
 WORKDIR /workspace
 
