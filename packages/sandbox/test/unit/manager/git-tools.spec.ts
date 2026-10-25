@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     InvalidRunStateError,
+    SandboxError,
     ToolDeniedError,
     ValidationError,
 } from '@chamvi/core';
@@ -42,6 +43,8 @@ type Remote = {
     /** Remote-tracking refs known locally, e.g. `origin/feature`. */
     tracking: string[];
     push: Partial<ExecResult>;
+    /** The answer of `ls-remote`; default the remote's HEAD: `main` for the workspace's repository, else `trunk`. */
+    lsRemote?: Partial<ExecResult>;
 };
 
 /** The git arguments of an exec: after the auth script's `sh url origin path`, the reset `-c` pairs, or plain `git`. */
@@ -81,7 +84,7 @@ function setup(options: Partial<WorkspaceManagerOptions> = {}, remote: Partial<R
                 case 'log':
                     return { stdout: 'abc1234 fix the build\ndef5678 bump deps\n' };
                 case 'ls-remote':
-                    return { stdout: `ref: refs/heads/trunk\tHEAD\n${REMOTE}\tHEAD\n` };
+                    return state.lsRemote ?? { stdout: `ref: refs/heads/${args.includes(REPO) ? 'main' : 'trunk'}\tHEAD\n${REMOTE}\tHEAD\n` };
                 case 'push':
                     return state.push;
                 default:
@@ -210,6 +213,30 @@ describe('git tools', () => {
             const allowed = setup({ push: { allowBranch: () => true } }, { head: 'main' });
             await allowed.create();
             await expect(allowed.call('git_push', {})).resolves.toMatchObject({ pushed: true, branch: 'main' });
+        });
+
+        it('reads the default branch of origin from the remote at push time, not from the model-writable record', async () => {
+            const {
+                create, 
+                call, 
+                provider, 
+            } = setup({}, { head: 'main' });
+            const workspace = await create();
+            // after a find(), info.defaultBranch comes from `git config chamvi.defaultBranch`, which bash can change
+            (provider.workspaces.get(workspace.id)!.info as { defaultBranch?: string }).defaultBranch = 'scratch';
+            await expect(call('git_push', {})).rejects.toThrow(ToolDeniedError);
+            const lsRemote = workspace.calls.find((entry) => gitArgs(entry.argv)?.[0] === 'ls-remote');
+            expect(gitArgs(lsRemote!.argv)).toEqual(['ls-remote', '--symref', REPO, 'HEAD']);
+            expect(workspace.calls.some((entry) => gitArgs(entry.argv)?.[0] === 'push')).toBe(false);
+        });
+
+        it('refuses the push when the default branch of the remote cannot be read', async () => {
+            for (const remote of [undefined, 'alice/demo']) {
+                const { create, call } = setup({}, { head: 'main', lsRemote: { exitCode: 128, stderr: 'remote: API rate limit exceeded' } });
+                const workspace = await create();
+                await expect(call('git_push', remote === undefined ? {} : { remote })).rejects.toThrow(SandboxError);
+                expect(workspace.calls.some((entry) => gitArgs(entry.argv)?.[0] === 'push')).toBe(false);
+            }
         });
 
         it('asks allowBranch with the branch and the tool context', async () => {
