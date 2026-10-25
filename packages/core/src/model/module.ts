@@ -17,6 +17,7 @@ import { MODEL_CONTEXT } from './constants.ts';
 import type { ModelCheckOptions, ModelRef } from './types.ts';
 
 const SHAPE = 'must be a "<provider>/<model>" string or a LanguageModel object.';
+const NO_RESOLVER = 'but the engine has no model resolver (EngineOptions.models); pass a LanguageModel object.';
 
 function isModelRef(value: unknown): value is ModelRef {
     return (typeof value === 'string' && value.length > 0) || isObject(value);
@@ -24,20 +25,23 @@ function isModelRef(value: unknown): value is ModelRef {
 
 /**
  * Refuses the default model (EngineOptions.model) when it is neither a
- * non-empty string nor an object, or a string the resolver refuses.
+ * non-empty string nor an object, a string without a resolver, or a string
+ * the resolver refuses.
  */
 export function checkDefaultModel(options: ModelCheckOptions): void {
     const { model, models } = options;
     if (model === undefined) return;
     if (!isModelRef(model)) throw new InvalidAgentDefinitionError(`The default model ${SHAPE}`);
-    if (typeof model === 'string' && models) models.check(model);
+    if (typeof model !== 'string') return;
+    if (!models) throw new InvalidAgentDefinitionError(`The default model "${model}" is a model string, ${NO_RESOLVER}`);
+    models.check(model);
 }
 
 /**
  * Refuses an agent the engine could not run: no model and no default, a
  * model that is neither a non-empty string nor an object, or a string the
- * resolver refuses (InvalidAgentDefinitionError). Objects are never checked;
- * without a resolver strings pass.
+ * resolver refuses or the engine has no resolver for
+ * (InvalidAgentDefinitionError). Objects are never checked.
  */
 export function checkAgentModel(agent: Agent, options: ModelCheckOptions): void {
     const ref: unknown = agent.definition.model ?? options.model;
@@ -45,7 +49,11 @@ export function checkAgentModel(agent: Agent, options: ModelCheckOptions): void 
         throw new InvalidAgentDefinitionError(`Agent "${agent.name}" has no model and the app sets no default (CHAMVI_MODEL).`);
     }
     if (!isModelRef(ref)) throw new InvalidAgentDefinitionError(`Agent "${agent.name}": model ${SHAPE}`);
-    if (typeof ref === 'string' && options.models) options.models.check(ref, agent.name);
+    if (typeof ref !== 'string') return;
+    if (!options.models) {
+        throw new InvalidAgentDefinitionError(`Agent "${agent.name}" uses the model string "${ref}", ${NO_RESOLVER}`);
+    }
+    options.models.check(ref, agent.name);
 }
 
 /**

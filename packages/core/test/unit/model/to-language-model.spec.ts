@@ -16,8 +16,11 @@ describe('toLanguageModel', () => {
             .toThrow('Agent "ops" has no model and the app sets no default (CHAMVI_MODEL).');
     });
 
-    it('passes a string through without a resolver', () => {
-        expect(toLanguageModel('openai/gpt-5', undefined, 'ops')).toBe('openai/gpt-5');
+    it('refuses a string without a resolver', () => {
+        expect(() => toLanguageModel('openai/gpt-5', undefined, 'ops')).toThrow(InvalidAgentDefinitionError);
+        expect(() => toLanguageModel('openai/gpt-5', undefined, 'ops')).toThrow(
+            'Agent "ops" uses the model string "openai/gpt-5", but the engine has no model resolver (EngineOptions.models); pass a LanguageModel object.',
+        );
     });
 
     it('wraps a non-Error throw of resolve()', () => {

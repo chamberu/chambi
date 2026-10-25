@@ -120,4 +120,13 @@ describe('model resolution at execution start', () => {
         expect(run?.output).toBe('own');
         expect(resolved).toEqual([]);
     });
+
+    it('without a resolver an object runs and a string never reaches a run', async () => {
+        const { run } = await runAgent({ model: mockModel([text('plain')]) });
+        expect(run?.status).toBe('completed');
+        expect(run?.output).toBe('plain');
+        await expect(runAgent({ model: 'anthropic/m' })).rejects.toThrow(
+            'Agent "ops" uses the model string "anthropic/m", but the engine has no model resolver (EngineOptions.models); pass a LanguageModel object.',
+        );
+    });
 });
