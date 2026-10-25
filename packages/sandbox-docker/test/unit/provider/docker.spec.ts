@@ -26,11 +26,13 @@ const MISSING_IMAGE = 'chamvi/does-not-exist:none';
 
 const NO_GIT_IMAGE = 'chamvi/sandbox-no-git:test';
 
-/** Builds `test/fixtures/no-git` on top of the test image (offline). */
-async function buildNoGitImage(docker: Docker): Promise<void> {
+const NO_CACHE_IMAGE = 'chamvi/sandbox-no-cache:test';
+
+/** Builds the fixture `test/fixtures/<fixture>` on top of the test image (offline) as `tag`. */
+async function buildFixtureImage(docker: Docker, fixture: string, tag: string): Promise<void> {
     const stream = await docker.buildImage(
-        { context: fileURLToPath(new URL('../../fixtures/no-git', import.meta.url)), src: ['Dockerfile'] },
-        { t: NO_GIT_IMAGE, buildargs: { BASE: dockerImage as string } },
+        { context: fileURLToPath(new URL(`../../fixtures/${fixture}`, import.meta.url)), src: ['Dockerfile'] },
+        { t: tag, buildargs: { BASE: dockerImage as string } },
     );
     await new Promise<void>((resolve, reject) => {
         docker.modem.followProgress(stream, (error: Error | null, output: Array<{ error?: string }>) => {
@@ -39,6 +41,9 @@ async function buildNoGitImage(docker: Docker): Promise<void> {
         });
     });
 }
+
+/** Writes into the cache folders of `CACHE_ENV` as the workspace user would (npm's logs, Go's module cache). */
+const WRITE_CACHE = 'mkdir -p "$npm_config_cache/_logs" "$GOMODCACHE" && touch "$npm_config_cache/_logs/probe" "$GOMODCACHE/probe" /cache/probe';
 
 function statusCode(error: unknown): number | undefined {
     return (error as { statusCode?: number } | undefined)?.statusCode;
@@ -370,8 +375,50 @@ describeDocker('docker sandbox', () => {
         expect(await workspace.readFile('a.txt')).toBe('hardened');
     });
 
+    it('opens the cache of an image without /cache to the hardened user', async () => {
+        await buildFixtureImage(docker, 'no-cache', NO_CACHE_IMAGE);
+        try {
+            const { workspace } = await create({
+                image: NO_CACHE_IMAGE,
+                pull: 'never',
+                user: '1000:1000',
+                readOnlyRoot: true,
+                cache: false,
+            });
+            const result = await workspace.exec(['sh', '-c', WRITE_CACHE]);
+            expect(result.stderr).toBe('');
+            expect(result.exitCode).toBe(0);
+        } finally {
+            await docker.getImage(NO_CACHE_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
+    });
+
+    it('opens the folders a root workspace made in a shared cache to the hardened user', async () => {
+        await buildFixtureImage(docker, 'no-cache', NO_CACHE_IMAGE);
+        const volume = `chamvi-sandbox-cache-test-${randomUUID()}`;
+        try {
+            const shared = {
+                image: NO_CACHE_IMAGE,
+                pull: 'never' as const,
+                cache: { volume },
+            };
+            const { workspace: root } = await create(shared);
+            expect((await root.exec(['sh', '-c', 'mkdir -p "$npm_config_cache" "$GOMODCACHE"'])).exitCode).toBe(0);
+            await root.dispose();
+
+            const { workspace } = await create({ ...shared, user: '1000:1000' });
+            const result = await workspace.exec(['sh', '-c', WRITE_CACHE]);
+            expect(result.stderr).toBe('');
+            expect(result.exitCode).toBe(0);
+            await workspace.dispose();
+        } finally {
+            await docker.getVolume(volume).remove().catch(() => undefined);
+            await docker.getImage(NO_CACHE_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
+    });
+
     it('refuses an image without git before any checkout and leaves no container', async () => {
-        await buildNoGitImage(docker);
+        await buildFixtureImage(docker, 'no-git', NO_GIT_IMAGE);
         try {
             const runId = `test-${randomUUID()}`;
             const error = await createDockerSandbox({
