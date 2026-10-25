@@ -24,15 +24,21 @@ import {
     expect,
     it,
 } from 'vitest';
-import { CREDENTIAL_HELPER_SCRIPT, GIT_AUTH_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
+import {
+    CREDENTIAL_HELPER_SCRIPT,
+    GIT_AUTH_REFUSED_EXIT,
+    GIT_AUTH_SCRIPT,
+    INSTALL_CREDENTIALS_SCRIPT,
+} from '../../../src/git/constants.ts';
 import { credentialsFileContent } from '../../../src/git/helpers.ts';
 
 /**
  * A fake git that, like git's http transport, asks the last configured
  * credential helper for `protocol`, `host` and `path` (its last three
- * arguments) and prints the answer.
+ * arguments) and prints the answer. Its config is empty.
  */
 const FAKE_GIT = `#!/bin/sh
+for a; do test "$a" = config && exit 1; done
 helper=
 while [ $# -gt 3 ]; do
   case $1 in
@@ -43,13 +49,28 @@ done
 printf 'protocol=%s\\nhost=%s\\npath=%s\\n\\n' "$1" "$2" "$3" | sh -c "\${helper#!} get"
 `;
 
+const REPO_URL = 'https://github.com/octo/demo.git';
+
 let dir: string;
 let env: Record<string, string>;
 
-function run(argv: string[], stdin: string, extra: Record<string, string> = {}): Promise<{ stdout: string; code: number }> {
+function run(
+    argv: string[],
+    stdin: string,
+    extra: Record<string, string> = {},
+    cwd?: string,
+): Promise<{
+    stdout: string; 
+    stderr: string; 
+    code: number 
+}> {
     return new Promise((resolve) => {
-        const child = execFile(argv[0]!, argv.slice(1), { env: { ...env, ...extra } }, (error, stdout) => {
-            resolve({ stdout, code: error ? Number((error as { code?: number }).code ?? 1) : 0 });
+        const child = execFile(argv[0]!, argv.slice(1), { env: { ...env, ...extra }, ...(cwd !== undefined && { cwd }) }, (error, stdout, stderr) => {
+            resolve({
+                stdout,
+                stderr,
+                code: error ? Number((error as { code?: number }).code ?? 1) : 0,
+            });
         });
         child.stdin!.end(stdin);
     });
@@ -68,12 +89,12 @@ afterAll(async () => {
 
 describe('GIT_AUTH_SCRIPT', () => {
     const auth = (protocol: string, host: string, path: string) => run(
-        ['sh', '-c', GIT_AUTH_SCRIPT, 'sh', 'https://github.com', 'octo/demo', 'fetch', protocol, host, path],
+        ['sh', '-c', GIT_AUTH_SCRIPT, 'sh', REPO_URL, 'https://github.com', 'octo/demo', 'fetch', protocol, host, path],
         'x-access-token\nghs_secret\n',
     );
 
     it('answers the credential for the expected origin and path', async () => {
-        await expect(auth('https', 'github.com', 'octo/demo.git')).resolves.toEqual({
+        await expect(auth('https', 'github.com', 'octo/demo.git')).resolves.toMatchObject({
             stdout: 'username=x-access-token\npassword=ghs_secret\n',
             code: 0,
         });
@@ -94,16 +115,90 @@ describe('GIT_AUTH_SCRIPT', () => {
     it('keeps the credential out of the environment of git', async () => {
         const envGit = join(dir, 'env-git');
         await mkdir(envGit);
-        await writeFile(join(envGit, 'git'), '#!/bin/sh\nenv\n');
+        await writeFile(join(envGit, 'git'), '#!/bin/sh\nfor a; do test "$a" = config && exit 1; done\nenv\n');
         await chmod(join(envGit, 'git'), 0o755);
         const { stdout, code } = await run(
-            ['sh', '-c', GIT_AUTH_SCRIPT, 'sh', 'https://github.com', 'octo/demo', 'status'],
+            ['sh', '-c', GIT_AUTH_SCRIPT, 'sh', REPO_URL, 'https://github.com', 'octo/demo', 'status'],
             'x-access-token\nghs_secret\n',
             { PATH: `${envGit}:${process.env.PATH}` },
         );
         expect(code).toBe(0);
         expect(stdout).toContain('CHAMVI_GIT_ORIGIN=https://github.com');
         expect(stdout).not.toContain('ghs_secret');
+    });
+});
+
+describe('GIT_AUTH_SCRIPT against the git config', () => {
+    const realGit = { PATH: process.env.PATH ?? '' };
+
+    async function repository(config: Array<[string, string]>): Promise<string> {
+        const repo = await mkdtemp(join(tmpdir(), 'chamvi-git-auth-'));
+        await run(['git', 'init', '-q', repo], '', realGit);
+        for (const [key, value] of config) {
+            await run(['git', 'config', key, value], '', realGit, repo);
+        }
+        return repo;
+    }
+
+    /** `git status` through the script: it only runs once the config checks passed. */
+    async function status(repo: string, home = dir) {
+        return run(
+            ['sh', '-c', GIT_AUTH_SCRIPT, 'sh', REPO_URL, 'https://github.com', 'octo/demo', 'status', '--short'],
+            'x-access-token\nghs_secret\n',
+            { ...realGit, HOME: home },
+            repo,
+        );
+    }
+
+    it('runs git when the config sends nothing elsewhere', async () => {
+        const repo = await repository([
+            [`http.${REPO_URL}.postBuffer`, '524288000'],
+            ['http.proxy', 'http://127.0.0.1:9'],
+            ['http.sslVerify', 'false'],
+        ]);
+        try {
+            await expect(status(repo)).resolves.toMatchObject({ code: 0 });
+        } finally {
+            await rm(repo, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses to send the credential through a proxy, an unverified or redirected connection the config sets for the URL', async () => {
+        for (const [key, value, named] of [
+            ['http.https://github.com.proxy', 'http://attacker:3128', 'http.proxy'],
+            [`http.${REPO_URL}.proxy`, 'http://attacker:3128', 'http.proxy'],
+            ['http.https://github.com.sslVerify', 'false', 'http.sslVerify'],
+            ['http.https://github.com/octo.sslVerify', 'no', 'http.sslVerify'],
+            ['http.https://github.com.sslCAInfo', '/tmp/attacker.pem', 'http.sslCAInfo'],
+            ['http.https://github.com.sslCAPath', '/tmp', 'http.sslCAPath'],
+            ['http.https://github.com.curloptResolve', 'github.com:443:10.0.0.1', 'http.curloptResolve'],
+            [`remote.${REPO_URL}.proxy`, 'http://attacker:3128', `remote.${REPO_URL}.proxy`],
+            ['remote.origin.proxy', 'http://attacker:3128', 'remote.origin.proxy'],
+            ['url.https://github.com/octo/demo.insteadOf', REPO_URL, 'url.https://github.com/octo/demo.insteadof'],
+            ['url.https://github.com/octo/demo.pushInsteadOf', REPO_URL, 'url.https://github.com/octo/demo.pushinsteadof'],
+        ] as const) {
+            const repo = await repository([[key, value]]);
+            try {
+                const result = await status(repo);
+                expect(result.code, key).toBe(GIT_AUTH_REFUSED_EXIT);
+                expect(result.stderr, key).toContain(named);
+                expect(result.stderr, key).not.toContain('ghs_secret');
+            } finally {
+                await rm(repo, { recursive: true, force: true });
+            }
+        }
+    });
+
+    it('reads the global config too', async () => {
+        const home = await mkdtemp(join(tmpdir(), 'chamvi-git-home-'));
+        const repo = await repository([]);
+        try {
+            await writeFile(join(home, '.gitconfig'), '[http "https://github.com"]\n\tproxy = http://attacker:3128\n');
+            await expect(status(repo, home)).resolves.toMatchObject({ code: GIT_AUTH_REFUSED_EXIT });
+        } finally {
+            await rm(repo, { recursive: true, force: true });
+            await rm(home, { recursive: true, force: true });
+        }
     });
 });
 
