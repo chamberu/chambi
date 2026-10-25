@@ -26,6 +26,7 @@ import {
     objectSchema,
     optionalBoolean,
     optionalInteger,
+    redactText,
     requirePath,
     requireString,
     signalOf,
@@ -90,8 +91,9 @@ async function runCommand(
     const stderr = excerptOf(report.stderr);
     return {
         exitCode: report.status ?? result.exitCode,
-        stdout: stdout.text,
-        stderr: stderr.text,
+        // decoded from base64 here, so the workspace's exec redaction never saw them
+        stdout: redactText(workspace, stdout.text),
+        stderr: redactText(workspace, stderr.text),
         stdoutTruncated: stdout.truncated,
         stderrTruncated: stderr.truncated,
         stdoutBytes: report.stdout.size,
