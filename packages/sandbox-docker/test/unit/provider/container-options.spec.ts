@@ -95,6 +95,11 @@ describe('buildContainerOptions', () => {
                 Source: '',
                 Target: '/workspace',
             }, {
+                // HOME on disk, kept across a restart, never in the memory-backed /tmp
+                Type: 'volume',
+                Source: '',
+                Target: '/home/sandbox',
+            }, {
                 Type: 'volume',
                 Source: 'chamvi-sandbox-cache',
                 Target: '/cache',
@@ -166,7 +171,7 @@ describe('buildContainerOptions', () => {
 
     it('mounts a cache of its own without a shared volume', () => {
         const options = buildContainerOptions(input({ cacheVolume: undefined }));
-        expect(options.HostConfig?.Mounts?.[1]).toEqual({
+        expect(options.HostConfig?.Mounts?.find((mount) => mount.Target === '/cache')).toEqual({
             Type: 'volume',
             Source: '',
             Target: '/cache',

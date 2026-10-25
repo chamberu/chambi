@@ -166,7 +166,7 @@ The checkout runs inside the workspace through its own `exec`, the same commands
 
 Quantities use Kubernetes notation (`'500m'`, `'1.5'`, `'512Mi'`, `'2G'`). `/tmp` is a 1 GiB tmpfs in containers and pods (`TMP_SIZE`, the providers' `tmpSize`).
 
-No host environment reaches a workspace. Containers and pods get `SANDBOX_ENV` (`HOME=/tmp`, `GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`, `safe.directory=/workspace`, `NPM_CONFIG_UPDATE_NOTIFIER=false`, `CI=true`) and the cache variables (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`, `MISE_DATA_DIR`, all under `/cache`, a volume the provider mounts and by default shares between workspaces) plus the configured `env`; local gets the host `PATH`, its own `HOME` and `TMPDIR`, the same git settings and the cache variables under `<root>/.cache`. `env` keys match `^[A-Za-z_][A-Za-z0-9_]*$`, values carry no NUL. Never put secrets there: whatever runs in the workspace can read them.
+No host environment reaches a workspace. Containers and pods get `SANDBOX_ENV` (`HOME=/home/sandbox`, `WORKSPACE_HOME`: a disk-backed volume of the workspace, kept across a restart, so cargo's, rustup's, Maven's and Gradle's homes and mise's global config never fill the memory-backed `/tmp`; `GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`, `safe.directory=/workspace`, `NPM_CONFIG_UPDATE_NOTIFIER=false`, `CI=true`) and the cache variables (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`, `MISE_DATA_DIR`, all under `/cache`, a volume the provider mounts and by default shares between workspaces) plus the configured `env`; local gets the host `PATH`, its own `HOME` and `TMPDIR`, the same git settings and the cache variables under `<root>/.cache`. `env` keys match `^[A-Za-z_][A-Za-z0-9_]*$`, values carry no NUL. Never put secrets there: whatever runs in the workspace can read them.
 
 ## Security
 
@@ -247,7 +247,7 @@ Misconfiguration throws core `InvalidAgentDefinitionError`.
 | `resolveLimits`, `parseCpu`, `parseMemory`, `assertSandboxEnv` | function | Limits and environment rules |
 | `assertImage`, `probeImage`, `cacheEnv`, `isRootUser` | function | Image reference rule, the image probe, the cache variables under a folder, the root check |
 | `createOutputCollector` | function | A capped output stream collector |
-| `WORKSPACE_ROOT`, `OUTPUT_MAX_BYTES`, `FILE_MAX_BYTES`, `EXEC_TIMEOUT_MS`, `EXEC_TIMEOUT_MAX_MS`, `SANDBOX_ENV` | constant | Workspace rules |
+| `WORKSPACE_ROOT`, `WORKSPACE_HOME`, `OUTPUT_MAX_BYTES`, `FILE_MAX_BYTES`, `EXEC_TIMEOUT_MS`, `EXEC_TIMEOUT_MAX_MS`, `SANDBOX_ENV` | constant | Workspace rules |
 | `DEFAULT_LIMITS`, `DEFAULT_SANDBOX_IMAGE`, `TMP_SIZE`, `SANDBOX_LABELS`, `RUN_LABEL`, `WORKSPACE_LABEL`, `EXPIRES_AT_KEY` | constant | Provider defaults and labels |
 | `MAX_WORKSPACES_PER_RUN`, `GC_INTERVAL_MS`, `CLOSE_TIMEOUT_MS` | constant | Manager defaults |
 | `TIMEOUT_KILL_AFTER_SECONDS`, `EXEC_GRACE_MS`, `ALIVE_PROBE_TIMEOUT_MS` | constant | Remote timeout handling and the liveness probe bound |

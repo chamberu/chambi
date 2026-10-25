@@ -96,6 +96,7 @@ Each workspace is a bare pod `chamvi-ws-<id>` with one container `sandbox`:
 | Resources | requests equal limits: `cpu`, `memory`, `ephemeral-storage` from `storage` |
 | `/workspace` | an emptyDir with `sizeLimit` from `storage` |
 | `/tmp` | a memory-backed emptyDir of `tmpSize` (default 1 GiB, `TMP_SIZE`) |
+| `/home/sandbox` | HOME (`WORKSPACE_HOME`): an emptyDir on the node's disk, counted in `ephemeral-storage` |
 | `/cache` | the ReadWriteMany claim `cache.claimName`, shared by every workspace, else an emptyDir of its own |
 | Environment | `SANDBOX_ENV`, the cache variables (`CACHE_ENV`) and `env`, nothing from chamvi's pod |
 | Labels | `podLabels`, then `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>`, `chamvi.dev/deployment=<deployment>`, `chamvi.dev/repo-key=<hash>` (with a repository) (the managed labels win; `podLabels` naming one throws; a `runId` that is no label value is a `ValidationError`, engine run ids are UUIDs) |

@@ -115,6 +115,8 @@ describe('buildPod', () => {
         expect(spec?.volumes).toEqual([
             { name: 'workspace', emptyDir: { sizeLimit: '4Gi' } },
             { name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: '1Gi' } },
+            // HOME on the node's disk (the pod's ephemeral-storage), never in the memory-backed /tmp
+            { name: 'home', emptyDir: {} },
             // a cache of its own without a claim, so the cache env always points somewhere
             { name: 'cache', emptyDir: {} },
         ]);
@@ -154,6 +156,7 @@ describe('buildPod', () => {
         expect(container.volumeMounts).toEqual([
             { name: 'workspace', mountPath: '/workspace' },
             { name: 'tmp', mountPath: '/tmp' },
+            { name: 'home', mountPath: '/home/sandbox' },
             { name: 'cache', mountPath: '/cache' },
         ]);
     });

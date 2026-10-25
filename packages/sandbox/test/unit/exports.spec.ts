@@ -55,12 +55,13 @@ describe('public api', () => {
 
     it('exports the workspace constants', () => {
         expect(sandbox.WORKSPACE_ROOT).toBe('/workspace');
+        expect(sandbox.WORKSPACE_HOME).toBe('/home/sandbox');
         expect(sandbox.OUTPUT_MAX_BYTES).toBe(65_536);
         expect(sandbox.FILE_MAX_BYTES).toBe(1_048_576);
         expect(sandbox.EXEC_TIMEOUT_MS).toBe(300_000);
         expect(sandbox.EXEC_TIMEOUT_MAX_MS).toBe(1_800_000);
         expect(sandbox.SANDBOX_ENV).toEqual({
-            HOME: '/tmp',
+            HOME: '/home/sandbox',
             GIT_TERMINAL_PROMPT: '0',
             GIT_CONFIG_NOSYSTEM: '1',
             GIT_CONFIG_COUNT: '1',

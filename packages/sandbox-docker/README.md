@@ -69,6 +69,7 @@ Each workspace is a container `chamvi-ws-<id>`:
 | Capabilities | all dropped; a root user gets back `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `KILL` (`ROOT_CAPABILITIES`); `no-new-privileges:true`, not privileged |
 | Limits | `NanoCpus` from `cpu`, `Memory` and `MemorySwap` (no swap) from `memory`, `PidsLimit` from `pids` |
 | `/workspace` | an anonymous volume, removed with the container (`remove({ force: true, v: true })`) |
+| `/home/sandbox` | HOME (`WORKSPACE_HOME`): an anonymous volume on disk, kept across a restart, removed with the container |
 | `/cache` | the named volume `chamvi-sandbox-cache` (`DEFAULT_CACHE_VOLUME`; a non-root `user` `chamvi-sandbox-cache-<user>`; `cache.volume`) shared by every workspace, or with `cache: false` an anonymous volume of its own |
 | `/tmp` | a tmpfs of `tmpSize` (default 1 GiB, `TMP_SIZE`; `exec`, `nosuid`, `nodev`) |
 | Network | `network` (default `bridge`) |
