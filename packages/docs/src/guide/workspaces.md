@@ -90,7 +90,7 @@ Private repositories and pushes need credentials. The manager asks its `credenti
 
 <<< @/snippets/workspaces.ts#credentials
 
-- `staticGitCredentials([{ host, path?, username?, token }])`: personal access tokens of GitHub (`x-access-token`), GitLab (`oauth2`, also project and deploy tokens) or any https host; `path` narrows a token to an owner or a repository, the longest match wins. `sandboxModule()` also reads them as JSON from `CHAMVI_GIT_TOKENS`.
+- `staticGitCredentials([{ host, path?, username?, token }])`: personal access tokens of GitHub (`x-access-token`), GitLab (`oauth2`, also project and deploy tokens) or any https host; `path` narrows a token to an owner or a repository (case-insensitive, like GitHub's and GitLab's paths), the longest match wins. `sandboxModule()` also reads them as JSON from `CHAMVI_GIT_TOKENS`.
 - `githubAppCredentials(app, { permissions? })` (`@chamvi/github`): a token of the App's installation limited to the one repository, `contents: read` to read, `contents: write` plus `permissions` (e.g. `{ workflows: 'write' }`, which a change under `.github/workflows` needs) to push, cached until shortly before it expires. `githubModule()` contributes it to `sandboxModule()` on its own (`credentials: false` turns that off), and `app.botIdentity()` gives the bot's commit identity for `author`.
 
 `credentialMode` decides how a token reaches git:

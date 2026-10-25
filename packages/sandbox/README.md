@@ -174,7 +174,7 @@ const workspaces = createWorkspaceManager({
 });
 ```
 
-- `staticGitCredentials([{ host, path?, username?, token }])`: GitHub (`x-access-token`), GitLab (`oauth2`) or any https host; `path` narrows to an owner or repository, the longest match wins. `githubAppCredentials(app)` from `@chamvi/github` issues repository-scoped App tokens.
+- `staticGitCredentials([{ host, path?, username?, token }])`: GitHub (`x-access-token`), GitLab (`oauth2`) or any https host; `path` narrows to an owner or repository (case-insensitive), the longest match wins. `githubAppCredentials(app)` from `@chamvi/github` issues repository-scoped App tokens.
 - `credentialMode: 'workspace'` (default): a credential helper and a 0600 file in the workspace's `$HOME/.chamvi/`, refreshed before a command once a token expires within ten minutes, so plain git in `bash` works; every result, file read and error the manager hands out has the issued tokens replaced by `[redacted]`. `'tools'`: no credential in the workspace, only the checkout and the git tools authenticate, each through a one-shot helper reading the token from stdin.
 - `push`: `mode` `'auto'` (default) or `'approve'` (asks through `approve()`, the run's source channel first), `allowForce` (default `false`, force is always `--force-with-lease`), `allowBranch(branch, ctx)` (default: every branch but the remote's default branch, read from the remote at push time). In `workspace` mode it binds `git_push` only, not a `git push` in `bash`.
 - `depth` makes the checkout shallow; `author` sets `GIT_AUTHOR_*` and `GIT_COMMITTER_*`.
