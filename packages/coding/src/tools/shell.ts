@@ -55,6 +55,7 @@ function plainResult(result: ExecResult): BashResult {
         stdoutLog: '',
         stderrLog: '',
         cwd: '',
+        outputCapped: false,
         timedOut: result.timedOut,
         durationMs: result.durationMs,
     };
@@ -67,12 +68,14 @@ async function runCommand(
         command: string; 
         cwd?: string; 
         timeoutMs: number; 
-        signal: AbortSignal 
+        signal: AbortSignal;
+        outputLogMaxBytes: number;
     },
 ): Promise<BashResult> {
     const id = randomBytes(6).toString('hex');
+    const cap = String(input.outputLogMaxBytes);
     const result = await workspace.exec(
-        ['sh', '-c', BASH_SCRIPT, 'sh', INNER_SCRIPT, input.command, id, input.cwd ?? ''],
+        ['sh', '-c', BASH_SCRIPT, 'sh', INNER_SCRIPT, input.command, id, input.cwd ?? '', cap],
         { timeoutMs: input.timeoutMs, signal: input.signal },
     );
     if (input.cwd !== undefined && result.stdout === `${CWD_MISSING}\n`) {
@@ -81,8 +84,8 @@ async function runCommand(
 
     let report = parseReport(result.stdout, result.stderr);
     if (!report) {
-        // the script was killed with the command (its timeout): read what the command wrote
-        const again = await workspace.exec(['sh', '-c', REPORT_SCRIPT, 'sh', id], {
+        // the script was killed with the command (its timeout or log cap): read what the command wrote
+        const again = await workspace.exec(['sh', '-c', REPORT_SCRIPT, 'sh', id, cap], {
             timeoutMs: REPORT_TIMEOUT_MS,
             signal: input.signal,
         });
@@ -103,18 +106,20 @@ async function runCommand(
         stdoutLog: report.stdout.log,
         stderrLog: report.stderr.log,
         cwd: report.cwd,
+        outputCapped: report.capped,
         timedOut: result.timedOut,
         durationMs: result.durationMs,
     };
 }
 
-export function bashTool(workspaces: CodingWorkspaces): Tool<BashInput, BashResult | BashJobResult> {
+export function bashTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number): Tool<BashInput, BashResult | BashJobResult> {
     return defineTool<BashInput, BashResult | BashJobResult>({
         description: 'Run a shell command in the workspace (bash when the image has it, else sh), e.g. to install dependencies, build or run tests. ' +
             'The shell keeps its working directory and exported variables from one call to the next (not functions, aliases or options); ' +
             'cwd is where the next call starts. ' +
             `Output past ${EXCERPT_HEAD_BYTES + EXCERPT_TAIL_BYTES} bytes per stream shows its start and end; the whole of it is in stdoutLog and stderrLog ` +
-            '(read them with read_file, grep or bash). A command past its timeout is killed (timedOut: true). No interactive input. ' +
+            '(read them with read_file, grep or bash). A command past its timeout is killed (timedOut: true), and so is one whose log ' +
+            `passes ${outputLogMaxBytes} bytes (outputCapped: true; redirect huge output to a file). No interactive input. ` +
             'For servers and watchers pass background: true and read the output with bash_output.',
         inputSchema: objectSchema<BashInput>({
             command: {
@@ -159,6 +164,7 @@ export function bashTool(workspaces: CodingWorkspaces): Tool<BashInput, BashResu
                 cwd,
                 timeoutMs,
                 signal,
+                outputLogMaxBytes,
             });
         },
     });

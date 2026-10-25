@@ -29,6 +29,7 @@ describe('public api', () => {
         expect(coding.SEARCH_MAX_RESULTS).toBe(500);
         expect(coding.LIST_MAX_RESULTS).toBe(5_000);
         expect(coding.LINE_MAX_CHARS).toBe(500);
+        expect(coding.OUTPUT_LOG_MAX_BYTES).toBe(64 * 1_048_576);
     });
 
     it('builds the coding tools', () => {
@@ -52,6 +53,13 @@ describe('public api', () => {
         expect(() => coding.codingTools({} as never)).toThrow(InvalidAgentDefinitionError);
     });
 
+    it('refuses an output log cap that is no positive integer', () => {
+        for (const outputLogMaxBytes of [0, -1, 1.5, '1' as never]) {
+            expect(() => coding.codingTools(manager, { outputLogMaxBytes })).toThrow(InvalidAgentDefinitionError);
+        }
+        expect(Object.keys(coding.codingTools(manager, { outputLogMaxBytes: 1_024 }))).toContain('bash');
+    });
+
     it('are chamvi tools and not effect tools', () => {
         for (const tool of Object.values(coding.codingTools(manager))) {
             expect(tool.contextSchema).toBe(toolContextSchema);
@@ -63,6 +71,7 @@ describe('public api', () => {
         expect(Object.keys(coding).sort()).toEqual([
             'LINE_MAX_CHARS',
             'LIST_MAX_RESULTS',
+            'OUTPUT_LOG_MAX_BYTES',
             'READ_MAX_CHARS',
             'READ_MAX_LINES',
             'SEARCH_MAX_RESULTS',

@@ -10,6 +10,15 @@ import type { IWorkspaceManager } from '@chamvi/sandbox';
 /** What the coding tools need of a workspace manager: the run's workspaces by id. */
 export type CodingWorkspaces = Pick<IWorkspaceManager, 'get'>;
 
+export type CodingToolsOptions = {
+    /**
+     * Bytes one output log of `bash` may grow to (per stream). A call whose
+     * log passes it is killed (`outputCapped: true`) and the log cut back to
+     * it. Default `OUTPUT_LOG_MAX_BYTES` (64 MiB).
+     */
+    outputLogMaxBytes?: number;
+};
+
 export type ReadFileResult = {
     /** Relative to `/workspace`. */
     path: string;
@@ -101,6 +110,11 @@ export type BashResult = {
     stderrLog: string;
     /** The working directory the next call starts in (`/workspace/...` inside the workspace). */
     cwd: string;
+    /**
+     * True when a log passed `outputLogMaxBytes`: the call was killed with
+     * its jobs, like a timeout, and the log keeps the first bytes up to the cap.
+     */
+    outputCapped: boolean;
     timedOut: boolean;
     durationMs: number;
 };

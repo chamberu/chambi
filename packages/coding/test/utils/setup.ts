@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ToolSet } from 'ai';
 import { codingTools } from '@chamvi/coding';
+import type { CodingToolsOptions } from '@chamvi/coding';
 import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { IWorkspace, IWorkspaceManager } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
@@ -39,7 +40,7 @@ export function createFixture(): Promise<GitFixture> {
 }
 
 /** A manager over a local sandbox in a temp root, with run r1 holding a checkout of `fixture`. */
-export async function setupCoding(fixture: GitFixture): Promise<CodingSetup> {
+export async function setupCoding(fixture: GitFixture, options?: CodingToolsOptions): Promise<CodingSetup> {
     const root = await mkdtemp(join(tmpdir(), 'chamvi-coding-'));
     const manager = createWorkspaceManager({
         provider: createLocalSandbox({ root }),
@@ -47,7 +48,7 @@ export async function setupCoding(fixture: GitFixture): Promise<CodingSetup> {
         gcIntervalMs: 0,
     });
     const { workspace } = await manager.acquire('r1', { repo: fixture.url });
-    const tools = codingTools(manager);
+    const tools = codingTools(manager, options);
     return {
         root,
         manager,

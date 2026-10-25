@@ -6,7 +6,12 @@
  */
 
 import { Buffer } from 'node:buffer';
-import { BLOCK_END, REPORT_HEADER, REPORT_STDERR_HEADER } from './constants.ts';
+import {
+    BLOCK_END,
+    REPORT_CAPPED,
+    REPORT_HEADER,
+    REPORT_STDERR_HEADER,
+} from './constants.ts';
 
 /** One stream of a `bash` report. */
 type ReportStream = {
@@ -22,6 +27,8 @@ type ReportStream = {
 type Report = {
     /** The exit status, `undefined` when the call was killed (the report was read afterwards). */
     status: number | undefined;
+    /** True when a log passed its cap (the call was killed, the log cut back to the cap). */
+    capped: boolean;
     /** The working directory the next call starts in. */
     cwd: string;
     stdout: ReportStream;
@@ -112,7 +119,7 @@ function readStream(lines: string[], start: number): { stream: ReportStream; nex
 /** The report a `bash` script printed (stdout and stderr part), undefined when it is missing or cut. */
 export function parseReport(stdout: string, stderr: string): Report | undefined {
     const out = stdout.split('\n');
-    const header = new RegExp(`^${REPORT_HEADER} (-|\\d+)$`).exec(out[0] ?? '');
+    const header = new RegExp(`^${REPORT_HEADER} (-|\\d+)( ${REPORT_CAPPED})?$`).exec(out[0] ?? '');
     if (!header || out.length < 2) return undefined;
     const stdoutStream = readStream(out, 2);
 
@@ -123,6 +130,7 @@ export function parseReport(stdout: string, stderr: string): Report | undefined 
 
     return {
         status: header[1] === '-' ? undefined : Number(header[1]),
+        capped: header[2] !== undefined,
         cwd: out[1] as string,
         stdout: stdoutStream.stream,
         stderr: stderrStream.stream,

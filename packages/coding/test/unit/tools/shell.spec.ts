@@ -37,6 +37,7 @@ describe('bash', () => {
             stderr: '',
             stdoutTruncated: false,
             stderrTruncated: false,
+            outputCapped: false,
             timedOut: false,
         });
         expect(result.durationMs).toBeGreaterThanOrEqual(0);
@@ -120,6 +121,30 @@ describe('bash', () => {
             timedOut: false, 
         });
         expect(Date.now() - started).toBeLessThan(5_000);
+    });
+
+    it('kills a command whose output passes the log cap and keeps the log at the cap', async () => {
+        const capped = await setupCoding(fixture, { outputLogMaxBytes: 1_048_576 });
+        try {
+            const started = Date.now();
+            const result = await capped.call<BashResult>('bash', { command: 'echo start >&2; yes', timeoutMs: 60_000 });
+            expect(result).toMatchObject({
+                outputCapped: true,
+                timedOut: false,
+                stdoutBytes: 1_048_576,
+                stdoutTruncated: true,
+                stderr: 'start\n',
+            });
+            expect(result.stdout.startsWith('y\ny\n')).toBe(true);
+            expect(Date.now() - started).toBeLessThan(15_000);
+            await expect(capped.call('bash', { command: 'yes | head -c 100 >&2; echo ok' })).resolves.toMatchObject({
+                stdout: 'ok\n',
+                stderrBytes: 100,
+                outputCapped: false,
+            });
+        } finally {
+            await capped.cleanup();
+        }
     });
 
     it('refuses timeouts out of range', async () => {

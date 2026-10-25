@@ -74,7 +74,7 @@ The tools are plain tools you did not write, so the gate lives in the agent's `b
 
 ## Tools
 
-`codingTools(workspaces)` returns a plain AI SDK `ToolSet`. Paths are relative to the workspace root or start with `/workspace/`; anything that leaves the root is a tool error.
+`codingTools(workspaces, { outputLogMaxBytes? })` returns a plain AI SDK `ToolSet`. Paths are relative to the workspace root or start with `/workspace/`; anything that leaves the root is a tool error.
 
 | Tool | Input | Result |
 |---|---|---|
@@ -82,10 +82,10 @@ The tools are plain tools you did not write, so the gate lives in the agent's `b
 | `write_file` | `{ path, content, encoding?, workspace? }` | `{ path, bytes }`: replaces the file (text, or bytes with `encoding: 'base64'`), creates missing directories |
 | `edit_file` | `{ path, oldString, newString, replaceAll?, workspace? }` | `{ path, replacements }`: `oldString` must match exactly once unless `replaceAll`. Calls of `edit_file` and `write_file` on one file run one after the other, so several edits of a file in one step all apply |
 | `multi_edit` | `{ path, edits: [{ oldString, newString, replaceAll? }], workspace? }` | `{ path, edits, replacements }`: the edits in order on the file's content, nothing written when one fails |
-| `grep` | `{ pattern, path?, ignoreCase?, includeIgnored?, limit?, workspace? }` | `{ matches: [{ path, line, text }], truncated, engine }`: ripgrep when the image has it, else `git grep -E`, else `grep -rE`; tracked, untracked and hidden files, git-ignored ones with `includeIgnored`; default 100, at most 500 matches, lines cut at 500 characters |
+| `grep` | `{ pattern, path?, ignoreCase?, includeIgnored?, limit?, workspace? }` | `{ matches: [{ path, line, text }], truncated, engine }`: ripgrep when the image has it, else `git grep -E`, else `grep -rE` (one `grep` per file for BusyBox); tracked, untracked and hidden files, git-ignored ones with `includeIgnored`; default 100, at most 500 matches, lines cut at 500 characters |
 | `glob` | `{ pattern, path?, includeIgnored?, limit?, workspace? }` | `{ files, truncated }`: files matching a `**` pattern, sorted |
 | `list_files` | `{ path?, includeIgnored?, limit?, workspace? }` | `{ files, truncated }`: tracked and untracked, git-ignored ones with `includeIgnored`, sorted; default 1000, at most 5000 |
-| `bash` | `{ command, cwd?, timeoutMs?, background?, workspace? }` | `{ exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, stdoutBytes, stderrBytes, stdoutLog, stderrLog, cwd, timedOut, durationMs }`: a shell (bash when present) that keeps its working directory and exported variables between calls; the whole output in `~/.chamvi/out/`, the result showing the first 8 KiB and the last 24 KiB of a longer stream; default timeout 5 minutes, at most 30. With `background: true` `{ job, status: 'running', outputLog }` at once |
+| `bash` | `{ command, cwd?, timeoutMs?, background?, workspace? }` | `{ exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, stdoutBytes, stderrBytes, stdoutLog, stderrLog, cwd, outputCapped, timedOut, durationMs }`: a shell (bash when present) that keeps its working directory and exported variables between calls; the whole output in `~/.chamvi/out/` (at most `outputLogMaxBytes` per stream, 64 MiB by default: past it the call is killed, `outputCapped: true`), the result showing the first 8 KiB and the last 24 KiB of a longer stream; default timeout 5 minutes, at most 30. With `background: true` `{ job, status: 'running', outputLog }` at once |
 | `bash_output` | `{ job, offset?, workspace? }` | `{ job, status, exitCode?, output, offset, nextOffset, size, truncated }`: a background job's output from a byte offset (at most 32 KiB) and its status (`running`, `exited`, `killed`, `lost`) |
 | `bash_kill` | `{ job, workspace? }` | `{ job, status, exitCode? }`: stops the job and every process it started |
 | `git_diff` | `{ staged?, path?, workspace? }` | `{ status, diff, truncated }`: `git status --short` and the unified diff (of the index with `staged`) |
