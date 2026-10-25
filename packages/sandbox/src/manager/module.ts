@@ -325,11 +325,16 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
                 throw new SandboxError(`This run already has a workspace of ${repo ?? 'no repository'} at ${existing.ref ?? 'the default branch'}; ` +
                     `dispose it first (dispose_workspace) to check out ${ref ?? 'the default branch'}.`);
             }
-            if (image !== undefined && existing.image !== image) {
-                throw new SandboxError(`This run already has a workspace of ${repo ?? 'no repository'} on the image ${existing.image ?? 'of the provider'}; ` +
-                    `dispose it first (dispose_workspace) to use ${image}.`);
+            if (image === undefined || existing.image === image) {
+                return { workspace: existing.workspace ?? await existing.pending!, reused: true };
             }
+            const refuse = (held: string) => new SandboxError(`This run already has a workspace of ${repo ?? 'no repository'} ` +
+                `on the image ${held}; dispose it first (dispose_workspace) to use ${image}.`);
+            if (existing.image !== undefined) throw refuse(existing.image);
+            // a create without a request learns its image once it lands; a
+            // workspace that records none (local) takes any request
             const workspace = existing.workspace ?? await existing.pending!;
+            if (workspace.info.image !== undefined && workspace.info.image !== image) throw refuse(workspace.info.image);
             return { workspace, reused: true };
         };
 
