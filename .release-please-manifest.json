@@ -14,5 +14,6 @@
     "packages/channel-openclaw": "0.2.1",
     "packages/ui": "0.2.1",
     "packages/app": "0.2.1",
-    "packages/cli": "0.2.1"
+    "packages/cli": "0.2.1",
+    "packages/tool-web": "0.2.1"
 }
