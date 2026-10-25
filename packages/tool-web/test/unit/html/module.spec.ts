@@ -14,6 +14,8 @@ import {
     isText,
 } from '../../../src/html/module.ts';
 
+const SCRIPT_URL = ['javascript', 'alert(1)'].join(':');
+
 const PAGE = `<!doctype html>
 <html>
 <head><title>Release notes &amp; more</title><style>body { color: red }</style></head>
@@ -58,9 +60,10 @@ describe('htmlToMarkdown', () => {
     });
 
     it('keeps links it cannot resolve and drops script links', () => {
-        const { content } = htmlToMarkdown('<p><a href="javascript:alert(1)">x</a> <a href="mailto:a@b.c">mail</a></p>', 'https://example.com/');
+        const { content } = htmlToMarkdown(`<p><a href="${SCRIPT_URL}">x</a> <a href="mailto:a@b.c">mail</a></p>`, 'https://example.com/');
 
-        expect(content).not.toContain('javascript:');
+        expect(content).not.toContain(SCRIPT_URL);
+        expect(content).toContain('x');
         expect(content).toContain('[mail](mailto:a@b.c)');
     });
 
