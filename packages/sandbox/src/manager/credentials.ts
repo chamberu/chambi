@@ -16,7 +16,7 @@ import type {
     IGitCredentials,
     Redactor,
 } from '../credentials/types.ts';
-import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../git/constants.ts';
+import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT, READ_CREDENTIALS_SCRIPT } from '../git/constants.ts';
 import { credentialKey, credentialsFileContent, urlOrigin } from '../git/helpers.ts';
 import type { ExecResult, IWorkspace } from '../workspace/types.ts';
 import { CREDENTIAL_INSTALL_TIMEOUT_MS } from './constants.ts';
@@ -39,13 +39,26 @@ export type CredentialSupport = {
      * `onError`) its read credential. A credential already inside that
      * window is rewritten `CREDENTIAL_RETRY_MS` later at the earliest. A failure goes to
      * `onError` and is retried `CREDENTIAL_RETRY_MS` later; it never throws.
+     * In both modes it first learns (`learn`) the tokens of a workspace this
+     * process did not create (`fresh` false).
      */
-    refresh(workspace: IWorkspace): Promise<void>;
-    /** The workspace the manager hands out: redacting, refreshing before each exec. One per raw workspace. */
+    refresh(workspace: IWorkspace, options?: { fresh?: boolean }): Promise<void>;
+    /**
+     * Once per workspace this process did not create: adds the tokens of
+     * its credentials file (an earlier process's, still valid) to the
+     * redactor, so a copy the model made of them is redacted too. A failure
+     * goes to `onError` and is retried `CREDENTIAL_RETRY_MS` later.
+     */
+    learn(workspace: IWorkspace): Promise<void>;
+    /** The workspace the manager hands out: redacting, learning and refreshing before each call. One per raw workspace. */
     wrap(workspace: IWorkspace): IWorkspace;
 };
 
 type InstallState = {
+    /** The earlier credentials file was read (or there is none: a workspace this process created). */
+    learned?: boolean;
+    learnRetryAt?: number;
+    learning?: Promise<void>;
     installed?: boolean;
     /** When the file must be rewritten (epoch ms); undefined: never (no credential expires). */
     refreshAt?: number;
@@ -53,6 +66,13 @@ type InstallState = {
     retryAt?: number;
     pending?: Promise<void>;
 };
+
+/**
+ * Tokens read back from a credentials file are at least this long: the
+ * file is model-writable, and a short value would redact common words in
+ * every run of the process.
+ */
+const LEARNED_SECRET_MIN_LENGTH = 16;
 
 function isHttps(url: string): boolean {
     return url.startsWith('https://');
@@ -120,14 +140,47 @@ export function createCredentialSupport(input: {
         return Math.max(Math.min(...expiries) - CREDENTIAL_REFRESH_MS, clock.now().getTime() + CREDENTIAL_RETRY_MS);
     };
 
-    const refresh: CredentialSupport['refresh'] = async (workspace) => {
+    const stateOf = (workspace: IWorkspace): InstallState | undefined => {
         const { repo } = workspace.info;
-        if (mode !== 'workspace' || repo === undefined || !isHttps(repo)) return;
+        if (repo === undefined || !isHttps(repo)) return undefined;
         let state = states.get(workspace);
         if (!state) {
             state = {};
             states.set(workspace, state);
         }
+        return state;
+    };
+
+    const learn: CredentialSupport['learn'] = async (workspace) => {
+        const state = stateOf(workspace);
+        if (!state || state.learned) return;
+        if (state.learnRetryAt !== undefined && clock.now().getTime() < state.learnRetryAt) return;
+        state.learning ??= (async () => {
+            const result = await workspace.exec(['sh', '-c', READ_CREDENTIALS_SCRIPT], { timeoutMs: CREDENTIAL_INSTALL_TIMEOUT_MS });
+            if (result.exitCode !== 0 || result.timedOut) {
+                throw new SandboxError(`reading the git credentials of workspace ${workspace.id} ${result.timedOut ? 'timed out' : `exited with ${result.exitCode}`}.`);
+            }
+            for (const line of result.stdout.split('\n')) {
+                const password = line.split('\t')[2];
+                if (password !== undefined && password.length >= LEARNED_SECRET_MIN_LENGTH) redactor.add(password);
+            }
+        })().then(() => {
+            state.learned = true;
+        }, (error: unknown) => {
+            state.learnRetryAt = clock.now().getTime() + CREDENTIAL_RETRY_MS;
+            onError(redactor.redactError(error));
+        }).finally(() => {
+            delete state.learning;
+        });
+        await state.learning;
+    };
+
+    const refresh: CredentialSupport['refresh'] = async (workspace, options = {}) => {
+        const state = stateOf(workspace);
+        if (!state) return;
+        if (options.fresh) state.learned = true;
+        await learn(workspace);
+        if (mode !== 'workspace') return;
         const now = clock.now().getTime();
         if (state.installed && (state.refreshAt === undefined || now < state.refreshAt)) return;
         if (state.retryAt !== undefined && now < state.retryAt) return;
@@ -182,8 +235,14 @@ export function createCredentialSupport(input: {
                 await refresh(workspace);
                 return redactResult(await workspace.exec(argv, options));
             }),
-            readFile: (path) => guard(async () => redactor.redact(await workspace.readFile(path))),
-            readBytes: (path) => guard(async () => redactor.redactBytes(await workspace.readBytes(path))),
+            readFile: (path) => guard(async () => {
+                await learn(workspace);
+                return redactor.redact(await workspace.readFile(path));
+            }),
+            readBytes: (path) => guard(async () => {
+                await learn(workspace);
+                return redactor.redactBytes(await workspace.readBytes(path));
+            }),
             writeFile: (path, content) => guard(() => workspace.writeFile(path, content)),
             dispose: () => guard(() => workspace.dispose()),
             redact: (text) => redactor.redact(text),
@@ -196,6 +255,7 @@ export function createCredentialSupport(input: {
         mode,
         redactor,
         lookup,
+        learn,
         refresh,
         wrap,
     };
