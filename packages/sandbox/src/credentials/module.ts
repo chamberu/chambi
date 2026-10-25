@@ -43,7 +43,8 @@ function toEntry(input: unknown, index: number): Entry {
     let segments: string[] = [];
     if (entry.path !== undefined) {
         const path = typeof entry.path === 'string' ? trimRepoPath(entry.path) : '';
-        segments = path === '' ? [] : path.split('/');
+        // GitHub and GitLab paths are case-insensitive (a payload's full_name keeps the owner's case)
+        segments = path === '' ? [] : path.toLowerCase().split('/');
         if (segments.length === 0 || segments.some((s) => !SEGMENT_PATTERN.test(s) || s === '.' || s === '..')) {
             throw fail('path must be an owner, group or repository like "octo" or "octo/demo".');
         }
@@ -60,7 +61,7 @@ function toEntry(input: unknown, index: number): Entry {
  * tokens (`x-access-token`), GitLab personal, project or deploy tokens
  * (`oauth2`), any https host. A request matches an entry of its host
  * (case-insensitive) whose `path` is a prefix of the repository path in
- * whole segments (no `path`: every repository and the host itself); the
+ * whole segments, also case-insensitive (no `path`: every repository and the host itself); the
  * longest `path` wins. InvalidAgentDefinitionError for a malformed entry,
  * never echoing a token.
  */
@@ -72,7 +73,7 @@ export function staticGitCredentials(entries: readonly StaticGitCredential[]): I
 
     return {
         async get(request: GitCredentialRequest) {
-            const path = request.path === '' ? [] : request.path.split('/');
+            const path = request.path === '' ? [] : request.path.toLowerCase().split('/');
             const match = list.find((entry) => entry.host === request.host &&
                 entry.segments.length <= path.length &&
                 entry.segments.every((segment, i) => segment === path[i]));

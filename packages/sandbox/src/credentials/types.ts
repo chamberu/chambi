@@ -39,7 +39,7 @@ export interface IGitCredentials {
 export type StaticGitCredential = {
     /** The host, e.g. `github.com` or `gitlab.example.com:8443`. */
     host: string;
-    /** An owner, group or repository prefix (whole segments), e.g. `octo` or `octo/demo`; default the whole host. */
+    /** An owner, group or repository prefix (whole segments, case-insensitive), e.g. `octo` or `octo/demo`; default the whole host. */
     path?: string;
     /** Default `oauth2` on a host whose name contains `gitlab`, else `x-access-token` (GitHub). */
     username?: string;

@@ -45,6 +45,22 @@ describe('staticGitCredentials', () => {
         await expect(credentials.get(request('https://gitlab.com/octo/demo.git'))).resolves.toBeUndefined();
     });
 
+    it('matches the path case-insensitively, like GitHub and GitLab paths', async () => {
+        const credentials = staticGitCredentials([{
+            host: 'github.com',
+            path: 'acme',
+            token: TOKEN,
+        }, {
+            host: 'github.com',
+            path: 'Octo/Demo',
+            token: 'ghp_repository_token',
+        }]);
+        await expect(credentials.get(request('https://github.com/Acme/service.git'))).resolves.toMatchObject({ password: TOKEN });
+        await expect(credentials.get(request('https://github.com/ACME/Service'))).resolves.toMatchObject({ password: TOKEN });
+        await expect(credentials.get(request('https://github.com/octo/demo.git'))).resolves.toMatchObject({ password: 'ghp_repository_token' });
+        await expect(credentials.get(request('https://github.com/acme-corp/service.git'))).resolves.toBeUndefined();
+    });
+
     it('uses oauth2 for a GitLab host and keeps a given username', async () => {
         const credentials = staticGitCredentials([
             { host: 'gitlab.example.com', token: 'glpat-aaaa' },
