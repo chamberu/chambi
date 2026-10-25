@@ -12,6 +12,7 @@ import {
     assertClockOption,
     assertCreateInput,
     assertImageOption,
+    assertTmpSizeOption,
     buildWorkspaceInfo,
     collectionError,
     isExpiredAt,
@@ -102,5 +103,18 @@ describe('collectionError', () => {
         expect(error.message).toBe('garbage collection removed 2 workspaces, 2 failed (first: first)');
         expect(error.cause).toBeInstanceOf(AggregateError);
         expect((error.cause as AggregateError).errors).toEqual(failures);
+    });
+});
+
+describe('assertTmpSizeOption', () => {
+    it('takes undefined or a positive memory quantity', () => {
+        expect(() => assertTmpSizeOption(undefined)).not.toThrow();
+        expect(() => assertTmpSizeOption('256Mi')).not.toThrow();
+        expect(() => assertTmpSizeOption('2G')).not.toThrow();
+    });
+
+    it.each(['', 'big', '0', '-1Gi', 512])('refuses %j', (value) => {
+        expect(() => assertTmpSizeOption(value)).toThrow(InvalidAgentDefinitionError);
+        expect(() => assertTmpSizeOption(value)).toThrow(/^tmpSize must be a positive memory quantity like "1Gi"/);
     });
 });
