@@ -11,6 +11,7 @@ import { InvalidAgentDefinitionError } from '@chamvi/core';
 import type { Engine } from '@chamvi/core';
 import { isObject } from 'smob';
 import { provideSandboxContext } from '../context/module.ts';
+import { isTerminal } from '../manager/helpers.ts';
 import { createWorkspaceManager } from '../manager/module.ts';
 import type { IWorkspaceManager } from '../manager/types.ts';
 import { DEFAULT_SANDBOX_IMAGE } from '../provider/constants.ts';
@@ -47,6 +48,9 @@ export class SandboxModule implements IModule {
 
     protected report: AppContext['report'] | undefined;
 
+    /** Set in `engineCreated`: answers `isSettled` for the garbage collection. */
+    protected engine: Engine | undefined;
+
     constructor(options: SandboxModuleOptions = {}) {
         const {
             provider,
@@ -64,6 +68,7 @@ export class SandboxModule implements IModule {
         }
 
         const env = input ?? process.env;
+        const deployment = envString(env, 'CHAMVI_DEPLOYMENT') ?? managerOptions.deployment;
         const name = envOneOf(env, 'CHAMVI_SANDBOX_PROVIDER', SANDBOX_PROVIDER_NAMES) ??
             (typeof provider === 'string' ? provider : undefined);
 
@@ -86,12 +91,22 @@ export class SandboxModule implements IModule {
             target = this.lazy;
         }
 
-        this.manager = createWorkspaceManager({
-            ...managerOptions,
-            provider: target,
-            ...(workspaceEnv && { env: workspaceEnv }),
-            onError: managerOptions.onError ?? ((error) => this.reportError(error)),
-        });
+        try {
+            this.manager = createWorkspaceManager({
+                ...managerOptions,
+                provider: target,
+                ...(workspaceEnv && { env: workspaceEnv }),
+                ...(deployment !== undefined && { deployment }),
+                isSettled: managerOptions.isSettled ?? ((runId) => this.isSettled(runId)),
+                onError: managerOptions.onError ?? ((error) => this.reportError(error)),
+            });
+        } catch (error) {
+            // name the variable, never echo its value
+            if (envString(env, 'CHAMVI_DEPLOYMENT') !== undefined && error instanceof InvalidAgentDefinitionError && /deployment/.test(error.message)) {
+                throw new InvalidAgentDefinitionError(`CHAMVI_DEPLOYMENT ${error.message.replace(/^deployment /, '')}`);
+            }
+            throw error;
+        }
     }
 
     async setup(container: IContainer): Promise<void> {
@@ -108,6 +123,7 @@ export class SandboxModule implements IModule {
             useValue: {
                 name: SANDBOX_MODULE_NAME,
                 engineCreated: (engine: Engine) => {
+                    this.engine = engine;
                     detach = this.manager.attach(engine);
                     provideSandboxContext(engine, this.manager);
                 },
@@ -155,6 +171,13 @@ export class SandboxModule implements IModule {
             }
             throw error;
         }
+    }
+
+    /** A run that no longer exists or settled; false before the engine exists. */
+    protected async isSettled(runId: string): Promise<boolean> {
+        if (!this.engine) return false;
+        const run = await this.engine.getRun(runId);
+        return !run || isTerminal(run.status);
     }
 
     protected reportError(error: unknown): void {

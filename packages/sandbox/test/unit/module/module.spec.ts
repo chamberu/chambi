@@ -13,7 +13,7 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { Agent, Engine } from '@chamvi/core';
+import type { Agent, Engine, Run } from '@chamvi/core';
 import { injectSandboxContext, provideSandboxContext } from '@chamvi/sandbox';
 import type { ISandboxProvider, IWorkspaceManager } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
@@ -43,6 +43,9 @@ import { createRecordingLogger, rejectionOf } from '../../utils/module.ts';
 class RecordingSandboxModule extends SandboxModule {
     imported: SandboxProviderName[] = [];
 
+    /** Every find and collectGarbage call of the provider it builds. */
+    calls: Array<[string, unknown]> = [];
+
     constructor(options: SandboxModuleOptions, protected failure?: Error) {
         super(options);
     }
@@ -55,7 +58,14 @@ class RecordingSandboxModule extends SandboxModule {
         return {
             name,
             create: async () => { throw new Error('not used'); },
-            collectGarbage: async () => 0,
+            find: async (_runId, options) => {
+                this.calls.push(['find', options]);
+                return [];
+            },
+            collectGarbage: async (options) => {
+                this.calls.push(['collectGarbage', options]);
+                return 0;
+            },
         };
     }
 }
@@ -65,7 +75,7 @@ function fakeManager(events: string[]): IWorkspaceManager & { engines: unknown[]
     return {
         engines,
         acquire: async () => { throw new Error('not used'); },
-        get: () => { throw new Error('not used'); },
+        get: async () => { throw new Error('not used'); },
         release: async () => undefined,
         attach(engine) {
             engines.push(engine);
@@ -359,5 +369,46 @@ describe('sandboxModule', () => {
 
         const { workspace } = await module.manager.acquire('run-1', {});
         expect(workspace.info.provider).toBe('local');
+        await module.manager.release('run-1');
+    });
+
+    it('CHAMVI_DEPLOYMENT wins over the deployment option', async () => {
+        const module = new RecordingSandboxModule({ env: { CHAMVI_DEPLOYMENT: 'prod' }, deployment: 'ci' });
+        await harnessWith(module);
+        await expect(module.manager.get('r1')).rejects.toThrow(/create_workspace/);
+        expect(module.calls[0]).toEqual(['find', { deployment: 'prod' }]);
+
+        const other = new RecordingSandboxModule({ env: {}, deployment: 'ci' });
+        await harnessWith(other);
+        await other.manager.get('r1').catch(() => undefined);
+        expect(other.calls[0]).toEqual(['find', { deployment: 'ci' }]);
+    });
+
+    it('an invalid CHAMVI_DEPLOYMENT fails the factory', () => {
+        expect(() => sandboxModule({ env: { CHAMVI_DEPLOYMENT: 'not valid' } })).toThrow(InvalidAgentDefinitionError);
+    });
+
+    it('answers isSettled through the engine: a missing or settled run is settled', async () => {
+        const module = new RecordingSandboxModule({ env: {} });
+        const harness = await harnessWith(module);
+        await module.manager.collectGarbage();
+        const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
+        const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
+
+        const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+        expect(await isSettled('missing')).toBe(true);
+        const getRun = vi.spyOn(engine, 'getRun');
+        getRun.mockResolvedValueOnce({ status: 'waiting' } as Run);
+        expect(await isSettled('r1')).toBe(false);
+        getRun.mockResolvedValueOnce({ status: 'cancelled' } as Run);
+        expect(await isSettled('r1')).toBe(true);
+    });
+
+    it('answers isSettled false before the engine exists', async () => {
+        const module = new RecordingSandboxModule({ env: {} });
+        await module.manager.collectGarbage();
+        const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
+        const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
+        expect(await isSettled('missing')).toBe(false);
     });
 });
