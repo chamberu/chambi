@@ -30,14 +30,19 @@ export const PATH_GUARD_SCRIPT = [
     'set +f; unset IFS; PATH=$p; export PATH;; esac',
 ].join(' ');
 
-/** The package-cache variables, each a folder under the cache directory. */
+/**
+ * The package-cache variables, each a folder under the cache directory.
+ * Only caches: no home of a tool that keeps credentials or installed
+ * programs there (`CARGO_HOME` holds `credentials.toml` and `cargo
+ * install`ed binaries, so cargo keeps its home, `$HOME/.cargo`, per
+ * workspace).
+ */
 export const CACHE_FOLDERS: Readonly<Record<string, string>> = Object.freeze({
     XDG_CACHE_HOME: 'xdg',
     npm_config_cache: 'npm',
     PIP_CACHE_DIR: 'pip',
     GOMODCACHE: 'go/mod',
     GOCACHE: 'go/build',
-    CARGO_HOME: 'cargo',
     COMPOSER_CACHE_DIR: 'composer',
     MISE_DATA_DIR: 'mise',
 });
