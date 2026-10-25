@@ -5,6 +5,7 @@ export default defineConfig({
     resolve: {
         // the sources, not dist
         alias: [
+            { find: /^@chamvi\/coding$/, replacement: fileURLToPath(new URL('../../coding/src/index.ts', import.meta.url)) },
             { find: /^@chamvi\/core$/, replacement: fileURLToPath(new URL('../../core/src/index.ts', import.meta.url)) },
             { find: /^@chamvi\/sandbox$/, replacement: fileURLToPath(new URL('../../sandbox/src/index.ts', import.meta.url)) },
             { find: /^@chamvi\/sandbox-docker$/, replacement: fileURLToPath(new URL('../src/index.ts', import.meta.url)) },
