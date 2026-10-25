@@ -111,6 +111,7 @@ export function createFakeProvider(options: { clock?: IClock } = {}): FakeProvid
                 repo: input.repo,
                 ref: input.ref,
                 commit: input.repo ? FAKE_COMMIT : undefined,
+                ...(input.image !== undefined && { image: input.image }),
                 createdAt: now,
                 expiresAt: new Date(now.getTime() + (input.limits?.maxLifetimeMs ?? DEFAULT_LIMITS.maxLifetimeMs)),
             }, randomUUID());

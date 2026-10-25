@@ -44,6 +44,7 @@ describe('workspace tools', () => {
             repo: 'https://github.com/octo/demo.git',
             ref: 'v1',
             commit: FAKE_COMMIT,
+            image: null,
             expiresAt: new Date(1_000_000 + 604_800_000).toISOString(),
             reused: false,
         });

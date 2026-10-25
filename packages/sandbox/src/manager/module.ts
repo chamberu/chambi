@@ -12,6 +12,7 @@ import {
     systemClock,
 } from '@chamvi/core';
 import type { ToolSet } from 'ai';
+import { assertImage } from '../image/module.ts';
 import { DEFAULT_DEPLOYMENT } from '../provider/constants.ts';
 import type { GarbageCollectOptions, WorkspaceCreateOptions } from '../provider/types.ts';
 import { assertGitRef, normalizeRepo } from '../repo/module.ts';
@@ -36,6 +37,8 @@ import type {
 type Entry = {
     key: string;
     ref?: string;
+    /** The image asked for, else (once created or found) the one the workspace runs. */
+    image?: string;
     workspace?: IWorkspace;
     /** Set while the provider creates the workspace; a pending entry counts toward the cap. */
     pending?: Promise<IWorkspace>;
@@ -199,7 +202,8 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         const createOptions: WorkspaceCreateOptions = { runId };
         if (entry.key !== '') createOptions.repo = entry.key;
         if (entry.ref !== undefined) createOptions.ref = entry.ref;
-        if (options.image !== undefined) createOptions.image = options.image;
+        const image = entry.image ?? options.image;
+        if (image !== undefined) createOptions.image = image;
         if (options.env !== undefined) createOptions.env = options.env;
         if (options.limits !== undefined) createOptions.limits = options.limits;
         createOptions.deployment = deployment;
@@ -226,6 +230,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
                 throw new SandboxError('workspace released while it was created; call create_workspace again.');
             }
             entry.workspace = workspace;
+            entry.image ??= workspace.info.image;
             return workspace;
         })();
     };
@@ -253,6 +258,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             }
             const entry: Entry = { key, workspace };
             if (workspace.info.ref !== undefined) entry.ref = workspace.info.ref;
+            if (workspace.info.image !== undefined) entry.image = workspace.info.image;
             entries.set(key, entry);
         }
     };
@@ -303,6 +309,10 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             if (repo === undefined) throw new ValidationError('ref needs a repo.');
             assertGitRef(ref);
         }
+        const image = input.image === undefined ? undefined : assertImage(input.image);
+        if (image !== undefined && options.allowImage && !options.allowImage(image)) {
+            throw new ValidationError('image not allowed.');
+        }
         const key = repo ?? '';
 
         maybeCollectGarbage();
@@ -312,6 +322,10 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             if (existing.ref !== ref) {
                 throw new SandboxError(`This run already has a workspace of ${repo ?? 'no repository'} at ${existing.ref ?? 'the default branch'}; ` +
                     `dispose it first (dispose_workspace) to check out ${ref ?? 'the default branch'}.`);
+            }
+            if (image !== undefined && existing.image !== image) {
+                throw new SandboxError(`This run already has a workspace of ${repo ?? 'no repository'} on the image ${existing.image ?? 'of the provider'}; ` +
+                    `dispose it first (dispose_workspace) to use ${image}.`);
             }
             const workspace = existing.workspace ?? await existing.pending!;
             return { workspace, reused: true };
@@ -335,6 +349,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             runs.set(runId, entries);
         }
         const entry: Entry = { key, ref };
+        if (image !== undefined) entry.image = image;
         entries.set(key, entry);
         entry.pending = create(runId, entries, entry, input);
         return { workspace: await entry.pending, reused: false };

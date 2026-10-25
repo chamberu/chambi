@@ -51,6 +51,9 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
     if (options.allowRepo !== undefined && typeof options.allowRepo !== 'function') {
         throw new InvalidAgentDefinitionError('allowRepo must be a function.');
     }
+    if (options.allowImage !== undefined && typeof options.allowImage !== 'function') {
+        throw new InvalidAgentDefinitionError('allowImage must be a function.');
+    }
     if (options.maxWorkspacesPerRun !== undefined && (!Number.isSafeInteger(options.maxWorkspacesPerRun) || options.maxWorkspacesPerRun < 1)) {
         throw new InvalidAgentDefinitionError(`maxWorkspacesPerRun must be an integer of at least 1, got ${JSON.stringify(options.maxWorkspacesPerRun)}.`);
     }
@@ -112,6 +115,7 @@ export function toToolResult(workspace: IWorkspace, reused: boolean): WorkspaceT
         repo: info.repo ?? null,
         ref: info.ref ?? null,
         commit: info.commit ?? null,
+        image: info.image ?? null,
         expiresAt: info.expiresAt.toISOString(),
         reused,
     };
