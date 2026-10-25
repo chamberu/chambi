@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.1](https://github.com/chamvi/chamvi/compare/v0.2.0...v0.2.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **app:** mark the default provider as v4 so string models are not converted twice ([#41](https://github.com/chamvi/chamvi/issues/41)) ([5780984](https://github.com/chamvi/chamvi/commit/5780984f9ec66790af1bf2c5b3a7b4adff077039))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @chamvi/channel-cron bumped from ^0.2.0 to ^0.2.1
+    * @chamvi/core bumped from ^0.2.0 to ^0.2.1
+    * @chamvi/http bumped from ^0.2.0 to ^0.2.1
+    * @chamvi/store-typeorm bumped from ^0.2.0 to ^0.2.1
+  * devDependencies
+    * @chamvi/test-kit bumped from ^0.2.0 to ^0.2.1
+
 ## [0.2.0](https://github.com/chamvi/chamvi/compare/app-v0.1.0...app-v0.2.0) (2026-10-25)
 
 
