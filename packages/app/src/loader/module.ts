@@ -33,6 +33,7 @@ import {
     defaultExportOf,
     isDirectory,
     isFile,
+    isHashIgnored,
     messageOf,
     readFreshModule,
     relativize,
@@ -164,8 +165,9 @@ function forgetRequired(dir: string): void {
 
 /**
  * The folder's content hash: sha256 (hex) over every file below `dir`
- * (dot-entries skipped) by relative POSIX path, each as
- * `path + '\0' + bytes + '\0'`.
+ * (dot-entries and the docs and editor leftovers of HASH_IGNORE_PATTERNS
+ * skipped, never a file the loader can import) by relative POSIX path, each
+ * as `path + '\0' + bytes + '\0'`.
  */
 export async function hashAgentFolder(dir: string): Promise<string> {
     const found = await locateMany('**/*', {
@@ -175,6 +177,7 @@ export async function hashAgentFolder(dir: string): Promise<string> {
     });
     const files = found
         .map((info) => ({ path: info.path, key: relative(dir, info.path).split(sep).join('/') }))
+        .filter((file) => !isHashIgnored(file.key))
         .sort((a, b) => compareCodePoints(a.key, b.key));
     const hash = createHash('sha256');
     for (const file of files) {

@@ -16,6 +16,7 @@ import { readFile, stat } from 'node:fs/promises';
 import {
     basename,
     dirname,
+    extname,
     join,
     sep,
 } from 'node:path';
@@ -24,7 +25,7 @@ import { InvalidAgentDefinitionError } from '@chamvi/core';
 import { createJiti } from 'jiti';
 import type { Jiti } from 'jiti';
 import { isObject } from 'smob';
-import { PINNED_PACKAGE_SCOPES } from './constants.ts';
+import { HASH_IGNORE_PATTERNS, HASH_IMPORTABLE_EXTENSIONS, PINNED_PACKAGE_SCOPES } from './constants.ts';
 
 let moduleJiti: Jiti | undefined;
 
@@ -205,4 +206,15 @@ export function defaultExportOf(mod: unknown, file: string): unknown {
         return (mod as { default: unknown }).default;
     }
     throw new InvalidAgentDefinitionError(`${file}: has no default export.`);
+}
+
+/**
+ * Whether the folder hash leaves out `file` (a relative POSIX path): its
+ * basename matches HASH_IGNORE_PATTERNS and the loader cannot import it.
+ */
+export function isHashIgnored(file: string): boolean {
+    const name = file.slice(file.lastIndexOf('/') + 1);
+    const extension = extname(name).toLowerCase();
+    if ((HASH_IMPORTABLE_EXTENSIONS as readonly string[]).includes(extension)) return false;
+    return HASH_IGNORE_PATTERNS.some((pattern) => pattern.test(name));
 }
