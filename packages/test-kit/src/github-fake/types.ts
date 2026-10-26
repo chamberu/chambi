@@ -52,6 +52,7 @@ export type FakeGithub = {
     issues: Map<string, Record<string, unknown>>;
     comments: Map<string, Array<Record<string, unknown>>>;
     labels: Map<string, Array<Record<string, unknown>>>;
+    /** Per `owner/repo`, oldest first: the last one is the latest, the list route answers newest first. */
     releases: Map<string, Array<Record<string, unknown>>>;
     files: Map<string, Record<string, unknown>>;
     pulls: Map<string, Record<string, unknown>>;

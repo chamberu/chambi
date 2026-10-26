@@ -16,5 +16,8 @@ export type {
     GithubIssueSearch,
     GithubLabel,
     GithubPullRequest,
+    GithubComparison,
     GithubRelease,
+    GithubReleaseList,
+    GithubReleaseNote,
 } from './types.ts';

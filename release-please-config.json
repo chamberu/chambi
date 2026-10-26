@@ -21,6 +21,7 @@
         "packages/sandbox-local": {"component": "sandbox-local"},
         "packages/store-typeorm": {"component": "store-typeorm"},
         "packages/test-kit": {"component": "test-kit"},
+        "packages/tool-web": {"component": "tool-web"},
         "packages/ui": {"component": "ui"}
     },
     "plugins": [
@@ -48,6 +49,7 @@
                 "sandbox-local",
                 "store-typeorm",
                 "test-kit",
+                "tool-web",
                 "ui"
             ]
         }

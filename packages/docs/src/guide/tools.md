@@ -26,6 +26,14 @@ Every tool built with `defineTool()` gets `context.run.signal` (a factory gets i
 
 A recovered run repeats the step that was in progress when the process died. A plain tool that posts a comment would post it again. Use [`defineEffectTool()`](/guide/effect-tools) for every tool that changes something outside the run.
 
+## Web research tools
+
+[`@chamvi/tool-web`](/reference/tool-web) gives an agent `web_fetch`: any public page as markdown (or text, or the raw body), a registry document such as `https://registry.npmjs.org/<name>` as JSON. It runs in the chamvi process through a [hapic](https://github.com/tada5hi/hapic) client that takes the proxy from `HTTP_PROXY`/`HTTPS_PROXY`, and reaches public addresses only: every URL and redirect target is resolved and refused when it points at a loopback, private, link-local or metadata address (`allowUrl` can open an internal host). Release notes between two versions of a GitHub project come from `@chamvi/github`'s `github_list_releases` and `github_compare`.
+
+<<< @/snippets/tool-web.ts#agent
+
+Everything the tool returns is written by strangers, and a page can carry instructions aimed at the model. The tool description marks results as untrusted; say so in the instructions too, and keep side effects behind [approvals](/guide/approvals) when an agent reads the web.
+
 ## Restricting tools per invoker
 
 A run started through `@chamvi/http` (REST or MCP) carries its **invoker**, `run.trigger.invoker`: `{ id, kind, name?, permissions }` of the authenticated principal (`kind` is the authenticator's label: `staticTokens()` sets `token` and `authup()` sets `authup`; `oidc()` keeps the kind its `principal` mapper returns, `oidc` in these docs). Cron and webhook runs have none. An agent's `toolPolicy(toolName, { run })` decides per tool whether the run may use it, and a refused tool is not offered to the model at all.

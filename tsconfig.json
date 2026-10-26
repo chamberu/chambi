@@ -21,6 +21,7 @@
             "@chamvi/sandbox-local": ["./packages/sandbox-local/src/index.ts"],
             "@chamvi/store-typeorm": ["./packages/store-typeorm/src/index.ts"],
             "@chamvi/test-kit": ["./packages/test-kit/src/index.ts"],
+            "@chamvi/tool-web": ["./packages/tool-web/src/index.ts"],
             "@chamvi/ui": ["./packages/ui/src/index.ts"],
             "@chamvi/ui/module": ["./packages/ui/src/module/index.ts"]
         }

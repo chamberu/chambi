@@ -16,6 +16,7 @@ chamvi is built milestone by milestone, each defined by one real agent that has 
 | `@chamvi/sandbox-local`, `@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s` | Workspace providers: a temporary directory (development), a container per workspace, a pod per workspace (root inside, strict at the edge, a hardened mode, a shared package cache); the `ghcr.io/chamvi/sandbox-dev` image with mise for any toolchain |
 | `@chamvi/channel-openclaw` | The OpenClaw channel: messages and approval requests into an OpenClaw chat through its hooks endpoint, with an `Idempotency-Key`. See [OpenClaw](/deployment/openclaw) |
 | `@chamvi/coding` | Coding tools (`read_file`, `write_file`, `edit_file`, `grep`, `list_files`, `bash`, `git_diff`) over a run's workspaces and the `ICodingBackend` contract |
+| `@chamvi/tool-web` | `web_fetch` behind an address check, through a hapic client with the proxy from the environment. See [Web research tools](/guide/tools#web-research-tools) |
 | `@chamvi/ui` | Vue 3 dashboard served by `uiRoutes()`: an agents overview, runs started from the agent page, runs with live steps, an approvals inbox, agent state, schedules |
 | `@chamvi/app`, `@chamvi/cli` | `createApp()` with orkos modules booted from env (store, engine, channels, HTTP, GitHub, sandbox, OpenClaw, UI, authup) and the `chamvi` bin with `dev`, `build`, `start`, `run-job` and `migrate`. See [Apps & Modules](/guide/app) |
 

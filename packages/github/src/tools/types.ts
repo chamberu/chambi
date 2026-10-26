@@ -85,6 +85,48 @@ export type GithubRelease = {
     body: string | null;
 } | { none: true };
 
+/** One release of `github_list_releases`. */
+export type GithubReleaseNote = {
+    tag: string;
+    name: string | null;
+    publishedAt: string | null;
+    url: string;
+    prerelease: boolean;
+    /** Cut at RELEASE_BODY_MAX_CHARS characters. */
+    body: string | null;
+    bodyTruncated: boolean;
+};
+
+/** `github_list_releases`: oldest first; `truncated` when more matched than RELEASES_MAX or the pages read did not reach `from`. */
+export type GithubReleaseList = {
+    releases: GithubReleaseNote[];
+    truncated: boolean;
+};
+
+/** `github_compare`: commits oldest first, both lists capped. */
+export type GithubComparison = {
+    status: string;
+    aheadBy: number;
+    behindBy: number;
+    totalCommits: number;
+    url: string;
+    commits: Array<{
+        sha: string;
+        /** The first line, cut at 300 characters. */
+        message: string;
+        author: string | null;
+        date: string | null;
+    }>;
+    files: Array<{
+        path: string;
+        status: string;
+        additions: number;
+        deletions: number;
+    }>;
+    /** True when commits were cut or the files reached GitHub's cap of 300 (more may exist). */
+    truncated: boolean;
+};
+
 /** `github_create_comment`: the posted (or found) comment. */
 export type GithubComment = {
     id: number;

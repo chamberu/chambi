@@ -1,0 +1,77 @@
+{
+    "name": "@chamvi/tool-web",
+    "version": "0.2.1",
+    "type": "module",
+    "description": "A web fetch tool for chamvi agents: public pages as markdown through a hapic client, with an address check against private and metadata hosts.",
+    "author": {
+        "name": "Peter Placzek",
+        "email": "contact@tada5hi.net",
+        "url": "https://github.com/tada5hi"
+    },
+    "homepage": "https://chamvi.dev",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/chamvi/chamvi.git",
+        "directory": "packages/tool-web"
+    },
+    "main": "dist/index.mjs",
+    "types": "dist/index.d.mts",
+    "exports": {
+        "./package.json": "./package.json",
+        ".": {
+            "types": "./dist/index.d.mts",
+            "import": "./dist/index.mjs"
+        }
+    },
+    "files": [
+        "dist",
+        "NOTICE"
+    ],
+    "engines": {
+        "node": ">=22.0.0"
+    },
+    "scripts": {
+        "build:types": "tsc --noEmit -p tsconfig.build.json",
+        "build:js": "tsdown",
+        "build": "npm run build:types && npm run build:js",
+        "typecheck": "tsc --noEmit -p tsconfig.json",
+        "test": "vitest --config test/vitest.config.ts --run",
+        "test:coverage": "vitest --config test/vitest.config.ts --run --coverage"
+    },
+    "nx": {
+        "targets": {
+            "test": {
+                "dependsOn": [
+                    "build"
+                ]
+            }
+        }
+    },
+    "keywords": [
+        "chamvi",
+        "web",
+        "fetch",
+        "registry",
+        "tools",
+        "agent"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "license": "Apache-2.0",
+    "dependencies": {
+        "hapic": "^3.0.2",
+        "mdream": "^2.0.3",
+        "smob": "^1.6.2"
+    },
+    "devDependencies": {
+        "@chamvi/core": "^0.2.1",
+        "@chamvi/http": "^0.2.1",
+        "@chamvi/test-kit": "^0.2.1",
+        "ai": "^7.0.146"
+    },
+    "peerDependencies": {
+        "@chamvi/core": "^0.2.1",
+        "ai": "^7"
+    }
+}
