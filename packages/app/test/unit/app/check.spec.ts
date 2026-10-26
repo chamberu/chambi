@@ -225,6 +225,25 @@ describe('App.check', () => {
         expect(error.code).toBe('invalid_agent_definition');
     });
 
+    it('rejects a code agent with a cron subscription croner refuses, as start does', async () => {
+        const nightly = defineAgent({
+            name: 'nightly',
+            model: textModel(),
+            instructions: 'x',
+            channels: [{
+                channel: 'cron',
+                id: 'cron:0 0 * * 1/2',
+                options: { expression: '0 0 * * 1/2', overlap: 'skip' },
+            }],
+        });
+        const { app } = build({ agents: [nightly] });
+        const { env } = await envFor();
+
+        const error = await rejectionOf(app.check({ env }));
+        expect(error.code).toBe('invalid_agent_definition');
+        expect(error.message).toContain('0 0 * * 1/2');
+    });
+
     it('rejects without CHAMVI_TOKENS outside dev', async () => {
         const { app } = build({ agents: [triage] });
         const { env } = await envFor();

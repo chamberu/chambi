@@ -34,7 +34,9 @@ import { createAgentsWatcher } from './watcher.ts';
  * `stopping` or `teardown`, awaiting a reload in flight. A job never cancels:
  * a revision conflict of the job's own agent fails the job
  * (InvalidRunStateError), another agent's is an issue. A check
- * (`context.check`) only loads and checks, writing nothing.
+ * (`context.check`) only loads and checks, writing nothing; it also runs
+ * every `AGENT_CHECKS` contribution over the code agents, since a check
+ * never reaches `engine.start()` (the cron channel's check of them).
  */
 export class AgentsModule implements IModule {
     readonly name: string = ModuleName.AGENTS;
@@ -81,7 +83,17 @@ export class AgentsModule implements IModule {
         const context = container.resolve(AppToken.CONTEXT);
         const config = container.resolve(AppToken.CONFIG);
         const { root } = this;
-        if (context.mode === 'migrate' || root === undefined) {
+        if (context.mode === 'migrate') {
+            return;
+        }
+
+        if (context.check) {
+            // a start runs these on code agents in engine.start() (the cron channel), which a check never calls
+            const check = createAgentCheck(container);
+            for (const agent of context.agents) check(agent);
+        }
+
+        if (root === undefined) {
             return;
         }
 
