@@ -72,6 +72,8 @@ function run(
                 code: error ? Number((error as { code?: number }).code ?? 1) : 0,
             });
         });
+        // a script that refuses exits before reading its stdin; the write then fails with EPIPE
+        child.stdin!.on('error', () => {});
         child.stdin!.end(stdin);
     });
 }

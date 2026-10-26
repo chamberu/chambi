@@ -44,6 +44,8 @@ describe('public api', () => {
         'tryInject',
         'ContextNotProvidedError',
         'AgentNotFoundError',
+        'checkAgentModel',
+        'resolveModel',
     ])('exports %s', (name) => {
         expect(core).toHaveProperty(name);
         expect(core[name as keyof typeof core]).toBeTypeOf('function');

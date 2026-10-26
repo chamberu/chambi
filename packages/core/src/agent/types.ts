@@ -5,8 +5,9 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { LanguageModel, OutputInterface, ToolSet } from 'ai';
+import type { OutputInterface, ToolSet } from 'ai';
 import type { ChannelSubscription } from '../channel/types.ts';
+import type { ModelRef } from '../model/types.ts';
 import type { Budget, RunContext } from '../run/types.ts';
 import type { StateSchema } from '../state/types.ts';
 import type { ToolContext } from '../tool/types.ts';
@@ -61,7 +62,11 @@ export type AgentHooks = {
 
 export type AgentDefinition<S extends StateSchema = StateSchema> = {
     name: string;
-    model: LanguageModel;
+    /**
+     * `'<provider>/<model id>'` (resolved through EngineOptions.models) or a
+     * LanguageModel object; without it the agent uses EngineOptions.model.
+     */
+    model?: ModelRef;
     instructions: string;
     /**
      * The channels that start the agent's runs (e.g. `cron.on('0 8 * * 1-5')`);

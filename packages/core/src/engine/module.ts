@@ -36,6 +36,9 @@ import type {
     Usage,
     WaitPoint,
 } from '../run/types.ts';
+import { MODEL_CONTEXT } from '../model/constants.ts';
+import { checkAgentModel, checkDefaultModel } from '../model/module.ts';
+import type { IModelResolver, ModelContext, ModelRef } from '../model/types.ts';
 import type { IStore } from '../store/types.ts';
 import { idempotencyScope, toInvoker } from '../trigger/helpers.ts';
 import { assertTriggerKey } from '../trigger/key.ts';
@@ -96,6 +99,12 @@ export class Engine implements IContextProvider {
 
     protected readonly claimTtlMs: number;
 
+    /** The default model of agents without one (EngineOptions.model). */
+    protected readonly model?: ModelRef;
+
+    /** Resolves string model refs (EngineOptions.models). */
+    protected readonly models?: IModelResolver;
+
     protected readonly listeners = new Set<(e: EngineEvent) => void>();
 
     protected readonly onError: (error: unknown, run?: Run) => void;
@@ -148,6 +157,15 @@ export class Engine implements IContextProvider {
             const duplicate = opts.agents.find((a) => seen.size === seen.add(a.name).size);
             throw new InvalidAgentDefinitionError(`Agent name "${duplicate?.name}" is used more than once.`);
         }
+        this.model = opts.model;
+        this.models = opts.models;
+        checkDefaultModel({ model: this.model, models: this.models });
+        // set directly: the key is module-private, so no provide() can collide
+        this.provided.set(MODEL_CONTEXT, {
+            model: this.model,
+            models: this.models,
+            agentModel: (name: string) => this.agents.get(name)?.definition.model,
+        } satisfies ModelContext);
         for (const agent of opts.agents) this.assertRegistrable(agent);
         // eslint-disable-next-line no-console
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));
@@ -856,6 +874,8 @@ export class Engine implements IContextProvider {
             engine: this,
             run,
             agent,
+            model: agent.definition.model ?? this.model,
+            models: this.models,
             store: this.store,
             clock: this.clock,
             signal,
@@ -988,6 +1008,8 @@ export class Engine implements IContextProvider {
 
     /** Refuses an agent the engine cannot run: one subscribing to a channel it does not have. */
     protected assertRegistrable(agent: Agent): void {
+        // first: putAgent refuses before syncing, the lock and any store write
+        checkAgentModel(agent, { model: this.model, models: this.models });
         for (const subscription of agent.definition.channels ?? []) {
             if (!this.channels.has(subscription.channel)) {
                 throw new InvalidAgentDefinitionError(`Agent "${agent.name}" subscribes to unknown channel "${subscription.channel}".`);
