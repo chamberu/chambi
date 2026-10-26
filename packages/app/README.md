@@ -81,7 +81,7 @@ export default createApp({
 | `stop()` | first SIGTERM or SIGINT | memoized; aborts a start still setting up, tears every module down |
 | `runJob({ agent, subscription?, env? })` | `chamvi run-job <agent> [subscription]` | fires one cron subscription once and waits for its run (no channel started, no HTTP); `{ runId?, status, exitCode }` |
 | `migrate({ env? })` | `chamvi migrate` | migrates the store (`DATABASE_URL` required) and closes it |
-| `check({ env?, dev? })` | `chamvi start --check` | the start path up to its start steps (config, store connection, model settings, every module, the agent folders' load and checks), then the teardown; writes nothing to the store, starts nothing, runs nothing; `{ issues }` (the agent folders' load issues) |
+| `check({ env?, dev? })` | `chamvi start --check` | the start path up to its start steps (config, store connection, model settings, every module, the agent folders' load and checks), then the teardown; writes nothing to the store, starts nothing, runs nothing (of the lifecycle hooks only `engineCreated` and `drained` run); `{ issues }` (the agent folders' load issues) |
 
 `env` defaults to `process.env`. An app runs one lifecycle (`check` counts as one); a second one rejects with `app_in_use`. `isApp(value)` recognizes an app, also one of another installed copy of the package.
 

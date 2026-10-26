@@ -18,11 +18,12 @@ import {
 } from 'vitest';
 import {
     APP_ERROR_CODE,
+    AppToken,
     configModule,
     createApp,
     storeModule,
 } from '@chamvi/app';
-import type { AppCheckResult, IApp } from '@chamvi/app';
+import type { AppCheckResult, IApp, IModule } from '@chamvi/app';
 import {
     agentFile,
     provider,
@@ -68,7 +69,8 @@ function recordingStore(store: MemoryStore): { store: IStore; writes: string[] }
 function build(options: {
     agents?: Agent[]; 
     store?: IStore; 
-    clock?: ControllableClock 
+    clock?: ControllableClock;
+    modules?: IModule[];
 } = {}) {
     const clock = options.clock ?? new ControllableClock(START);
     const logger = createRecordingLogger(clock);
@@ -76,7 +78,7 @@ function build(options: {
     const app = createApp({
         agents: options.agents ?? [],
         models: { test: provider() },
-        modules: [configModule({ clock, logger }), storeModule({ store })],
+        modules: [configModule({ clock, logger }), storeModule({ store }), ...options.modules ?? []],
     });
     apps.push(app);
     return {
@@ -266,6 +268,29 @@ describe('App.check', () => {
 
         const error = await rejectionOf(app.check({ env }));
         expect(error.code).toBe('invalid_agent_definition');
+    });
+
+    it('runs the paired engineCreated and drained hooks, never started or stopping', async () => {
+        const phases: string[] = [];
+        const hooks: IModule = {
+            name: 'hooks',
+            setup: async (container) => {
+                container.registerMany(AppToken.LIFECYCLE_HOOKS, {
+                    useValue: {
+                        name: 'probe',
+                        engineCreated: () => { phases.push('engineCreated'); },
+                        started: () => { phases.push('started'); },
+                        stopping: () => { phases.push('stopping'); },
+                        drained: () => { phases.push('drained'); },
+                    },
+                });
+            },
+        };
+        const { app } = build({ agents: [triage], modules: [hooks] });
+        const { env } = await envFor();
+
+        await app.check({ env });
+        expect(phases).toEqual(['engineCreated', 'drained']);
     });
 
     it('does not wait the readiness delay', async () => {

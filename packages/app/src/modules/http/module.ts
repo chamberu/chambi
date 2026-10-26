@@ -99,8 +99,11 @@ export class HttpModule implements IModule {
             closeTimeoutMs: config.http.closeTimeoutMs,
             onError: (error) => context.report(error, { phase: 'shutdown' }),
         });
-        // the first callback, before the http app's own: the stopping hooks (the purge timer); the drain stops the channels
-        shutdown.onShutdown(() => runHooks(container, 'stopping'));
+        // the first callback, before the http app's own: the stopping hooks (the purge timer); the drain stops the channels.
+        // A check never ran `started`, so it never runs `stopping` either
+        if (!context.check) {
+            shutdown.onShutdown(() => runHooks(container, 'stopping'));
+        }
         this.shutdown = shutdown;
         container.register(AppToken.SHUTDOWN, { useValue: shutdown });
 

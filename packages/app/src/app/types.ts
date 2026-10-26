@@ -78,7 +78,8 @@ export interface IApp {
      * onReady and the agent folders' load and checks, then the teardown; no
      * engine or channel start, no server, no run, no store write (no
      * migration, marker, cancel or lock). Resolves the agent folders' load
-     * issues; a configuration error rejects (`invalid_agent_definition`), a
+     * issues; the lifecycle hooks `engineCreated` and `drained` run, never
+     * `started` or `stopping`. A configuration error rejects (`invalid_agent_definition`), a
      * store failure with its own code (`store_not_migrated`, a connection
      * error). The app's one lifecycle, like start().
      */

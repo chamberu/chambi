@@ -49,7 +49,8 @@ export type AppContext = {
     agents: readonly Agent[];
     /**
      * `IApp.check()` (mode `start`): every module sets up and checks as for a
-     * start, but nothing writes the store and no start step runs.
+     * start, but nothing writes the store and no start step runs. Of the
+     * lifecycle hooks only the paired `engineCreated` and `drained` run.
      */
     check?: boolean;
     /** `IApp.runJob()` (mode `job`): the agent the job runs. */
@@ -86,13 +87,13 @@ export type GitCredentialSource = {
 
 export interface ILifecycleHook {
     readonly name: string;
-    /** After `new Engine(...)`, before `engine.start()` (start and job). */
+    /** After `new Engine(...)`, before `engine.start()` (start, job and a check). */
     engineCreated?(engine: Engine): void | Promise<void>;
     /** start only: after engine.start() (which starts the channels), before serve(). */
     started?(): void | Promise<void>;
     /** start only: the shutdown's first step, before the closers, the server close and the drain (which stops the channels). */
     stopping?(): void | Promise<void>;
-    /** After the engine drained (start and job), before the store closes. */
+    /** After the engine drained (start, job and a check), before the store closes. */
     drained?(): void | Promise<void>;
 }
 
