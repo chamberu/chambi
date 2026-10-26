@@ -90,7 +90,7 @@ The tools are plain tools you did not write, so the gate lives in the agent's `b
 | `bash_kill` | `{ job, workspace? }` | `{ job, status, exitCode? }`: stops the job and every process it started |
 | `git_diff` | `{ staged?, path?, workspace? }` | `{ status, diff, truncated }`: `git status --short` and the unified diff (of the index with `staged`) |
 
-`git_diff`, `list_files` and `grep` (with git grep) read paths literally, so a path like `:!src` names a file and is never pathspec magic. A model mistake (an unknown file, an `oldString` that is missing or ambiguous, a bad path) comes back as a tool error it can correct; a broken sandbox is a `SandboxError` tool error, never a failed run.
+`git_diff`, `list_files` and `grep` (with git grep) read paths literally, so a path like `:!src` names a file and is never pathspec magic. `bash` keeps its state through an `EXIT` trap: a command that sets its own `EXIT` trap replaces it, so that call's working directory and exports are not kept. On a manager with git credentials the edit tools read the raw file (`IWorkspace.readFileRaw`), so editing a file that holds an issued token never writes `[redacted]` into it; their errors never echo file text. A model mistake (an unknown file, an `oldString` that is missing or ambiguous, a bad path) comes back as a tool error it can correct; a broken sandbox is a `SandboxError` tool error, never a failed run.
 
 ## Workspaces
 

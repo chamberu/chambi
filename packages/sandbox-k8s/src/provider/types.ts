@@ -32,8 +32,7 @@ export type KubernetesSandboxOptions = {
     /**
      * Pull policy of every workspace image (the provider's, the manager's
      * and one a run asked for through `create_workspace({ image })`):
-     * default `'IfNotPresent'`, `'Always'` for a mutable tag, `'Never'` for
-     * pre-pulled images only.
+     * default `'IfNotPresent'`, `'Always'` for a mutable tag.
      */
     imagePullPolicy?: ImagePullPolicy;
     /**
