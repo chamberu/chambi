@@ -18,6 +18,7 @@ import {
 } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
 import type { BashResult, ReadFileResult } from '@chamvi/coding';
+import { codingTools } from '@chamvi/coding';
 import type { GitFixture } from '@chamvi/test-kit';
 import { createFixture, setupCoding } from '../../utils/setup.ts';
 import type { CodingSetup } from '../../utils/setup.ts';
@@ -31,6 +32,11 @@ beforeEach(async () => { s = await setupCoding(fixture); });
 afterEach(async () => { await s.cleanup(); });
 
 describe('bash', () => {
+    it('warns that an own EXIT trap drops the kept state', () => {
+        const tools = codingTools({ get: async () => s.workspace });
+        expect(tools.bash!.description).toContain('EXIT trap');
+    });
+
     it('runs a command and reports the exit code', async () => {
         const result = await s.call<BashResult>('bash', { command: 'echo hi && exit 4' });
         expect(result).toMatchObject({
