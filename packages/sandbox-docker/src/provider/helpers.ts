@@ -11,6 +11,7 @@ import {
     CACHE_ENV,
     ROOT_CAPABILITIES,
     SANDBOX_ENV,
+    SLEEP_UNTIL_SCRIPT,
     WORKSPACE_HOME,
     WORKSPACE_ROOT,
     abortedCreate,
@@ -27,8 +28,7 @@ import {
 } from '@chamvi/sandbox';
 import type Dockerode from 'dockerode';
 import { isObject } from 'smob';
-import { createHash } from 'node:crypto';
-import { CONTAINER_NAME_PREFIX, DEFAULT_CACHE_VOLUME } from './constants.ts';
+import { CONTAINER_NAME_PREFIX } from './constants.ts';
 import type { ContainerOptionsInput, DockerSandboxOptions } from './types.ts';
 
 const PULL_POLICIES = ['missing', 'always', 'never'];
@@ -73,35 +73,19 @@ export function assertDockerOptions(options: DockerSandboxOptions): void {
         throw new InvalidAgentDefinitionError('readOnlyRoot must be a boolean.');
     }
     const { cache } = options;
-    if (cache !== undefined && cache !== false) {
-        if (!isObject(cache)) {
-            throw new InvalidAgentDefinitionError('cache must be false or { volume? }.');
-        }
-        if (cache.volume !== undefined && (typeof cache.volume !== 'string' || !VOLUME_NAME.test(cache.volume))) {
-            throw new InvalidAgentDefinitionError('cache.volume must be a Docker volume name (letters, digits, _ . -).');
-        }
+    if (
+        cache !== undefined &&
+        (!isObject(cache) || typeof cache.volume !== 'string' || !VOLUME_NAME.test(cache.volume))
+    ) {
+        throw new InvalidAgentDefinitionError(
+            'cache must be { volume } naming a Docker volume (letters, digits, _ . -); ' +
+            'without it every workspace gets an anonymous /cache.',
+        );
     }
     assertTmpSizeOption(options.tmpSize);
     assertClockOption(clock);
     assertSandboxEnv(options.env);
     resolveLimits(options.limits);
-}
-
-/**
- * The cache volume a provider mounts without `cache.volume`:
- * `DEFAULT_CACHE_VOLUME` for root, else `<DEFAULT_CACHE_VOLUME>-<user>`
- * (the name before any `:group`, or 16 hex characters of its sha256 when it
- * is no volume name). A root workspace leaves root-owned folders deep in the
- * cache (npm's `_cacache`, mise's installs), which `openCache` cannot open,
- * so a non-root user never shares the root volume by default.
- */
-export function defaultCacheVolume(user: string): string {
-    if (isRootUser(user)) return DEFAULT_CACHE_VOLUME;
-    const name = user.split(':')[0] as string;
-    const suffix = /^[A-Za-z0-9_.-]{1,64}$/.test(name) ?
-        name :
-        createHash('sha256').update(name).digest('hex').slice(0, 16);
-    return `${DEFAULT_CACHE_VOLUME}-${suffix}`;
 }
 
 /** True when a create failed because the image is not present (a 404 also answers a missing network). */
@@ -177,10 +161,14 @@ export async function pullImage(docker: Dockerode, image: string, signal?: Abort
  * then with only the `ROOT_CAPABILITIES`, else none), a writable root unless
  * `readOnlyRoot`, no-new-privileges, docker-init as pid 1 (it reaps the
  * orphans of any image), pid/memory/cpu limits, a `/tmp` tmpfs,
- * anonymous `/workspace` and `WORKSPACE_HOME` volumes, the cache at `/cache` (the shared named
- * volume, or an anonymous one) and only `SANDBOX_ENV`, `CACHE_ENV` and the
- * configured `env` (never the host's). No host mount, no privileged mode. It sleeps forever: its lifetime follows the
- * run, and only the garbage collection (expiry, settled run) removes it.
+ * anonymous `/workspace` and `WORKSPACE_HOME` volumes, the cache at `/cache`
+ * (an anonymous volume, or the named `cache.volume`) and only `SANDBOX_ENV`,
+ * `CACHE_ENV` and the configured `env` (never the host's). No host mount, no
+ * privileged mode. The image's entrypoint is replaced: it sleeps until
+ * `expiresAt` (`SLEEP_UNTIL_SCRIPT`, an absolute deadline, so a container
+ * `find` starts again after a restart stops at the same time), so it stops
+ * itself even when no collection runs; the garbage collection (expiry,
+ * settled run) removes it.
  * Its labels hold everything `find` rebuilds the info from.
  */
 export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.ContainerCreateOptions {
@@ -195,7 +183,10 @@ export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.C
     return {
         name: `${CONTAINER_NAME_PREFIX}${input.id}`,
         Image: input.info.image,
-        Cmd: ['sleep', 'infinity'],
+        // the image's entrypoint is skipped (an image whose entrypoint is a
+        // command, not an init, would never sleep); Init adds docker-init
+        Entrypoint: [],
+        Cmd: ['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', String(Math.ceil(input.info.expiresAt.getTime() / 1000))],
         User: input.user,
         WorkingDir: WORKSPACE_ROOT,
         Env: Object.entries(env).map(([key, value]) => `${key}=${value}`),

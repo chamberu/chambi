@@ -9,6 +9,7 @@ import {
     CACHE_ENV,
     ROOT_CAPABILITIES,
     SANDBOX_ENV,
+    SLEEP_UNTIL_SCRIPT,
     repoKey,
 } from '@chamvi/sandbox';
 import {
@@ -17,7 +18,14 @@ import {
     expect,
     it,
 } from 'vitest';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { buildContainerOptions } from '../../../src/provider/helpers.ts';
+
+const run = promisify(execFile);
+
+// the expiry of input(): 2026-01-01T00:10:00Z in epoch seconds
+const DEADLINE = String(Date.UTC(2026, 0, 1, 0, 10) / 1000);
 
 function input(overrides: Partial<Parameters<typeof buildContainerOptions>[0]> = {}) {
     return {
@@ -33,7 +41,7 @@ function input(overrides: Partial<Parameters<typeof buildContainerOptions>[0]> =
         network: 'bridge',
         user: '0:0',
         readOnlyRoot: false,
-        cacheVolume: 'chamvi-sandbox-cache' as string | undefined,
+        cacheVolume: undefined as string | undefined,
         tmpSize: '1Gi',
         env: { FOO: 'bar' },
         limits: {
@@ -52,13 +60,13 @@ describe('buildContainerOptions', () => {
         delete process.env.CHAMVI_SECRET_PROBE;
     });
 
-    it('builds a root container with a writable root, the package-manager capabilities and the shared cache', () => {
+    it('builds a root container with a writable root, the package-manager capabilities and an anonymous cache', () => {
         const options = buildContainerOptions(input());
 
         expect(options.name).toBe('chamvi-ws-w1');
         expect(options.Image).toBe('img');
-        // the lifetime follows the run: only the garbage collection removes it
-        expect(options.Cmd).toEqual(['sleep', 'infinity']);
+        // it stops itself at the workspace's lifetime; the garbage collection removes it
+        expect(options.Cmd).toEqual(['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', DEADLINE]);
         expect(options.User).toBe('0:0');
         expect(options.WorkingDir).toBe('/workspace');
         expect(options.Env).toEqual([
@@ -101,7 +109,7 @@ describe('buildContainerOptions', () => {
                 Target: '/home/sandbox',
             }, {
                 Type: 'volume',
-                Source: 'chamvi-sandbox-cache',
+                Source: '',
                 Target: '/cache',
             }],
             AutoRemove: false,
@@ -177,7 +185,51 @@ describe('buildContainerOptions', () => {
             Target: '/cache',
         });
         // the variables still point into /cache, which exists either way
-        expect(options.Env).toContain('MISE_DATA_DIR=/cache/mise');
+        expect(options.Env).toContain('npm_config_cache=/cache/npm');
+        // toolchains stay per workspace, never in a cache volume
+        expect(options.Env?.some((entry) => entry.startsWith('MISE_DATA_DIR='))).toBe(false);
+    });
+
+    it('sleeps until an absolute deadline, so a restarted container still stops at expiresAt', async () => {
+        const now = Math.floor(Date.now() / 1000);
+        // a restart after the expiry: it exits at once
+        const started = Date.now();
+        await run('sh', ['-c', SLEEP_UNTIL_SCRIPT, 'sh', String(now - 60)]);
+        expect(Date.now() - started).toBeLessThan(1_000);
+        // a restart before it: only the time left
+        const waited = Date.now();
+        await run('sh', ['-c', SLEEP_UNTIL_SCRIPT, 'sh', String(now + 2)]);
+        expect(Date.now() - waited).toBeGreaterThanOrEqual(500);
+        expect(Date.now() - waited).toBeLessThan(3_500);
+    });
+
+    it('rounds the deadline up to a whole second', () => {
+        const options = buildContainerOptions(input({
+            info: {
+                runId: 'r1',
+                provider: 'docker',
+                image: 'img',
+                createdAt: new Date('2026-01-01T00:00:00Z'),
+                expiresAt: new Date('2026-01-01T00:10:00.200Z'),
+            },
+        }));
+        expect(options.Cmd?.at(-1)).toBe(String(Number(DEADLINE) + 1));
+    });
+
+    it('sleeps until the workspace expiry and skips the image entrypoint', () => {
+        const options = buildContainerOptions(input());
+        expect(options.Cmd).toEqual(['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', DEADLINE]);
+        expect(options.Entrypoint).toEqual([]);
+        expect(options.HostConfig?.Init).toBe(true);
+    });
+
+    it('mounts a shared volume only when one is named', () => {
+        const options = buildContainerOptions(input({ cacheVolume: 'chamvi-shared' }));
+        expect(options.HostConfig?.Mounts?.find((mount) => mount.Target === '/cache')).toEqual({
+            Type: 'volume',
+            Source: 'chamvi-shared',
+            Target: '/cache',
+        });
     });
 
     it('sizes /tmp', () => {

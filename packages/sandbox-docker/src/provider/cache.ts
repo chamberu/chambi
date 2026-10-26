@@ -44,9 +44,10 @@ export const CACHE_OPEN_SCRIPT = `for d in ${[WORKSPACE_HOME, ...cacheFolders()]
  * 0755 (the same for the `WORKSPACE_HOME` volume of an image without that
  * folder; and a root workspace sharing the volume leaves the top-level
  * folders so), where every install of the hardened user would fail. Only
- * those folders: what a root workspace made below them (npm's `_cacache`,
- * mise's installs) stays root's, which is why a non-root user gets a
- * volume of its own by default (`defaultCacheVolume`). SandboxError when
+ * those folders: what a root workspace made below them (npm's `_cacache`)
+ * stays root's, which is why a non-root user must never share a
+ * `cache.volume` a root workspace wrote to (the default `/cache` is an
+ * anonymous volume per workspace). SandboxError when
  * it fails, `abortedCreate()` once `signal` fires.
  */
 export async function openCache(root: IWorkspace, user: string, signal?: AbortSignal): Promise<void> {

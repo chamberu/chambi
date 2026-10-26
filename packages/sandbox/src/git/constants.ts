@@ -97,6 +97,15 @@ export const CREDENTIAL_HELPER_SCRIPT = [
 ].join('\n');
 
 /**
+ * Removes the credentials file of `credentialMode: 'workspace'`: run once
+ * by a `credentialMode: 'tools'` process before the first exec of a
+ * workspace it found again, since an earlier workspace-mode process may
+ * have left still valid tokens in it, which this process never issued and
+ * so never redacts.
+ */
+export const CLEAR_CREDENTIALS_SCRIPT = 'rm -f "$HOME/.chamvi/credentials" "$HOME/.chamvi/credentials.tmp"';
+
+/**
  * Installs the workspace credential helper: `$1` the helper script, `$2`
  * the byte length of the credentials file on stdin (read with `head -c`, so
  * no stdin EOF is needed). Writes `$HOME/.chamvi/credentials` (0600, through
@@ -112,9 +121,3 @@ export const INSTALL_CREDENTIALS_SCRIPT = [
     'git config --global --replace-all credential.helper \'!sh "$HOME/.chamvi/git-credential"\' || exit 1',
     'git config --global credential.useHttpPath true',
 ].join('\n');
-
-/**
- * Prints the workspace's credentials file (`$HOME/.chamvi/credentials`),
- * nothing when there is none: the tokens an earlier process installed.
- */
-export const READ_CREDENTIALS_SCRIPT = 'f=$HOME/.chamvi/credentials; test -f "$f" && cat "$f"; exit 0';

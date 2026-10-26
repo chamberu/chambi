@@ -5,7 +5,33 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { envList } from '@chamvi/app';
+import type { Env } from '@chamvi/app';
+import { InvalidAgentDefinitionError } from '@chamvi/core';
 import { isObject } from 'smob';
+import { assertImage } from '../image/module.ts';
+
+/**
+ * The image allow-list of `CHAMVI_SANDBOX_IMAGES` (a comma list, exact
+ * references), or undefined when the variable is unset or holds no entry
+ * (only separators and blanks), so no image parameter is offered. An entry that is no
+ * image reference is an InvalidAgentDefinitionError naming the variable,
+ * never the entry.
+ */
+export function readImageAllowList(env: Env): ((image: string) => boolean) | undefined {
+    const entries = envList(env, 'CHAMVI_SANDBOX_IMAGES');
+    if (entries === undefined) return undefined;
+    const images = new Set<string>();
+    for (const entry of entries.map((value) => value.trim()).filter(Boolean)) {
+        try {
+            images.add(assertImage(entry));
+        } catch {
+            throw new InvalidAgentDefinitionError('CHAMVI_SANDBOX_IMAGES holds an entry that is no image reference.');
+        }
+    }
+    if (images.size === 0) return undefined;
+    return (image) => images.has(image);
+}
 
 /**
  * True when the package itself is not installed, not when something it

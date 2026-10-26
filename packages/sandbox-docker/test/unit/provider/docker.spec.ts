@@ -32,6 +32,7 @@ const NO_GIT_IMAGE = 'chamvi/sandbox-no-git:test';
 
 const NO_CACHE_IMAGE = 'chamvi/sandbox-no-cache:test';
 const NO_INIT_IMAGE = 'chamvi/sandbox-no-init:test';
+const ENTRYPOINT_IMAGE = 'chamvi/sandbox-entrypoint:test';
 
 /** Leaves 20 orphans that exit at once, waits, then prints how many processes are zombies. */
 const ORPHANS = 'for i in $(seq 20); do sh -c "sleep 0.1 &"; done; sleep 1; ' +
@@ -441,9 +442,9 @@ describeDocker('docker sandbox', () => {
         }
     });
 
-    it('keeps the cache of its own with cache false', async () => {
-        const { workspace: first } = await create({ cache: false });
-        const { workspace: second } = await create({ cache: false });
+    it('keeps a cache of its own without cache.volume', async () => {
+        const { workspace: first } = await create({ cache: undefined });
+        const { workspace: second } = await create({ cache: undefined });
         await first.exec(['sh', '-c', 'mkdir -p /cache/npm && echo one > /cache/npm/own']);
         expect((await second.exec(['cat', '/cache/npm/own'])).exitCode).not.toBe(0);
         expect((await first.exec(['cat', '/cache/npm/own'])).stdout).toBe('one\n');
@@ -453,7 +454,7 @@ describeDocker('docker sandbox', () => {
         const { workspace } = await create({
             user: '1000:1000', 
             readOnlyRoot: true, 
-            cache: false, 
+            cache: undefined, 
         });
         expect((await workspace.exec(['id', '-u'])).stdout.trim()).toBe('1000');
         expect((await workspace.exec(['touch', '/etc/probe'])).exitCode).not.toBe(0);
@@ -484,7 +485,7 @@ describeDocker('docker sandbox', () => {
                 pull: 'never',
                 user: '1000:1000',
                 readOnlyRoot: true,
-                cache: false,
+                cache: undefined,
             });
             const result = await workspace.exec(['sh', '-c', WRITE_CACHE]);
             expect(result.stderr).toBe('');
@@ -495,7 +496,7 @@ describeDocker('docker sandbox', () => {
     });
 
     // only the top-level folders: what a root workspace makes below them stays
-    // root's, which is why a non-root user gets a volume of its own by default
+    // root's, which is why a non-root user must never share a root's volume
     it('opens the top-level folders a root workspace made in an explicitly shared cache to the hardened user', async () => {
         await buildFixtureImage(docker, 'no-cache', NO_CACHE_IMAGE);
         const volume = `chamvi-sandbox-cache-test-${randomUUID()}`;
@@ -539,16 +540,24 @@ describeDocker('docker sandbox', () => {
         }
     });
 
-    it.skipIf(offline)('pulls a model-chosen image when missing, whatever pull says', async () => {
+    it('starts an image whose entrypoint is a command', async () => {
+        await buildFixtureImage(docker, 'entrypoint', ENTRYPOINT_IMAGE);
+        try {
+            const { workspace } = await create({ image: ENTRYPOINT_IMAGE, pull: 'never' });
+            expect((await workspace.exec(['true'])).exitCode).toBe(0);
+            await workspace.dispose();
+        } finally {
+            await docker.getImage(ENTRYPOINT_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
+    });
+
+    it('never pulls any image with pull never', async () => {
         const runId = `test-${randomUUID()}`;
         const error = await createDockerSandbox({ ...dockerOptions, pull: 'never' })
-            .create({
-                runId,
-                image: MISSING_IMAGE,
-                imageRequested: true,
-            })
+            .create({ runId, image: MISSING_IMAGE })
             .catch((e: unknown) => e);
-        expect((error as Error).message).toContain(`cannot pull the image ${MISSING_IMAGE}`);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).not.toContain('cannot pull');
         expect(await containersOf(runId)).toEqual([]);
     });
 

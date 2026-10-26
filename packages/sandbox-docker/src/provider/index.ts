@@ -7,7 +7,6 @@
 
 export {
     CONTAINER_NAME_PREFIX,
-    DEFAULT_CACHE_VOLUME,
     DEFAULT_NETWORK,
     DEFAULT_USER,
 } from './constants.ts';

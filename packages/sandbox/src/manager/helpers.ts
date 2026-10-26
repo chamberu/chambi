@@ -18,14 +18,37 @@ import { isObject } from 'smob';
 import { assertSandboxEnv, resolveLimits } from '../limits/module.ts';
 import { assertDeployment, assertImageOption } from '../provider/module.ts';
 import { WORKSPACE_ROOT } from '../workspace/constants.ts';
+import { GC_INTERVAL_MAX_MS } from './constants.ts';
 import type { IGitCredentials } from '../credentials/types.ts';
 import type { IWorkspace } from '../workspace/types.ts';
+import type { ISandboxProvider } from '../provider/types.ts';
 import type {
     GitAuthor,
     PushPolicy,
     WorkspaceManagerOptions,
     WorkspaceToolResult,
 } from './types.ts';
+
+/** The name of the local provider, which runs no images. */
+const LOCAL_PROVIDER = 'local';
+
+/**
+ * Whether `create_workspace` offers an `image`: only with an allow-list and
+ * never on the local provider (it runs no images).
+ */
+export function offersImage(
+    provider: Pick<ISandboxProvider, 'name'>,
+    allowImage: WorkspaceManagerOptions['allowImage'],
+): boolean {
+    return allowImage !== undefined && provider.name !== LOCAL_PROVIDER;
+}
+
+/** Why a requested image is refused when the manager offers none. */
+export function imageNotOfferedMessage(provider: Pick<ISandboxProvider, 'name'>): string {
+    return provider.name === LOCAL_PROVIDER ?
+        'image is not offered: the local provider runs no images.' :
+        'image is not offered: the operator configured no image allow-list.';
+}
 
 /** Checks the manager options; InvalidAgentDefinitionError for a misconfiguration. */
 export function assertManagerOptions(options: WorkspaceManagerOptions): void {
@@ -63,8 +86,13 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
     if (options.maxWorkspacesPerRun !== undefined && (!Number.isSafeInteger(options.maxWorkspacesPerRun) || options.maxWorkspacesPerRun < 1)) {
         throw new InvalidAgentDefinitionError(`maxWorkspacesPerRun must be an integer of at least 1, got ${JSON.stringify(options.maxWorkspacesPerRun)}.`);
     }
-    if (options.gcIntervalMs !== undefined && (!Number.isSafeInteger(options.gcIntervalMs) || options.gcIntervalMs < 0)) {
-        throw new InvalidAgentDefinitionError(`gcIntervalMs must be an integer of at least 0, got ${JSON.stringify(options.gcIntervalMs)}.`);
+    if (options.gcIntervalMs !== undefined && (
+        !Number.isSafeInteger(options.gcIntervalMs) ||
+        options.gcIntervalMs < 0 ||
+        options.gcIntervalMs > GC_INTERVAL_MAX_MS
+    )) {
+        // a Node timer above 2^31 - 1 fires after 1 ms, so the collector would run back to back
+        throw new InvalidAgentDefinitionError(`gcIntervalMs must be an integer from 0 to ${GC_INTERVAL_MAX_MS}, got ${JSON.stringify(options.gcIntervalMs)}.`);
     }
     if (options.onError !== undefined && typeof options.onError !== 'function') {
         throw new InvalidAgentDefinitionError('onError must be a function.');

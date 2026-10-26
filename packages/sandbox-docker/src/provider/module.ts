@@ -47,7 +47,6 @@ import {
 import {
     assertDockerOptions,
     buildContainerOptions,
-    defaultCacheVolume,
     dockerMessage,
     isMissingImage,
     isStatus,
@@ -63,9 +62,8 @@ const PROVIDER_NAME = 'docker';
  * writable root and a few capabilities by default, the hardened mode through
  * `user` and `readOnlyRoot`), commands run through the Docker exec API inside
  * GNU `timeout`. `create` probes the image (`probeImage`) before the
- * checkout and, for a non-root `user`, opens the cache to it (`openCache`); an image a run asked for (`imageRequested`) is pulled when
- * missing, whatever `pull` says, while the provider's and the operator's
- * follow `pull`. `find` lists a run's
+ * checkout and, for a non-root `user`, opens the cache to it (`openCache`);
+ * `pull` applies to every image, also one a run asked for. `find` lists a run's
  * containers by label, starts a stopped one again (its volume holds the
  * work) and rebuilds the info from the labels. The client connects lazily,
  * so creating the provider never contacts the daemon.
@@ -79,7 +77,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
     const pull = options.pull ?? 'missing';
     const user = options.user ?? DEFAULT_USER;
     const readOnlyRoot = options.readOnlyRoot ?? false;
-    const cacheVolume = options.cache === false ? undefined : (options.cache?.volume ?? defaultCacheVolume(user));
+    const cacheVolume = options.cache?.volume;
     const tmpSize = options.tmpSize ?? TMP_SIZE;
     const clock = options.clock ?? systemClock;
     const live = new Map<string, IWorkspace>();
@@ -87,16 +85,15 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
     const disposing = new WeakSet<IWorkspace>();
 
     /**
-     * Creates the container, pulling its image first as `pull` says (as
-     * `'missing'` for an image a run asked for); `signal` drops every request.
+     * Creates the container, pulling its image first as `pull` says (for
+     * every image: the provider's, the operator's and one a run asked for);
+     * `signal` drops every request.
      */
     async function createContainer(
         createOptions: Docker.ContainerCreateOptions,
         imageName: string,
-        requested: boolean,
         signal: AbortSignal | undefined,
     ): Promise<Docker.Container> {
-        const policy = requested && imageName !== image ? 'missing' : pull;
         const attempt = async (): Promise<Docker.Container> => {
             try {
                 return await docker.createContainer(signal ? { ...createOptions, abortSignal: signal } : createOptions);
@@ -108,12 +105,12 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             }
         };
 
-        if (policy === 'always') await pullImage(docker, imageName, signal);
+        if (pull === 'always') await pullImage(docker, imageName, signal);
         try {
             return await attempt();
         } catch (error) {
             if (error instanceof SandboxError) throw error;
-            if (policy !== 'missing' || !isMissingImage(error)) {
+            if (pull !== 'missing' || !isMissingImage(error)) {
                 throw new SandboxError(`cannot create a workspace container from ${imageName}: ${dockerMessage(error)}`, { cause: error });
             }
         }
@@ -192,7 +189,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 tmpSize,
                 env: { ...options.env, ...input.env },
                 limits,
-            }), imageName, input.imageRequested === true, input.signal);
+            }), imageName, input.signal);
 
             const transport = createDockerTransport(docker, container, clock, user);
             const workspace = open(id, info, transport);

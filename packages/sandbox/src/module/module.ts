@@ -19,12 +19,13 @@ import type {
     IModule,
 } from '@chamvi/app';
 import { InvalidAgentDefinitionError, MemoryStore } from '@chamvi/core';
-import type { Engine } from '@chamvi/core';
+import type { Engine, IClock } from '@chamvi/core';
 import { isObject } from 'smob';
 import { provideSandboxContext } from '../context/module.ts';
 import { staticGitCredentials } from '../credentials/module.ts';
 import type { IGitCredentials, StaticGitCredential } from '../credentials/types.ts';
 import { isTerminal } from '../manager/helpers.ts';
+import { GC_INTERVAL_MS } from '../manager/constants.ts';
 import { createWorkspaceManager } from '../manager/module.ts';
 import type { IWorkspaceManager } from '../manager/types.ts';
 import { DEFAULT_SANDBOX_IMAGE } from '../provider/constants.ts';
@@ -36,7 +37,7 @@ import {
     SANDBOX_PROVIDER_NAMES,
     SANDBOX_PROVIDER_PACKAGES,
 } from './constants.ts';
-import { isPackageNotFound, loadPackage } from './helpers.ts';
+import { isPackageNotFound, loadPackage, readImageAllowList } from './helpers.ts';
 import { createLazyProvider } from './provider.ts';
 import type {
     DockerProviderPackage,
@@ -50,8 +51,10 @@ import type {
 /**
  * Run-scoped workspaces (`.manager`, built when the factory is called). In
  * start and job mode `setup` loads the provider package and contributes the
- * lifecycle hook that attaches the manager to the engine and closes it after
- * the engine drained (disposing the held workspaces too when the store is a
+ * lifecycle hook that attaches the manager to the engine (in start mode also
+ * starting the garbage collector on the engine's clock, every
+ * `gcIntervalMs`) and closes it after the engine drained (the collector
+ * stopped first; disposing the held workspaces too when the store is a
  * MemoryStore, whose runs no restart resumes); migrate mode does nothing.
  */
 export class SandboxModule implements IModule {
@@ -72,6 +75,18 @@ export class SandboxModule implements IModule {
      * apps share the default deployment on one host.
      */
     protected ownsDeployment = false;
+
+    /** Interval of the start-mode collector (`gcIntervalMs` or `GC_INTERVAL_MS`); 0 runs none. */
+    protected gcIntervalMs: number = GC_INTERVAL_MS;
+
+    /** The armed collector timer, while one runs. */
+    protected collector: { clear(): void } | undefined;
+
+    /** Set by `stopCollector`: a collection in flight arms no further timer. */
+    protected collectorStopped = false;
+
+    /** The collection the timer started, while it runs; `drained` waits for it. */
+    protected collecting: Promise<void> | undefined;
 
     /** The sources other modules contribute to `AppToken.GIT_CREDENTIALS`, readable once `setup` ran. */
     protected contributed: () => readonly GitCredentialSource[] = () => [];
@@ -116,6 +131,8 @@ export class SandboxModule implements IModule {
             ...managerOptions
         } = options;
 
+        this.gcIntervalMs = managerOptions.gcIntervalMs ?? GC_INTERVAL_MS;
+
         if (manager) {
             this.manager = manager;
             return;
@@ -148,12 +165,14 @@ export class SandboxModule implements IModule {
 
         const credentials = this.credentialSources(env, managerOptions.credentials);
         const credentialMode = envOneOf(env, 'CHAMVI_GIT_CREDENTIAL_MODE', CREDENTIAL_MODES) ?? managerOptions.credentialMode;
+        const allowImage = readImageAllowList(env) ?? managerOptions.allowImage;
         try {
             this.manager = createWorkspaceManager({
                 ...managerOptions,
                 credentials,
                 ...(credentialMode && { credentialMode }),
                 provider: target,
+                ...(allowImage && { allowImage }),
                 ...(workspaceEnv && { env: workspaceEnv }),
                 ...(deployment !== undefined && { deployment }),
                 isSettled: managerOptions.isSettled ?? ((runId) => this.isSettled(runId)),
@@ -187,8 +206,14 @@ export class SandboxModule implements IModule {
                     this.engine = engine;
                     detach = this.manager.attach(engine);
                     provideSandboxContext(engine, this.manager);
+                    // a job is short: only a long-lived process collects on a timer
+                    if (context.mode === 'start') this.startCollector(engine.clock);
                 },
                 drained: async () => {
+                    this.stopCollector();
+                    // a collection in flight still reads the store and removes
+                    // workspaces: it must settle before the store closes
+                    await this.collecting;
                     detach?.();
                     detach = undefined;
                     // no run of a memory store resumes after this process: its
@@ -197,6 +222,37 @@ export class SandboxModule implements IModule {
                 },
             },
         });
+    }
+
+    /**
+     * Collects expired workspaces and those of settled runs every
+     * `gcIntervalMs` on `clock` (not keeping the process alive), each timer
+     * armed once the previous collection settled; a failed collection is
+     * reported and the next one still runs. None for an interval of 0.
+     */
+    protected startCollector(clock: IClock): void {
+        if (this.gcIntervalMs === 0) return;
+        this.collectorStopped = false;
+        const arm = (): void => {
+            this.collector = clock.setTimeout(() => {
+                this.collector = undefined;
+                const collecting = this.manager.collectGarbage()
+                    .then(() => undefined, (error: unknown) => this.reportError(error))
+                    .finally(() => {
+                        if (this.collecting === collecting) this.collecting = undefined;
+                        if (!this.collectorStopped) arm();
+                    });
+                this.collecting = collecting;
+            }, this.gcIntervalMs);
+        };
+        arm();
+    }
+
+    /** Clears the collector timer; a collection in flight arms no further one (`drained` awaits it). */
+    protected stopCollector(): void {
+        this.collectorStopped = true;
+        this.collector?.clear();
+        this.collector = undefined;
     }
 
     /** Imports the provider package and builds the provider; a test seam. */

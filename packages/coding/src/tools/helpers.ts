@@ -173,6 +173,15 @@ export function objectSchema<T>(properties: Record<string, JSONSchema7>, require
     });
 }
 
+/**
+ * The unredacted text of a file, for a tool that writes it back
+ * (`IWorkspace.readFileRaw` when the workspace redacts, else `readFile`);
+ * never for text shown to the model.
+ */
+export function readRawText(workspace: IWorkspace, path: string): Promise<string> {
+    return workspace.readFileRaw ? workspace.readFileRaw(path) : workspace.readFile(path);
+}
+
 /** `text` through the workspace's credential redaction (`IWorkspace.redact`), when it has one. */
 export function redactText(workspace: IWorkspace, text: string): string {
     return workspace.redact ? workspace.redact(text) : text;

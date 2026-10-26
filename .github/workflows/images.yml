@@ -45,10 +45,10 @@ jobs:
                   docker run --rm "$IMAGE" sh -c 'git --version && timeout -k 1 5 true && curl --version >/dev/null && rg --version && jq --version && cc --version >/dev/null && unzip -v >/dev/null && mise --version'
                   # no language toolchain is baked in
                   docker run --rm "$IMAGE" sh -c '! command -v node && ! command -v python3'
-                  # the providers' capability set: apt and mise work as root, a toolchain lands in /cache
+                  # the providers' capability set: apt and mise work as root, a toolchain lands in HOME, never /cache
                   docker run --rm --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add FSETID \
-                      --cap-add SETUID --cap-add SETGID --cap-add KILL --security-opt no-new-privileges:true "$IMAGE" \
-                      sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends file >/dev/null && file --version && mise use -g node@22 && node --version && test -d /cache/mise/installs/node'
+                      --cap-add SETUID --cap-add SETGID --cap-add KILL --security-opt no-new-privileges:true -e HOME=/home/sandbox "$IMAGE" \
+                      sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends file >/dev/null && file --version && mise use -g node@22 && node --version && test -d /home/sandbox/.local/share/mise/installs/node && test ! -e /cache/mise'
                   # the hardened mode: uid 1000 on a read-only root writes /workspace, HOME and /cache
                   docker run --rm --user 1000:1000 --read-only --tmpfs /tmp -v /workspace -v /home/sandbox -v /cache "$IMAGE" \
                       sh -c 'touch /workspace/probe && mkdir -p /cache/npm /home/sandbox/.cargo && touch /tmp/probe && mise reshim && test -d "$MISE_SHIMS_DIR"'

@@ -23,8 +23,10 @@ import {
     assertManagerOptions,
     authorEnv,
     credentialSources,
+    imageNotOfferedMessage,
     isExpired,
     isTerminal,
+    offersImage,
     toSandboxError,
 } from './helpers.ts';
 import { createGitTools } from './git-tools.ts';
@@ -216,7 +218,6 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         // entry.image is the run's request here (a created or found workspace never comes back)
         const image = entry.image ?? options.image;
         if (image !== undefined) createOptions.image = image;
-        if (entry.image !== undefined && entry.image !== options.image) createOptions.imageRequested = true;
         if (options.env !== undefined || options.author !== undefined) createOptions.env = { ...options.env, ...authorEnv(options.author) };
         if (options.limits !== undefined) createOptions.limits = options.limits;
         createOptions.deployment = deployment;
@@ -333,6 +334,9 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             assertGitRef(ref);
         }
         const image = input.image === undefined ? undefined : assertImage(input.image);
+        if (image !== undefined && !offersImage(options.provider, options.allowImage)) {
+            throw new ValidationError(imageNotOfferedMessage(options.provider));
+        }
         if (image !== undefined && options.allowImage && !options.allowImage(image)) {
             throw new ValidationError('image not allowed.');
         }
@@ -519,7 +523,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         attach,
         tools: () => {
             tools ??= {
-                ...createWorkspaceTools(manager),
+                ...createWorkspaceTools(manager, { image: offersImage(options.provider, options.allowImage) }),
                 ...createGitTools({
                     manager,
                     lookup: async (url, access, runId, signal) => credentials?.lookup(url, access, runId, signal),

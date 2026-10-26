@@ -24,9 +24,11 @@ export type WorkspaceManagerOptions = {
     /** Narrows the accepted repositories further; gets the normalized URL. */
     allowRepo?: (url: string) => boolean;
     /**
-     * Narrows the images `create_workspace` may ask for (any image by
-     * default); gets the reference as requested. Never asked for the
-     * manager's or the provider's own image.
+     * The images `create_workspace` may ask for; gets the reference as
+     * requested. Without it, and on the local provider (it runs no images),
+     * `create_workspace` has no `image` parameter and a requested image is a
+     * `ValidationError`. Never asked for the manager's or the provider's own
+     * image.
      */
     allowImage?: (image: string) => boolean;
     /** Workspaces one run may hold at once. Default MAX_WORKSPACES_PER_RUN (3). */
@@ -87,7 +89,11 @@ export type AcquireInput = {
     /** `owner/name`, an https URL, or `file:///absolute/path` with `allowFileRepos`. */
     repo?: string;
     ref?: string;
-    /** An image reference (`assertImage`), checked by `allowImage`; default the manager's, else the provider's. */
+    /**
+     * An image reference (`assertImage`), only with `allowImage` and not on
+     * the local provider, checked by `allowImage`; default the manager's,
+     * else the provider's.
+     */
     image?: string;
     signal?: AbortSignal;
 };

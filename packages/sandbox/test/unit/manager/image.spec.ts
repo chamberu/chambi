@@ -24,6 +24,8 @@ function setup(options: Partial<WorkspaceManagerOptions> = {}, providerImage?: s
         provider,
         clock,
         gcIntervalMs: 0,
+        // a requested image needs an allow-list; the refusals pass their own
+        allowImage: () => true,
         ...options,
     });
     return {
@@ -41,12 +43,31 @@ describe('workspace manager: images', () => {
         expect(workspace.info.image).toBe('python:3.13');
     });
 
-    it('marks a requested image for the provider\'s pull rule, never the manager\'s own', async () => {
+    it('refuses a requested image without an allow-list, before any create', async () => {
+        const { provider, manager } = setup({ image: 'operator:1', allowImage: undefined });
+        await expect(manager.acquire('r1', { image: 'python:3.13' })).rejects.toThrow(ValidationError);
+        await expect(manager.acquire('r1', { image: 'python:3.13' })).rejects.toThrow(/no image allow-list/);
+        expect(provider.created).toEqual([]);
+    });
+
+    it('refuses a requested image on the local provider', async () => {
+        const clock = new ControllableClock(new Date(1_000_000));
+        const provider = Object.assign(createFakeProvider({ clock }), { name: 'local' });
+        const manager = createWorkspaceManager({
+            provider,
+            clock,
+            gcIntervalMs: 0,
+            allowImage: () => true,
+        });
+        await expect(manager.acquire('r1', { image: 'python:3.13' })).rejects.toThrow(ValidationError);
+        await expect(manager.acquire('r1', { image: 'python:3.13' })).rejects.toThrow(/local provider/);
+        expect(provider.created).toEqual([]);
+    });
+
+    it('passes no imageRequested to the provider', async () => {
         const { provider, manager } = setup({ image: 'operator:1' });
         await manager.acquire('r1', { image: 'python:3.13' });
-        await manager.acquire('r2', {});
-        await manager.acquire('r3', { image: 'operator:1' });
-        expect(provider.created.map((input) => input.imageRequested)).toEqual([true, undefined, undefined]);
+        expect(provider.created[0]).not.toHaveProperty('imageRequested');
     });
 
     it('keeps the manager\'s image without a request', async () => {
@@ -114,6 +135,7 @@ describe('workspace manager: images', () => {
             provider, 
             clock, 
             gcIntervalMs: 0, 
+            allowImage: () => true,
         });
         await expect(other.acquire('r1', { repo: 'octo/demo', image: 'python:3.13' })).rejects.toThrow(/dispose it first/);
         await expect(other.acquire('r1', { repo: 'octo/demo', image: 'node:24' })).resolves.toMatchObject({ reused: true });

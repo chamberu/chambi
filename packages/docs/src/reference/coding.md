@@ -32,6 +32,8 @@ Throws `InvalidAgentDefinitionError` when `workspaces` has no `get`, `options` i
 | `bash_kill` | `job` | `BashKillResult` |
 | `git_diff` | `staged?`, `path?` | `GitDiffResult` |
 
+`bash` keeps its working directory and exported variables through an `EXIT` trap; a command that sets its own `EXIT` trap replaces it, so that call's state is not kept. `edit_file` and `multi_edit` read the file through `IWorkspace.readFileRaw` when the workspace redacts credentials: they match oldString against the redacted text the model read (`redactedSpans`), refuse an edit that touches a `[redacted]` span and put every untouched token back byte for byte, so an oldString can neither probe a token nor write `[redacted]` back.
+
 Every tool also takes `workspace?`, the id from `create_workspace`. A path is relative to the workspace root or starts with `/workspace/`; `read_file` and `grep` also take the log paths `bash` and `bash_output` name (`~/.chamvi/out/<id>.stdout.log`, `~/.chamvi/jobs/<id>/output`), and nothing else outside the workspace. See [The shell](/guide/workspaces#the-shell) for the kept state, the output logs and the jobs. Input the model can correct (a bad path, an `oldString` that is missing or ambiguous) is a `ValidationError` tool error; a missing or oversized file and any other sandbox failure a `SandboxError` tool error.
 
 <<< ../../../coding/src/tools/types.ts{ts}

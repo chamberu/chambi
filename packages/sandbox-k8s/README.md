@@ -89,10 +89,10 @@ Each workspace is a bare pod `chamvi-ws-<id>` with one container `sandbox`:
 
 | Setting | Value |
 |---|---|
-| Pod | `restartPolicy: Never`, `automountServiceAccountToken: false`, `enableServiceLinks: false`, `shareProcessNamespace: true` (the pause container is pid 1 and reaps orphaned processes for any image, also one without an init, whose zombies would otherwise fill the kubelet's pid limit), no `activeDeadlineSeconds` (the lifetime follows the run), `terminationGracePeriodSeconds: 5` |
+| Pod | `restartPolicy: Never`, `automountServiceAccountToken: false`, `enableServiceLinks: false`, `shareProcessNamespace: true` (the pause container is pid 1 and reaps orphaned processes for any image, also one without an init, whose zombies would otherwise fill the kubelet's pid limit), `activeDeadlineSeconds` = the workspace's lifetime in seconds (`lifetimeSeconds`), so the pod ends itself at `expiresAt` even when no collection runs, `terminationGracePeriodSeconds: 5` |
 | Pod security | `runAsUser`/`runAsGroup` from `user` (default 0), seccomp `RuntimeDefault`; a non-root user adds `runAsNonRoot` and `fsGroup` |
 | Container security | `allowPrivilegeEscalation: false`, not privileged, `readOnlyRootFilesystem` from `readOnlyRoot` (default false), all capabilities dropped and for root `ROOT_CAPABILITIES` added back |
-| Command | the image's entrypoint (`sandbox-dev`: `tini`) with `sleep infinity` |
+| Command | `command: ['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', '<expiresAt in epoch seconds>']` (sleeps until `expiresAt`, so a pod scheduled late stops in time), replacing the image's entrypoint (an image whose entrypoint is a command works too) |
 | Resources | requests equal limits: `cpu`, `memory`, `ephemeral-storage` from `storage` |
 | `/workspace` | an emptyDir with `sizeLimit` from `storage` |
 | `/tmp` | a memory-backed emptyDir of `tmpSize` (default 1 GiB, `TMP_SIZE`) |
@@ -110,11 +110,11 @@ A pod is used rather than a Job: exec needs a pod name known at create time, and
 
 The default image is `ghcr.io/chamvi/sandbox-dev:trixie` (`DEFAULT_SANDBOX_IMAGE`): Debian, git, build tools, ripgrep, jq and mise for any toolchain, built for `linux/amd64` and `linux/arm64` from [`images/sandbox-dev`](../../images/sandbox-dev); tags `trixie` (rebuilt on changes and weekly) and `trixie-<short sha>`. `imagePullPolicy` (the provider image's) defaults to `'IfNotPresent'`; use `'Always'` to follow the mutable tag, or pin a digest in production (`image: 'ghcr.io/chamvi/sandbox-dev@sha256:...'`).
 
-A run may pick any image (`create_workspace({ image })`, narrowed by the manager's `allowImage`); one it asked for is pulled if not present, while the provider's and the manager's image follow `imagePullPolicy`. An image needs `sh`, `git` and a GNU `timeout` that takes `-k`: `create` probes them once the pod runs and fails with a `SandboxError` naming what is missing, before any checkout (and deletes the pod).
+A run may pick an image (`create_workspace({ image })`) only when the manager has an allow-list (`allowImage`, or `CHAMVI_SANDBOX_IMAGES` in `sandboxModule()`); `imagePullPolicy` applies to every image, the provider's, the manager's and one a run asked for. An image needs `sh`, `git` and a GNU `timeout` that takes `-k`: `create` probes them once the pod runs and fails with a `SandboxError` naming what is missing, before any checkout (and deletes the pod).
 
 ## Cache
 
-Every pod mounts `/cache` and gets the cache variables (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`, `MISE_DATA_DIR`). Without `cache` that is an emptyDir of the pod (counted against its `ephemeral-storage`), so installs work but start cold every time. With `cache: { claimName }` every workspace mounts the same ReadWriteMany claim (NFS, CephFS, EFS, Azure Files), so toolchains and packages are fetched once per cluster.
+Every pod mounts `/cache` and gets the cache variables (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`; package downloads only, mise keeps toolchains in HOME). Without `cache` that is an emptyDir of the pod (counted against its `ephemeral-storage`), so installs work but start cold every time. With `cache: { claimName }` every workspace mounts the same ReadWriteMany claim (NFS, CephFS, EFS, Azure Files), so workspaces sharing the claim reuse each other's package downloads (a miss, an eviction or concurrent installs may still fetch again; toolchains stay per workspace, in HOME).
 
 **Risk**: a shared claim is shared by every run and agent of the namespace. A malicious package one run fetched can sit in another run's cache; npm verifies integrity hashes, pip, Go's build cache and others less. Keep runs that must not influence each other on different claims, or without one.
 
@@ -144,7 +144,7 @@ Stdin is closed only on the `v5.channel.k8s.io` exec protocol (Kubernetes 1.30+)
 | `namespace` | `string` | required | Namespace of the workspace pods |
 | `kubeConfig` | `KubeConfig` | `loadFromDefault()` | Cluster access |
 | `image` | `string` | `DEFAULT_SANDBOX_IMAGE` | The workspace image; pin a digest in production |
-| `imagePullPolicy` | `'IfNotPresent' \| 'Always'` | `'IfNotPresent'` | Of the provider's image; `'Always'` for a mutable tag |
+| `imagePullPolicy` | `'IfNotPresent' \| 'Always'` | `'IfNotPresent'` | Of every workspace image; `'Always'` for a mutable tag |
 | `env` | `Record<string, string>` | none | Added after `SANDBOX_ENV` and `CACHE_ENV` |
 | `user` | `{ uid, gid }` | `{ uid: 0, gid: 0 }` | The pod's user; a non-root user gets no capability, `runAsNonRoot` and `fsGroup` |
 | `readOnlyRoot` | `boolean` | `false` | A read-only root filesystem |

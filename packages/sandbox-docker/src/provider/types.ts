@@ -22,8 +22,8 @@ export type DockerSandboxOptions = {
     /**
      * `'missing'` (default) pulls once when the image is not present, `'always'`
      * before every create (a mutable tag then follows its rebuilds), `'never'`
-     * never. It covers the provider's `image` and the manager's; an image a
-     * run asked for (`create_workspace({ image })`) is pulled when missing.
+     * never. It covers every image: the provider's `image`, the manager's and
+     * one a run asked for (`create_workspace({ image })`).
      */
     pull?: 'missing' | 'always' | 'never';
     /** Added to every workspace's environment, after `SANDBOX_ENV` and `CACHE_ENV`. */
@@ -38,15 +38,13 @@ export type DockerSandboxOptions = {
     /** A read-only root filesystem (only `/workspace`, `/cache` and `/tmp` writable). Default false. */
     readOnlyRoot?: boolean;
     /**
-     * The `/cache` mount: a named volume every workspace shares (default
-     * `DEFAULT_CACHE_VOLUME` for root, `<DEFAULT_CACHE_VOLUME>-<user>` for a
-     * non-root `user`, since a root workspace leaves root-owned folders deep
-     * in the cache), or with `false` an anonymous volume per workspace,
-     * removed with it. Never point a non-root `user` at a volume a root
-     * workspace wrote to. A shared cache is shared by every run and
-     * agent on the host: a package one run fetched can be used by another.
+     * The `/cache` mount. Default: an anonymous volume per workspace,
+     * removed with it. `{ volume }` mounts that named volume in every
+     * workspace instead: a trust boundary shared by every run and agent on
+     * the host (a package one run fetched can be used by another). Never
+     * point a non-root `user` at a volume a root workspace wrote to.
      */
-    cache?: false | { volume?: string };
+    cache?: { volume: string };
     /** Size of the `/tmp` tmpfs; default `TMP_SIZE` (`'1Gi'`). */
     tmpSize?: string;
     clock?: IClock;
@@ -60,7 +58,7 @@ export type ContainerOptionsInput = {
     network: string;
     user: string;
     readOnlyRoot: boolean;
-    /** The shared cache volume; undefined mounts an anonymous one. */
+    /** The shared cache volume (`cache.volume`); undefined mounts an anonymous one per workspace. */
     cacheVolume?: string;
     tmpSize: string;
     env: Record<string, string>;

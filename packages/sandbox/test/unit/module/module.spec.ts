@@ -42,6 +42,8 @@ import { createModuleHarness } from '@chamvi/app/testing';
 import type { ModuleHarness } from '@chamvi/app/testing';
 import { SandboxModule, sandboxModule } from '@chamvi/sandbox/module';
 import type { SandboxModuleOptions, SandboxProviderName } from '@chamvi/sandbox/module';
+import { GC_INTERVAL_MS } from '../../../src/manager/constants.ts';
+import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel, textModel } from '../../utils/model.ts';
 import { createRecordingLogger, rejectionOf } from '../../utils/module.ts';
 
@@ -51,6 +53,12 @@ class RecordingSandboxModule extends SandboxModule {
 
     /** Every find and collectGarbage call of the provider it builds. */
     calls: Array<[string, unknown]> = [];
+
+    /** Rejects the next collectGarbage call of the provider with this error. */
+    gcFailure: Error | undefined;
+
+    /** Holds every collectGarbage call of the provider until it resolves. */
+    gcGate: Promise<void> | undefined;
 
     constructor(options: SandboxModuleOptions, protected failure?: Error) {
         super(options);
@@ -70,9 +78,17 @@ class RecordingSandboxModule extends SandboxModule {
             },
             collectGarbage: async (options) => {
                 this.calls.push(['collectGarbage', options]);
+                await this.gcGate;
+                const failure = this.gcFailure;
+                this.gcFailure = undefined;
+                if (failure) throw failure;
                 return 0;
             },
         };
+    }
+
+    collections(): number {
+        return this.calls.filter(([kind]) => kind === 'collectGarbage').length;
     }
 }
 
@@ -126,13 +142,14 @@ async function harnessWith(module: IModule, options: {
     agents?: Agent[];
     events?: string[];
     store?: IStore;
+    clock?: ControllableClock;
 } = {}) {
     const harness = await createModuleHarness({
         mode: options.mode ?? 'start',
         env: {},
         agents: options.agents ?? [agent()],
         modules: [
-            configModule({ logger: createRecordingLogger() }),
+            configModule({ logger: createRecordingLogger(), ...(options.clock && { clock: options.clock }) }),
             storeModule(options.store ? { store: options.store } : {}),
             engineModule(),
             module,
@@ -150,6 +167,171 @@ function recordDrain(engine: Engine, events: string[]): void {
         return drain(options);
     };
 }
+
+describe('sandboxModule: garbage collection timer', () => {
+    function clock(): ControllableClock {
+        return new ControllableClock(new Date(1_000_000));
+    }
+
+    it('collects garbage every GC_INTERVAL_MS in start mode', async () => {
+        const time = clock();
+        const module = new RecordingSandboxModule({ env: {} });
+        await harnessWith(module, { clock: time });
+        const before = module.collections();
+
+        time.advance(GC_INTERVAL_MS - 1);
+        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        expect(module.collections()).toBe(before);
+
+        time.advance(1);
+        await vi.waitFor(() => expect(module.collections()).toBe(before + 1));
+
+        time.advance(GC_INTERVAL_MS);
+        await vi.waitFor(() => expect(module.collections()).toBe(before + 2));
+    });
+
+    it('runs no collector in job mode', async () => {
+        const time = clock();
+        const module = new RecordingSandboxModule({ env: {} });
+        await harnessWith(module, { clock: time, mode: 'job' });
+        const before = module.collections();
+
+        time.advance(2 * GC_INTERVAL_MS);
+        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        expect(module.collections()).toBe(before);
+    });
+
+    it('stops the collector once drained', async () => {
+        const time = clock();
+        const module = new RecordingSandboxModule({ env: {} });
+        const harness = await harnessWith(module, { clock: time });
+        await harness.stop();
+        const before = module.collections();
+
+        time.advance(2 * GC_INTERVAL_MS);
+        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        expect(module.collections()).toBe(before);
+    });
+
+    it('waits for a collection in flight before the manager closes', async () => {
+        const time = clock();
+        const module = new RecordingSandboxModule({ env: {} });
+        const harness = await harnessWith(module, { clock: time });
+        const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+        module.gcGate = gate;
+        const before = module.collections();
+
+        time.advance(GC_INTERVAL_MS);
+        await vi.waitFor(() => expect(module.collections()).toBe(before + 1));
+
+        let stopped = false;
+        const stopping = harness.stop().then(() => { stopped = true; });
+        await new Promise((resolve) => { setTimeout(resolve, 20); });
+        expect(stopped).toBe(false);
+
+        release();
+        await stopping;
+        expect(stopped).toBe(true);
+    });
+
+    it('runs no collector with gcIntervalMs 0', async () => {
+        const time = clock();
+        const module = new RecordingSandboxModule({ env: {}, gcIntervalMs: 0 });
+        await harnessWith(module, { clock: time });
+        const before = module.collections();
+
+        time.advance(2 * GC_INTERVAL_MS);
+        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        expect(module.collections()).toBe(before);
+    });
+
+    it('reports a failing collection and keeps collecting', async () => {
+        const time = clock();
+        const module = new RecordingSandboxModule({ env: {} });
+        const harness = await harnessWith(module, { clock: time });
+        const failure = new Error('collection failed');
+        module.gcFailure = failure;
+        const before = module.collections();
+
+        time.advance(GC_INTERVAL_MS);
+        await vi.waitFor(() => expect(harness.reported.map((report) => report.error)).toContain(failure));
+
+        time.advance(GC_INTERVAL_MS);
+        await vi.waitFor(() => expect(module.collections()).toBe(before + 2));
+    });
+});
+
+describe('sandboxModule: image allow-list', () => {
+    function dockerProvider(): ISandboxProvider {
+        return {
+            name: 'docker',
+            create: async () => { throw new Error('not used'); },
+            find: async () => [],
+            collectGarbage: async () => 0,
+        };
+    }
+
+    function imageParameterOf(module: SandboxModule): boolean {
+        const tool = module.manager.tools().create_workspace as { inputSchema: { jsonSchema: { properties: Record<string, unknown> } } };
+        return 'image' in tool.inputSchema.jsonSchema.properties;
+    }
+
+    it('offers no image without an allow-list', () => {
+        const module = sandboxModule({ provider: dockerProvider(), env: {} });
+        expect(imageParameterOf(module)).toBe(false);
+    });
+
+    it('builds the allow-list from CHAMVI_SANDBOX_IMAGES', async () => {
+        const module = sandboxModule({ provider: dockerProvider(), env: { CHAMVI_SANDBOX_IMAGES: ' python:3.13 ,rust:1,' } });
+        managers.push(module.manager);
+        expect(imageParameterOf(module)).toBe(true);
+        await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
+    });
+
+    it('reads a CHAMVI_SANDBOX_IMAGES of separators and blanks as unset', () => {
+        for (const value of [',', ' , ', '  ']) {
+            const module = sandboxModule({ provider: dockerProvider(), env: { CHAMVI_SANDBOX_IMAGES: value } });
+            expect(imageParameterOf(module)).toBe(false);
+        }
+    });
+
+    it('keeps the allowImage option under a CHAMVI_SANDBOX_IMAGES without an entry', async () => {
+        const allowImage = vi.fn(() => false);
+        const module = sandboxModule({
+            provider: dockerProvider(), 
+            allowImage, 
+            env: { CHAMVI_SANDBOX_IMAGES: ' , ' }, 
+        });
+        managers.push(module.manager);
+        expect(imageParameterOf(module)).toBe(true);
+        await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
+        expect(allowImage).toHaveBeenCalled();
+    });
+
+    it('names CHAMVI_SANDBOX_IMAGES for an entry that is no image reference, never echoing it', () => {
+        let error: unknown;
+        try {
+            sandboxModule({ provider: dockerProvider(), env: { CHAMVI_SANDBOX_IMAGES: 'ok:1,bad image' } });
+        } catch (e) {
+            error = e;
+        }
+        expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
+        expect((error as Error).message).toContain('CHAMVI_SANDBOX_IMAGES');
+        expect((error as Error).message).not.toContain('bad image');
+    });
+
+    it('lets CHAMVI_SANDBOX_IMAGES win over allowImage', async () => {
+        const allowImage = vi.fn(() => true);
+        const module = sandboxModule({
+            provider: dockerProvider(),
+            allowImage,
+            env: { CHAMVI_SANDBOX_IMAGES: 'python:3.13' },
+        });
+        managers.push(module.manager);
+        await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
+        expect(allowImage).not.toHaveBeenCalled();
+    });
+});
 
 describe('sandboxModule', () => {
     it('local by default, exposes the manager synchronously', async () => {

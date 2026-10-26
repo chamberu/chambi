@@ -7,12 +7,15 @@
 
 import type { Tool } from 'ai';
 import { ValidationError, defineTool } from '@chamvi/core';
+import { REDACTED } from '@chamvi/sandbox';
+import type { IWorkspace } from '@chamvi/sandbox';
 import { FILE_PATH_PROPERTY, MULTI_EDIT_MAX_EDITS } from './constants.ts';
 import {
     fileKey,
     inputObject,
     objectSchema,
     optionalBoolean,
+    readRawText,
     requirePath,
     requireString,
     requireText,
@@ -67,25 +70,87 @@ function readEdit(value: unknown, label = ''): Required<Edit> {
     };
 }
 
-/** `text` with `edit` applied, and how often; ValidationError when it has no or (without replaceAll) several matches. */
-function applyEdit(text: string, edit: Required<Edit>, path: string, label = ''): { text: string; replacements: number } {
+/**
+ * The text the edits run on: what the model read (`read_file`), each span
+ * the workspace redacts a `[redacted]` marker at `at` standing for its raw
+ * token. Matching never sees a token, so an oldString cannot probe one, and
+ * `rawText()` puts every untouched token back byte for byte.
+ */
+type EditDocument = {
+    text: string;
+    markers: Array<{ at: number; raw: string }>;
+};
+
+async function readDocument(workspace: IWorkspace, path: string): Promise<EditDocument> {
+    const raw = await readRawText(workspace, path);
+    const spans = workspace.redactedSpans?.(raw) ?? [];
+    if (spans.length === 0) return { text: raw, markers: [] };
+    let text = '';
+    let from = 0;
+    const markers: EditDocument['markers'] = [];
+    for (const span of spans) {
+        text += raw.slice(from, span.start);
+        markers.push({ at: text.length, raw: raw.slice(span.start, span.end) });
+        text += REDACTED;
+        from = span.end;
+    }
+    return { text: text + raw.slice(from), markers };
+}
+
+function rawText(document: EditDocument): string {
+    let raw = '';
+    let from = 0;
+    for (const marker of document.markers) {
+        raw += `${document.text.slice(from, marker.at)}${marker.raw}`;
+        from = marker.at + REDACTED.length;
+    }
+    return raw + document.text.slice(from);
+}
+
+/**
+ * `document` with `edit` applied, and how often; ValidationError when it has
+ * no or (without replaceAll) several matches, or touches a redacted span.
+ */
+function applyEdit(document: EditDocument, edit: Required<Edit>, path: string, label = ''): { document: EditDocument; replacements: number } {
     const {
-        oldString, 
-        newString, 
-        replaceAll, 
+        oldString,
+        newString,
+        replaceAll,
     } = edit;
-    const parts = text.split(oldString);
-    const count = parts.length - 1;
-    if (count === 0) {
+    const { text, markers } = document;
+    // the leftmost non-overlapping matches, as split() finds them
+    const matches: number[] = [];
+    for (let at = text.indexOf(oldString); at !== -1; at = text.indexOf(oldString, at + oldString.length)) {
+        matches.push(at);
+    }
+    if (matches.length === 0) {
         throw new ValidationError(`${label}oldString not found in ${path}. Read the file and copy the text exactly.`);
     }
-    if (count > 1 && !replaceAll) {
-        throw new ValidationError(`${label}oldString has ${count} matches in ${path}: add surrounding text to make it unique, or pass replaceAll: true.`);
+    if (matches.length > 1 && !replaceAll) {
+        throw new ValidationError(`${label}oldString has ${matches.length} matches in ${path}: add surrounding text to make it unique, or pass replaceAll: true.`);
     }
-    // split/join: replace() would expand `$&` and friends in newString
+    const targets = replaceAll ? matches : matches.slice(0, 1);
+    const touches = targets.some((at) => markers.some((marker) => at < marker.at + REDACTED.length && marker.at < at + oldString.length));
+    if (touches) {
+        throw new ValidationError(`${label}oldString overlaps a redacted credential in ${path}: edit the text around [redacted] only.`);
+    }
+
+    // plain concatenation: replace() would expand `$&` and friends in newString
+    let next = '';
+    let from = 0;
+    for (const at of targets) {
+        next += `${text.slice(from, at)}${newString}`;
+        from = at + oldString.length;
+    }
+    next += text.slice(from);
+    const delta = newString.length - oldString.length;
+    const moved = markers.map((marker) => ({
+        at: marker.at + delta * targets.filter((at) => at < marker.at).length,
+        raw: marker.raw,
+    }));
     return {
-        text: replaceAll ? parts.join(newString) : `${parts[0]}${newString}${parts.slice(1).join(oldString)}`,
-        replacements: replaceAll ? count : 1,
+        document: { text: next, markers: moved },
+        replacements: targets.length,
     };
 }
 
@@ -102,8 +167,8 @@ export function editFileTool(workspaces: CodingWorkspaces, queue: FileQueue): To
 
             // read, change and write in one turn of the file's queue
             return queue(fileKey(workspace.id, path), async () => {
-                const result = applyEdit(await workspace.readFile(path), edit, path);
-                await workspace.writeFile(path, result.text);
+                const result = applyEdit(await readDocument(workspace, path), edit, path);
+                await workspace.writeFile(path, rawText(result.document));
                 return { path, replacements: result.replacements };
             });
         },
@@ -138,14 +203,14 @@ export function multiEditTool(workspaces: CodingWorkspaces, queue: FileQueue): T
             const workspace = await workspaceOf(workspaces, body, context);
 
             return queue(fileKey(workspace.id, path), async () => {
-                let text = await workspace.readFile(path);
+                let document = await readDocument(workspace, path);
                 let replacements = 0;
                 edits.forEach((edit, index) => {
-                    const result = applyEdit(text, edit, path, `edit ${index + 1}: `);
-                    text = result.text;
+                    const result = applyEdit(document, edit, path, `edit ${index + 1}: `);
+                    document = result.document;
                     replacements += result.replacements;
                 });
-                await workspace.writeFile(path, text);
+                await workspace.writeFile(path, rawText(document));
                 return {
                     path, 
                     edits: edits.length, 

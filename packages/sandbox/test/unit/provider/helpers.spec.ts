@@ -16,6 +16,7 @@ import {
     buildWorkspaceInfo,
     collectionError,
     isExpiredAt,
+    lifetimeSeconds,
 } from '@chamvi/sandbox';
 import { ControllableClock } from '../../utils/clock.ts';
 
@@ -59,6 +60,17 @@ describe('option checks', () => {
         expect(() => assertClockOption(undefined)).not.toThrow();
         expect(() => assertClockOption(new ControllableClock())).not.toThrow();
         expect(() => assertClockOption({ now: () => new Date() })).toThrow('clock must be an IClock.');
+    });
+});
+
+describe('lifetimeSeconds', () => {
+    it('rounds a lifetime up to whole seconds', () => {
+        expect(lifetimeSeconds({ createdAt: new Date(0), expiresAt: new Date(1_500) })).toBe(2);
+        expect(lifetimeSeconds({ createdAt: new Date(0), expiresAt: new Date(604_800_000) })).toBe(604_800);
+    });
+
+    it('is at least one second', () => {
+        expect(lifetimeSeconds({ createdAt: new Date(5_000), expiresAt: new Date(5_000) })).toBe(1);
     });
 });
 

@@ -32,6 +32,7 @@ describe('public api', () => {
         'assertClockOption',
         'buildWorkspaceInfo',
         'isExpiredAt',
+        'lifetimeSeconds',
         'collectionError',
         'assertDeployment',
         'workspaceLabels',
@@ -80,6 +81,7 @@ describe('public api', () => {
         expect(sandbox.CREDENTIAL_RETRY_MS).toBe(60_000);
         expect(sandbox.CREDENTIALS_FILE).toBe('.chamvi/credentials');
         expect(sandbox.REDACT_MIN_LENGTH).toBe(4);
+        expect(sandbox.REDACT_GRACE_MS).toBe(3_600_000);
     });
 
     it('exports the provider constants', () => {
@@ -92,6 +94,7 @@ describe('public api', () => {
         });
         expect(sandbox.DEFAULT_SANDBOX_IMAGE).toBe('ghcr.io/chamvi/sandbox-dev:trixie');
         expect(sandbox.TMP_SIZE).toBe('1Gi');
+        expect(sandbox.SLEEP_UNTIL_SCRIPT).toMatch(/exec sleep/);
         expect(sandbox.SANDBOX_LABELS).toEqual({
             'app.kubernetes.io/managed-by': 'chamvi',
             'app.kubernetes.io/component': 'sandbox',
@@ -117,12 +120,13 @@ describe('public api', () => {
         expect(sandbox.CREDENTIAL_INSTALL_TIMEOUT_MS).toBe(30_000);
         expect(sandbox.PUSH_LOG_MAX_COMMITS).toBe(50);
         expect(sandbox.GC_INTERVAL_MS).toBe(600_000);
+        expect(sandbox.GC_INTERVAL_MAX_MS).toBe(2_147_483_647);
         expect(sandbox.CLOSE_TIMEOUT_MS).toBe(30_000);
     });
 
     it('exports the image constants', () => {
         expect(sandbox.CACHE_DIR).toBe('/cache');
-        expect(sandbox.CACHE_ENV.MISE_DATA_DIR).toBe('/cache/mise');
+        expect(sandbox.CACHE_ENV).not.toHaveProperty('MISE_DATA_DIR');
         expect(sandbox.IMAGE_PROBE_TIMEOUT_MS).toBe(30_000);
         expect(sandbox.IMAGE_REQUIREMENTS).toEqual(['sh', 'git', 'timeout']);
         expect(sandbox.ROOT_CAPABILITIES).toContain('SETUID');

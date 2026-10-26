@@ -5,14 +5,16 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { SandboxError, ValidationError } from '@chamvi/core';
+import { SandboxError, ValidationError, systemClock } from '@chamvi/core';
+import type { IClock } from '@chamvi/core';
 import { isObject } from 'smob';
-import { REDACTED, REDACT_MIN_LENGTH } from './constants.ts';
+import { REDACTED, REDACT_GRACE_MS, REDACT_MIN_LENGTH } from './constants.ts';
 import type {
     GitAccess,
     GitCredential,
     GitCredentialRequest,
     IGitCredentials,
+    RedactedSpan,
     Redactor,
 } from './types.ts';
 
@@ -86,29 +88,79 @@ export async function resolveGitCredential(
     return undefined;
 }
 
-/** A redactor over the secrets added to it (each at least `REDACT_MIN_LENGTH` characters). */
-export function createRedactor(): Redactor {
+/**
+ * A redactor over the secrets added to it (each at least `REDACT_MIN_LENGTH`
+ * characters); one added with an `expiresAt` is forgotten `REDACT_GRACE_MS`
+ * after it on `clock`, checked on every call.
+ */
+export function createRedactor(options: { clock?: IClock } = {}): Redactor {
+    const clock = options.clock ?? systemClock;
     /** Longest first, so a secret containing another is replaced whole. */
     let secrets: string[] = [];
     const encoded = new Map<string, Buffer>();
+    /** Epoch ms after which a secret is dropped; undefined keeps it. */
+    const dropAt = new Map<string, number | undefined>();
     const replacement = Buffer.from(REDACTED);
 
-    const redact = (text: string): string => {
-        let result = text;
-        for (const secret of secrets) {
-            if (result.includes(secret)) result = result.replaceAll(secret, REDACTED);
+    const prune = (): void => {
+        const now = clock.now().getTime();
+        let dropped = false;
+        for (const [secret, at] of dropAt) {
+            if (at !== undefined && now >= at) {
+                dropAt.delete(secret);
+                encoded.delete(secret);
+                dropped = true;
+            }
         }
-        return result;
+        if (dropped) secrets = secrets.filter((secret) => encoded.has(secret));
+    };
+
+    const redactedSpans = (text: string): RedactedSpan[] => {
+        prune();
+        const spans: RedactedSpan[] = [];
+        // longest first: a secret inside a longer one is covered by it
+        for (const secret of secrets) {
+            for (let at = text.indexOf(secret); at !== -1; at = text.indexOf(secret, at + 1)) {
+                const end = at + secret.length;
+                if (spans.some((span) => at < span.end && span.start < end)) continue;
+                spans.push({ start: at, end });
+                at = end - 1;
+            }
+        }
+        return spans.sort((a, b) => a.start - b.start);
+    };
+
+    const redact = (text: string): string => {
+        const spans = redactedSpans(text);
+        if (spans.length === 0) return text;
+        let result = '';
+        let from = 0;
+        for (const span of spans) {
+            result += `${text.slice(from, span.start)}${REDACTED}`;
+            from = span.end;
+        }
+        return result + text.slice(from);
     };
 
     return {
-        add(secret) {
-            if (typeof secret !== 'string' || secret.length < REDACT_MIN_LENGTH || encoded.has(secret)) return;
+        add(secret, expiresAt) {
+            prune();
+            if (typeof secret !== 'string' || secret.length < REDACT_MIN_LENGTH) return;
+            const at = expiresAt instanceof Date ? expiresAt.getTime() + REDACT_GRACE_MS : undefined;
+            if (encoded.has(secret)) {
+                const current = dropAt.get(secret);
+                // no expiry wins, else the later one
+                if (current !== undefined) dropAt.set(secret, at === undefined ? undefined : Math.max(current, at));
+                return;
+            }
             encoded.set(secret, Buffer.from(secret));
+            dropAt.set(secret, at);
             secrets = [...secrets, secret].sort((a, b) => b.length - a.length);
         },
         redact,
+        redactedSpans,
         redactBytes(bytes) {
+            prune();
             let buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
             let changed = false;
             for (const secret of secrets) {

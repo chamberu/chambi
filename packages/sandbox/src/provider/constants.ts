@@ -60,3 +60,12 @@ export const REF_KEY = 'chamvi.dev/ref';
 
 /** The image: a Docker label, a Kubernetes annotation. */
 export const IMAGE_KEY = 'chamvi.dev/image';
+
+/**
+ * The command of a workspace container or pod (`sh -c` with the deadline,
+ * epoch seconds, as `$1`): it sleeps until the workspace's `expiresAt`,
+ * also when Docker starts the container again after a restart or a pod is
+ * scheduled late, and exits at once past it. An absolute deadline, since a
+ * fixed `sleep <lifetime>` would start over on every start.
+ */
+export const SLEEP_UNTIL_SCRIPT = 'd=$(( $1 - $(date +%s) )); if [ "$d" -gt 0 ]; then exec sleep "$d"; fi';

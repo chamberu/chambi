@@ -45,23 +45,26 @@ describeDocker('docker garbage collection', () => {
     });
 
     it('removes expired workspaces only', async () => {
-        // an hour back, so no workspace of a spec running alongside is expired at this clock's time
-        const clock = new ExpiryClock(new Date(Date.now() - 3_600_000));
+        // the real time, since a container sleeps until its expiry on the
+        // daemon's clock; a deployment of its own, so no workspace of a spec
+        // running alongside is in the pass
+        const clock = new ExpiryClock(new Date());
+        const deployment = `test-${randomUUID().slice(0, 8)}`;
         const provider = createDockerSandbox({
             ...dockerOptions,
             clock, 
             limits: { maxLifetimeMs: 600_000 }, 
         });
 
-        const first = await provider.create({ runId: `test-${randomUUID()}` });
+        const first = await provider.create({ runId: `test-${randomUUID()}`, deployment });
         workspaces.push(first);
         clock.advance(60_000);
-        const second = await provider.create({ runId: `test-${randomUUID()}` });
+        const second = await provider.create({ runId: `test-${randomUUID()}`, deployment });
         workspaces.push(second);
 
         // past the first one's expiry, a minute before the second one's
         clock.advance(540_000);
-        expect(await provider.collectGarbage()).toBe(1);
+        expect(await provider.collectGarbage({ deployment })).toBe(1);
 
         await expect(docker.getContainer(`${CONTAINER_NAME_PREFIX}${first.id}`).inspect())
             .rejects.toSatisfy((error) => statusCode(error) === 404);

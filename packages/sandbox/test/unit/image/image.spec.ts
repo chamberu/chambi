@@ -15,6 +15,7 @@ import {
     cacheEnv,
     isRootUser,
 } from '@chamvi/sandbox';
+import { CACHE_FOLDERS } from '../../../src/image/constants.ts';
 
 describe('assertImage', () => {
     it.each([
@@ -55,9 +56,12 @@ describe('cache env', () => {
             GOMODCACHE: '/cache/go/mod',
             GOCACHE: '/cache/go/build',
             COMPOSER_CACHE_DIR: '/cache/composer',
-            MISE_DATA_DIR: '/cache/mise',
         });
         expect(Object.isFrozen(CACHE_ENV)).toBe(true);
+    });
+
+    it('keeps no toolchain home in the cache', () => {
+        expect(Object.keys(CACHE_FOLDERS)).not.toContain('MISE_DATA_DIR');
     });
 
     it('never shares a home that holds credentials or installed programs (CARGO_HOME)', () => {
@@ -73,7 +77,6 @@ describe('cache env', () => {
             GOMODCACHE: '/srv/ws/.cache/go/mod',
             GOCACHE: '/srv/ws/.cache/go/build',
             COMPOSER_CACHE_DIR: '/srv/ws/.cache/composer',
-            MISE_DATA_DIR: '/srv/ws/.cache/mise',
         });
     });
 });

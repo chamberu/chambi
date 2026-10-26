@@ -7,10 +7,56 @@
 
 import { describe, expect, it } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
-import { REDACTED } from '@chamvi/sandbox';
+import { REDACTED, REDACT_GRACE_MS } from '@chamvi/sandbox';
 import { createRedactor } from '../../../src/credentials/helpers.ts';
+import { ControllableClock } from '../../utils/clock.ts';
 
 describe('createRedactor', () => {
+    it('forgets a secret REDACT_GRACE_MS after it expired', () => {
+        const T = 1_000_000;
+        const clock = new ControllableClock(new Date(T));
+        const redactor = createRedactor({ clock });
+        redactor.add('ghs_expiring_token', new Date(T + 1000));
+        clock.advance(1000 + REDACT_GRACE_MS - 1);
+        expect(redactor.redact('ghs_expiring_token')).toBe(REDACTED);
+        expect(new TextDecoder().decode(redactor.redactBytes(new TextEncoder().encode('ghs_expiring_token')))).toBe(REDACTED);
+        clock.advance(1);
+        expect(redactor.redact('ghs_expiring_token')).toBe('ghs_expiring_token');
+        expect(new TextDecoder().decode(redactor.redactBytes(new TextEncoder().encode('ghs_expiring_token')))).toBe('ghs_expiring_token');
+    });
+
+    it('answers the spans it redacts, a secret inside a longer one covered by it', () => {
+        const redactor = createRedactor({ clock: new ControllableClock(new Date(1_000_000)) });
+        redactor.add('token');
+        redactor.add('ghs_token_long');
+        const text = 'a ghs_token_long b token c';
+        expect(redactor.redactedSpans(text)).toEqual([{ start: 2, end: 16 }, { start: 19, end: 24 }]);
+        expect(redactor.redact(text)).toBe(`a ${REDACTED} b ${REDACTED} c`);
+        expect(redactor.redactedSpans('nothing here')).toEqual([]);
+    });
+
+    it('keeps a secret without expiry', () => {
+        const clock = new ControllableClock(new Date(1_000_000));
+        const redactor = createRedactor({ clock });
+        redactor.add('ghs_static_token');
+        clock.advance(100 * REDACT_GRACE_MS);
+        expect(redactor.redact('ghs_static_token')).toBe(REDACTED);
+    });
+
+    it('keeps the later expiry of a secret added twice, and none wins', () => {
+        const T = 1_000_000;
+        const clock = new ControllableClock(new Date(T));
+        const redactor = createRedactor({ clock });
+        redactor.add('ghs_twice_token', new Date(T + 1000));
+        redactor.add('ghs_twice_token', new Date(T + 5000));
+        clock.advance(1000 + REDACT_GRACE_MS);
+        expect(redactor.redact('ghs_twice_token')).toBe(REDACTED);
+        redactor.add('ghs_twice_token');
+        redactor.add('ghs_twice_token', new Date(T + 6000));
+        clock.advance(10 * REDACT_GRACE_MS);
+        expect(redactor.redact('ghs_twice_token')).toBe(REDACTED);
+    });
+
     it('replaces every issued secret in text', () => {
         const redactor = createRedactor();
         redactor.add('ghs_secret1');

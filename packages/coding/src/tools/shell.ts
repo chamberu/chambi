@@ -117,6 +117,7 @@ export function bashTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number
             `passes ${outputLogMaxBytes} bytes (outputCapped: true; redirect huge output to a file). No interactive input. ` +
             'A process the command leaves running (cmd &) keeps writing to the log and is killed once the log passes that size. ' +
             'For servers and watchers pass background: true and read the output with bash_output. ' +
+            'A command that sets its own EXIT trap replaces the one that keeps the working directory and exported variables, so that call\'s are not kept. ' +
             'When git fetch, pull or push fails to authenticate here, use git_fetch, git_pull and git_push, which carry the run\'s credentials.',
         inputSchema: objectSchema<BashInput>({
             command: {

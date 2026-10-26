@@ -63,14 +63,14 @@ Each workspace is a container `chamvi-ws-<id>`:
 | Setting | Value |
 |---|---|
 | User | `user`, default `0:0` (`DEFAULT_USER`), also of every command |
-| Command | `sleep infinity` under the image's entrypoint: the lifetime follows the run; the garbage collection removes it |
+| Command | `sh -c` sleeping until `expiresAt` (an absolute deadline, so a container `find` starts again after a host or daemon restart still stops at the same time, or at once past it), with the image's entrypoint replaced (`Entrypoint: []`): the container stops itself at `expiresAt` even when no collection runs; the garbage collection removes it |
 | Init | `Init: true`: docker-init is pid 1 and reaps orphaned processes (background jobs, the trees an exec timeout kills) for any image, also one without an init, whose zombies would otherwise fill `PidsLimit` |
 | Root filesystem | writable; read-only with `readOnlyRoot` |
 | Capabilities | all dropped; a root user gets back `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `KILL` (`ROOT_CAPABILITIES`); `no-new-privileges:true`, not privileged |
 | Limits | `NanoCpus` from `cpu`, `Memory` and `MemorySwap` (no swap) from `memory`, `PidsLimit` from `pids` |
 | `/workspace` | an anonymous volume, removed with the container (`remove({ force: true, v: true })`) |
 | `/home/sandbox` | HOME (`WORKSPACE_HOME`): an anonymous volume on disk, kept across a restart, removed with the container |
-| `/cache` | the named volume `chamvi-sandbox-cache` (`DEFAULT_CACHE_VOLUME`; a non-root `user` `chamvi-sandbox-cache-<user>`; `cache.volume`) shared by every workspace, or with `cache: false` an anonymous volume of its own |
+| `/cache` | an anonymous volume of its own, removed with the container; with `cache: { volume }` that named volume, shared by every workspace using it |
 | `/tmp` | a tmpfs of `tmpSize` (default 1 GiB, `TMP_SIZE`; `exec`, `nosuid`, `nodev`) |
 | Network | `network` (default `bridge`) |
 | Environment | `SANDBOX_ENV`, the cache variables (`CACHE_ENV`) and `env`, nothing from the host |
@@ -78,22 +78,23 @@ Each workspace is a container `chamvi-ws-<id>`:
 
 `limits.storage` is not enforced: a default volume has no size (use a storage driver with quotas, or the Kubernetes provider). Commands run through the Docker exec API in `/workspace`; a file is read with `cat` and written with `head -c` from stdin.
 
-**Hardened mode**: `createDockerSandbox({ user: '1000:1000', readOnlyRoot: true })` gives the container of earlier versions: uid 1000, a read-only root, no capability at all. `apt` and root-only installs then fail; toolchains still install into `/cache` with mise. The cache is then a volume of that user's own, `chamvi-sandbox-cache-<user>` (the name before any `:group`, e.g. `chamvi-sandbox-cache-1000`), since a root workspace leaves root-owned folders deep in the cache (npm's `_cacache`, mise's installs) that the hardened user cannot write. Before the checkout the provider opens the cache to that user (one exec as root, which owns the mount point Docker makes for an image without `/cache`, so it makes `/cache` and the empty top-level `CACHE_ENV` folders writable without any capability), so any image works there. Only those folders: never point a non-root `user` at a `cache.volume` a root workspace or another user wrote to.
+**Hardened mode**: `createDockerSandbox({ user: '1000:1000', readOnlyRoot: true })` gives the container of earlier versions: uid 1000, a read-only root, no capability at all. `apt` and root-only installs then fail; toolchains still install into HOME with mise. Before the checkout the provider opens the cache to that user (one exec as root, which owns the mount point Docker makes for an image without `/cache`, so it makes `/cache` and the empty top-level `CACHE_ENV` folders writable without any capability), so any image works there. Only those folders: a root workspace leaves root-owned folders deep in a cache (npm's `_cacache`) that the hardened user cannot write, so never point a non-root `user` at a `cache.volume` a root workspace or another user wrote to.
 
 ## Image
 
 The default image is `ghcr.io/chamvi/sandbox-dev:trixie` (`DEFAULT_SANDBOX_IMAGE`): Debian, git, curl, ripgrep, jq, build-essential, `tini` and [mise](https://mise.jdx.dev), which installs any toolchain at runtime (`mise use -g node@22`, `mise install`), built for `linux/amd64` and `linux/arm64` from [`images/sandbox-dev`](../../images/sandbox-dev). Tags: `trixie` (rebuilt on changes and weekly) and `trixie-<short sha>` (pushed once per commit that changes the image).
 
-- A run may pick any image (`create_workspace({ image })`), which the manager's `allowImage` narrows.
-- `pull: 'missing'` (default) pulls the provider's image once when the daemon lacks it, `'always'` before every create (a mutable tag then follows its rebuilds), `'never'` never. It covers the manager's `image` too; an image a run asked for (`create_workspace({ image })`) is pulled when missing.
+- A run may pick an image (`create_workspace({ image })`) only when the manager has an allow-list (`allowImage`, or `CHAMVI_SANDBOX_IMAGES` in `sandboxModule()`); without one the tool has no `image` parameter.
+- `pull: 'missing'` (default) pulls an image once when the daemon lacks it, `'always'` before every create (a mutable tag then follows its rebuilds), `'never'` never. It covers every image: the provider's, the manager's `image` and one a run asked for (`create_workspace({ image })`).
 - Pin a digest in production (`image: 'ghcr.io/chamvi/sandbox-dev@sha256:...'`), or use `pull: 'always'`.
+- The image's entrypoint is replaced, so an image whose entrypoint is a command (`["git"]`) works too.
 - An image needs `sh`, `git` and a GNU `timeout` that takes `-k`, plus `cat`, `head`, `mkdir`, `dirname`, `cp`, `mv` and `rm`. `create` probes the first three once the container runs and fails with a `SandboxError` naming what is missing, before any checkout (and removes the container).
 
 ## Cache
 
-Every workspace mounts `/cache` and gets `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR` and `MISE_DATA_DIR` pointing into it (`CACHE_ENV`), so a second install of the same packages or toolchain is fast. By default it is one named volume for the whole host, `chamvi-sandbox-cache` (one per non-root `user`, `chamvi-sandbox-cache-<user>`), which outlives every workspace (remove it with `docker volume rm` to reset it).
+Every workspace mounts `/cache` and gets `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE` and `COMPOSER_CACHE_DIR` pointing into it (`CACHE_ENV`): package downloads only, never toolchains (mise keeps its installs in HOME, per workspace). By default `/cache` is an anonymous volume per workspace, removed with it.
 
-**Risk**: workspaces of different runs and agents share that volume. A malicious package one run fetched can sit in the cache of another run; npm verifies integrity hashes, pip, Go's build cache and others less. Use `cache: false` (an anonymous volume per workspace, removed with it) where runs must not influence each other, or a volume per trust level (`cache: { volume: 'chamvi-cache-public' }`).
+`cache: { volume: 'chamvi-cache' }` mounts one named volume in every workspace instead, so a second install of the same packages is fast; it outlives every workspace (remove it with `docker volume rm` to reset it). **Risk**: a shared volume is a trust boundary shared by every run and agent on the host. A malicious package one run fetched can sit in the cache of another run; npm verifies integrity hashes, pip, Go's build cache and others less. Share a volume only between runs that trust each other, one volume per trust level.
 
 ## Security
 
@@ -106,7 +107,7 @@ Every workspace mounts `/cache` and gets `XDG_CACHE_HOME`, `npm_config_cache`, `
   ```
 
   and pass `network: 'chamvi-sandbox'`. `network: 'none'` cuts the network entirely; then only repo-less workspaces work, since the clone runs inside the container.
-- **Root inside, not on the host.** A workspace runs as root with a writable root filesystem by default, so it can install anything; it is still no privileged container, holds only the capabilities package managers need, keeps `no-new-privileges` and mounts nothing of the host but the cache volume. Use the hardened mode (`user`, `readOnlyRoot`) where root in the container is too much.
+- **Root inside, not on the host.** A workspace runs as root with a writable root filesystem by default, so it can install anything; it is still no privileged container, holds only the capabilities package managers need, keeps `no-new-privileges` and mounts nothing of the host (a named `cache.volume` is the only volume shared between workspaces). Use the hardened mode (`user`, `readOnlyRoot`) where root in the container is too much.
 - **Prompt injection**: what the model runs follows what it reads. Narrow `allowRepo` on the manager and put `bash` behind an approval where needed.
 
 ## Timeouts and abort
@@ -130,12 +131,12 @@ A create's `signal` (aborted by `release(runId)` and `manager.close()`) drops it
 | `docker` | `Dockerode` | `new Docker()` | The client (`DOCKER_HOST` or `/var/run/docker.sock`) |
 | `image` | `string` | `DEFAULT_SANDBOX_IMAGE` | The workspace image; pin a digest in production |
 | `network` | `string` | `'bridge'` | `'bridge'`, `'none'` or a user-created network |
-| `pull` | `'missing' \| 'always' \| 'never'` | `'missing'` | When to pull the image |
+| `pull` | `'missing' \| 'always' \| 'never'` | `'missing'` | When to pull an image (every image, also one a run asked for) |
 | `env` | `Record<string, string>` | none | Added after `SANDBOX_ENV` and `CACHE_ENV` |
 | `limits` | `SandboxLimits` | `DEFAULT_LIMITS` | `cpu`, `memory`, `pids`, `maxLifetimeMs` (`storage` is not enforced) |
 | `user` | `string` | `'0:0'` | The container user (`uid:gid` or a name); a non-root user gets no capability |
 | `readOnlyRoot` | `boolean` | `false` | A read-only root filesystem |
-| `cache` | `false \| { volume? }` | `{ volume: 'chamvi-sandbox-cache' }` (a non-root `user`: `'chamvi-sandbox-cache-<user>'`) | The shared `/cache` volume, or `false` for one per workspace |
+| `cache` | `{ volume: string }` | none (an anonymous volume per workspace) | A named `/cache` volume shared by every workspace (`false` and `{}` are refused) |
 | `tmpSize` | `string` | `'1Gi'` | Size of the `/tmp` tmpfs |
 | `clock` | `IClock` | `systemClock` | Expiry and the exec guard |
 
@@ -149,7 +150,6 @@ Misconfiguration throws core `InvalidAgentDefinitionError`; daemon and container
 | `DEFAULT_NETWORK` | constant | `'bridge'` |
 | `CONTAINER_NAME_PREFIX` | constant | `'chamvi-ws-'` |
 | `DEFAULT_USER` | constant | `'0:0'` |
-| `DEFAULT_CACHE_VOLUME` | constant | `'chamvi-sandbox-cache'` (root; a non-root `user` appends `-<user>`) |
 
 Types: `DockerSandboxOptions`.
 

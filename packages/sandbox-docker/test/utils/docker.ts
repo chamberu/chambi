@@ -30,7 +30,7 @@ export const dockerImage: string | undefined = context?.image;
 
 /**
  * The provider options of the tests: the test image and the tests' own
- * cache volume, so no run creates the host's default `chamvi-sandbox-cache`.
+ * shared cache volume (removed by the global setup's teardown).
  */
 export const dockerOptions = {
     image: context?.image,

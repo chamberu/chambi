@@ -33,13 +33,6 @@ export type WorkspaceCreateOptions = {
     checkout?: CheckoutOptions;
     /** The image of a container or pod workspace; default the provider's. */
     image?: string;
-    /**
-     * True when `image` is what a run asked for (`create_workspace({ image })`):
-     * a container or pod provider pulls it when missing, whatever its pull
-     * policy. The provider's own image and the operator's (the manager's
-     * `image`) follow the policy.
-     */
-    imageRequested?: boolean;
     env?: Record<string, string>;
     limits?: SandboxLimits;
     /** The deployment the workspace belongs to; default `DEFAULT_DEPLOYMENT`. */
