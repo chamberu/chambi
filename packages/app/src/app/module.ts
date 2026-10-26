@@ -18,7 +18,12 @@ import { inspectApp } from '../inspect/module.ts';
 import type { AppReport } from '../inspect/types.ts';
 import type { ModelProviders, ProviderConfig } from '../models/types.ts';
 import { AppToken } from '../module/constants.ts';
-import { createStoppedError, reportingModule, runHooks } from '../module/helpers.ts';
+import {
+    createStoppedError,
+    isAgentCheckSource,
+    reportingModule,
+    runHooks,
+} from '../module/helpers.ts';
 import { runStartSteps } from '../module/start.ts';
 import type { AppContext, AppMode } from '../module/types.ts';
 import { APP_BRAND } from './constants.ts';
@@ -108,6 +113,7 @@ export class App implements IApp {
             env: options.env ?? process.env,
             cwd: process.cwd(),
             agents: this.agents,
+            checks: this.modules.flatMap((module) => (isAgentCheckSource(module) ? module.agentChecks() : [])),
             ...(this.model !== undefined && { model: this.model }),
             ...(this.providers !== undefined && { providers: this.providers }),
             ...(this.models !== undefined && { models: this.models }),

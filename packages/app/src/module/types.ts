@@ -58,6 +58,15 @@ export type AppContext = {
 export type AgentCheck = (agent: Agent) => void;
 
 /**
+ * A module whose `AGENT_CHECKS` contributions are known without a lifecycle.
+ * `IApp.inspect()` (and so `chamvi doctor`) runs exactly these checks of the
+ * modules the app holds; a module without `agentChecks()` is not checked there.
+ */
+export interface IAgentCheckSource {
+    agentChecks(): AgentCheck[];
+}
+
+/**
  * A git credential source (structurally `@chamvi/sandbox`'s
  * `IGitCredentials`): modules contribute one to `AppToken.GIT_CREDENTIALS`
  * (`githubModule()` its App's), and `sandboxModule()` asks them after its own.

@@ -5,10 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { assertSchedulable } from '@chamvi/channel-cron';
 import { checkAgentModel } from '@chamvi/core';
 import type { Agent, ModelRef } from '@chamvi/core';
-import { assertMcpRunTool } from '@chamvi/http';
 import { isObject } from 'smob';
 import { readConfig } from '../config/module.ts';
 import { messageOf } from '../loader/helpers.ts';
@@ -16,6 +14,7 @@ import { loadAgents } from '../loader/module.ts';
 import { createModelResolver } from '../models/resolver.ts';
 import { readModelSettings } from '../models/settings.ts';
 import type { ModelResolver, ProviderSettings } from '../models/types.ts';
+import type { AgentCheck } from '../module/types.ts';
 import { NO_AGENTS_MESSAGE, NO_DIRECTORY_MESSAGE } from '../modules/agents/constants.ts';
 import { isDirectory, resolveAgentsRoot } from '../modules/agents/helpers.ts';
 import type {
@@ -63,15 +62,19 @@ function toProviderReport(provider: ProviderSettings, resolver: ModelResolver | 
     };
 }
 
-/** What a start would refuse about an agent: the model (`putAgent`) and every `AGENT_CHECKS` check of the built-ins. */
-function checkAgent(agent: Agent, model: ModelRef | undefined, resolver: ModelResolver | undefined): string[] {
+/** What a start would refuse about an agent: the model (`putAgent`) and the `AGENT_CHECKS` the app's modules declare (`agentChecks()`). */
+function checkAgent(
+    agent: Agent,
+    model: ModelRef | undefined,
+    resolver: ModelResolver | undefined,
+    agentChecks: readonly AgentCheck[],
+): string[] {
     const checks = [
         () => checkAgentModel(agent, {
             ...(model !== undefined && { model }),
             ...(resolver !== undefined && { models: resolver }),
         }),
-        () => assertSchedulable(agent),
-        () => assertMcpRunTool(agent),
+        ...agentChecks.map((check) => () => check(agent)),
     ];
     const errors: string[] = [];
     for (const check of checks) {
@@ -151,7 +154,7 @@ export async function inspectApp(input: InspectInput): Promise<AppReport> {
         }
     }
 
-    const agents: AgentReport[] = input.agents.map((agent) => toAgentReport(agent, 'code', model, checkAgent(agent, model, resolver)));
+    const agents: AgentReport[] = input.agents.map((agent) => toAgentReport(agent, 'code', model, checkAgent(agent, model, resolver, input.checks)));
 
     if (configRead) {
         const root = await resolveAgentsRoot(dir, cwd);
@@ -169,7 +172,7 @@ export async function inspectApp(input: InspectInput): Promise<AppReport> {
                     model,
                     codeNames.has(agent.name) ?
                         [`${agent.name}: a code agent has this name; the folder is not loaded.`] :
-                        checkAgent(agent, model, resolver),
+                        checkAgent(agent, model, resolver, input.checks),
                 )),
                 ...loaded.issues.map((issue): AgentReport => ({
                     name: issue.agent,

@@ -17,7 +17,7 @@ import {
     expect,
     it,
 } from 'vitest';
-import { createApp } from '@chamvi/app';
+import { createApp, httpModule } from '@chamvi/app';
 import type { IApp } from '@chamvi/app';
 import { NO_AGENTS_MESSAGE } from '../../../src/modules/agents/constants.ts';
 import {
@@ -155,6 +155,15 @@ describe('IApp.inspect()', () => {
                 errors: [],
             },
         ]);
+    });
+
+    it('runs only the agent checks the app\'s modules declare', async () => {
+        await writeTree(agentsDir, { [`${LONG_NAME}/agent.ts`]: agentFile('x', 'test/model', LONG_NAME, [HTTP_TRIGGER]) });
+        const app = track(createApp({ modules: [httpModule({ mcp: false })], models: testModels() }));
+
+        const report = await app.inspect({ env: { CHAMVI_AGENTS_DIR: agentsDir } });
+
+        expect(report.agents.find((agent) => agent.name === LONG_NAME)?.errors).toEqual([]);
     });
 
     it('reports folder agents a start would refuse', async () => {

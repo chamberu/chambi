@@ -7,6 +7,7 @@
 
 import type { Agent, ModelRef } from '@chamvi/core';
 import type { Env } from '../env/types.ts';
+import type { AgentCheck } from '../module/types.ts';
 import type {
     ModelProviders,
     ProviderConfig,
@@ -44,7 +45,11 @@ export type AgentReport = {
 
 /** What `IApp.inspect()` returns. */
 export type AppReport = {
-    /** Whether a start would resolve every setting and register every agent. */
+    /**
+     * Whether the model settings resolve and every agent passes its model
+     * check and the checks the app's modules declare. Not checked: the store
+     * (DATABASE_URL), authenticators, channels and modules without `agentChecks()`.
+     */
     ok: boolean;
     /** The config file read (absolute), when one was. */
     configFile?: string;
@@ -64,6 +69,8 @@ export type InspectInput = {
     env: Env;
     cwd: string;
     agents: readonly Agent[];
+    /** The AGENT_CHECKS the app's modules declare through `agentChecks()`. */
+    checks: readonly AgentCheck[];
     model?: ModelRef;
     providers?: Record<string, ProviderConfig>;
     models?: ModelProviders;
