@@ -47,7 +47,6 @@ import {
 import {
     assertDockerOptions,
     buildContainerOptions,
-    defaultCacheVolume,
     dockerMessage,
     isMissingImage,
     isStatus,
@@ -79,7 +78,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
     const pull = options.pull ?? 'missing';
     const user = options.user ?? DEFAULT_USER;
     const readOnlyRoot = options.readOnlyRoot ?? false;
-    const cacheVolume = options.cache === false ? undefined : (options.cache?.volume ?? defaultCacheVolume(user));
+    const cacheVolume = options.cache?.volume;
     const tmpSize = options.tmpSize ?? TMP_SIZE;
     const clock = options.clock ?? systemClock;
     const live = new Map<string, IWorkspace>();

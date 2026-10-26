@@ -89,14 +89,15 @@ describeDocker('sandbox-dev image as root (the default)', () => {
         expect((await run(['sh', '-c', 'command -v node || command -v python3 || command -v go'])).exitCode).not.toBe(0);
     });
 
-    it('keeps mise\'s shims out of the shared cache, behind the system tools on the PATH', async () => {
+    it('keeps mise\'s toolchains and shims out of the cache, behind the system tools on the PATH', async () => {
         const result = await run(['sh', '-c', 'echo "$PATH" && echo "$MISE_SHIMS_DIR" && echo "$MISE_DATA_DIR"']);
         const [path, shims, data] = result.stdout.split('\n');
         expect(path!.split(':').some((entry) => entry === '/cache' || entry.startsWith('/cache/'))).toBe(false);
         expect(path).toMatch(/:\/usr\/bin:.*:\/home\/sandbox\/\.local\/share\/mise\/shims$/);
         // in the workspace's disk-backed HOME, never the memory-backed /tmp
         expect(shims).toBe('/home/sandbox/.local/share/mise/shims');
-        expect(data).toBe('/cache/mise');
+        // mise's default data dir, $HOME/.local/share/mise: per workspace
+        expect(data).toBe('');
     });
 
     it('has a writable root filesystem', async () => {

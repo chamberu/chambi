@@ -30,6 +30,8 @@ describe('docker sandbox options', () => {
         ['a user with NUL', { user: 'a\0' }],
         ['a readOnlyRoot that is no boolean', { readOnlyRoot: 'yes' }],
         ['cache true', { cache: true }],
+        ['cache false', { cache: false }],
+        ['cache without a volume', { cache: {} }],
         ['an empty cache volume', { cache: { volume: '' } }],
         ['a cache volume with a slash', { cache: { volume: '/var/lib/x' } }],
         ['a bad tmpSize', { tmpSize: 'big' }],
@@ -82,25 +84,27 @@ describe('docker sandbox create without a daemon', () => {
     });
 
     it.each([
-        ['the default root user', {}, 'chamvi-sandbox-cache'],
-        ['root by name', { user: 'root:root' }, 'chamvi-sandbox-cache'],
-        ['a non-root uid', { user: '1000:1000' }, 'chamvi-sandbox-cache-1000'],
-        ['a non-root name', { user: 'node' }, 'chamvi-sandbox-cache-node'],
-        ['a non-root user with an explicit volume', { user: '1000:1000', cache: { volume: 'shared' } }, 'shared'],
-    ])('mounts the cache volume of %s', async (_name, options, volume) => {
+        ['the default root user', {}],
+        ['root by name', { user: 'root:root' }],
+        ['a non-root uid', { user: '1000:1000' }],
+    ])('mounts an anonymous cache for %s', async (_name, options) => {
         const docker = fakeDocker(new Error('stop after the create options'));
         const provider = createDockerSandbox({ docker: docker as never, ...options });
 
         await expect(provider.create({ runId: 'run-1' })).rejects.toThrow(SandboxError);
-        expect(cacheMountOf(docker)).toBe(volume);
+        expect(cacheMountOf(docker)).toBe('');
     });
 
-    it('gives a non-root user name that is no volume name a hashed cache volume', async () => {
+    it('mounts the named volume only with cache.volume', async () => {
         const docker = fakeDocker(new Error('stop after the create options'));
-        const provider = createDockerSandbox({ docker: docker as never, user: 'dom\\user' });
+        const provider = createDockerSandbox({ docker: docker as never, user: '1000:1000', cache: { volume: 'shared' } });
 
         await expect(provider.create({ runId: 'run-1' })).rejects.toThrow(SandboxError);
-        expect(cacheMountOf(docker)).toMatch(/^chamvi-sandbox-cache-[0-9a-f]{16}$/);
+        expect(cacheMountOf(docker)).toBe('shared');
+    });
+
+    it('names the new cache shape when refusing the old opt-out', () => {
+        expect(() => createDockerSandbox({ cache: false } as never)).toThrow(/cache must be \{ volume \}/);
     });
 
     it('creates no container for an already aborted signal', async () => {

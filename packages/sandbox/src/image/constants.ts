@@ -18,8 +18,9 @@ export const CACHE_DIR = '/cache';
 /**
  * Drops every `PATH` entry at or under `CACHE_DIR` before chamvi's own
  * commands run (the image probe, the `timeout` wrapper of every exec, the
- * checkout's `git`): the cache is shared by every run and agent and
- * writable by each, so a `git` or `timeout` one run planted there must never
+ * checkout's `git`): the cache may be shared by several runs and agents
+ * (a named Docker volume, a cache claim) and is writable by each, so a `git`
+ * or `timeout` one run planted there must never
  * be what another run's workspace executes. A PATH without such an entry
  * stays as it is. One line, no trailing `;`.
  */
@@ -32,10 +33,11 @@ export const PATH_GUARD_SCRIPT = [
 
 /**
  * The package-cache variables, each a folder under the cache directory.
- * Only caches: no home of a tool that keeps credentials or installed
- * programs there (`CARGO_HOME` holds `credentials.toml` and `cargo
- * install`ed binaries, so cargo keeps its home, `$HOME/.cargo`, per
- * workspace).
+ * Only package download caches: no home of a tool that keeps credentials
+ * or installed programs there (`CARGO_HOME` holds `credentials.toml` and
+ * `cargo install`ed binaries, so cargo keeps its home, `$HOME/.cargo`, per
+ * workspace; mise keeps its toolchains in its default
+ * `$HOME/.local/share/mise`, per workspace too).
  */
 export const CACHE_FOLDERS: Readonly<Record<string, string>> = Object.freeze({
     XDG_CACHE_HOME: 'xdg',
@@ -44,7 +46,6 @@ export const CACHE_FOLDERS: Readonly<Record<string, string>> = Object.freeze({
     GOMODCACHE: 'go/mod',
     GOCACHE: 'go/build',
     COMPOSER_CACHE_DIR: 'composer',
-    MISE_DATA_DIR: 'mise',
 });
 
 /** The cache variables of a container or pod workspace, all under `CACHE_DIR`. */

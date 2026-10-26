@@ -122,7 +122,7 @@ describe('public api', () => {
 
     it('exports the image constants', () => {
         expect(sandbox.CACHE_DIR).toBe('/cache');
-        expect(sandbox.CACHE_ENV.MISE_DATA_DIR).toBe('/cache/mise');
+        expect(sandbox.CACHE_ENV).not.toHaveProperty('MISE_DATA_DIR');
         expect(sandbox.IMAGE_PROBE_TIMEOUT_MS).toBe(30_000);
         expect(sandbox.IMAGE_REQUIREMENTS).toEqual(['sh', 'git', 'timeout']);
         expect(sandbox.ROOT_CAPABILITIES).toContain('SETUID');

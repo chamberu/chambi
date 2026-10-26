@@ -33,7 +33,7 @@ function input(overrides: Partial<Parameters<typeof buildContainerOptions>[0]> =
         network: 'bridge',
         user: '0:0',
         readOnlyRoot: false,
-        cacheVolume: 'chamvi-sandbox-cache' as string | undefined,
+        cacheVolume: undefined as string | undefined,
         tmpSize: '1Gi',
         env: { FOO: 'bar' },
         limits: {
@@ -52,7 +52,7 @@ describe('buildContainerOptions', () => {
         delete process.env.CHAMVI_SECRET_PROBE;
     });
 
-    it('builds a root container with a writable root, the package-manager capabilities and the shared cache', () => {
+    it('builds a root container with a writable root, the package-manager capabilities and an anonymous cache', () => {
         const options = buildContainerOptions(input());
 
         expect(options.name).toBe('chamvi-ws-w1');
@@ -101,7 +101,7 @@ describe('buildContainerOptions', () => {
                 Target: '/home/sandbox',
             }, {
                 Type: 'volume',
-                Source: 'chamvi-sandbox-cache',
+                Source: '',
                 Target: '/cache',
             }],
             AutoRemove: false,
@@ -177,7 +177,18 @@ describe('buildContainerOptions', () => {
             Target: '/cache',
         });
         // the variables still point into /cache, which exists either way
-        expect(options.Env).toContain('MISE_DATA_DIR=/cache/mise');
+        expect(options.Env).toContain('npm_config_cache=/cache/npm');
+        // toolchains stay per workspace, never in a cache volume
+        expect(options.Env?.some((entry) => entry.startsWith('MISE_DATA_DIR='))).toBe(false);
+    });
+
+    it('mounts a shared volume only when one is named', () => {
+        const options = buildContainerOptions(input({ cacheVolume: 'chamvi-shared' }));
+        expect(options.HostConfig?.Mounts?.find((mount) => mount.Target === '/cache')).toEqual({
+            Type: 'volume',
+            Source: 'chamvi-shared',
+            Target: '/cache',
+        });
     });
 
     it('sizes /tmp', () => {

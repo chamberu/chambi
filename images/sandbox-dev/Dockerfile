@@ -21,24 +21,22 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # /workspace, /home/sandbox (the workspace's HOME, @chamvi/sandbox's
-# WORKSPACE_HOME) and /cache (the shared package cache) are volumes in a
+# WORKSPACE_HOME) and /cache (the package download cache) are volumes in a
 # workspace; Docker copies these modes into an empty volume, so the
 # hardened mode (user 1000) can write them too
 RUN mkdir -m 0777 /workspace && mkdir -p -m 1777 /home/sandbox && mkdir -m 1777 /cache
 
-# the cache variables of @chamvi/sandbox's CACHE_ENV for mise (its
-# toolchains in the shared cache), and mise's shims at the end of the PATH,
-# so `mise use -g node@22` makes node a plain command. The shims live in
-# the workspace's HOME (per workspace, on disk, kept across a restart of a
-# stopped container, writable in the hardened mode too), never in the
-# cache: every run can write there, and a `git` one run planted on the PATH
-# would run in every later workspace. mise's global config follows HOME
-# too. mise trusts the repository's config and reads .nvmrc and
-# .python-version
+# mise's toolchains, shims and global config live in the workspace's HOME
+# (mise's default data dir $HOME/.local/share/mise: per workspace, on disk,
+# kept across a restart of a stopped container, writable in the hardened
+# mode too), never in /cache, which holds package downloads only and may be
+# a volume several runs share: a toolchain or a `git` one run planted there
+# would run in every later workspace. mise's shims go at the end of the
+# PATH, so `mise use -g node@22` makes node a plain command. mise trusts
+# the repository's config and reads .nvmrc and .python-version
 ENV DEBIAN_FRONTEND=noninteractive \
     CI=true \
     GIT_TERMINAL_PROMPT=0 \
-    MISE_DATA_DIR=/cache/mise \
     MISE_SHIMS_DIR=/home/sandbox/.local/share/mise/shims \
     MISE_YES=1 \
     MISE_TRUSTED_CONFIG_PATHS=/workspace \

@@ -441,9 +441,9 @@ describeDocker('docker sandbox', () => {
         }
     });
 
-    it('keeps the cache of its own with cache false', async () => {
-        const { workspace: first } = await create({ cache: false });
-        const { workspace: second } = await create({ cache: false });
+    it('keeps a cache of its own without cache.volume', async () => {
+        const { workspace: first } = await create({ cache: undefined });
+        const { workspace: second } = await create({ cache: undefined });
         await first.exec(['sh', '-c', 'mkdir -p /cache/npm && echo one > /cache/npm/own']);
         expect((await second.exec(['cat', '/cache/npm/own'])).exitCode).not.toBe(0);
         expect((await first.exec(['cat', '/cache/npm/own'])).stdout).toBe('one\n');
@@ -453,7 +453,7 @@ describeDocker('docker sandbox', () => {
         const { workspace } = await create({
             user: '1000:1000', 
             readOnlyRoot: true, 
-            cache: false, 
+            cache: undefined, 
         });
         expect((await workspace.exec(['id', '-u'])).stdout.trim()).toBe('1000');
         expect((await workspace.exec(['touch', '/etc/probe'])).exitCode).not.toBe(0);
@@ -484,7 +484,7 @@ describeDocker('docker sandbox', () => {
                 pull: 'never',
                 user: '1000:1000',
                 readOnlyRoot: true,
-                cache: false,
+                cache: undefined,
             });
             const result = await workspace.exec(['sh', '-c', WRITE_CACHE]);
             expect(result.stderr).toBe('');
@@ -495,7 +495,7 @@ describeDocker('docker sandbox', () => {
     });
 
     // only the top-level folders: what a root workspace makes below them stays
-    // root's, which is why a non-root user gets a volume of its own by default
+    // root's, which is why a non-root user must never share a root's volume
     it('opens the top-level folders a root workspace made in an explicitly shared cache to the hardened user', async () => {
         await buildFixtureImage(docker, 'no-cache', NO_CACHE_IMAGE);
         const volume = `chamvi-sandbox-cache-test-${randomUUID()}`;
