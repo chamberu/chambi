@@ -63,7 +63,10 @@ export function buildModuleHarness(options: ModuleHarnessOptions = {}): ModuleHa
         async setup() {
             try {
                 await application.setup();
-                await runStartSteps(container);
+                // a check stops before the start steps, like IApp.check()
+                if (!context.check) {
+                    await runStartSteps(container);
+                }
             } catch (error) {
                 await application.teardown();
                 throw error;

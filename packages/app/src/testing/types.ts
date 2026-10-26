@@ -24,7 +24,7 @@ export type ModuleHarnessOptions = {
     model?: AppContext['model'];
     /** createApp's `providers`, copied into the context. */
     providers?: AppContext['providers'];
-    /** Copied into the context: `IApp.check()`'s flag (mode stays `start`). */
+    /** Copied into the context: `IApp.check()`'s flag (mode stays `start`); `setup()` then runs no start steps. */
     check?: boolean;
     /** Copied into the context: the agent a job runs (`IApp.runJob()`). */
     job?: AppContext['job'];
