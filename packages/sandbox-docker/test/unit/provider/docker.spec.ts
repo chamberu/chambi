@@ -539,16 +539,13 @@ describeDocker('docker sandbox', () => {
         }
     });
 
-    it.skipIf(offline)('pulls a model-chosen image when missing, whatever pull says', async () => {
+    it('never pulls any image with pull never', async () => {
         const runId = `test-${randomUUID()}`;
         const error = await createDockerSandbox({ ...dockerOptions, pull: 'never' })
-            .create({
-                runId,
-                image: MISSING_IMAGE,
-                imageRequested: true,
-            })
+            .create({ runId, image: MISSING_IMAGE })
             .catch((e: unknown) => e);
-        expect((error as Error).message).toContain(`cannot pull the image ${MISSING_IMAGE}`);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).not.toContain('cannot pull');
         expect(await containersOf(runId)).toEqual([]);
     });
 

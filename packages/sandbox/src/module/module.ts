@@ -36,7 +36,7 @@ import {
     SANDBOX_PROVIDER_NAMES,
     SANDBOX_PROVIDER_PACKAGES,
 } from './constants.ts';
-import { isPackageNotFound, loadPackage } from './helpers.ts';
+import { isPackageNotFound, loadPackage, readImageAllowList } from './helpers.ts';
 import { createLazyProvider } from './provider.ts';
 import type {
     DockerProviderPackage,
@@ -148,12 +148,14 @@ export class SandboxModule implements IModule {
 
         const credentials = this.credentialSources(env, managerOptions.credentials);
         const credentialMode = envOneOf(env, 'CHAMVI_GIT_CREDENTIAL_MODE', CREDENTIAL_MODES) ?? managerOptions.credentialMode;
+        const allowImage = readImageAllowList(env) ?? managerOptions.allowImage;
         try {
             this.manager = createWorkspaceManager({
                 ...managerOptions,
                 credentials,
                 ...(credentialMode && { credentialMode }),
                 provider: target,
+                ...(allowImage && { allowImage }),
                 ...(workspaceEnv && { env: workspaceEnv }),
                 ...(deployment !== undefined && { deployment }),
                 isSettled: managerOptions.isSettled ?? ((runId) => this.isSettled(runId)),

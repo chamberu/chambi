@@ -166,8 +166,8 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                     env: { ...options.env, ...input.env },
                     limits,
                     labels: options.podLabels ?? {},
-                    // an image a run asked for is pulled if not present; the provider's and the operator's follow the option
-                    imagePullPolicy: input.imageRequested === true && info.image !== image ? 'IfNotPresent' : imagePullPolicy,
+                    // the operator's policy for every image, requested or default
+                    imagePullPolicy,
                     user,
                     readOnlyRoot,
                     ...(options.cache && { cacheClaim: options.cache.claimName }),

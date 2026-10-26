@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { ToolSet } from 'ai';
 import {
     EFFECT,
     SandboxError,
@@ -105,6 +106,38 @@ describe('workspace tools', () => {
         await expect(callTool(tools, 'dispose_workspace', { workspace }, toolContext('r2')))
             .rejects.toThrow(/not found/);
         expect(provider.disposed).toEqual([]);
+    });
+
+    function propertiesOf(tools: ToolSet): string[] {
+        const schema = tools.create_workspace!.inputSchema as { jsonSchema: { properties: Record<string, unknown> } };
+        return Object.keys(schema.jsonSchema.properties);
+    }
+
+    it('offers no image parameter without an allow-list', () => {
+        const { tools } = setup();
+        expect(propertiesOf(tools)).toEqual(['repo', 'ref']);
+    });
+
+    it('offers the image parameter with an allow-list', () => {
+        const clock = new ControllableClock(new Date(1_000_000));
+        const manager = createWorkspaceManager({
+            provider: createFakeProvider({ clock }),
+            clock,
+            gcIntervalMs: 0,
+            allowImage: () => true,
+        });
+        expect(propertiesOf(manager.tools())).toContain('image');
+    });
+
+    it('offers no image parameter on the local provider, even with an allow-list', () => {
+        const clock = new ControllableClock(new Date(1_000_000));
+        const manager = createWorkspaceManager({
+            provider: Object.assign(createFakeProvider({ clock }), { name: 'local' }),
+            clock,
+            gcIntervalMs: 0,
+            allowImage: () => true,
+        });
+        expect(propertiesOf(manager.tools())).toEqual(['repo', 'ref']);
     });
 
     it('are chamvi tools and not effect tools', () => {

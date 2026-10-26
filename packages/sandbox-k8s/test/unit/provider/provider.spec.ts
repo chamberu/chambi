@@ -160,21 +160,12 @@ describe('kubernetes sandbox', () => {
         expect(client.deleted).toEqual([client.created[0]!.metadata!.name]);
     });
 
-    it('pulls a model-chosen image if not present, the provider\'s own and the operator\'s as configured', async () => {
+    it('applies the operator\'s pull policy to every image', async () => {
         const { client, provider } = setup(answerRevParse, { imagePullPolicy: 'Always' });
         await provider.create({ runId: 'r1' });
-        await provider.create({
-            runId: 'r2', 
-            image: 'python:3.13', 
-            imageRequested: true, 
-        });
+        await provider.create({ runId: 'r2', image: 'python:3.13' });
         await provider.create({ runId: 'r3', image: 'registry.local/acme/builder:2' });
-        await provider.create({
-            runId: 'r4', 
-            image: 'img', 
-            imageRequested: true, 
-        });
-        expect(client.created.map((pod) => pod.spec?.containers[0]?.imagePullPolicy)).toEqual(['Always', 'IfNotPresent', 'Always', 'Always']);
+        expect(client.created.map((pod) => pod.spec?.containers[0]?.imagePullPolicy)).toEqual(['Always', 'Always', 'Always']);
         expect(client.created[1]!.spec?.containers[0]?.image).toBe('python:3.13');
     });
 

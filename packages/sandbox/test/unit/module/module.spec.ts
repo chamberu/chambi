@@ -151,6 +151,58 @@ function recordDrain(engine: Engine, events: string[]): void {
     };
 }
 
+describe('sandboxModule: image allow-list', () => {
+    function dockerProvider(): ISandboxProvider {
+        return {
+            name: 'docker',
+            create: async () => { throw new Error('not used'); },
+            find: async () => [],
+            collectGarbage: async () => 0,
+        };
+    }
+
+    function imageParameterOf(module: SandboxModule): boolean {
+        const tool = module.manager.tools().create_workspace as { inputSchema: { jsonSchema: { properties: Record<string, unknown> } } };
+        return 'image' in tool.inputSchema.jsonSchema.properties;
+    }
+
+    it('offers no image without an allow-list', () => {
+        const module = sandboxModule({ provider: dockerProvider(), env: {} });
+        expect(imageParameterOf(module)).toBe(false);
+    });
+
+    it('builds the allow-list from CHAMVI_SANDBOX_IMAGES', async () => {
+        const module = sandboxModule({ provider: dockerProvider(), env: { CHAMVI_SANDBOX_IMAGES: ' python:3.13 ,rust:1,' } });
+        managers.push(module.manager);
+        expect(imageParameterOf(module)).toBe(true);
+        await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
+    });
+
+    it('names CHAMVI_SANDBOX_IMAGES for an entry that is no image reference, never echoing it', () => {
+        let error: unknown;
+        try {
+            sandboxModule({ provider: dockerProvider(), env: { CHAMVI_SANDBOX_IMAGES: 'ok:1,bad image' } });
+        } catch (e) {
+            error = e;
+        }
+        expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
+        expect((error as Error).message).toContain('CHAMVI_SANDBOX_IMAGES');
+        expect((error as Error).message).not.toContain('bad image');
+    });
+
+    it('lets CHAMVI_SANDBOX_IMAGES win over allowImage', async () => {
+        const allowImage = vi.fn(() => true);
+        const module = sandboxModule({
+            provider: dockerProvider(),
+            allowImage,
+            env: { CHAMVI_SANDBOX_IMAGES: 'python:3.13' },
+        });
+        managers.push(module.manager);
+        await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
+        expect(allowImage).not.toHaveBeenCalled();
+    });
+});
+
 describe('sandboxModule', () => {
     it('local by default, exposes the manager synchronously', async () => {
         const module = new RecordingSandboxModule({ env: {} });
