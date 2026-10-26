@@ -27,12 +27,15 @@ A subscription to a channel no module contributes (a `github.on()` without `gith
 
 ## 3. A model
 
-Agents without a `model` take the app's default. One provider, one model:
+Agents without a `model` take the app's default. One provider, one model, in a `.env` file next to `package.json`:
 
 ```bash
+# .env
 CHAMVI_MODEL=anthropic/claude-sonnet-5-5
 ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+`chamvi dev` reads `.env`; `chamvi start` does not, so in production these come from the process environment (`export` them in a shell, or the deployment's env).
 
 A string names a provider the app declared; nothing falls back to a gateway. See [Pick a Model](/guide/models).
 
@@ -43,10 +46,10 @@ npx chamvi dev     # .env loaded, restarts on code changes
 npx chamvi start   # production: needs CHAMVI_TOKENS
 ```
 
-`chamvi dev` without `CHAMVI_TOKENS` generates a random token with every permission and logs it once (a warning), so you can call the API right away. `chamvi start` refuses to start without an authenticator: set `CHAMVI_TOKENS` to a JSON list, each `value` at least 16 characters:
+`chamvi dev` without `CHAMVI_TOKENS` generates a random token with every permission and logs it once (a warning), so you can call the API right away. `chamvi start` refuses to start without an authenticator: set `CHAMVI_TOKENS` to a JSON list, each `value` at least 16 characters. Generate the value, never copy one from a page:
 
 ```bash
-CHAMVI_TOKENS='[{ "value": "a-long-random-secret", "id": "ops", "permissions": ["*"] }]'
+export CHAMVI_TOKENS="[{ \"value\": \"$(openssl rand -hex 32)\", \"id\": \"ops\", \"permissions\": [\"*\"] }]"
 ```
 
 Both listen on port 3000 (`PORT`). Without `DATABASE_URL` runs live in memory: a restart loses them (see [Stores](/stores/typeorm) for Postgres).
@@ -57,7 +60,7 @@ The default app has no dashboard. Add an entry that includes `uiModule()` (`npm 
 
 <<< @/snippets/first-agent/index.ts#dashboard
 
-`chamvi dev` runs `src/index.ts` directly; for `chamvi start`, build it first (`chamvi build` writes `dist/index.mjs`, with `tsdown` installed as a devDependency). The dashboard is at `/ui`; sign in with a token from `CHAMVI_TOKENS` (or the dev token). See [Dashboard](/guide/ui).
+`chamvi dev` runs `src/index.ts` directly; for `chamvi start`, build it first: `chamvi build` writes `dist/index.mjs` and needs `tsdown` (`npm install --save-dev tsdown`, an optional peer of `@chamvi/cli`). The dashboard is at `/ui`; sign in with a token from `CHAMVI_TOKENS` (or the dev token). See [Dashboard](/guide/ui).
 
 ## 6. Editing a folder cancels its runs
 
