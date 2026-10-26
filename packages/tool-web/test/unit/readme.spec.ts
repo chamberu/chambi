@@ -21,12 +21,9 @@ describe('README example', () => {
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
-    it('gives the agent web_fetch and package_info, and web_search with a provider', () => {
-        const plain = createResearchAgent(mockModel([]));
-        expect(Object.keys(plain.definition.tools as object).sort()).toEqual(['package_info', 'web_fetch']);
-
-        const searching = createResearchAgent(mockModel([]), { search: async () => [] });
-        expect(Object.keys(searching.definition.tools as object).sort()).toEqual(['package_info', 'web_fetch', 'web_search']);
+    it('gives the agent web_fetch', () => {
+        const agent = createResearchAgent(mockModel([]));
+        expect(Object.keys(agent.definition.tools as object)).toEqual(['web_fetch']);
     });
 
     it('subscribes to the http channel, so REST and MCP can start it', () => {

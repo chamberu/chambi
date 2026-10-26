@@ -1,6 +1,6 @@
 # @chamvi/tool-web
 
-Web research tools for chamvi agents: URL fetch behind an address guard, package registry lookups and a pluggable web search. The public API of `packages/tool-web/src/index.ts`.
+A web fetch tool for chamvi agents: any public page as markdown, behind an address check, through a [hapic](https://github.com/tada5hi/hapic) client. The public API of `packages/tool-web/src/index.ts`.
 
 ```bash
 npm install @chamvi/tool-web @chamvi/core ai --save
@@ -11,36 +11,50 @@ npm install @chamvi/tool-web @chamvi/core ai --save
 ## webTools
 
 ```ts
-function webTools(options?: WebToolsOptions): ToolSet;
+function webTools(options?: WebToolsOptions): ToolSet; // { web_fetch }
 
 const WEB_FETCH_MAX_BYTES: 5_242_880;
 const WEB_FETCH_MAX_CHARS: 65_536;
 const WEB_TIMEOUT_MS: 30_000;
-const MAX_REDIRECTS: 5;
-const WEB_SEARCH_MAX_RESULTS: 20;
+const WEB_MAX_REDIRECTS: 5;
 const WEB_REQUEST_ERROR_CODE: 'web_request';
 ```
 
-Throws `InvalidAgentDefinitionError` for options that are no object, a `fetch`, `lookup` or `allowUrl` that is no function, a `search` without `search()`, a `maxBytes` or `timeoutMs` that is no positive integer (`timeoutMs` at most 2^31 - 1), `registries` with an unknown ecosystem or a value that is no absolute http(s) URL without credentials, query or hash, and a `clock` without `now()` and `setTimeout()`. Returns `web_fetch`, `package_info` and, with `search`, `web_search`: plain [`defineTool()`](/guide/tools) tools, no effect tools.
+Throws `InvalidAgentDefinitionError` for options that are no object, a `client` that is no hapic client, a `lookup` or `allowUrl` that is no function, a `maxBytes` or `timeoutMs` that is no positive integer (`timeoutMs` at most 2^31 - 1) and a clock without `now()` and `setTimeout()`.
 
 | Tool | Input | Result |
 |---|---|---|
-| `web_fetch` | `url`, `format?` (`markdown` default, `text`, `raw`), `offset?` | `WebFetchResult`: at most 65 536 characters from `offset`; an HTML page converts in a worker thread (its first 1 Mi characters, bounded by `timeoutMs`, refused when nested deeper than 512 elements) |
-| `package_info` | `ecosystem` (`npm`, `pypi`, `crates`, `packagist`, `go`, `rubygems`), `name`, `version?` (or an npm dist-tag) | `PackageInfo`: up to 100 versions, newest first, and the detail of `version` (default the latest) |
-| `web_search` | `query`, `limit?` (default 10, at most 20) | `SearchResult[]` |
+| `web_fetch` | `url`, `format?` (`markdown` default, `text`, `raw`), `offset?` | `WebFetchResult`: at most 65 536 characters from `offset`; an HTML page converted (links absolute) unless `raw`, other text as is; `nextOffset` while more follows, `truncated` when the body passed `maxBytes` or the HTML 1 Mi characters |
 
-Every request (also each redirect, at most 5) resolves the host through `lookup` and refuses the URL (`ValidationError`) when any address is loopback, private, link-local, CGNAT, multicast, reserved or documentation space (IPv4 and IPv6; IPv4-mapped, NAT64 and 6to4 by the IPv4 address inside), unless `allowUrl(url)` returns `true` (`false` refuses any URL); the default transport connects to the checked address. Registry origins skip the check. Request failures are tool errors with code `web_request`: an error status (`HTTP <status> from <url>`), more than 5 redirects, a timeout (`No answer from <origin> within <ms>ms.`), a host that does not resolve, a response that is no text, a registry without the package (`<ecosystem> has no package <name>.`) or version.
+Every URL and every redirect target (at most 5) is resolved and refused (`ValidationError`) when an address is loopback, private, link-local or metadata, CGNAT, multicast or reserved, unless `allowUrl(url)` answers `true`; `false` refuses a URL outright. The request resolves the name again (DNS rebinding is not covered), and behind a proxy the proxy connects. An error status, a network failure, a binary response and the timeout are `ChamviError`s with code `web_request`, tool errors the model reads.
 
-<<< ../../../tool-web/src/tools/types.ts{ts}
-
-<<< ../../../tool-web/src/request/types.ts#public{ts}
-
-## Registries
+## Types
 
 ```ts
-const DEFAULT_REGISTRIES: Readonly<Record<PackageEcosystem, string>>; // npm, pypi, crates, packagist, go, rubygems
-const PACKAGE_VERSIONS_MAX: 100;
-const PACKAGE_DEPENDENCIES_MAX: 200;
-```
+type WebToolsOptions = {
+    client?: IClient;          // hapic; default createClient(), proxy from HTTP_PROXY / HTTPS_PROXY / NO_PROXY
+    lookup?: WebLookup;        // default dns.lookup, every address
+    allowUrl?: WebUrlPolicy;
+    maxBytes?: number;         // default 5 MiB
+    timeoutMs?: number;        // default 30 s, the whole fetch
+    clock?: IClock;
+};
 
-<<< ../../../tool-web/src/registry/types.ts#public{ts}
+type WebLookup = (hostname: string, signal: AbortSignal) => Promise<WebAddress[]>;
+type WebAddress = { address: string; family: number };
+type WebUrlPolicy = (url: URL) => boolean | undefined;
+type WebFetchFormat = 'markdown' | 'text' | 'raw';
+
+type WebFetchResult = {
+    url: string;               // after redirects
+    status: number;
+    contentType: string | null;
+    format: WebFetchFormat;
+    title?: string;
+    content: string;
+    offset: number;
+    totalChars: number;
+    nextOffset?: number;
+    truncated: boolean;
+};
+```

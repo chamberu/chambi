@@ -5,26 +5,22 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Transport, WebAddress, WebLookup } from '../../src/request/types.ts';
-
-export type FakeCall = {
-    url: string;
-    addresses: WebAddress[];
-    headers: Record<string, string>;
-};
+import { FetchTransport, createClient } from 'hapic';
+import type { IClient } from 'hapic';
+import type { WebAddress, WebLookup } from '@chamvi/tool-web';
 
 export type FakeRoute = (url: URL, signal: AbortSignal) => Response | Promise<Response>;
 
 export type FakeWeb = {
-    transport: Transport;
+    /** A hapic client over the routes (no proxy). */
+    client: IClient;
     lookup: WebLookup;
-    /** A `fetch` over the same routes, for webTools({ fetch }). */
-    fetch: typeof globalThis.fetch;
-    calls: FakeCall[];
+    /** The URLs requested, in order. */
+    calls: string[];
     lookups: string[];
-    /** Answers for a URL (exact `href`). */
+    /** Answers per URL (exact `href`); any other URL answers 404. */
     routes: Map<string, FakeRoute>;
-    /** Addresses per host name; a missing host has none. */
+    /** Addresses per host name; a missing host gets `PUBLIC`. */
     dns: Map<string, WebAddress[]>;
 };
 
@@ -34,41 +30,27 @@ export const PUBLIC: WebAddress = { address: '93.184.215.14', family: 4 };
 export function createFakeWeb(): FakeWeb {
     const routes = new Map<string, FakeRoute>();
     const dns = new Map<string, WebAddress[]>();
-    const calls: FakeCall[] = [];
+    const calls: string[] = [];
     const lookups: string[] = [];
-
-    const answer = async (url: URL, signal: AbortSignal): Promise<Response> => {
+    const fetch = async (input: string, init?: RequestInit): Promise<Response> => {
+        const url = new URL(input);
+        calls.push(url.href);
+        const signal = init?.signal ?? new AbortController().signal;
+        signal.throwIfAborted();
         const route = routes.get(url.href);
         if (!route) return new Response('not found', { status: 404 });
         return route(url, signal);
     };
-
     return {
-        calls,
-        lookups,
-        routes,
-        dns,
+        client: createClient({ transport: new FetchTransport({ fetch }), proxy: false }),
         lookup: async (hostname) => {
             lookups.push(hostname);
             return dns.get(hostname) ?? [PUBLIC];
         },
-        transport: async (url, init) => {
-            calls.push({
-                url: url.href, 
-                addresses: init.addresses, 
-                headers: init.headers, 
-            });
-            return answer(url, init.signal);
-        },
-        fetch: (async (input: string | URL | Request, init?: RequestInit) => {
-            const url = new URL(input instanceof Request ? input.url : input);
-            calls.push({
-                url: url.href, 
-                addresses: [], 
-                headers: Object.fromEntries(new Headers(init?.headers)), 
-            });
-            return answer(url, init?.signal ?? new AbortController().signal);
-        }) as typeof globalThis.fetch,
+        calls,
+        lookups,
+        routes,
+        dns,
     };
 }
 

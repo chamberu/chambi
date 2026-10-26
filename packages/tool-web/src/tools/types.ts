@@ -6,61 +6,53 @@
  */
 
 import type { IClock } from '@chamvi/core';
-import type { PackageEcosystem } from '../registry/types.ts';
-import type { WebLookup, WebUrlPolicy } from '../request/types.ts';
+import type { IClient } from 'hapic';
 
-/** One search hit. */
-export type SearchResult = {
-    title: string;
-    url: string;
-    snippet?: string;
+/** One address of a host name. */
+export type WebAddress = {
+    address: string;
+    family: number;
 };
 
-/** A web search backend (no built-in one ships); `web_search` exists only with one. */
-export interface ISearchProvider {
-    search(query: string, options: { limit: number; signal: AbortSignal }): Promise<SearchResult[]>;
-}
+/** Resolves a host name to its addresses (default `dns.lookup`, every address). */
+export type WebLookup = (hostname: string, signal: AbortSignal) => Promise<WebAddress[]>;
+
+/** true allows a URL (also on a non-public address), false refuses it, undefined applies the address check. */
+export type WebUrlPolicy = (url: URL) => boolean | undefined;
 
 export type WebToolsOptions = {
-    /** Adds `web_search`. */
-    search?: ISearchProvider;
-    /** Replaces the default transport (node:http(s) pinned to the checked address); it must pin addresses itself to keep DNS rebinding out. */
-    fetch?: typeof globalThis.fetch;
-    /** Resolves host names (default `dns.lookup`, every address). */
-    lookup?: WebLookup;
-    /** true allows a URL (also on a non-public address), false refuses it, undefined applies the address check. */
-    allowUrl?: WebUrlPolicy;
-    /** Bytes `web_fetch` reads of a response (default WEB_FETCH_MAX_BYTES, 5 MiB). */
-    maxBytes?: number;
-    /** Timeout of one request, redirects and body included, and for web_fetch of the HTML conversion too (default WEB_TIMEOUT_MS, 30 s). */
-    timeoutMs?: number;
     /**
-     * Registry base URLs per ecosystem (default DEFAULT_REGISTRIES); their
-     * origins skip the address check, so a mirror on a private address works.
+     * The hapic client the requests go through. Default: a fresh one, whose
+     * transport honours `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`.
      */
-    registries?: Partial<Record<PackageEcosystem, string>>;
-    /** Timers (default systemClock). */
+    client?: IClient;
+    /** Resolves host names for the address check (default `dns.lookup`). */
+    lookup?: WebLookup;
+    /** Overrides the address check per URL. */
+    allowUrl?: WebUrlPolicy;
+    /** Bytes `web_fetch` reads of a response (default `WEB_FETCH_MAX_BYTES`, 5 MiB). */
+    maxBytes?: number;
+    /** Milliseconds one fetch may take, redirects included (default `WEB_TIMEOUT_MS`, 30 s). */
+    timeoutMs?: number;
     clock?: IClock;
 };
 
 export type WebFetchFormat = 'markdown' | 'text' | 'raw';
 
-/** `web_fetch`. */
 export type WebFetchResult = {
     /** The URL after redirects. */
     url: string;
     status: number;
     contentType: string | null;
     format: WebFetchFormat;
-    /** The HTML page's title (markdown and text). */
     title?: string;
-    /** At most WEB_FETCH_MAX_CHARS characters from `offset`. */
+    /** At most `WEB_FETCH_MAX_CHARS` characters from `offset`. */
     content: string;
     offset: number;
-    /** Characters of the whole converted document. */
+    /** Characters of the whole (converted) document. */
     totalChars: number;
-    /** The offset of the next page, when more follows. */
+    /** The offset of the next page, when the content goes on. */
     nextOffset?: number;
-    /** True when the response was longer than `maxBytes` and only its start was read, or only the start of a longer HTML page was converted. */
+    /** The body was longer than `maxBytes`, or the HTML longer than the converter takes, and was cut. */
     truncated: boolean;
 };

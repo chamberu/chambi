@@ -46,7 +46,7 @@ npm install @chamvi/sandbox @chamvi/coding @chamvi/sandbox-local    # developmen
 
 ## Web research tools
 
-Agents that read the web (pages, package registries, a search provider) add the web tools:
+Agents that read the web (pages, changelogs, package registries) add the web fetch tool:
 
 ```bash
 npm install @chamvi/tool-web

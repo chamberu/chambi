@@ -7,22 +7,24 @@
 
 import type { Tool } from 'ai';
 import { ValidationError, defineTool } from '@chamvi/core';
-import { convertHtml } from '../html/convert.ts';
 import { HTML_MAX_CHARS } from '../html/constants.ts';
 import {
     decodeBody,
+    htmlToMarkdown,
+    htmlToText,
     isHtml,
     isText,
     mediaTypeOf,
 } from '../html/module.ts';
-import { requestError } from '../request/asserts.ts';
 import { UNTRUSTED_NOTE, WEB_FETCH_FORMATS, WEB_FETCH_MAX_CHARS } from './constants.ts';
 import {
     cutText,
+    getPage,
     inputObject,
     objectSchema,
     optionalInteger,
     optionalOneOf,
+    requestError,
     requireString,
     signalOf,
 } from './asserts.ts';
@@ -38,8 +40,9 @@ type WebFetchInput = {
 export function webFetchTool(options: ResolvedWebOptions): Tool<WebFetchInput, WebFetchResult> {
     return defineTool<WebFetchInput, WebFetchResult>({
         description: 'Fetch a public web page or file over http(s): an HTML page as readable markdown (default) or plain text, ' +
-            `any other text as is, or the raw body. Returns at most ${WEB_FETCH_MAX_CHARS} characters from offset; ` +
-            `nextOffset names the next page. ${UNTRUSTED_NOTE}`,
+            'any other text (JSON, e.g. a package registry such as https://registry.npmjs.org/<name> or ' +
+            'https://pypi.org/pypi/<name>/json) as is. ' +
+            `Returns at most ${WEB_FETCH_MAX_CHARS} characters from offset; nextOffset names the next page. ${UNTRUSTED_NOTE}`,
         inputSchema: objectSchema<WebFetchInput>({
             url: {
                 type: 'string',
@@ -63,50 +66,38 @@ export function webFetchTool(options: ResolvedWebOptions): Tool<WebFetchInput, W
             const format = optionalOneOf(body.format, 'format', WEB_FETCH_FORMATS) ?? 'markdown';
             const offset = optionalInteger(body.offset, 'offset', 0) ?? 0;
 
-            const started = options.clock.now().getTime();
-            const signal = signalOf(abortSignal, context);
-            const response = await options.request(url, {
-                signal,
-                accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
-            });
-            const contentType = response.headers.get('content-type');
-            if (!isText(contentType)) {
-                throw requestError(`${response.url} is ${mediaTypeOf(contentType)}, not text.`);
+            const page = await getPage(url, options, signalOf(abortSignal, context));
+            if (!isText(page.contentType)) {
+                throw requestError(`${page.url.href} is ${mediaTypeOf(page.contentType)}, not text; web_fetch reads text only.`);
             }
-            const text = decodeBody(response.bytes, contentType);
-            let page: { title?: string; content: string } = { content: text };
-            let cut = false;
-            if (format !== 'raw' && isHtml(contentType)) {
-                const html = cutText(text, 0, HTML_MAX_CHARS);
-                cut = html.length < text.length;
-                page = await convertHtml({
-                    html,
-                    baseUrl: response.url,
-                    format,
-                    signal,
-                    // the call's timeout covers the conversion too
-                    timeoutMs: Math.max(options.timeoutMs - (options.clock.now().getTime() - started), 0),
-                    clock: options.clock,
-                });
+            let text = decodeBody(page.bytes, page.contentType);
+            let { truncated } = page;
+            let title: string | undefined;
+            if (format !== 'raw' && isHtml(page.contentType)) {
+                if (text.length > HTML_MAX_CHARS) {
+                    text = text.slice(0, HTML_MAX_CHARS);
+                    truncated = true;
+                }
+                const converted = format === 'text' ? htmlToText(text) : htmlToMarkdown(text, page.url.href);
+                ({ title } = converted);
+                text = converted.content;
             }
-
-            const totalChars = page.content.length;
-            if (offset > totalChars) {
-                throw new ValidationError(`offset ${offset} is past the end of the document, which has ${totalChars} characters.`);
+            if (offset > 0 && offset >= text.length) {
+                throw new ValidationError(`offset ${offset} is past the end (${text.length} characters).`);
             }
-            const content = cutText(page.content, offset, WEB_FETCH_MAX_CHARS);
+            const content = cutText(text, offset, WEB_FETCH_MAX_CHARS);
             const next = offset + content.length;
             return {
-                url: response.url,
-                status: response.status,
-                contentType,
+                url: page.url.href,
+                status: page.status,
+                contentType: page.contentType,
                 format,
-                ...(page.title !== undefined ? { title: page.title } : {}),
+                ...(title !== undefined && { title }),
                 content,
                 offset,
-                totalChars,
-                ...(next < totalChars ? { nextOffset: next } : {}),
-                truncated: response.truncated || cut,
+                totalChars: text.length,
+                ...(next < text.length && { nextOffset: next }),
+                truncated,
             };
         },
     });

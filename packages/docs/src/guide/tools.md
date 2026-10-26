@@ -28,15 +28,11 @@ A recovered run repeats the step that was in progress when the process died. A p
 
 ## Web research tools
 
-[`@chamvi/tool-web`](/reference/tool-web) gives an agent the web: `web_fetch` reads any public page as markdown, `package_info` reads npm, PyPI, crates.io, Packagist, the Go module proxy and RubyGems, and `web_search` runs a search provider you bring. They run in the chamvi process and reach public addresses only: every request and every redirect is resolved and checked first (loopback, private, link-local and metadata addresses are refused), then connected to the checked address. Release notes between two versions of a GitHub project come from `@chamvi/github`'s `github_list_releases` and `github_compare`.
+[`@chamvi/tool-web`](/reference/tool-web) gives an agent `web_fetch`: any public page as markdown (or text, or the raw body), a registry document such as `https://registry.npmjs.org/<name>` as JSON. It runs in the chamvi process through a [hapic](https://github.com/tada5hi/hapic) client that takes the proxy from `HTTP_PROXY`/`HTTPS_PROXY`, and reaches public addresses only: every URL and redirect target is resolved and refused when it points at a loopback, private, link-local or metadata address (`allowUrl` can open an internal host). Release notes between two versions of a GitHub project come from `@chamvi/github`'s `github_list_releases` and `github_compare`.
 
 <<< @/snippets/tool-web.ts#agent
 
-A search provider is any object with `search(query, { limit, signal })`:
-
-<<< @/snippets/tool-web.ts#provider
-
-Everything these tools return is written by strangers, and a page can carry instructions aimed at the model. The tool descriptions mark results as untrusted; say so in the instructions too, and keep side effects behind [approvals](/guide/approvals) when an agent reads the web.
+Everything the tool returns is written by strangers, and a page can carry instructions aimed at the model. The tool description marks results as untrusted; say so in the instructions too, and keep side effects behind [approvals](/guide/approvals) when an agent reads the web.
 
 ## Restricting tools per invoker
 

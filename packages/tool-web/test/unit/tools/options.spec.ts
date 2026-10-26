@@ -12,7 +12,7 @@ import { webTools } from '@chamvi/tool-web';
 describe('webTools options', () => {
     it.each([
         ['options that are no object', 'nope'],
-        ['a fetch that is no function', { fetch: 'x' }],
+        ['a client that is no hapic client', { client: { get: () => undefined } }],
         ['a lookup that is no function', { lookup: 1 }],
         ['an allowUrl that is no function', { allowUrl: true }],
         ['a maxBytes that is no positive integer', { maxBytes: 0 }],
@@ -25,7 +25,7 @@ describe('webTools options', () => {
     });
 
     it('builds the tools without options', () => {
-        expect(Object.keys(webTools()).sort()).toEqual(['package_info', 'web_fetch']);
+        expect(Object.keys(webTools()).sort()).toEqual(['web_fetch']);
     });
 
     it('are chamvi tools and not effect tools', () => {

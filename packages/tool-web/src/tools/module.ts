@@ -8,21 +8,13 @@
 import type { ToolSet } from 'ai';
 import { resolveOptions } from './asserts.ts';
 import { webFetchTool } from './fetch.ts';
-import { packageInfoTool } from './package.ts';
-import { webSearchTool } from './search.ts';
 import type { WebToolsOptions } from './types.ts';
 
 /**
- * The web research tools: web_fetch, package_info and, with a `search`
- * provider, web_search. They run in the
- * chamvi process (not in a workspace) and reach public addresses only,
- * unless `allowUrl` opens more (or `registries` names a private mirror). Plain chamvi tools, not effect tools: they change nothing.
+ * The web tools: `web_fetch` (a public http(s) page as markdown, text or
+ * raw). Options are checked when called (InvalidAgentDefinitionError).
  */
 export function webTools(options: WebToolsOptions = {}): ToolSet {
     const resolved = resolveOptions(options);
-    return {
-        web_fetch: webFetchTool(resolved),
-        package_info: packageInfoTool(resolved),
-        ...(resolved.search ? { web_search: webSearchTool(resolved, resolved.search) } : {}),
-    };
+    return { web_fetch: webFetchTool(resolved) };
 }
