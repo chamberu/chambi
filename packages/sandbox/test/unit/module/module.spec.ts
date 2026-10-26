@@ -57,6 +57,9 @@ class RecordingSandboxModule extends SandboxModule {
     /** Rejects the next collectGarbage call of the provider with this error. */
     gcFailure: Error | undefined;
 
+    /** Holds every collectGarbage call of the provider until it resolves. */
+    gcGate: Promise<void> | undefined;
+
     constructor(options: SandboxModuleOptions, protected failure?: Error) {
         super(options);
     }
@@ -75,6 +78,7 @@ class RecordingSandboxModule extends SandboxModule {
             },
             collectGarbage: async (options) => {
                 this.calls.push(['collectGarbage', options]);
+                await this.gcGate;
                 const failure = this.gcFailure;
                 this.gcFailure = undefined;
                 if (failure) throw failure;
@@ -207,6 +211,27 @@ describe('sandboxModule: garbage collection timer', () => {
         time.advance(2 * GC_INTERVAL_MS);
         await new Promise((resolve) => { setTimeout(resolve, 10); });
         expect(module.collections()).toBe(before);
+    });
+
+    it('waits for a collection in flight before the manager closes', async () => {
+        const time = clock();
+        const module = new RecordingSandboxModule({ env: {} });
+        const harness = await harnessWith(module, { clock: time });
+        let release!: () => void;
+        module.gcGate = new Promise((resolve) => { release = resolve; });
+        const before = module.collections();
+
+        time.advance(GC_INTERVAL_MS);
+        await vi.waitFor(() => expect(module.collections()).toBe(before + 1));
+
+        let stopped = false;
+        const stopping = harness.stop().then(() => { stopped = true; });
+        await new Promise((resolve) => { setTimeout(resolve, 20); });
+        expect(stopped).toBe(false);
+
+        release();
+        await stopping;
+        expect(stopped).toBe(true);
     });
 
     it('runs no collector with gcIntervalMs 0', async () => {

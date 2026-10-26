@@ -85,6 +85,9 @@ export class SandboxModule implements IModule {
     /** Set by `stopCollector`: a collection in flight arms no further timer. */
     protected collectorStopped = false;
 
+    /** The collection the timer started, while it runs; `drained` waits for it. */
+    protected collecting: Promise<void> | undefined;
+
     /** The sources other modules contribute to `AppToken.GIT_CREDENTIALS`, readable once `setup` ran. */
     protected contributed: () => readonly GitCredentialSource[] = () => [];
 
@@ -208,6 +211,9 @@ export class SandboxModule implements IModule {
                 },
                 drained: async () => {
                     this.stopCollector();
+                    // a collection in flight still reads the store and removes
+                    // workspaces: it must settle before the store closes
+                    await this.collecting;
                     detach?.();
                     detach = undefined;
                     // no run of a memory store resumes after this process: its
@@ -230,17 +236,19 @@ export class SandboxModule implements IModule {
         const arm = (): void => {
             this.collector = clock.setTimeout(() => {
                 this.collector = undefined;
-                this.manager.collectGarbage()
-                    .catch((error: unknown) => this.reportError(error))
+                const collecting = this.manager.collectGarbage()
+                    .then(() => undefined, (error: unknown) => this.reportError(error))
                     .finally(() => {
+                        if (this.collecting === collecting) this.collecting = undefined;
                         if (!this.collectorStopped) arm();
                     });
+                this.collecting = collecting;
             }, this.gcIntervalMs);
         };
         arm();
     }
 
-    /** Clears the collector timer; a collection in flight arms no further one. */
+    /** Clears the collector timer; a collection in flight arms no further one (`drained` awaits it). */
     protected stopCollector(): void {
         this.collectorStopped = true;
         this.collector?.clear();
