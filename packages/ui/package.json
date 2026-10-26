@@ -103,7 +103,7 @@
         "@vuecs/theme-tailwind": "^6.5.0",
         "@vuecs/timeago": "^2.2.1",
         "@vuecs/tree": "^1.0.0",
-        "@vueuse/core": "^14.0.0",
+        "@vueuse/core": "^15.0.0",
         "ai": "^7.0.146",
         "ilingo": "^6.2.0",
         "pinia": "^4.1.0",
