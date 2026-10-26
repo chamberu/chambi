@@ -11,7 +11,7 @@ import { isObject } from 'smob';
 import { WEB_FETCH_MAX_BYTES, WEB_TIMEOUT_MS } from '../request/constants.ts';
 import { systemLookup } from '../url/lookup.ts';
 import { TIMER_MAX_MS } from './constants.ts';
-import type { ResolvedWebOptions, WebToolsOptions } from './types.ts';
+import type { WebToolsOptions, WebToolsOptionsNormalized } from './types.ts';
 
 function positiveInteger(value: unknown, name: string, fallback: number, max = Number.MAX_SAFE_INTEGER): number {
     if (value === undefined) return fallback;
@@ -22,7 +22,7 @@ function positiveInteger(value: unknown, name: string, fallback: number, max = N
 }
 
 /** The options checked, with their defaults (InvalidAgentDefinitionError). */
-export function resolveOptions(options: WebToolsOptions): ResolvedWebOptions {
+export function normalizeOptions(options: WebToolsOptions): WebToolsOptionsNormalized {
     if (!isObject(options)) {
         throw new InvalidAgentDefinitionError('webTools() options must be an object.');
     }

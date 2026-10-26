@@ -15,7 +15,7 @@ import {
     isText,
     mediaTypeOf,
 } from '../html/module.ts';
-import type { ResolvedWebOptions } from '../options/types.ts';
+import type { WebToolsOptionsNormalized } from '../options/types.ts';
 import { requestError } from '../request/asserts.ts';
 import { getPage } from '../request/module.ts';
 import {
@@ -36,7 +36,7 @@ type WebFetchInput = {
     offset?: number;
 };
 
-export function webFetchTool(options: ResolvedWebOptions): Tool<WebFetchInput, WebFetchResult> {
+export function webFetchTool(options: WebToolsOptionsNormalized): Tool<WebFetchInput, WebFetchResult> {
     return defineTool<WebFetchInput, WebFetchResult>({
         description: 'Fetch a public web page or file over http(s): an HTML page as readable markdown (default) or plain text, ' +
             'any other text (JSON, e.g. a package registry such as https://registry.npmjs.org/<name> or ' +

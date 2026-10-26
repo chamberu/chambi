@@ -6,7 +6,7 @@
  */
 
 import { isHttpResponseError } from 'hapic';
-import type { ResolvedWebOptions } from '../options/types.ts';
+import type { WebToolsOptionsNormalized } from '../options/types.ts';
 import { checkUrl, parseWebUrl } from '../url/module.ts';
 import { messageOf, readCapped, requestError } from './asserts.ts';
 import { WEB_MAX_REDIRECTS } from './constants.ts';
@@ -18,7 +18,7 @@ import type { WebResponse } from './types.ts';
  * reads at most `maxBytes` of the body. A 4xx or 5xx status, a network
  * failure and the timeout are `web_request` tool errors.
  */
-export async function getPage(input: string, options: ResolvedWebOptions, signal: AbortSignal): Promise<WebResponse> {
+export async function getPage(input: string, options: WebToolsOptionsNormalized, signal: AbortSignal): Promise<WebResponse> {
     const timeout = new AbortController();
     const timer = options.clock.setTimeout(() => {
         timeout.abort(requestError(`The request did not finish within ${options.timeoutMs}ms.`));

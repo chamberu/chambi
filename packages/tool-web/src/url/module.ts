@@ -8,7 +8,7 @@
 import { isIP } from 'node:net';
 import { ValidationError } from '@chamvi/core';
 import { isBlockedAddress } from '../address/module.ts';
-import type { ResolvedWebOptions } from '../options/types.ts';
+import type { WebToolsOptionsNormalized } from '../options/types.ts';
 import { messageOf, requestError } from '../request/asserts.ts';
 
 /** An absolute http(s) URL without credentials, else a ValidationError. */
@@ -35,7 +35,7 @@ export function parseWebUrl(input: string | URL): URL {
  * so a host answering differently the second time (DNS rebinding) is not
  * covered; `allowUrl` and a network policy are the operator's tools for that.
  */
-export async function checkUrl(url: URL, options: ResolvedWebOptions, signal: AbortSignal): Promise<void> {
+export async function checkUrl(url: URL, options: WebToolsOptionsNormalized, signal: AbortSignal): Promise<void> {
     const decision = options.allowUrl?.(url);
     if (decision === false) {
         throw new ValidationError(`${url.href} is not allowed.`);

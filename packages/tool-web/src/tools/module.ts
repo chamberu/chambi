@@ -6,7 +6,7 @@
  */
 
 import type { ToolSet } from 'ai';
-import { resolveOptions } from '../options/module.ts';
+import { normalizeOptions } from '../options/module.ts';
 import type { WebToolsOptions } from '../options/types.ts';
 import { webFetchTool } from './fetch.ts';
 
@@ -15,6 +15,6 @@ import { webFetchTool } from './fetch.ts';
  * raw). Options are checked when called (InvalidAgentDefinitionError).
  */
 export function webTools(options: WebToolsOptions = {}): ToolSet {
-    const resolved = resolveOptions(options);
-    return { web_fetch: webFetchTool(resolved) };
+    const normalized = normalizeOptions(options);
+    return { web_fetch: webFetchTool(normalized) };
 }

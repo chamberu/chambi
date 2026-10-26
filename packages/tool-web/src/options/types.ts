@@ -27,7 +27,7 @@ export type WebToolsOptions = {
 };
 
 /** The options checked, with their defaults. */
-export type ResolvedWebOptions = {
+export type WebToolsOptionsNormalized = {
     client: IClient;
     lookup: WebLookup;
     allowUrl?: WebUrlPolicy;
