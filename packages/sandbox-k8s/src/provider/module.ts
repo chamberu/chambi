@@ -17,6 +17,7 @@ import {
     DEPLOYMENT_LABEL,
     RUN_LABEL,
     SANDBOX_LABEL_SELECTORS,
+    TMP_SIZE,
     WORKSPACE_LABEL,
     abortedCreate,
     assertCreateInput,
@@ -27,11 +28,17 @@ import {
     createSettledCheck,
     delay,
     prepareWorkspace,
+    probeImage,
     readCheckout,
     readWorkspaceInfo,
     resolveLimits,
 } from '@chamvi/sandbox';
-import type { ISandboxProvider, IWorkspace, WorkspaceInfo } from '@chamvi/sandbox';
+import type {
+    IExecTransport,
+    ISandboxProvider,
+    IWorkspace,
+    WorkspaceInfo,
+} from '@chamvi/sandbox';
 import { createPodClient } from '../client/module.ts';
 import { createPodTransport } from '../transport/module.ts';
 import {
@@ -55,10 +62,12 @@ const PROVIDER_NAME = 'k8s';
 const MANAGED_SELECTOR = SANDBOX_LABEL_SELECTORS.join(',');
 
 /**
- * One hardened pod per workspace (see `buildPod`), commands run through the
- * pod exec API inside GNU `timeout`. `create` waits for the pod to run
- * (polling its status on the clock, failing fast on image and config errors),
- * then checks out. `find` lists a run's running pods by label and rebuilds
+ * One pod per workspace (see `buildPod`: root with a writable root and a few
+ * capabilities by default, the hardened mode through `user` and
+ * `readOnlyRoot`), commands run through the pod exec API inside GNU
+ * `timeout`. `create` waits for the pod to run (polling its status on the
+ * clock, failing fast on image and config errors), probes the image
+ * (`probeImage`), then checks out. `find` lists a run's running pods by label and rebuilds
  * the info from their labels and annotations; a pod that failed, finished
  * or is being deleted is gone. Creating the provider contacts nothing.
  */
@@ -72,6 +81,9 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
     });
     const image = options.image ?? DEFAULT_SANDBOX_IMAGE;
     const imagePullPolicy = options.imagePullPolicy ?? 'IfNotPresent';
+    const user = options.user ?? { uid: 0, gid: 0 };
+    const readOnlyRoot = options.readOnlyRoot ?? false;
+    const tmpSize = options.tmpSize ?? TMP_SIZE;
     const startTimeoutMs = options.startTimeoutMs ?? START_TIMEOUT_MS;
     const pollMs = options.pollMs ?? POLL_MS;
     const clock = options.clock ?? systemClock;
@@ -96,11 +108,11 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
     }
 
     /** The workspace of pod `chamvi-ws-<id>`, registered as live until disposed. */
-    function open(id: string, info: WorkspaceInfo): IWorkspace {
+    function open(id: string, info: WorkspaceInfo, transport: IExecTransport = createPodTransport(client, `${POD_NAME_PREFIX}${id}`)): IWorkspace {
         const remote = createRemoteWorkspace({
             id,
             info,
-            transport: createPodTransport(client, `${POD_NAME_PREFIX}${id}`),
+            transport,
             clock,
         });
         const workspace: IWorkspace = {
@@ -141,7 +153,8 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                 ...buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.maxLifetimeMs),
                 image: input.image ?? image,
             };
-            const workspace = open(id, info);
+            const transport = createPodTransport(client, name);
+            const workspace = open(id, info, transport);
 
             try {
                 await client.create(buildPod({
@@ -152,9 +165,19 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                     env: { ...options.env, ...input.env },
                     limits,
                     labels: options.podLabels ?? {},
-                    imagePullPolicy,
+                    // an image a run asked for is pulled if not present; the provider's and the operator's follow the option
+                    imagePullPolicy: input.imageRequested === true && info.image !== image ? 'IfNotPresent' : imagePullPolicy,
+                    user,
+                    readOnlyRoot,
+                    ...(options.cache && { cacheClaim: options.cache.claimName }),
+                    tmpSize,
                 }));
                 await waitForRunning(name, input.signal);
+                await probeImage(transport, {
+                    image: info.image, 
+                    clock, 
+                    signal: input.signal, 
+                });
                 const { commit } = await prepareWorkspace(workspace, {
                     repo: input.repo,
                     ref: input.ref,

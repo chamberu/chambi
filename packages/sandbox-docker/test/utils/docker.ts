@@ -10,8 +10,10 @@ import type Docker from 'dockerode';
 import { describe, inject } from 'vitest';
 
 export type DockerContext = {
-    /** The sandbox image built from `images/sandbox-node` by the global setup. */
+    /** The sandbox image built from `images/sandbox-dev` by the global setup. */
     image: string;
+    /** The shared cache volume the tests use (removed by the global setup's teardown). */
+    cacheVolume: string;
 };
 
 declare module 'vitest' {
@@ -24,6 +26,15 @@ const context: DockerContext | undefined = inject('docker');
 
 /** The test image, `undefined` when Docker is not available. */
 export const dockerImage: string | undefined = context?.image;
+
+/**
+ * The provider options of the tests: the test image and the tests' own
+ * cache volume, so no run creates the host's default `chamvi-sandbox-cache`.
+ */
+export const dockerOptions = {
+    image: context?.image,
+    cache: { volume: context?.cacheVolume },
+};
 
 /** A `describe` that skips when the global setup found no Docker daemon. */
 export function describeDocker(name: string, fn: () => void): void {

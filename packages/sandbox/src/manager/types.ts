@@ -22,6 +22,12 @@ export type WorkspaceManagerOptions = {
     allowFileRepos?: boolean;
     /** Narrows the accepted repositories further; gets the normalized URL. */
     allowRepo?: (url: string) => boolean;
+    /**
+     * Narrows the images `create_workspace` may ask for (any image by
+     * default); gets the reference as requested. Never asked for the
+     * manager's or the provider's own image.
+     */
+    allowImage?: (image: string) => boolean;
     /** Workspaces one run may hold at once. Default MAX_WORKSPACES_PER_RUN (3). */
     maxWorkspacesPerRun?: number;
     /** Minimum interval between the garbage collections `acquire` starts. Default GC_INTERVAL_MS; 0 disables them. */
@@ -46,6 +52,8 @@ export type AcquireInput = {
     /** `owner/name`, an https URL, or `file:///absolute/path` with `allowFileRepos`. */
     repo?: string;
     ref?: string;
+    /** An image reference (`assertImage`), checked by `allowImage`; default the manager's, else the provider's. */
+    image?: string;
     signal?: AbortSignal;
 };
 
@@ -74,8 +82,8 @@ export interface IWorkspaceManager {
      * The run's workspace of `repo` (none: the repo-less one): held, else
      * found through `provider.find` (adopted, `reused`), else created when
      * missing, expired or gone (`IWorkspace.disposed`). Concurrent calls share one create. ValidationError for a
-     * repository or ref the rules refuse; SandboxError for another ref of a
-     * held repository, a reached per-run cap or a failed create.
+     * repository, ref or image the rules refuse; SandboxError for another ref
+     * or image of a held repository, a reached per-run cap or a failed create.
      */
     acquire(runId: string, input: AcquireInput): Promise<AcquireResult>;
     /**
@@ -130,6 +138,8 @@ export type WorkspaceToolResult = {
     repo: string | null;
     ref: string | null;
     commit: string | null;
+    /** The image of a container or pod workspace; null on local. */
+    image: string | null;
     expiresAt: string;
     reused: boolean;
 };

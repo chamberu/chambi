@@ -25,7 +25,7 @@ chamvi/
 │   ├── sandbox/                     # @chamvi/sandbox (same layout; aliases core, itself and its /module, sandbox-local, app, app/testing, http, channel-cron, store-typeorm; private test/utils/clock.ts)
 │   ├── sandbox-local/               # @chamvi/sandbox-local (aliases core, sandbox, test-kit and itself)
 │   ├── sandbox-docker/              # @chamvi/sandbox-docker (same aliases as local)
-│   │   └── test/global-setup.ts     # dockerode ping() gate, builds images/sandbox-node as chamvi/sandbox-node:test
+│   │   └── test/global-setup.ts     # dockerode ping() gate, builds images/sandbox-dev as chamvi/sandbox-dev:test, removes the test cache volume
 │   ├── sandbox-k8s/                 # @chamvi/sandbox-k8s (same aliases; tests drive a fake IPodClient, test/utils/client.ts)
 │   ├── coding/                      # @chamvi/coding (aliases core, sandbox, sandbox-local, test-kit and itself)
 │   ├── ui/                          # @chamvi/ui (aliases core, http, test-kit, itself and its /module, plus app, app/testing, channel-cron, store-typeorm to src)
@@ -46,14 +46,15 @@ chamvi/
 │       ├── src/public/              # logo.svg (favicon), fixed light/dark logo and run-lifecycle copies
 │       └── src/snippets/            # Code samples included via <<<, type-checked by the docs typecheck
 ├── images/
-│   └── sandbox-node/                # Dockerfile + README of ghcr.io/chamvi/sandbox-node (Node 24, git, tini, uid 1000)
+│   ├── sandbox-dev/                 # Dockerfile + README of ghcr.io/chamvi/sandbox-dev (Debian, git, build tools, ripgrep, jq, mise; root)
+│   └── sandbox-node/                # deprecated ghcr.io/chamvi/sandbox-node (Node 24, uid 1000), built for one more release
 ├── .github/
 │   ├── assets/                      # logo.svg (+ test-kit and organisation variants), run-lifecycle.svg
 │   ├── actions/{install,build}/     # Composite actions
 │   ├── workflows/{ci,release,docs,images}.yml # CI (Node 22, 24, plus the Chromium e2e job), release-please + npm publish, docs to GitHub Pages, sandbox image (craneship, amd64 + arm64)
 │   ├── ISSUE_TEMPLATE/              # Bug report and feature request templates
 │   ├── FUNDING.yml                  # GitHub Sponsors
-│   └── dependabot.yml               # Daily npm + github-actions updates, docker for images/sandbox-node
+│   └── dependabot.yml               # Daily npm + github-actions updates, docker for images/sandbox-dev and images/sandbox-node
 ├── .husky/commit-msg                # Runs commitlint
 ├── CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md
 ├── nx.json                          # Task orchestration and caching
@@ -83,8 +84,8 @@ chamvi/
 | `@chamvi/store-typeorm` | Exists (0.1.0) | `TypeormStore`, entities, initial migration, `migrateStore`, `purgeExpired` |
 | `@chamvi/sandbox` | Exists (0.1.0) | `ISandboxProvider`/`IWorkspace`/`IExecTransport` contracts, path, repo, ref, limit and env rules, output collector, `createRemoteWorkspace()`, `prepareWorkspace()`, the run-scoped `createWorkspaceManager()` with `create_workspace`/`dispose_workspace`, the context pair `provideSandboxContext`/`injectSandboxContext`; `/module`: `sandboxModule()` (optional peer on `@chamvi/app`, the providers optional peers loaded by variable specifier); depends on `smob`, peer on core and `ai` |
 | `@chamvi/sandbox-local` | Exists (0.1.0) | `createLocalSandbox()`: temp directory + spawn, no isolation; depends on `smob`, peer on core and sandbox |
-| `@chamvi/sandbox-docker` | Exists (0.1.0) | `createDockerSandbox()`: one hardened container per workspace; depends on `dockerode` + `@types/dockerode`, `smob`, peer on core and sandbox |
-| `@chamvi/sandbox-k8s` | Exists (0.1.0) | `createKubernetesSandbox()`, `createPodClient()`: one hardened pod per workspace; depends on `@kubernetes/client-node`, `smob`, peer on core and sandbox |
+| `@chamvi/sandbox-docker` | Exists (0.1.0) | `createDockerSandbox()`: one container per workspace (root inside, a hardened mode, a shared cache volume); depends on `dockerode` + `@types/dockerode`, `smob`, peer on core and sandbox |
+| `@chamvi/sandbox-k8s` | Exists (0.1.0) | `createKubernetesSandbox()`, `createPodClient()`: one pod per workspace (root inside, a hardened mode, an optional cache claim); depends on `@kubernetes/client-node`, `smob`, peer on core and sandbox |
 | `@chamvi/coding` | Exists (0.1.0) | `codingTools()` (read_file, write_file, edit_file, grep, list_files, bash, git_diff), the `ICodingBackend` contract; depends on `smob`, peer on core, sandbox and `ai` |
 | `@chamvi/ui` | Exists (0.1.0) | `uiRoutes()`: serves the prebuilt Vue 3 + vuecs dashboard (runs, run detail, approvals, agent state, schedules) as one extra route of `createHttpApp({ routes })`; `/module`: `uiModule()` (optional peer on `@chamvi/app`); peer on core and http (types only), every SPA library a bundled devDependency |
 | `@chamvi/app` | Exists (0.1.0) | `createApp()` (`IApp`: `start`, `stop`, `runJob`, `migrate`), built-in orkos modules (config, store, static tokens, engine (every `AppToken.CHANNELS` contribution), agents (the `CHAMVI_AGENTS_DIR` folder loader and watcher), scheduler (the cron channel), http (the http, mcp and webhook channels, the `/channels` mount), plus the optional `consoleChannelModule()`) over an eldin container, `AppToken`s, env readers, `readConfig()`, the JSON line logger, the model registry; the module contract (tokens, `ModuleName`, env readers, `approvalUrlOf`, `AppContext`, `ILifecycleHook`, the orkos `IModule` and eldin `IContainer` types); subpaths `/authup` (`authupModule`, `oidcModule`) and `/testing` (`buildModuleHarness()`, `createModuleHarness()`), the other optional modules live in their feature packages on `/module`; re-exports core and part of http; depends on core, http, channel-cron, store-typeorm, `orkos`, `eldin`, `envix`, `routup`, `smob`, `locter`, `jiti`, `validup`, `@ebec/core`, peer on `ai`, `typeorm`, `pg` (optional: the AI SDK provider packages and the two `@authup/*` packages; no `@chamvi/*` feature package in any dependency field) |
@@ -172,9 +173,10 @@ Folders without an `index.ts` export nothing public; other modules import the fi
 
 | Path | Purpose |
 |------|---------|
-| `workspace/` | `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult` (`types.ts`); `assertArgv()` (`module.ts`); `WORKSPACE_ROOT`, `OUTPUT_MAX_BYTES`, `FILE_MAX_BYTES`, `EXEC_TIMEOUT_MS`, `EXEC_TIMEOUT_MAX_MS`, `SANDBOX_ENV` (`constants.ts`) |
-| `provider/` | `ISandboxProvider` (`create`, `find`, `collectGarbage`), `WorkspaceCreateOptions`, `WorkspaceFindOptions`, `GarbageCollectOptions`, `SandboxLimits` (`types.ts`); `DEFAULT_LIMITS`, `DEFAULT_SANDBOX_IMAGE`, `TMP_SIZE`, `SANDBOX_LABELS`, `SANDBOX_LABEL_SELECTORS`, `RUN_LABEL`, `WORKSPACE_LABEL`, `DEPLOYMENT_LABEL`, `DEFAULT_DEPLOYMENT`, `REPO_KEY_LABEL`, `EXPIRES_AT_KEY`, `CREATED_AT_KEY`, `REPO_URL_KEY`, `REF_KEY`, `IMAGE_KEY` (`constants.ts`); the helpers every provider shares: `assertCreateInput()`, `abortedCreate()`, `assertImageOption()`, `assertClockOption()`, `buildWorkspaceInfo()`, `isExpiredAt()`, `collectionError()`, `assertDeployment()`, `repoKey()`, `workspaceLabels()`, `workspaceMetadata()`, `readWorkspaceInfo()`, `createSettledCheck()` (`module.ts`), `isName()`, `readEpoch()`, `DEPLOYMENT_PATTERN`, `REPO_KEY_LENGTH` (`helpers.ts`, internal) |
+| `workspace/` | `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult` (`types.ts`); `assertArgv()` (`module.ts`); `WORKSPACE_ROOT`, `WORKSPACE_HOME`, `OUTPUT_MAX_BYTES`, `FILE_MAX_BYTES`, `EXEC_TIMEOUT_MS`, `EXEC_TIMEOUT_MAX_MS`, `SANDBOX_ENV` (`constants.ts`) |
+| `provider/` | `ISandboxProvider` (`create`, `find`, `collectGarbage`), `WorkspaceCreateOptions`, `WorkspaceFindOptions`, `GarbageCollectOptions`, `SandboxLimits` (`types.ts`); `DEFAULT_LIMITS`, `DEFAULT_SANDBOX_IMAGE`, `TMP_SIZE`, `SANDBOX_LABELS`, `SANDBOX_LABEL_SELECTORS`, `RUN_LABEL`, `WORKSPACE_LABEL`, `DEPLOYMENT_LABEL`, `DEFAULT_DEPLOYMENT`, `REPO_KEY_LABEL`, `EXPIRES_AT_KEY`, `CREATED_AT_KEY`, `REPO_URL_KEY`, `REF_KEY`, `IMAGE_KEY` (`constants.ts`); the helpers every provider shares: `assertCreateInput()`, `abortedCreate()`, `assertImageOption()`, `assertTmpSizeOption()`, `assertClockOption()`, `buildWorkspaceInfo()`, `isExpiredAt()`, `collectionError()`, `assertDeployment()`, `repoKey()`, `workspaceLabels()`, `workspaceMetadata()`, `readWorkspaceInfo()`, `createSettledCheck()` (`module.ts`), `isName()`, `readEpoch()`, `DEPLOYMENT_PATTERN`, `REPO_KEY_LENGTH` (`helpers.ts`, internal) |
 | `clock/` | `delay()` (a wait on the `IClock` that rejects with the caller's abort error) |
+| `image/` | `assertImage()`, `probeImage()`, `cacheEnv()`, `isRootUser()` (`module.ts`); `CACHE_DIR`, `CACHE_ENV`, `ROOT_CAPABILITIES`, `IMAGE_REQUIREMENTS`, `IMAGE_PROBE_TIMEOUT_MS` (public), `IMAGE_PATTERN`, `CACHE_FOLDERS`, `IMAGE_PROBE_SCRIPT`, `IMAGE_PROBE_MISSING_EXIT` (`constants.ts`, internal) |
 | `limits/` | `resolveLimits()`, `parseCpu()`, `parseMemory()`, `assertSandboxEnv()` (`module.ts`); patterns and units (`constants.ts`, internal) |
 | `output/` | `createOutputCollector()`, `createSinkStream()` (a `Writable` into an `IOutputSink`) (`module.ts`), `IOutputCollector` (`types.ts`), `completeLength()` (UTF-8 cut, `asserts.ts`) |
 | `path/` | `resolveWorkspacePath()`, `absoluteWorkspacePath()` |
@@ -184,20 +186,20 @@ Folders without an `index.ts` export nothing public; other modules import the fi
 | `context/` | `provideSandboxContext()`, `injectSandboxContext()` (`module.ts`), `SANDBOX_CONTEXT` (`constants.ts`, internal; key `sandbox`) |
 | `module/` | The `/module` entry (the only folder importing `@chamvi/app`): `sandboxModule()`, `SandboxModule` (`module.ts`), `createLazyProvider()` (`provider.ts`), `isPackageNotFound()` (a copy of the app's), `loadPackage()` (`asserts.ts`), `SANDBOX_MODULE_NAME`, `SANDBOX_PROVIDER_NAMES` (public), `SANDBOX_PROVIDER_PACKAGES`, `SANDBOX_PROVIDER_IDS` (`constants.ts`), `SandboxModuleOptions`, `SandboxProviderName` (public region) and the structural provider package types (`types.ts`) |
 
-`@chamvi/sandbox-local` (`packages/sandbox-local/src/provider/`): `createLocalSandbox()` (`module.ts`, `find` from the records), `LocalWorkspace` (`workspace.ts`, spawn per exec in its own process group), `collectExpired()`, `listRecords()` (`gc.ts`), `killLingeringJobs()`, `trackLingering()` (`exit.ts`, the process `exit` listener), `buildEnv()`, `killGroup()`, `exitCodeOf()`, `toRecord()`, `parseRecord()` (`helpers.ts`), `WorkspaceRecord`, `ParsedRecord` (`types.ts`, internal), `LOCAL_PROVIDER_NAME`, `REPO_DIR`, `WORKSPACE_RECORD`, `KILL_GRACE_MS` (`constants.ts`, internal; only `createLocalSandbox` is exported).
+`@chamvi/sandbox-local` (`packages/sandbox-local/src/provider/`): `createLocalSandbox()` (`module.ts`, `find` from the records), `LocalWorkspace` (`workspace.ts`, spawn per exec in its own process group), `collectExpired()`, `listRecords()` (`gc.ts`), `killLingeringJobs()`, `trackLingering()` (`exit.ts`, the process `exit` listener), `buildEnv()`, `killGroup()`, `exitCodeOf()`, `toRecord()`, `parseRecord()` (`helpers.ts`), `WorkspaceRecord`, `ParsedRecord` (`types.ts`, internal), `LOCAL_PROVIDER_NAME`, `REPO_DIR`, `WORKSPACE_RECORD`, `CACHE_DIR_NAME`, `KILL_GRACE_MS` (`constants.ts`, internal; only `createLocalSandbox` is exported).
 
 ## Docker Sandbox Module Map (`packages/sandbox-docker/src`)
 
 | Path | Purpose |
 |------|---------|
-| `provider/` | `createDockerSandbox()` (`module.ts`), `buildContainerOptions()`, `assertDockerOptions()`, `pullImage()`, `removeContainer()` (`asserts.ts`, internal), `DEFAULT_NETWORK`, `CONTAINER_NAME_PREFIX`, `SANDBOX_USER` (`constants.ts`), `DockerSandboxOptions` (`types.ts`) |
+| `provider/` | `createDockerSandbox()` (`module.ts`), `buildContainerOptions()`, `assertDockerOptions()`, `pullImage()`, `removeContainer()` (`asserts.ts`, internal), `openCache()`, `CACHE_OPEN_SCRIPT` (`cache.ts`, internal), `DEFAULT_NETWORK`, `CONTAINER_NAME_PREFIX`, `DEFAULT_USER`, `DEFAULT_CACHE_VOLUME` (public), `CACHE_OPEN_USER`, `CACHE_OPEN_TIMEOUT_MS` (internal) (`constants.ts`), `DockerSandboxOptions` (`types.ts`) |
 | `transport/` | No barrel: `createDockerTransport()`, the `IExecTransport` over the Docker exec API (demuxed streams into the workspace's sinks, exit code by inspect poll, `alive` by container inspect) |
 
 ## Kubernetes Sandbox Module Map (`packages/sandbox-k8s/src`)
 
 | Path | Purpose |
 |------|---------|
-| `provider/` | `createKubernetesSandbox()` (`module.ts`), `buildPod()`, `podState()`, `assertKubernetesOptions()`, `loadDefaultKubeConfig()` (`asserts.ts`, internal), `CONTAINER_NAME`, `POD_NAME_PREFIX`, `START_TIMEOUT_MS`, `POLL_MS`, `FATAL_WAITING_REASONS` (`constants.ts`), `KubernetesSandboxOptions` (`types.ts`) |
+| `provider/` | `createKubernetesSandbox()` (`module.ts`), `buildPod()`, `podState()`, `assertKubernetesOptions()`, `loadDefaultKubeConfig()` (`asserts.ts`, internal), `CONTAINER_NAME`, `POD_NAME_PREFIX`, `START_TIMEOUT_MS`, `POLL_MS`, `FATAL_WAITING_REASONS` (`constants.ts`), `KubernetesSandboxOptions`, `PodUser` (`types.ts`) |
 | `client/` | `createPodClient()` (`module.ts`), `createPodClientFrom()` (`asserts.ts`, the test seam over `core`/`exec`), `IPodClient` and parts (`types.ts`), `STDIN_CLOSE_PROTOCOL` (`v5.channel.k8s.io`) |
 | `transport/` | No barrel: `createPodTransport()`, the `IExecTransport` over `IPodClient.exec` (`alive` by pod read) |
 

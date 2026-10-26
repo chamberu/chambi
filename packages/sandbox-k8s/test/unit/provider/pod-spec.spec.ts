@@ -7,7 +7,12 @@
 
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { SANDBOX_ENV, repoKey } from '@chamvi/sandbox';
+import {
+    CACHE_ENV,
+    ROOT_CAPABILITIES,
+    SANDBOX_ENV,
+    repoKey,
+} from '@chamvi/sandbox';
 import { buildPod } from '../../../src/provider/helpers.ts';
 
 type PodInput = Parameters<typeof buildPod>[0];
@@ -33,6 +38,15 @@ const input: PodInput = {
     },
     labels: { team: 'x' },
     imagePullPolicy: 'IfNotPresent',
+    user: { uid: 0, gid: 0 },
+    readOnlyRoot: false,
+    tmpSize: '1Gi',
+};
+
+const hardened: PodInput = {
+    ...input,
+    user: { uid: 1000, gid: 1000 },
+    readOnlyRoot: true,
 };
 
 describe('buildPod', () => {
@@ -77,21 +91,21 @@ describe('buildPod', () => {
         expect(pod.metadata?.annotations).toMatchObject({ 'chamvi.dev/repo': repo, 'chamvi.dev/ref': 'main' });
     });
 
-    it('hardens the pod', () => {
+    it('runs the pod as root with a RuntimeDefault seccomp profile', () => {
         const { spec } = buildPod(input);
         expect(spec).toMatchObject({
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
             enableServiceLinks: false,
+            // the pause container is pid 1 and reaps the orphans of every image
+            shareProcessNamespace: true,
             terminationGracePeriodSeconds: 5,
         });
         // the lifetime follows the run: nothing ends the pod but the garbage collection
         expect(spec).not.toHaveProperty('activeDeadlineSeconds');
         expect(spec?.securityContext).toEqual({
-            runAsNonRoot: true,
-            runAsUser: 1000,
-            runAsGroup: 1000,
-            fsGroup: 1000,
+            runAsUser: 0,
+            runAsGroup: 0,
             seccompProfile: { type: 'RuntimeDefault' },
         });
         expect(spec).not.toHaveProperty('serviceAccountName');
@@ -100,11 +114,15 @@ describe('buildPod', () => {
         expect(spec).not.toHaveProperty('hostIPC');
         expect(spec?.volumes).toEqual([
             { name: 'workspace', emptyDir: { sizeLimit: '4Gi' } },
-            { name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: '512Mi' } },
+            { name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: '1Gi' } },
+            // HOME on the node's disk (the pod's ephemeral-storage), never in the memory-backed /tmp
+            { name: 'home', emptyDir: {} },
+            // a cache of its own without a claim, so the cache env always points somewhere
+            { name: 'cache', emptyDir: {} },
         ]);
     });
 
-    it('hardens the one container', () => {
+    it('runs the one container as root with a writable root and the package-manager capabilities', () => {
         const { spec } = buildPod(input);
         expect(spec?.containers).toHaveLength(1);
         const container = spec!.containers[0]!;
@@ -118,16 +136,16 @@ describe('buildPod', () => {
         expect(container).not.toHaveProperty('command');
         expect(container.env).toEqual([
             ...Object.entries(SANDBOX_ENV).map(([name, value]) => ({ name, value })),
+            ...Object.entries(CACHE_ENV).map(([name, value]) => ({ name, value })),
             { name: 'FOO', value: 'bar' },
         ]);
         expect(container).not.toHaveProperty('envFrom');
         expect(container.env!.some((entry) => 'valueFrom' in entry)).toBe(false);
         expect(container.securityContext).toEqual({
             allowPrivilegeEscalation: false,
-            readOnlyRootFilesystem: true,
+            readOnlyRootFilesystem: false,
             privileged: false,
-            runAsNonRoot: true,
-            capabilities: { drop: ['ALL'] },
+            capabilities: { drop: ['ALL'], add: [...ROOT_CAPABILITIES] },
         });
         const resources = {
             cpu: '500m',
@@ -138,7 +156,36 @@ describe('buildPod', () => {
         expect(container.volumeMounts).toEqual([
             { name: 'workspace', mountPath: '/workspace' },
             { name: 'tmp', mountPath: '/tmp' },
+            { name: 'home', mountPath: '/home/sandbox' },
+            { name: 'cache', mountPath: '/cache' },
         ]);
+    });
+
+    it('restores the hardened mode with a non-root user and a read-only root', () => {
+        const { spec } = buildPod(hardened);
+        expect(spec?.securityContext).toEqual({
+            runAsNonRoot: true,
+            runAsUser: 1000,
+            runAsGroup: 1000,
+            fsGroup: 1000,
+            seccompProfile: { type: 'RuntimeDefault' },
+        });
+        expect(spec?.containers[0]!.securityContext).toEqual({
+            allowPrivilegeEscalation: false,
+            readOnlyRootFilesystem: true,
+            privileged: false,
+            runAsNonRoot: true,
+            capabilities: { drop: ['ALL'] },
+        });
+    });
+
+    it('mounts the shared cache claim', () => {
+        const { spec } = buildPod({ ...input, cacheClaim: 'chamvi-cache' });
+        expect(spec?.volumes?.at(-1)).toEqual({ name: 'cache', persistentVolumeClaim: { claimName: 'chamvi-cache' } });
+    });
+
+    it('sizes /tmp', () => {
+        expect(buildPod({ ...input, tmpSize: '256Mi' }).spec?.volumes?.[1]).toEqual({ name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: '256Mi' } });
     });
 
     it('passes the pull policy', () => {

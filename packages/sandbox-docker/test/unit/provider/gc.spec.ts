@@ -16,7 +16,7 @@ import { SandboxError, systemClock } from '@chamvi/core';
 import type { IWorkspace } from '@chamvi/sandbox';
 import { CONTAINER_NAME_PREFIX, createDockerSandbox } from '@chamvi/sandbox-docker';
 import { ControllableClock } from '@chamvi/test-kit';
-import { describeDocker, dockerImage } from '../../utils/docker.ts';
+import { describeDocker, dockerImage, dockerOptions } from '../../utils/docker.ts';
 
 /**
  * Controllable `now` (the expiry), real timers: the transport polls the
@@ -48,7 +48,7 @@ describeDocker('docker garbage collection', () => {
         // an hour back, so no workspace of a spec running alongside is expired at this clock's time
         const clock = new ExpiryClock(new Date(Date.now() - 3_600_000));
         const provider = createDockerSandbox({
-            image: dockerImage, 
+            ...dockerOptions,
             clock, 
             limits: { maxLifetimeMs: 600_000 }, 
         });
@@ -111,7 +111,7 @@ describeDocker('docker garbage collection', () => {
     });
 
     it('removes the workspaces of settled runs with isSettled, in its deployment only', async () => {
-        const provider = createDockerSandbox({ image: dockerImage });
+        const provider = createDockerSandbox({ ...dockerOptions });
         const done = `test-${randomUUID()}`;
         const live = `test-${randomUUID()}`;
         // a deployment of its own: workspaces of specs alongside stay out of the pass
@@ -140,7 +140,7 @@ describeDocker('docker garbage collection', () => {
         });
         strangers.push(container);
 
-        const provider = createDockerSandbox({ image: dockerImage, clock: new ExpiryClock(new Date(Date.now() - 3_600_000)) });
+        const provider = createDockerSandbox({ ...dockerOptions, clock: new ExpiryClock(new Date(Date.now() - 3_600_000)) });
         await provider.collectGarbage();
 
         await expect(container.inspect()).resolves.toBeDefined();

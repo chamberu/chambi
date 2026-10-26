@@ -96,7 +96,8 @@ describe('coding flow (local)', () => {
         expect(result.timedOut).toBe(false);
 
         await vi.waitFor(async () => {
-            expect(await readdir(root)).toEqual([]);
+            // every workspace folder is gone; the shared package cache stays for the next run
+            expect((await readdir(root)).filter((name) => name !== '.cache')).toEqual([]);
         }, { timeout: 5_000 });
     });
 });

@@ -26,6 +26,7 @@ import {
 } from '@chamvi/sandbox';
 import type { ISandboxProvider, IWorkspace, WorkspaceInfo } from '@chamvi/sandbox';
 import {
+    CACHE_DIR_NAME,
     DEFAULT_ROOT_NAME,
     LOCAL_PROVIDER_NAME,
     REPO_DIR,
@@ -40,7 +41,7 @@ import { LocalWorkspace } from './workspace.ts';
  * Workspaces in host directories, `<root>/<id>/{workspace.json,home,tmp,repo}`,
  * commands spawned as the host user. **No isolation**: for development and
  * tests, never for untrusted code. Of the limits only `maxLifetimeMs` (the
- * expiry) applies. `find` rebuilds a workspace from its `workspace.json`
+ * expiry) applies. The package caches point into `<root>/.cache` (`cache`). `find` rebuilds a workspace from its `workspace.json`
  * (run, deployment, repo, ref, env, times; owner-only, as the env may hold
  * tokens), so another provider over the same root (a restarted process)
  * reaches it.
@@ -49,10 +50,14 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
     if (options.root !== undefined && (typeof options.root !== 'string' || options.root.length === 0)) {
         throw new InvalidAgentDefinitionError('root must be a non-empty path.');
     }
+    if (options.cache !== undefined && typeof options.cache !== 'boolean') {
+        throw new InvalidAgentDefinitionError('cache must be a boolean.');
+    }
     assertSandboxEnv(options.env);
     resolveLimits(options.limits);
 
     const root = resolve(options.root ?? join(tmpdir(), DEFAULT_ROOT_NAME));
+    const cacheDir = options.cache === false ? undefined : join(root, CACHE_DIR_NAME);
     const clock = options.clock ?? systemClock;
     const live = new Map<string, IWorkspace>();
 
@@ -62,7 +67,7 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
             id,
             dir,
             info,
-            env: buildEnv(dir, { ...options.env, ...env }),
+            env: buildEnv(dir, { ...options.env, ...env }, cacheDir),
             clock,
             onDispose: () => live.delete(id),
         });
@@ -82,6 +87,7 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
             const dir = join(root, id);
             const info = buildWorkspaceInfo(input, LOCAL_PROVIDER_NAME, clock.now(), limits.maxLifetimeMs);
             try {
+                // the cache folders appear once a tool writes to them
                 await mkdir(root, { recursive: true });
                 // owner only: the record holds the create's env (tokens)
                 await mkdir(dir, { mode: 0o700 });

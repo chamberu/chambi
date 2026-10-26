@@ -57,8 +57,10 @@ export type FakeProvider = ISandboxProvider & {
  * set when a repo is given, expiry `limits.maxLifetimeMs` (default
  * DEFAULT_LIMITS.maxLifetimeMs) after the clock's now. `find` answers the
  * live, unexpired workspaces of the run and deployment it handed out.
+ * With `image`, a create without one records that image (a container
+ * provider's default), else none (like local).
  */
-export function createFakeProvider(options: { clock?: IClock } = {}): FakeProvider {
+export function createFakeProvider(options: { clock?: IClock; image?: string } = {}): FakeProvider {
     const clock = options.clock ?? systemClock;
     let nextCreateError: Error | undefined;
     let nextGcError: Error | undefined;
@@ -111,6 +113,7 @@ export function createFakeProvider(options: { clock?: IClock } = {}): FakeProvid
                 repo: input.repo,
                 ref: input.ref,
                 commit: input.repo ? FAKE_COMMIT : undefined,
+                ...((input.image ?? options.image) !== undefined && { image: input.image ?? options.image }),
                 createdAt: now,
                 expiresAt: new Date(now.getTime() + (input.limits?.maxLifetimeMs ?? DEFAULT_LIMITS.maxLifetimeMs)),
             }, randomUUID());

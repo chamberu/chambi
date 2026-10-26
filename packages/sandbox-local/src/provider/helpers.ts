@@ -11,6 +11,7 @@ import {
     DEFAULT_DEPLOYMENT,
     SANDBOX_ENV,
     assertSandboxEnv,
+    cacheEnv,
 } from '@chamvi/sandbox';
 import type { WorkspaceInfo } from '@chamvi/sandbox';
 import { isObject } from 'smob';
@@ -49,9 +50,10 @@ export function exitCodeOf(code: number | null, signal: NodeJS.Signals | null): 
 /**
  * The whole environment of a local exec: the host PATH, `SANDBOX_ENV`
  * without its container-only entries (HOME and `safe.directory`), HOME and
- * TMPDIR inside the workspace folder, then the configured `env`.
+ * TMPDIR inside the workspace folder, with `cacheDir` the package caches
+ * under it, then the configured `env`.
  */
-export function buildEnv(dir: string, env: Record<string, string>): Record<string, string> {
+export function buildEnv(dir: string, env: Record<string, string>, cacheDir?: string): Record<string, string> {
     const base: Record<string, string> = { PATH: process.env.PATH || FALLBACK_PATH };
     for (const [key, value] of Object.entries(SANDBOX_ENV)) {
         if (key === 'HOME' || (key.startsWith('GIT_CONFIG_') && key !== 'GIT_CONFIG_NOSYSTEM')) continue;
@@ -61,6 +63,7 @@ export function buildEnv(dir: string, env: Record<string, string>): Record<strin
         ...base,
         HOME: join(dir, 'home'),
         TMPDIR: join(dir, 'tmp'),
+        ...(cacheDir !== undefined && cacheEnv(cacheDir)),
         ...env,
     };
 }

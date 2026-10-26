@@ -15,6 +15,11 @@ export type LocalSandboxOptions = {
     env?: Record<string, string>;
     /** The only limit local enforces: the workspace lifetime (expiry, `maxLifetimeMs`). */
     limits?: Pick<SandboxLimits, 'maxLifetimeMs'>;
+    /**
+     * Point the package caches (`CACHE_ENV`'s variables) into `<root>/.cache`,
+     * shared by every workspace of the root. Default true.
+     */
+    cache?: boolean;
     clock?: IClock;
 };
 

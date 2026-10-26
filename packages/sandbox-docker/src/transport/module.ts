@@ -10,13 +10,13 @@ import type { IClock } from '@chamvi/core';
 import { createSinkStream, delay } from '@chamvi/sandbox';
 import type { IExecTransport, TransportExecOptions, TransportExecResult } from '@chamvi/sandbox';
 import type Dockerode from 'dockerode';
-import { SANDBOX_USER } from '../provider/constants.ts';
 import { isStatus, removeContainer } from '../provider/helpers.ts';
 import { INSPECT_POLL_INITIAL_MS, INSPECT_POLL_MAX_MS } from './constants.ts';
 import { abortError, streamEnded } from './helpers.ts';
 
 /**
- * Runs argv in a started workspace container through the Docker exec API:
+ * Runs argv in a started workspace container through the Docker exec API,
+ * as `user` (the container's):
  * stdout and stderr demultiplexed into the workspace's sinks, stdin written
  * and half-closed, then the exit code read from the exec
  * once it stopped (polled on the clock with backoff). The signal detaches:
@@ -28,6 +28,7 @@ export function createDockerTransport(
     docker: Dockerode,
     container: Dockerode.Container,
     clock: IClock,
+    user: string,
 ): IExecTransport {
     return {
         async exec(argv: readonly string[], options: TransportExecOptions): Promise<TransportExecResult> {
@@ -40,7 +41,7 @@ export function createDockerTransport(
                 AttachStderr: true,
                 AttachStdin: stdin !== undefined,
                 Tty: false,
-                User: SANDBOX_USER,
+                User: user,
                 abortSignal: signal,
             });
             const stream = await exec.start({

@@ -20,7 +20,7 @@ const GC_INTERVAL_MS: 600_000;
 const CLOSE_TIMEOUT_MS: 30_000;
 ```
 
-Throws `InvalidAgentDefinitionError` for a provider without `create`, `find` and `collectGarbage`, an empty `image`, invalid `env` or `limits`, a `deployment` that is no label value, an `allowRepo`, `isSettled` or `onError` that is no function, a `maxWorkspacesPerRun` below 1 or a negative `gcIntervalMs`.
+Throws `InvalidAgentDefinitionError` for a provider without `create`, `find` and `collectGarbage`, an empty `image`, invalid `env` or `limits`, a `deployment` that is no label value, an `allowRepo`, `allowImage`, `isSettled` or `onError` that is no function, a `maxWorkspacesPerRun` below 1 or a negative `gcIntervalMs`.
 
 On a miss (`get` without a held workspace that fits, `acquire` of a repository it does not hold) the manager asks `provider.find(runId, { deployment })` once per run at a time and adopts what it finds, so a run reaches its workspaces after a restart or on another replica. `release(runId)` (and `attach` for a settled run) disposes the held workspaces and every one `find` reports; with `isSettled`, `attach` skips the `find` for a settled run this process neither holds nor looks up and starts a garbage collection instead (at most one per `gcIntervalMs`), which removes what other processes left for it; `close()` disposes nothing a live run holds, `close({ dispose: true })` disposes those too.
 
@@ -64,6 +64,25 @@ function createSettledCheck(isSettled?: (runId: string) => Promise<boolean>): (r
 
 `normalizeRepo`, `assertGitRef` and `resolveWorkspacePath` throw `ValidationError` (model input); `resolveLimits`, `parseCpu`, `parseMemory` and `assertSandboxEnv` throw `InvalidAgentDefinitionError` (configuration); `prepareWorkspace` throws `SandboxError` with git's stderr when a checkout step fails and, as its last step, records the checkout as `git config chamvi.checkout` (the commit, or `none` without a repo). `readCheckout` reads it back: `{ commit }`, `{}` for a repo-less workspace, `undefined` for a create that died before its checkout finished, which `find` must skip. A read that fails otherwise (a container restarted a moment ago) is retried on the provider's clock, 5 reads 500 ms apart, before it counts as missing.
 
+### Images, privileges and the cache
+
+```ts
+function assertImage(value: unknown): string;               // an image reference, else ValidationError (never echoed)
+function probeImage(transport: IExecTransport, options: { image: string; clock?: IClock; signal?: AbortSignal }): Promise<void>;
+function cacheEnv(dir: string): Record<string, string>;     // CACHE_ENV's variables under another folder (local)
+function isRootUser(user: string | number): boolean;        // 0, '0:<gid>', 'root', 'root:<group>'
+function assertTmpSizeOption(value: unknown): void;         // a positive memory quantity, else InvalidAgentDefinitionError
+
+const CACHE_DIR: '/cache';
+const WORKSPACE_HOME: '/home/sandbox';                      // HOME of a container or pod workspace, a disk-backed volume of its own
+const CACHE_ENV: Readonly<Record<string, string>>;          // XDG_CACHE_HOME, npm_config_cache, PIP_CACHE_DIR, GOMODCACHE, GOCACHE, COMPOSER_CACHE_DIR, MISE_DATA_DIR
+const ROOT_CAPABILITIES: readonly string[];                 // CHOWN, DAC_OVERRIDE, FOWNER, FSETID, SETUID, SETGID, KILL
+const IMAGE_REQUIREMENTS: readonly string[];                // sh, git, timeout (with -k)
+const IMAGE_PROBE_TIMEOUT_MS: 30_000;
+```
+
+`probeImage` runs one `sh -c` script straight on the transport (every workspace exec goes through `timeout`, which may be what is missing), right after the container or pod started and before the checkout: a `SandboxError` names what the image lacks (`git`, `timeout`, `a timeout that supports -k`, or `sh` when the script cannot start), or why the probe failed (no answer within `IMAGE_PROBE_TIMEOUT_MS` on the clock). Docker and Kubernetes add `ROOT_CAPABILITIES` back for a root user only and mount `/cache` with `CACHE_ENV` in every workspace.
+
 ### Remote workspaces
 
 ```ts
@@ -106,7 +125,7 @@ The provider is `CHAMVI_SANDBOX_PROVIDER`, else `options.provider`, else `local`
 function createLocalSandbox(options?: LocalSandboxOptions): ISandboxProvider; // name 'local'
 ```
 
-No isolation: development and tests only. Workspaces are folders under `root` (default `<os tmpdir>/chamvi-workspaces`); of the limits only `maxLifetimeMs` applies. `find` rebuilds a workspace from its `workspace.json`, so a restarted process reaches it; the record holds the create's `env` on disk, so the folder is `0700` and the record `0600`.
+No isolation: development and tests only. Workspaces are folders under `root` (default `<os tmpdir>/chamvi-workspaces`); of the limits only `maxLifetimeMs` applies. The cache variables point into `<root>/.cache` (`cache: false` sets none). `find` rebuilds a workspace from its `workspace.json`, so a restarted process reaches it; the record holds the create's `env` on disk, so the folder is `0700` and the record `0600`.
 
 <<< ../../../sandbox-local/src/provider/types.ts{ts}
 
@@ -117,10 +136,11 @@ function createDockerSandbox(options?: DockerSandboxOptions): ISandboxProvider; 
 
 const DEFAULT_NETWORK: 'bridge';
 const CONTAINER_NAME_PREFIX: 'chamvi-ws-';
-const SANDBOX_USER: '1000:1000';
+const DEFAULT_USER: '0:0';
+const DEFAULT_CACHE_VOLUME: 'chamvi-sandbox-cache';
 ```
 
-One container per workspace (`sleep infinity`: its lifetime follows the run), removed with its volume on dispose or by the garbage collection. `find` lists a run's containers by label and starts a stopped one again. Creating the provider contacts nothing.
+One container per workspace (`sleep infinity` under docker-init, `Init: true`, which reaps orphans for any image: its lifetime follows the run), removed with its volume on dispose or by the garbage collection. Root with a writable root and `ROOT_CAPABILITIES` by default; `{ user: '1000:1000', readOnlyRoot: true }` is the hardened mode. `/cache` is the named volume (shared by every workspace of the host; a non-root `user` gets `chamvi-sandbox-cache-<user>`) or, with `cache: false`, an anonymous one. An image a run asked for (`imageRequested`) is pulled when missing; the provider's and the manager's follow `pull`. `find` lists a run's containers by label and starts a stopped one again. Creating the provider contacts nothing.
 
 <<< ../../../sandbox-docker/src/provider/types.ts{ts}
 
@@ -137,7 +157,7 @@ const POLL_MS: 1_000;
 const FATAL_WAITING_REASONS: readonly string[];
 ```
 
-One pod per workspace, without `activeDeadlineSeconds` (its lifetime follows the run); `find` lists a run's running pods by label. The Role needs `pods` `create`, `get`, `list`, `delete` and `pods/exec` `get` and `create` in the sandbox namespace. See [Kubernetes & Flux](/deployment/kubernetes#sandboxes-in-the-cluster).
+One pod per workspace, without `activeDeadlineSeconds` (its lifetime follows the run); `find` lists a run's running pods by label. Root with a writable root and `ROOT_CAPABILITIES` by default (Pod Security `baseline`); `{ user: { uid: 1000, gid: 1000 }, readOnlyRoot: true }` is the hardened mode (`restricted`). `/cache` is the claim of `cache.claimName` or an emptyDir. The Role needs `pods` `create`, `get`, `list`, `delete` and `pods/exec` `get` and `create` in the sandbox namespace. See [Kubernetes & Flux](/deployment/kubernetes#sandboxes-in-the-cluster).
 
 <<< ../../../sandbox-k8s/src/provider/types.ts{ts}
 
