@@ -5,7 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { Engine, MemoryStore } from '@chamvi/core';
+import { join } from 'node:path';
+import { Engine, InvalidRunStateError, MemoryStore } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
     afterEach,
@@ -14,6 +15,7 @@ import {
     expect,
     it,
 } from 'vitest';
+import { hashAgentFolder } from '@chamvi/app';
 import {
     START,
     agentFile,
@@ -108,5 +110,119 @@ describe('revision markers moved by another process', () => {
         expect(await store.getAgentRevision('elsewhere')).toBeDefined();
         expect((await store.getRun(runId))?.status).toBe('queued');
         expect(setup.engine().getAgent('greeter')).toBeDefined();
+    });
+});
+
+describe('a job never reloads an agent', () => {
+    const OLD = 'c'.repeat(64);
+
+    it('a job writes the first marker and runs', async () => {
+        await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+        const clock = new ControllableClock(START);
+        const store = new MemoryStore({ clock });
+        const runId = await queueRun(store, clock, 'greeter');
+        const setup = buildAgentsDirHarness({
+            root: root.path,
+            clock,
+            store,
+            mode: 'job',
+            job: { agent: 'greeter' },
+        });
+        harnesses.push(setup.harness);
+        await setup.harness.setup();
+
+        const hash = await hashAgentFolder(join(root.path, 'greeter'));
+        expect((await store.getAgentRevision('greeter'))?.hash).toBe(hash);
+        expect(setup.engine().agentRevision('greeter')).toBe(hash);
+        expect((await store.getRun(runId))?.status).toBe('queued');
+        expect(setup.issues()).toEqual([]);
+    });
+
+    it('a job moves a different marker when the agent has no unsettled runs', async () => {
+        await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+        const clock = new ControllableClock(START);
+        const store = new MemoryStore({ clock });
+        await store.setAgentRevision({
+            agent: 'greeter', 
+            hash: OLD, 
+            changedAt: START, 
+        });
+        const setup = buildAgentsDirHarness({
+            root: root.path,
+            clock,
+            store,
+            mode: 'job',
+            job: { agent: 'greeter' },
+        });
+        harnesses.push(setup.harness);
+        await setup.harness.setup();
+
+        expect((await store.getAgentRevision('greeter'))?.hash).toBe(await hashAgentFolder(join(root.path, 'greeter')));
+        expect(setup.issues()).toEqual([]);
+    });
+
+    it('a job with a changed folder fails and cancels nothing', async () => {
+        await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+        const clock = new ControllableClock(START);
+        const store = new MemoryStore({ clock });
+        await store.setAgentRevision({
+            agent: 'greeter', 
+            hash: OLD, 
+            changedAt: START, 
+        });
+        const runId = await queueRun(store, clock, 'greeter');
+        const setup = buildAgentsDirHarness({
+            root: root.path,
+            clock,
+            store,
+            mode: 'job',
+            job: { agent: 'greeter' },
+        });
+        harnesses.push(setup.harness);
+
+        const error = await setup.harness.setup().then(() => undefined, (e: unknown) => e);
+        expect(error).toBeInstanceOf(InvalidRunStateError);
+        const hash = await hashAgentFolder(join(root.path, 'greeter'));
+        expect((error as Error).message).toContain('greeter');
+        expect((error as Error).message).toContain(OLD.slice(0, 12));
+        expect((error as Error).message).toContain(hash.slice(0, 12));
+        expect(await store.getAgentRevision('greeter')).toEqual({
+            agent: 'greeter', 
+            hash: OLD, 
+            changedAt: START, 
+        });
+        expect((await store.getRun(runId))?.status).toBe('queued');
+    });
+
+    it('a conflict of another agent is an issue and the job still runs', async () => {
+        await writeTree(root.path, {
+            'greeter/agent.ts': agentFile('v1'),
+            'triage/agent.ts': agentFile('v1', 'test/model', 'triage'),
+        });
+        const clock = new ControllableClock(START);
+        const store = new MemoryStore({ clock });
+        await store.setAgentRevision({
+            agent: 'triage', 
+            hash: OLD, 
+            changedAt: START, 
+        });
+        const runId = await queueRun(store, clock, 'triage');
+        const setup = buildAgentsDirHarness({
+            root: root.path,
+            clock,
+            store,
+            mode: 'job',
+            job: { agent: 'greeter' },
+        });
+        harnesses.push(setup.harness);
+        await setup.harness.setup();
+
+        expect(setup.engine().getAgent('greeter')).toBeDefined();
+        expect(setup.engine().getAgent('triage')).toBeUndefined();
+        expect(setup.issues()).toHaveLength(1);
+        expect(setup.issues()[0]?.agent).toBe('triage');
+        expect(setup.issues()[0]?.message).toContain('A job never reloads an agent: start the app to apply the change.');
+        expect((await store.getRun(runId))?.status).toBe('queued');
+        expect((await store.getAgentRevision('triage'))?.hash).toBe(OLD);
     });
 });

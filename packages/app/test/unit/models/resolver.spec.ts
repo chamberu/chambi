@@ -204,6 +204,16 @@ describe('createModelResolver', () => {
         );
     });
 
+    it('words a model a tool resolves neutrally', async () => {
+        const resolver = await createModelResolver(await settingsOf(), { importer: fakeImporter({}).importer });
+
+        expect(errorOf(() => resolver.resolve('team-a/m')).message).toBe(
+            'The model "team-a/m" uses provider "team-a", which is not configured. ' +
+            'Set CHAMVI_PROVIDER_TEAM_A_TYPE and CHAMVI_PROVIDER_TEAM_A_API_KEY, or declare it in chamvi.json.',
+        );
+        expect(errorOf(() => resolver.resolve('gpt')).message).toBe('The model "gpt" must be "<provider>/<model>".');
+    });
+
     it('gives a keyless openai-compatible provider its name, base URL and headers, without an apiKey key', async () => {
         const fake = fakeImporter(
             { '@ai-sdk/openai-compatible': 'createOpenAICompatible' },

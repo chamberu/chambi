@@ -10,7 +10,7 @@ npm install @chamvi/app ai typeorm pg
 
 | Entry | Exports | Needs |
 |---|---|---|
-| `@chamvi/app` | `createApp`, `isApp`, the built-in modules, the module contract (tokens, `ModuleName`, `AppContext`, `ILifecycleHook`, the `IModule` and `IContainer` types), env readers, `approvalUrlOf`, `readConfig`, `createLogger`, `BUILTIN_PROVIDERS`, the model and report types (`ProviderConfig`, `SecretValue`, `AppReport`, ...) | |
+| `@chamvi/app` | `createApp`, `isApp`, the built-in modules, the module contract (tokens, `ModuleName`, `AppContext`, `ILifecycleHook`, the `IModule` and `IContainer` types), env readers, `approvalUrlOf`, `readConfig`, `createLogger`, `BUILTIN_PROVIDERS`, the model and check types (`ProviderConfig`, `SecretValue`, `AppCheckOptions`, `AppCheckResult`, ...) | |
 | `@chamvi/app/authup` | `authupModule`, `oidcModule` | `@authup/server-adapter-kit`, `@authup/core-http-kit` |
 | `@chamvi/app/testing` | `buildModuleHarness`, `createModuleHarness` | |
 
@@ -33,7 +33,7 @@ Synchronous and side-effect free. `agents` may be omitted or empty: the agents c
 | `stop` | the shutdown sequence (see [Start and stop](/guide/app#start-and-stop)); memoized, waits for a setup in flight | `app_stop_failed` when a teardown failed (each failure is logged) |
 | `runJob` | config, store (migrated), engine (not started: `@chamvi/channel-cron` `runJob` starts it without channels, ticks and drains it); no http | the job's error; `app_in_use` |
 | `migrate` | config, store (`migrateStore`), store teardown | `InvalidAgentDefinitionError` without `DATABASE_URL`; `app_in_use` |
-| `inspect` | nothing: reads the config, the [model settings](/guide/models) and the providers, loads the agent folders through `loadAgents()` and checks every agent like `start` (model, `assertSchedulable`, `assertMcpRunTool`); no store, no engine, no module lifecycle, no revision marker. Resolves an `AppReport` (`ok`, the default model and its source, per provider its type, sources per field, base URL origin and path, whether a key is set and the header names, never a value; per agent its model and errors; the issues). Read-only, so it never marks the app used: any number of times, before or after another lifecycle | never for a setting (every problem is in the report) |
+| `check` | the `start` path up to its start steps (`context.check`, mode `start`): config, store (connected, never migrated: pending migrations reject with `store_not_migrated` unless `CHAMVI_MIGRATE` is on), the model settings, every module's setup and onReady, the agent folders loaded and checked (`engine.checkAgent()`, never `putAgent`), then the teardown. No engine or channel start, no server, no run, no store write (no migration, revision marker, cancel or lock). Resolves `{ issues }`, the agent folders' load issues | the setup error (`invalid_agent_definition` for a configuration error), the store's (`store_not_migrated`, a connection error); `app_in_use`: it is the app's one lifecycle |
 
 `runJob` resolves `exitCode: 0` for a `completed`, `waiting`, `skipped`, queued-behind-an-approval or signal-interrupted run, `1` for `failed` or `cancelled`.
 
@@ -222,9 +222,7 @@ Model strings are split at the first `/`. Every provider gets an explicit key an
 
 <<< ../../../app/src/models/types.ts#public{ts}
 
-`app.inspect({ env? })` (`chamvi doctor`) reports the same settings without starting anything:
-
-<<< ../../../app/src/inspect/types.ts#public{ts}
+`app.check({ env? })` (`chamvi start --check`) runs the same settings through the real start path without starting anything or writing to the store; see [Check before you deploy](/guide/models#check-before-you-deploy).
 
 ## Logger
 

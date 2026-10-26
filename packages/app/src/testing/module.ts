@@ -39,6 +39,8 @@ export function buildModuleHarness(options: ModuleHarnessOptions = {}): ModuleHa
         ...(options.model !== undefined && { model: options.model }),
         ...(options.providers !== undefined && { providers: options.providers }),
         agents: options.agents ?? [],
+        ...(options.check !== undefined && { check: options.check }),
+        ...(options.job !== undefined && { job: options.job }),
     };
 
     const container = new Container();
@@ -61,7 +63,10 @@ export function buildModuleHarness(options: ModuleHarnessOptions = {}): ModuleHa
         async setup() {
             try {
                 await application.setup();
-                await runStartSteps(container);
+                // a check stops before the start steps, like IApp.check()
+                if (!context.check) {
+                    await runStartSteps(container);
+                }
             } catch (error) {
                 await application.teardown();
                 throw error;

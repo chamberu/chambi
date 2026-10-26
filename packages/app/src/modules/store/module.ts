@@ -5,16 +5,21 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { InvalidAgentDefinitionError, MemoryStore } from '@chamvi/core';
+import { ChamviError, InvalidAgentDefinitionError, MemoryStore } from '@chamvi/core';
 import type { IClock, IStore } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
 import type { DataSource } from 'typeorm';
-import { AppToken, ModuleName } from '../../module/constants.ts';
+import { APP_ERROR_CODE, AppToken, ModuleName } from '../../module/constants.ts';
 import { throwIfStopped } from '../../module/helpers.ts';
 import type { ILogger } from '../../logger/types.ts';
 import type { AppContext } from '../../module/types.ts';
-import { MEMORY_STORE_WARNING, PURGE_HOOK_NAME, STORE_CONNECT_TIMEOUT_MS } from './constants.ts';
+import {
+    MEMORY_STORE_WARNING,
+    PURGE_HOOK_NAME,
+    STORE_CONNECT_TIMEOUT_MS,
+    STORE_NOT_MIGRATED_HINT,
+} from './constants.ts';
 import { destroyQuietly, isPurgingStore, maskPassword } from './helpers.ts';
 import { createPurgeTimer } from './purge.ts';
 import type {
@@ -27,7 +32,10 @@ import type {
  * given data source or `options.url ?? DATABASE_URL` (TypeORM loaded lazily,
  * migrated in migrate mode or with `CHAMVI_MIGRATE`, `DATA_SOURCE` registered
  * too); else a MemoryStore. A store with `purgeExpired` gets the purge timer
- * in start mode.
+ * in start mode. A check (`context.check`) writes nothing: it never
+ * migrates, and with `CHAMVI_MIGRATE=false` a TypeORM store with pending
+ * migrations fails with `store_not_migrated` (by default a start would
+ * apply them, so they pass).
  */
 export class StoreModule implements IModule {
     readonly name: string = ModuleName.STORE;
@@ -77,7 +85,7 @@ export class StoreModule implements IModule {
 
         container.register(AppToken.STORE, { useValue: store });
 
-        if (context.mode === 'start' && config.store.purgeIntervalMs > 0 && isPurgingStore(store)) {
+        if (context.mode === 'start' && !context.check && config.store.purgeIntervalMs > 0 && isPurgingStore(store)) {
             const purge = createPurgeTimer({
                 store,
                 clock,
@@ -148,8 +156,23 @@ export class StoreModule implements IModule {
     }
 
     protected async typeormStore(context: AppContext, dataSource: DataSource, clock: IClock, migrate: boolean): Promise<IStore> {
-        const { TypeormStore, migrateStore } = await import('@chamvi/store-typeorm');
-        if (migrate) {
+        const {
+            TypeormStore, 
+            migrateStore, 
+            pendingMigrations, 
+        } = await import('@chamvi/store-typeorm');
+        if (context.check) {
+            // read-only: a start with CHAMVI_MIGRATE (the default) would apply them, else it cannot run
+            if (!migrate) {
+                const pending = await pendingMigrations(dataSource);
+                if (pending.length > 0) {
+                    throw new ChamviError({
+                        code: APP_ERROR_CODE.STORE_NOT_MIGRATED,
+                        message: `The store has ${pending.length} pending migration(s); ${STORE_NOT_MIGRATED_HINT}`,
+                    });
+                }
+            }
+        } else if (migrate) {
             throwIfStopped(context);
             await migrateStore(dataSource);
         }

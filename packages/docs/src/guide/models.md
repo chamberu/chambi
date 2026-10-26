@@ -13,7 +13,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ```bash
 npm install @ai-sdk/anthropic   # the provider package: an optional peer of @chamvi/app
-npx chamvi doctor               # checks it before you start
+npx chamvi start --check        # checks it before you start
 ```
 
 `ANTHROPIC_API_KEY` creates a provider named `anthropic`; `CHAMVI_MODEL` makes `anthropic/claude-sonnet-5-5` the default of every agent without a `model`.
@@ -57,7 +57,7 @@ The packages are optional peers of `@chamvi/app` (`ai` is a required one): insta
 
 A secret (`SecretValue`) is a literal string, `{ env: 'VAR' }` (read from the app's env) or `{ file: 'path' }` (relative to the working directory, one trailing newline trimmed, so a mounted Kubernetes Secret works). chamvi always hands the provider package an explicit key and base URL: a provider never falls back to `process.env` behind the app's back, so two providers of one type keep their keys apart.
 
-Keys, credential headers and credential-bearing URLs never reach a store row, a step, a log line, an error or the `chamvi doctor` output: errors and doctor name variables, fields and header names, never values.
+Keys, credential headers and credential-bearing URLs never reach a store row, a step, a log line, an error or the `chamvi start --check` output: errors name variables, fields and header names, never values.
 
 ### Implicit providers
 
@@ -150,28 +150,24 @@ Sources, highest first: **env**, then **the config file**, then **`createApp()` 
 | `CHAMVI_PROVIDER_<NAME>_HEADER_<HEADER>` | One header (`X_TEAM` is `x-team`) |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, ... | The [implicit providers](#implicit-providers) |
 
-## chamvi doctor
+## Check before you deploy
 
-`chamvi doctor` prints what a start would use and refuse, without starting anything: no store, no engine, no migration, no server. It reads the same settings (env, config file, code), builds the providers and checks every code and folder agent like `start` does: its model and the checks the app's modules declare (the built-in scheduler's cron subscriptions, the built-in http module's MCP tool unless `mcp: false`). It does not check the store (`DATABASE_URL`), authenticators, channels, or modules that declare no `agentChecks()`, so an `ok` line means the models and agents resolve, not that a start will succeed.
+`chamvi start --check` runs the start path of the built entry up to the start itself and exits: it reads the same settings (env, config file, code), builds the providers, connects to the store, sets every module up and loads every [agent folder](/guide/agent-folders) with the checks a start runs (the model, the channels an agent subscribes to, the built-in scheduler's cron subscriptions, the built-in http module's MCP tool unless `mcp: false`). Code agents get the same checks. It starts no engine, channel or server, runs nothing and writes nothing to the store: no migration, no revision marker, no cancel. Of a module's lifecycle hooks only `engineCreated` and `drained` run (never `started` or `stopping`).
 
 ```bash
-npx chamvi doctor              # the built entry (dist/index.mjs), as chamvi start runs it
-npx chamvi doctor --dev        # the source entry with .env loaded, as chamvi dev runs it
+npx chamvi build && npx chamvi start --check
 ```
 
 ```
-default model: anthropic/claude-sonnet-5-5 (code)
-
-providers:
-  anthropic: type anthropic (implicit), api key set (implicit)
-  router: type openai-compatible (code), api key set (env), base URL http://9router:20128/v1, headers x-team (file)
-
-agents:
-  triage (code): anthropic/claude-sonnet-5-5, ok
-  review (code): team-a/claude-opus-4-6, error
-    - Agent "review" uses provider "team-a", which is not configured. Set CHAMVI_PROVIDER_TEAM_A_TYPE and CHAMVI_PROVIDER_TEAM_A_API_KEY, or declare it in chamvi.json.
-
-not ok: a start would refuse or skip what is listed above
+chamvi: start check passed
 ```
 
-Each value names its source (`env`, `file`, `code` or `implicit`); keys show only as set or not, base URLs as origin and path, headers by name. It exits `0` when everything resolves and `2` otherwise, so it fits a CI step or a `kubectl exec` into a running pod. The same report is `await app.inspect({ env })` in code ([reference](/reference/app#createapp)).
+It needs what a start needs (`CHAMVI_TOKENS`, the provider keys, `DATABASE_URL`), so run it in CI with the production or staging env. Exit codes:
+
+| Code | Means |
+|---|---|
+| `0` | Clean: `chamvi: start check passed` on stdout |
+| `1` | A runtime failure: the store is unreachable, or it has pending migrations and `CHAMVI_MIGRATE` is off (`store_not_migrated`) |
+| `2` | A configuration error (a provider that is not configured, a missing key or authenticator, a code agent on an unknown channel), or an agent folder with a load issue, each on its own stderr line |
+
+Errors name the variable to set, never a value. The same check is `await app.check({ env })` in code ([reference](/reference/app#createapp)), resolving `{ issues }`.

@@ -11,7 +11,6 @@ import type { IModule } from 'orkos';
 import { APP_ERROR_CODE, AppToken } from './constants.ts';
 import type {
     AppContext,
-    IAgentCheckSource,
     ILifecycleHook,
     LifecyclePhase,
 } from './types.ts';
@@ -83,9 +82,4 @@ export function reportingModule(module: IModule, report: AppContext['report']): 
             },
         }),
     };
-}
-
-/** Whether a module declares its AGENT_CHECKS contributions (`agentChecks()`). */
-export function isAgentCheckSource(module: IModule): module is IModule & IAgentCheckSource {
-    return typeof (module as Partial<IAgentCheckSource>).agentChecks === 'function';
 }

@@ -72,4 +72,48 @@ describe('hashAgentFolder', () => {
 
         expect(await hashAgentFolder(dir)).toBe(expected);
     });
+
+    it('skips docs and editor leftovers', async () => {
+        const dir = join(root.path, 'agent');
+        await writeTree(dir, { 'agent.ts': 'a' });
+        const hash = await hashAgentFolder(dir);
+        await writeTree(dir, {
+            'README.md': 'r',
+            'readme.txt': 'r',
+            CHANGELOG: 'c',
+            'NOTES.md': 'n',
+            LICENSE: 'l',
+            'agent.ts~': 'b',
+            '.agent.ts.swp': 's',
+            'x.swo': 's',
+            'prompt.md.bak': 'b',
+            'agent.ts.orig': 'o',
+            'tools/README.md': 'r',
+            'tools/.DS_Store': 'd',
+            'Changelog.MD': 'c',
+        });
+        expect(await hashAgentFolder(dir)).toBe(hash);
+    });
+
+    it('still hashes prompts and JSON', async () => {
+        const dir = join(root.path, 'agent');
+        await writeTree(dir, { 'agent.ts': 'a' });
+        const hash = await hashAgentFolder(dir);
+        await writeTree(dir, { 'prompt.md': 'p' });
+        const withPrompt = await hashAgentFolder(dir);
+        expect(withPrompt).not.toBe(hash);
+        await writeTree(dir, { 'data.json': '{}' });
+        expect(await hashAgentFolder(dir)).not.toBe(withPrompt);
+    });
+
+    it('hashes importable files whose names match a doc pattern', async () => {
+        const dir = join(root.path, 'agent');
+        await writeTree(dir, { 'agent.ts': 'a' });
+        const hash = await hashAgentFolder(dir);
+        await writeTree(dir, { 'notes.ts': 'export {};' });
+        const withNotes = await hashAgentFolder(dir);
+        expect(withNotes).not.toBe(hash);
+        await writeTree(dir, { 'license.json': '{}' });
+        expect(await hashAgentFolder(dir)).not.toBe(withNotes);
+    });
 });

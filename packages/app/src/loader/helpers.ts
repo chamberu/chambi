@@ -6,6 +6,7 @@
  */
 
 
+import { createHash } from 'node:crypto';
 import {
     readFileSync,
     readdirSync,
@@ -16,15 +17,18 @@ import { readFile, stat } from 'node:fs/promises';
 import {
     basename,
     dirname,
+    extname,
     join,
+    relative,
     sep,
 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
 import { createJiti } from 'jiti';
 import type { Jiti } from 'jiti';
+import { locateMany } from 'locter';
 import { isObject } from 'smob';
-import { PINNED_PACKAGE_SCOPES } from './constants.ts';
+import { HASH_IGNORE_PATTERNS, HASH_IMPORTABLE_EXTENSIONS, PINNED_PACKAGE_SCOPES } from './constants.ts';
 
 let moduleJiti: Jiti | undefined;
 
@@ -205,4 +209,49 @@ export function defaultExportOf(mod: unknown, file: string): unknown {
         return (mod as { default: unknown }).default;
     }
     throw new InvalidAgentDefinitionError(`${file}: has no default export.`);
+}
+
+/**
+ * Whether the folder hash leaves out `file` (a relative POSIX path): its
+ * basename matches HASH_IGNORE_PATTERNS and the loader cannot import it.
+ */
+export function isHashIgnored(file: string): boolean {
+    const name = file.slice(file.lastIndexOf('/') + 1);
+    const extension = extname(name).toLowerCase();
+    if ((HASH_IMPORTABLE_EXTENSIONS as readonly string[]).includes(extension)) return false;
+    return HASH_IGNORE_PATTERNS.some((pattern) => pattern.test(name));
+}
+
+/**
+ * sha256 (hex) over the files below `dir` that `include` keeps (dot-entries
+ * skipped) by relative POSIX path, each as `path + '\0' + bytes + '\0'`.
+ */
+export async function hashFolder(dir: string, include: (key: string) => boolean): Promise<string> {
+    const found = await locateMany('**/*', {
+        cwd: dir,
+        onlyFiles: true,
+        dot: false,
+    });
+    const files = found
+        .map((info) => ({ path: info.path, key: relative(dir, info.path).split(sep).join('/') }))
+        .filter((file) => include(file.key))
+        .sort((a, b) => compareCodePoints(a.key, b.key));
+    const hash = createHash('sha256');
+    for (const file of files) {
+        hash.update(`${file.key}\0`);
+        hash.update(await readFile(file.path));
+        hash.update('\0');
+    }
+    return hash.digest('hex');
+}
+
+/**
+ * The hash of an agent folder before HASH_IGNORE_PATTERNS existed (every
+ * file but dot-entries), or undefined when it equals `hash` (no ignored file):
+ * a revision marker at it holds the same content, so a reload moves it
+ * without cancelling runs.
+ */
+export async function formerAgentFolderHash(dir: string, hash: string): Promise<string | undefined> {
+    const former = await hashFolder(dir, () => true);
+    return former === hash ? undefined : former;
 }

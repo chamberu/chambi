@@ -9,13 +9,16 @@ import type { IClock } from '../../clock/index.ts';
 import type { Run } from '../../run/types.ts';
 import type { IStore } from '../../store/types.ts';
 
+/** What a registry cancel stores on the run (`Run.error`). */
+export type CancelReason = { code: string; message: string };
+
 /** What the registry operations need from the engine. */
 export type RegistryContext = {
     store: IStore;
     clock: IClock;
     /** The lock is retried every claimTtlMs / 3. */
     claimTtlMs: number;
-    cancel: (runId: string) => Promise<void>;
+    cancel: (runId: string, reason: CancelReason) => Promise<void>;
     onError: (error: unknown, run?: Run) => void;
 };
 

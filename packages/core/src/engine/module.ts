@@ -52,8 +52,14 @@ import { toRunError } from './execute/helpers.ts';
 import { executeRun } from './execute/module.ts';
 import type { ApprovalRequest } from './execute/types.ts';
 import { RunQueue } from './queue/module.ts';
-import { cancelAgentRuns, dropRevision, syncRevision } from './registry/module.ts';
-import type { RegistryContext } from './registry/types.ts';
+import { agentCancelReason } from './registry/helpers.ts';
+import {
+    cancelAgentRuns,
+    claimRevision,
+    dropRevision,
+    syncRevision,
+} from './registry/module.ts';
+import type { CancelReason, RegistryContext } from './registry/types.ts';
 import type {
     ApprovalAnswer,
     DispatchEnvelope,
@@ -118,6 +124,8 @@ export class Engine implements IContextProvider {
         controller: AbortController;
         done: Promise<void>;
         stop?: 'cancel' | 'drain' | 'lease-lost';
+        /** What a cancel by the registry stores on the run when it settles `cancelled`. */
+        cancelReason?: CancelReason;
     }>();
 
     /**
@@ -306,22 +314,56 @@ export class Engine implements IContextProvider {
      * change, once across replicas. Without one, replacing a registered agent
      * cancels its unsettled runs created before now. Emits `agents.changed`,
      * except for the same agent at the same revision (`unchanged`).
+     *
+     * With `reload: false` (a process that never reloads, e.g. a job) nothing
+     * is cancelled: a missing marker is written, a different one moved only
+     * while the agent has no unsettled run, else InvalidRunStateError and the
+     * agent stays unregistered.
+     *
+     * A marker at `formerRevision` (the same content hashed by an earlier
+     * algorithm) counts as equal: it is moved to `revision` and nothing is
+     * cancelled, so a hash change of the loader never cancels runs.
      */
-    async putAgent(agent: Agent, options: { revision?: string } = {}): Promise<'added' | 'replaced' | 'unchanged'> {
+    async putAgent(
+        agent: Agent,
+        options: {
+            revision?: string; 
+            formerRevision?: string; 
+            reload?: boolean 
+        } = {},
+    ): Promise<'added' | 'replaced' | 'unchanged'> {
         this.assertRegistrable(agent);
         const { name } = agent;
-        const { revision } = options;
+        const {
+            revision, 
+            formerRevision, 
+            reload = true, 
+        } = options;
         const registered = this.agents.has(name);
         if (registered && this.agents.get(name) === agent && this.revisions.get(name) === revision) return 'unchanged';
+        let cancelled: string[] | undefined;
         if (revision !== undefined) {
             this.syncing.add(name);
             try {
-                await syncRevision(this.registry(), name, revision);
+                if (reload) {
+                    cancelled = await syncRevision(this.registry(), name, revision, formerRevision);
+                } else {
+                    await claimRevision(this.registry(), name, revision, formerRevision);
+                }
             } finally {
                 this.syncing.delete(name);
             }
-        } else if (registered) {
-            await cancelAgentRuns(this.registry(), name, this.clock.now());
+        } else if (registered && reload) {
+            cancelled = await cancelAgentRuns(this.registry(), name, agentCancelReason(name, 'replaced'), this.clock.now());
+        }
+        if (cancelled) {
+            this.emit({
+                type: 'agents.cancelled',
+                name,
+                reason: 'agent_replaced',
+                ...(revision !== undefined && { revision }),
+                runIds: cancelled,
+            });
         }
         const kind = this.agents.has(name) ? 'replaced' : 'added';
         this.agents.set(name, agent);
@@ -356,11 +398,19 @@ export class Engine implements IContextProvider {
             });
         }
         const pending = this.removals.has(name);
-        await dropRevision(this.registry(), name, {
+        const cancelled = await dropRevision(this.registry(), name, {
             registered: pending,
             ...(pending && { revision: this.removals.get(name) }),
         });
         this.removals.delete(name);
+        if (cancelled) {
+            this.emit({
+                type: 'agents.cancelled',
+                name,
+                reason: 'agent_removed',
+                runIds: cancelled,
+            });
+        }
         return registered;
     }
 
@@ -540,9 +590,19 @@ export class Engine implements IContextProvider {
      * owner now.
      */
     async cancel(runId: string): Promise<void> {
+        return this.cancelRun(runId);
+    }
+
+    /**
+     * cancel() with a reason the run stores as its `error` (the registry's
+     * `agent_replaced`/`agent_removed`); a run on another replica gets it with
+     * `cancelRequested`, and the owner's settle keeps it.
+     */
+    protected async cancelRun(runId: string, reason?: CancelReason): Promise<void> {
         const execution = this.executions.get(runId);
         if (execution) {
             execution.stop ??= 'cancel';
+            if (reason) execution.cancelReason ??= reason;
             execution.controller.abort();
             await execution.done;
             if (execution.stop === 'lease-lost') {
@@ -550,7 +610,9 @@ export class Engine implements IContextProvider {
             }
             // the abort cannot stop a pause that was already writing: cancel the run it left waiting
             const run = await this.store.getRun(runId);
-            if (run?.status === RunStatus.WAITING || run?.status === RunStatus.QUEUED) await this.cancelStored(runId, [run.status]);
+            if (run?.status === RunStatus.WAITING || run?.status === RunStatus.QUEUED) {
+                await this.cancelStored(runId, [run.status], execution.cancelReason);
+            }
             return;
         }
         for (let attempt = 0; ; attempt++) {
@@ -563,10 +625,11 @@ export class Engine implements IContextProvider {
             }
             try {
                 if (status === RunStatus.QUEUED || status === RunStatus.WAITING) {
-                    await this.cancelStored(runId, [status]);
+                    await this.cancelStored(runId, [status], reason);
                 } else {
                     const updated = await this.store.updateRun(runId, {
                         cancelRequested: true,
+                        ...(reason && { error: reason }),
                         updatedAt: this.clock.now(),
                     }, { expectStatus: [status] });
                     this.emit({ type: 'run.updated', run: updated });
@@ -579,13 +642,14 @@ export class Engine implements IContextProvider {
         }
     }
 
-    /** Settles a run nobody executes (`expectStatus`) as cancelled. */
-    protected async cancelStored(runId: string, expectStatus: Run['status'][]): Promise<void> {
+    /** Settles a run nobody executes (`expectStatus`) as cancelled, storing `reason` as its error. */
+    protected async cancelStored(runId: string, expectStatus: Run['status'][], reason?: CancelReason): Promise<void> {
         const now = this.clock.now();
         const updated = await this.store.updateRun(
             runId,
             {
                 status: RunStatus.CANCELLED,
+                ...(reason && { error: reason }),
                 waiting: undefined,
                 finishedAt: now,
                 updatedAt: now,
@@ -761,8 +825,9 @@ export class Engine implements IContextProvider {
         if (!updated) return;
         this.emit({ type: 'run.updated', run: updated });
         // a cancel arrived while pausing (an abort cannot interrupt this write): settle, do not deliver
-        if (updated.cancelRequested || this.executions.get(run.id)?.stop === 'cancel') {
-            await this.cancelStored(run.id, [RunStatus.WAITING]).catch((error: unknown) => {
+        const execution = this.executions.get(run.id);
+        if (updated.cancelRequested || execution?.stop === 'cancel') {
+            await this.cancelStored(run.id, [RunStatus.WAITING], execution?.cancelReason).catch((error: unknown) => {
                 if (!(error instanceof InvalidRunStateError)) this.onError(error, run);
             });
             return;
@@ -949,7 +1014,8 @@ export class Engine implements IContextProvider {
      * `cancelled`; after a lost lease nothing is written and undefined resolves.
      */
     protected async finish(id: string, patch: Partial<Run>): Promise<Run | undefined> {
-        const stop = this.executions.get(id)?.stop;
+        const execution = this.executions.get(id);
+        const stop = execution?.stop;
         if (stop === 'lease-lost') return undefined;
         const now = this.clock.now();
         const settled: Partial<Run> = stop === 'drain' && patch.status === RunStatus.CANCELLED ?
@@ -965,6 +1031,10 @@ export class Engine implements IContextProvider {
                 waiting: undefined,
                 finishedAt: now,
                 updatedAt: now,
+                // a registry cancel's reason; a remote one is already stored and kept
+                ...(patch.status === RunStatus.CANCELLED && execution?.cancelReason && { error: execution.cancelReason }),
+                // completed despite a cancel request: the stored reason no longer applies
+                ...(patch.status === RunStatus.COMPLETED && { error: undefined }),
                 ...patch,
             };
         if (settled.usage === undefined) delete settled.usage;
@@ -1006,6 +1076,15 @@ export class Engine implements IContextProvider {
         this.onError(new LeaseLostError(id));
     }
 
+    /**
+     * What putAgent() refuses before any store read or write: a model that
+     * does not resolve, a subscription to a channel the engine does not have
+     * (InvalidAgentDefinitionError). Registers nothing.
+     */
+    checkAgent(agent: Agent): void {
+        this.assertRegistrable(agent);
+    }
+
     /** Refuses an agent the engine cannot run: one subscribing to a channel it does not have. */
     protected assertRegistrable(agent: Agent): void {
         // first: putAgent refuses before syncing, the lock and any store write
@@ -1022,7 +1101,7 @@ export class Engine implements IContextProvider {
             store: this.store,
             clock: this.clock,
             claimTtlMs: this.claimTtlMs,
-            cancel: (runId) => this.cancel(runId),
+            cancel: (runId, reason) => this.cancelRun(runId, reason),
             onError: (error, run) => this.onError(error, run),
         };
     }

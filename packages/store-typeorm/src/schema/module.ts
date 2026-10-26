@@ -33,3 +33,14 @@ export async function migrateStore(dataSource: DataSource): Promise<void> {
         await queryRunner.release();
     }
 }
+
+/**
+ * The names of the store's migrations (`STORE_MIGRATIONS` of the data source)
+ * not run yet, in order. Read-only: a database without the migrations table
+ * has all of them pending, and the table is never created.
+ */
+export async function pendingMigrations(dataSource: DataSource): Promise<string[]> {
+    const executor = new MigrationExecutor(dataSource);
+    const pending = await executor.getPendingMigrations();
+    return pending.map((migration) => migration.name);
+}

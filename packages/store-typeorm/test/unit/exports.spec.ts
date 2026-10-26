@@ -11,6 +11,7 @@ import * as pkg from '@chamvi/store-typeorm';
 describe('public api', () => {
     it.each([
         'migrateStore',
+        'pendingMigrations',
         'TypeormStore',
     ])('exports %s', (name) => {
         expect(pkg).toHaveProperty(name);

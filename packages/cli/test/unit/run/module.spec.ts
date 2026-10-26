@@ -24,8 +24,15 @@ describe('runCli', () => {
         const fake = createFakeProcess();
         await runCli(['--help'], fake.context());
         const out = fake.stdout.join('');
-        ['start', 'run-job', 'migrate', 'doctor'].forEach((command) => expect(out).toContain(command));
+        ['start', 'run-job', 'migrate'].forEach((command) => expect(out).toContain(command));
+        expect(out).not.toContain('doctor');
         expect(fake.exitCodes).toEqual([]);
+    });
+
+    it('start --help lists --check', async () => {
+        const fake = createFakeProcess();
+        await runCli(['start', '--help'], fake.context());
+        expect(fake.stdout.join('')).toContain('--check');
     });
 
     it('<command> --help prints that command', async () => {

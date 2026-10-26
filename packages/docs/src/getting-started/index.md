@@ -70,4 +70,5 @@ The engine starts runs only through `engine.dispatch()`, which channels call: [`
 
 - [Installation](/getting-started/installation): install the core and a model provider.
 - [Quick Start](/getting-started/quick-start): define an agent and run it once.
+- [Your First Agent](/guide/first-agent): an agent folder on `@chamvi/app`, from `chamvi dev` to `chamvi start --check` in CI.
 - [Guide](/guide/): the concepts, one page each.

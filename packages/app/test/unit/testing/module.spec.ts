@@ -53,9 +53,10 @@ function modules(extra: IModule[] = []): IModule[] {
     ];
 }
 
-async function start(mode?: AppMode) {
+async function start(mode?: AppMode, check?: boolean) {
     const harness = await createModuleHarness({
         mode,
+        ...(check && { check }),
         env: {},
         agents: [triage()],
         modules: modules(),
@@ -85,6 +86,15 @@ describe('module harness', () => {
 
     it('job mode does not start the engine', async () => {
         const harness = await start('job');
+        const engine = harness.container.resolve(AppToken.ENGINE);
+        const { runId } = await dispatch(engine);
+        await engine.idle();
+
+        expect((await engine.getRun(runId))?.status).toBe('queued');
+    });
+
+    it('a check runs no start steps', async () => {
+        const harness = await start('start', true);
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
         await engine.idle();

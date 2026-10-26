@@ -38,6 +38,7 @@ import { createTestDatabaseUrl, describePostgres } from '../../../utils/database
 
 function build(options: {
     mode?: AppMode;
+    check?: boolean;
     env?: Record<string, string>;
     store?: StoreModuleOptions;
 }) {
@@ -45,6 +46,7 @@ function build(options: {
     const logger = createRecordingLogger(clock);
     const harness = buildHarness({
         mode: options.mode ?? 'start',
+        ...(options.check && { check: true }),
         env: { ...options.env },
         modules: [configModule({ clock, logger }), storeModule(options.store)],
     });
@@ -104,6 +106,15 @@ describe('storeModule on a database URL', () => {
         expect(logger.lines.join('\n')).not.toContain('sekr3t');
         expect(inspect(harness.reported, { depth: 5 })).not.toContain('sekr3t');
         expect(harness.container.has(AppToken.STORE)).toBe(false);
+    });
+
+    it('an unreachable DATABASE_URL fails a check too', async () => {
+        const { harness } = build({ check: true, env: { DATABASE_URL: 'postgres://u:sekr3t@127.0.0.1:1/x' } });
+
+        const error = await harness.setup().then(() => undefined, (e: unknown) => e);
+        expect(error).toBeInstanceOf(Error);
+        expect(error).not.toBeInstanceOf(InvalidAgentDefinitionError);
+        expect(inspect(error, { depth: 5 })).not.toContain('sekr3t');
     });
 
     it('a server that never answers fails setup after the connect timeout', async () => {
@@ -298,6 +309,51 @@ describePostgres('storeModule on Postgres', () => {
         });
 
         await runHooks(harness.container, 'stopping');
+        await harness.stop();
+    });
+
+    it('check mode on an unmigrated database fails with store_not_migrated and creates nothing', async () => {
+        const url = await createTestDatabaseUrl();
+        const { harness } = build({ check: true, env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'false' } });
+
+        const error = await harness.setup().then(() => undefined, (e: unknown) => e);
+        expect(error).toMatchObject({ code: APP_ERROR_CODE.STORE_NOT_MIGRATED });
+        expect((error as Error).message).toBe(
+            'The store has 5 pending migration(s); run chamvi migrate or set CHAMVI_MIGRATE=true.',
+        );
+        const ds = await openAdmin(url);
+        try {
+            expect(await tableExists(ds, 'migrations')).toBe(false);
+            expect(await tableExists(ds, 'chamvi_runs')).toBe(false);
+        } finally {
+            await closeAdmin();
+        }
+    });
+
+    it('check mode with CHAMVI_MIGRATE=true passes and migrates nothing', async () => {
+        const url = await createTestDatabaseUrl();
+        const { harness } = build({ check: true, env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'true' } });
+        await harness.setup();
+        await harness.stop();
+
+        const ds = await openAdmin(url);
+        try {
+            expect(await tableExists(ds, 'migrations')).toBe(false);
+            expect(await tableExists(ds, 'chamvi_runs')).toBe(false);
+        } finally {
+            await closeAdmin();
+        }
+    });
+
+    it('check mode on a migrated database passes', async () => {
+        const url = await createTestDatabaseUrl();
+        const first = build({ env: { DATABASE_URL: url } });
+        await first.harness.setup();
+        await first.harness.stop();
+
+        const { harness } = build({ check: true, env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'false' } });
+        await harness.setup();
+        expect(harness.container.resolve(AppToken.STORE)).toBeInstanceOf(TypeormStore);
         await harness.stop();
     });
 });

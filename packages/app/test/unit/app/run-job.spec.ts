@@ -30,12 +30,20 @@ import {
     storeModule,
 } from '@chamvi/app';
 import type { IApp } from '@chamvi/app';
+import {
+    agentFile,
+    cronTrigger,
+    provider,
+    queueRun,
+} from '../../utils/agents-dir.ts';
 import { hangingModel, rejectionOf } from '../../utils/app.ts';
+import { createTempDir, writeTree } from '../../utils/folder.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
 import { failingModel, textModel } from '../../utils/model.ts';
 
 const DRAIN_MS = 1_000;
 const POLL_MS = 1_000;
+const APP_ERROR_CODE_INVALID_RUN_STATE = 'invalid_run_state';
 
 let apps: IApp[] = [];
 
@@ -209,5 +217,38 @@ describe('App.runJob', () => {
         await new Promise((resolve) => { setTimeout(resolve, 10); });
         expect(getRun).not.toHaveBeenCalled();
         expect(listRuns).not.toHaveBeenCalled();
+    });
+
+    it('rejects with invalid_run_state when its folder changed since the marker', async () => {
+        const dir = await createTempDir();
+        try {
+            await writeTree(dir.path, { 'greeter/agent.ts': agentFile('v1', 'test/model', 'greeter', [cronTrigger('*/5 * * * *')]) });
+            const clock = new ControllableClock(new Date('2026-10-21T08:00:00Z'));
+            const logger = createRecordingLogger(clock);
+            const store = new MemoryStore({ clock });
+            const old = 'c'.repeat(64);
+            await store.setAgentRevision({
+                agent: 'greeter', 
+                hash: old, 
+                changedAt: clock.now(), 
+            });
+            const runId = await queueRun(store, clock, 'greeter');
+            const app = createApp({
+                models: { test: provider() },
+                modules: [configModule({ clock, logger }), storeModule({ store })],
+            });
+            apps.push(app);
+
+            const error = await rejectionOf(app.runJob({
+                env: { CHAMVI_DRAIN_TIMEOUT_MS: String(DRAIN_MS), CHAMVI_AGENTS_DIR: dir.path },
+                agent: 'greeter',
+            }));
+            expect(error.code).toBe(APP_ERROR_CODE_INVALID_RUN_STATE);
+            expect(error.message).toContain(old.slice(0, 12));
+            expect((await store.getAgentRevision('greeter'))?.hash).toBe(old);
+            expect((await store.getRun(runId))?.status).toBe('queued');
+        } finally {
+            await dir.remove();
+        }
     });
 });

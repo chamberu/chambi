@@ -104,6 +104,7 @@ export default defineConfig({
                         { text: 'Introduction', link: '/getting-started/' },
                         { text: 'Installation', link: '/getting-started/installation' },
                         { text: 'Quick Start', link: '/getting-started/quick-start' },
+                        { text: 'Your First Agent', link: '/guide/first-agent' },
                     ],
                 },
             ],
@@ -112,6 +113,7 @@ export default defineConfig({
                     text: 'Concepts',
                     items: [
                         { text: 'Overview', link: '/guide/' },
+                        { text: 'Your First Agent', link: '/guide/first-agent' },
                         { text: 'Agents', link: '/guide/agents' },
                         { text: 'Channels & the Envelope', link: '/guide/channels' },
                         { text: 'Run Lifecycle', link: '/guide/run-lifecycle' },

@@ -6,9 +6,25 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { InvalidRunStateError } from '../../errors/index.ts';
-import { AGENT_LOCK_TTL_MS } from '../constants.ts';
-import type { RegistryContext } from './types.ts';
+import { ErrorCode, InvalidRunStateError } from '../../errors/index.ts';
+import { AGENT_LOCK_TTL_MS, REVISION_PREFIX_LENGTH } from '../constants.ts';
+import type { CancelReason, RegistryContext } from './types.ts';
+
+/** What a registry cancel stores on the runs of `agent`. */
+export function agentCancelReason(agent: string, kind: 'replaced' | 'removed', revision?: string): CancelReason {
+    if (kind === 'removed') {
+        return {
+            code: ErrorCode.AGENT_REMOVED,
+            message: `Agent "${agent}" was removed; its unsettled runs were cancelled.`,
+        };
+    }
+    return {
+        code: ErrorCode.AGENT_REPLACED,
+        message: revision === undefined ?
+            `Agent "${agent}" was replaced; its unsettled runs were cancelled.` :
+            `Agent "${agent}" was reloaded at revision ${revision.slice(0, REVISION_PREFIX_LENGTH)}; its unsettled runs were cancelled.`,
+    };
+}
 
 function delay(ctx: RegistryContext, ms: number): Promise<void> {
     return new Promise((resolve) => {

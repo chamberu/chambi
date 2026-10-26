@@ -10,7 +10,6 @@ import type { CommandDef } from 'citty';
 import type { CliContext } from '../run/types.ts';
 import { createBuildCommand } from './build.ts';
 import { createDevCommand } from './dev.ts';
-import { createDoctorCommand } from './doctor.ts';
 import { readVersion } from './helpers.ts';
 import { createMigrateCommand } from './migrate.ts';
 import { createRunJobCommand } from './run-job.ts';
@@ -25,7 +24,7 @@ export function createMainCommand(context: CliContext): CommandDef {
         meta: {
             name: 'chamvi',
             version: readVersion(),
-            description: 'Run a chamvi app: dev, build, start, run-job, migrate, doctor',
+            description: 'Run a chamvi app: dev, build, start, run-job, migrate',
         },
         subCommands: {
             dev: createDevCommand(context),
@@ -33,7 +32,6 @@ export function createMainCommand(context: CliContext): CommandDef {
             start: createStartCommand(context),
             'run-job': createRunJobCommand(context),
             migrate: createMigrateCommand(context),
-            doctor: createDoctorCommand(context),
         },
     });
 }

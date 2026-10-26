@@ -11,6 +11,7 @@ export type {
 } from './execute/types.ts';
 export type {
     AgentChange,
+    AgentRunsCancelled,
     ApprovalAnswer,
     DispatchEnvelope,
     EngineEvent,

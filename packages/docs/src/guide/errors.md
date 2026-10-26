@@ -24,6 +24,15 @@ Every error chamvi throws extends `ChamviError`, which extends ebec's `BaseError
 
 A failed run stores `{ code, message }` in `run.error`. For budget, timeout and fatal tool failures the code is the error's code. Any other thrown value gets its own `code` if it has a string one, else `Error`.
 
+A run the registry cancelled stores why in `run.error` too, with a code that has no error class (nothing throws it):
+
+| `ErrorCode` | Code | Stored when |
+|---|---|---|
+| `AGENT_REPLACED` | `agent_replaced` | A folder change (a new revision) or a replaced code agent cancelled the run while it was unsettled |
+| `AGENT_REMOVED` | `agent_removed` | The agent was removed (its folder deleted) while the run was unsettled |
+
+A run cancelled on another replica keeps the reason once its owner settles it; a run that completes anyway ends without one. A user's cancel stores no error.
+
 <<< @/snippets/errors.ts#run-error
 
 ## Errors without a caller

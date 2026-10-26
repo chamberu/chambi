@@ -36,8 +36,27 @@ export type AgentChange = {
     kind: 'added' | 'replaced' | 'removed';
 };
 
+/**
+ * The unsettled runs a registry change cancelled: a revision change or a
+ * replaced code agent (`agent_replaced`), a removal (`agent_removed`).
+ * Emitted once per sweep, by the engine that swept (so once across replicas),
+ * also with no run ids. `runIds` are the runs whose cancel went through,
+ * which is a request for a run executing on another replica (it may still
+ * complete before that replica sees it) or being drained here (it settles
+ * `interrupted`).
+ */
+export type AgentRunsCancelled = {
+    type: 'agents.cancelled';
+    name: string;
+    reason: 'agent_replaced' | 'agent_removed';
+    /** The revision the agent was reloaded at (a folder agent's replacement only). */
+    revision?: string;
+    /** The runs whose cancel went through (cancelled, or a cancel requested; see above). */
+    runIds: string[];
+};
+
 /** Every event Engine.on() delivers. */
-export type EngineEvent = RunEvent | AgentChange;
+export type EngineEvent = RunEvent | AgentChange | AgentRunsCancelled;
 
 export type EngineOptions = {
     store: IStore;

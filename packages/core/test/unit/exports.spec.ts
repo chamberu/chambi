@@ -132,6 +132,11 @@ describe('public api', () => {
         expect(core.ErrorCode.AGENT_NOT_FOUND).toBe('agent_not_found');
     });
 
+    it('exports the agent cancel reason codes', () => {
+        expect(core.ErrorCode.AGENT_REPLACED).toBe('agent_replaced');
+        expect(core.ErrorCode.AGENT_REMOVED).toBe('agent_removed');
+    });
+
     it('keeps the agent registry internals internal', () => {
         expect(core).not.toHaveProperty('AGENT_LOCK_TTL_MS');
         expect(core).not.toHaveProperty('cancelAgentRuns');
@@ -144,7 +149,14 @@ describe('public api', () => {
             name: string;
             kind: 'added' | 'replaced' | 'removed';
         }>();
-        expectTypeOf<core.EngineEvent>().toEqualTypeOf<core.RunEvent | core.AgentChange>();
+        expectTypeOf<core.EngineEvent>().toEqualTypeOf<core.RunEvent | core.AgentChange | core.AgentRunsCancelled>();
+        expectTypeOf<core.AgentRunsCancelled>().toEqualTypeOf<{
+            type: 'agents.cancelled';
+            name: string;
+            reason: 'agent_replaced' | 'agent_removed';
+            revision?: string;
+            runIds: string[];
+        }>();
     });
 
     it('exports the agent folder types', () => {
