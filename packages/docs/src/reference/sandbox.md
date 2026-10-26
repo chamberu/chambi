@@ -72,7 +72,7 @@ function prepareWorkspace(
     workspace: IWorkspace,
     input: { repo?: string; ref?: string; depth?: number; credential?: GitCredential; signal?: AbortSignal },
 ): Promise<{ commit?: string; defaultBranch?: string }>;
-function readCheckout(workspace: IWorkspace, signal?: AbortSignal): Promise<{ commit?: string; defaultBranch?: string } | undefined>;
+function readCheckout(workspace: IWorkspace, signal?: AbortSignal, clock?: IClock): Promise<{ commit?: string; defaultBranch?: string } | undefined>;
 function createOutputCollector(maxBytes: number): IOutputCollector;
 ```
 
