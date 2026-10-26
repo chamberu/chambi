@@ -12,7 +12,7 @@ import { inject } from '../context/module.ts';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
 import type { StateSchema } from '../state/types.ts';
 import type { ToolContext } from '../tool/types.ts';
-import { toLanguageModel } from './asserts.ts';
+import { noModelMessage, toLanguageModel } from './asserts.ts';
 import { MODEL_CONTEXT } from './constants.ts';
 import type { ModelCheckOptions, ModelRef } from './types.ts';
 
@@ -46,7 +46,7 @@ export function checkDefaultModel(options: ModelCheckOptions): void {
 export function checkAgentModel(agent: Agent, options: ModelCheckOptions): void {
     const ref: unknown = agent.definition.model ?? options.model;
     if (ref === undefined || ref === null) {
-        throw new InvalidAgentDefinitionError(`Agent "${agent.name}" has no model and the app sets no default (CHAMVI_MODEL).`);
+        throw new InvalidAgentDefinitionError(noModelMessage(agent.name));
     }
     if (!isModelRef(ref)) throw new InvalidAgentDefinitionError(`Agent "${agent.name}": model ${SHAPE}`);
     if (typeof ref !== 'string') return;

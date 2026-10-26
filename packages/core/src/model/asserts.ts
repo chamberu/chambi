@@ -10,6 +10,13 @@ import { InvalidAgentDefinitionError } from '../errors/index.ts';
 import type { IModelResolver, ModelRef } from './types.ts';
 
 /**
+ * The refusal for an agent without a model when the engine has no default.
+ */
+export function noModelMessage(agent: string): string {
+    return `Agent "${agent}" has no model and the engine sets no default (EngineOptions.model; CHAMVI_MODEL in @chamvi/app).`;
+}
+
+/**
  * The model an execution runs: an object as is, a string through the
  * resolver (any refusal an InvalidAgentDefinitionError naming the ref).
  * Without a resolver a string is refused, a guard behind the registration
@@ -21,7 +28,7 @@ export function toLanguageModel(
     agent: string,
 ): LanguageModel {
     if (ref === undefined) {
-        throw new InvalidAgentDefinitionError(`Agent "${agent}" has no model and the app sets no default (CHAMVI_MODEL).`);
+        throw new InvalidAgentDefinitionError(noModelMessage(agent));
     }
     if (typeof ref !== 'string') return ref;
     if (!models) {
