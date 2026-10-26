@@ -217,8 +217,8 @@ describe('sandboxModule: garbage collection timer', () => {
         const time = clock();
         const module = new RecordingSandboxModule({ env: {} });
         const harness = await harnessWith(module, { clock: time });
-        let release!: () => void;
-        module.gcGate = new Promise((resolve) => { release = resolve; });
+        const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+        module.gcGate = gate;
         const before = module.collections();
 
         time.advance(GC_INTERVAL_MS);
@@ -297,7 +297,11 @@ describe('sandboxModule: image allow-list', () => {
 
     it('keeps the allowImage option under a CHAMVI_SANDBOX_IMAGES without an entry', async () => {
         const allowImage = vi.fn(() => false);
-        const module = sandboxModule({ provider: dockerProvider(), allowImage, env: { CHAMVI_SANDBOX_IMAGES: ' , ' } });
+        const module = sandboxModule({
+            provider: dockerProvider(), 
+            allowImage, 
+            env: { CHAMVI_SANDBOX_IMAGES: ' , ' }, 
+        });
         managers.push(module.manager);
         expect(imageParameterOf(module)).toBe(true);
         await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
