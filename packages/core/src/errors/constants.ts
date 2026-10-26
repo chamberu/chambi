@@ -7,6 +7,8 @@
 
 export const ErrorCode = {
     AGENT_NOT_FOUND: 'agent_not_found',
+    AGENT_REMOVED: 'agent_removed',
+    AGENT_REPLACED: 'agent_replaced',
     ARTIFACT_NOT_FOUND: 'artifact_not_found',
     BUDGET_EXCEEDED: 'BudgetExceeded',
     CHANNEL_NOT_FOUND: 'channel_not_found',

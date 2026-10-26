@@ -60,6 +60,11 @@ export type Run = {
     /** Where the run came from on its channel (`trigger.address`). */
     address?: string;
     output?: unknown;
+    /**
+     * Why the run failed, or why the registry cancelled it (`agent_replaced`,
+     * `agent_removed`); a run cancelled on another replica keeps the reason
+     * through the owner's settle, a run that completes anyway loses it.
+     */
     error?: { code: string; message: string };
     usage: Usage;
     waiting?: WaitPoint;

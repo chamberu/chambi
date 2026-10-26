@@ -10,3 +10,5 @@ export const DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
 export const APPROVAL_TIMED_OUT = 'approval timed out';
 /** TTL of the registry lock `agents:<name>`; also how long putAgent/removeAgent wait for it. */
 export const AGENT_LOCK_TTL_MS = 300_000;
+/** How many characters of a revision hash a cancel reason names. */
+export const REVISION_PREFIX_LENGTH = 12;
