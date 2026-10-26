@@ -570,6 +570,9 @@ describe('workspace manager: acquire', () => {
         expect(() => createWorkspaceManager({ provider, maxWorkspacesPerRun: 1.5 })).toThrow(InvalidAgentDefinitionError);
         expect(() => createWorkspaceManager({ provider, env: { 'A B': 'x' } })).toThrow(InvalidAgentDefinitionError);
         expect(() => createWorkspaceManager({ provider, gcIntervalMs: -1 })).toThrow(InvalidAgentDefinitionError);
+        // a Node timer above 2^31 - 1 fires after 1 ms: the collector would run back to back
+        expect(() => createWorkspaceManager({ provider, gcIntervalMs: 2_147_483_648 })).toThrow(InvalidAgentDefinitionError);
+        expect(() => createWorkspaceManager({ provider, gcIntervalMs: 2_147_483_647 })).not.toThrow();
         expect(() => createWorkspaceManager({ provider, limits: { pids: 0 } })).toThrow(InvalidAgentDefinitionError);
         expect(() => createWorkspaceManager({ provider, image: '' })).toThrow(InvalidAgentDefinitionError);
         expect(() => createWorkspaceManager({ provider: {} as never })).toThrow(InvalidAgentDefinitionError);
