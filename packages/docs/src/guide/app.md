@@ -1,6 +1,6 @@
 # Apps & Modules
 
-An agent repository is one entry file: `export default createApp({ agents, modules })`. [`@chamvi/app`](/reference/app) boots config, store, engine, channels and HTTP from environment variables and shuts them down in order; [`@chamvi/cli`](/reference/cli) turns that into a process with `chamvi dev | build | start | run-job | migrate | doctor`, signals and exit codes.
+An agent repository is one entry file: `export default createApp({ agents, modules })`. [`@chamvi/app`](/reference/app) boots config, store, engine, channels and HTTP from environment variables and shuts them down in order; [`@chamvi/cli`](/reference/cli) turns that into a process with `chamvi dev | build | start | run-job | migrate`, signals and exit codes.
 
 ```bash
 npm install @chamvi/app @chamvi/cli ai @ai-sdk/anthropic typeorm pg
@@ -39,7 +39,7 @@ npm install --save-dev tsdown   # only for chamvi build
 
 ## Models
 
-An agent's `model` is optional: without one it uses the app's default (`CHAMVI_MODEL`, `chamvi.json` or `createApp({ model })`). Model strings `'<provider>/<model id>'` resolve through the providers the app declares (env, `chamvi.json`, `createApp({ providers })`), never through the Vercel Gateway or the AI SDK's global provider; `chamvi doctor` checks them before a start. See [Pick a Model](/guide/models).
+An agent's `model` is optional: without one it uses the app's default (`CHAMVI_MODEL`, `chamvi.json` or `createApp({ model })`). Model strings `'<provider>/<model id>'` resolve through the providers the app declares (env, `chamvi.json`, `createApp({ providers })`), never through the Vercel Gateway or the AI SDK's global provider; `chamvi start --check` checks them before a deploy. See [Pick a Model](/guide/models).
 
 ## Modules
 
@@ -130,7 +130,7 @@ The optional module factories read `options.env ?? process.env` when they are ca
 
 ## Read next
 
-- [Pick a Model](/guide/models): the default model, providers, gateways and `chamvi doctor`
+- [Pick a Model](/guide/models): the default model, providers, gateways and `chamvi start --check`
 - [`@chamvi/app` reference](/reference/app): every factory, option, token and variable
 - [`@chamvi/cli` reference](/reference/cli): commands, exit codes, signals and `dev`
 - [Deployment](/deployment/): the image, chart and template built on the CLI
