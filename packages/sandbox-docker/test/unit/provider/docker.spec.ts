@@ -165,6 +165,51 @@ describeDocker('docker sandbox', () => {
         expect(await found[0]!.readFile('kept.txt')).toBe('work');
     });
 
+    it('restarts a stopped container the list still shows as running', async () => {
+        const { runId, workspace } = await create();
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        await container.stop({ t: 0 });
+        // Docker's list is a view that may lag behind a stop
+        const client = Object.create(docker) as Docker;
+        const list = async (options?: Docker.ContainerListOptions) => (await docker.listContainers(options))
+            .map((item) => ({ ...item, State: 'running' }));
+        client.listContainers = list as Docker['listContainers'];
+
+        const found = await createDockerSandbox({ ...dockerOptions, docker: client }).find(runId);
+        workspaces.push(...found);
+        expect(found.map((item) => item.id)).toEqual([workspace.id]);
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('unpauses a paused container it finds', async () => {
+        const { runId, workspace } = await create();
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        await container.pause();
+
+        const found = await createDockerSandbox({ ...dockerOptions }).find(runId);
+        workspaces.push(...found);
+        expect(found.map((item) => item.id)).toEqual([workspace.id]);
+        expect((await container.inspect()).State.Paused).toBe(false);
+        expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('fails find on an inspect error other than a removed container', async () => {
+        const { runId } = await create();
+        const client = Object.create(docker) as Docker;
+        client.getContainer = ((id: string) => {
+            const container = docker.getContainer(id);
+            container.inspect = (async () => {
+                throw Object.assign(new Error('(HTTP code 500) server error - daemon busy'), { statusCode: 500 });
+            }) as Docker.Container['inspect'];
+            return container;
+        }) as Docker['getContainer'];
+
+        await expect(createDockerSandbox({ ...dockerOptions, docker: client }).find(runId)).rejects.toThrow(/daemon busy/);
+    });
+
     it('restarts the stopped container of a held workspace on find and keeps the handle', async () => {
         const provider = createDockerSandbox({ ...dockerOptions });
         const runId = `test-${randomUUID()}`;
