@@ -23,6 +23,12 @@ import { createFakeProvider } from '../../utils/provider.ts';
 /** Lets already-queued callbacks settle; not a sleep. */
 const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
 
+/** Flushes until `condition` holds (a lookup and a create each take a tick); at most 20 rounds. */
+async function until(condition: () => boolean): Promise<void> {
+    for (let round = 0; round < 20 && !condition(); round++) await flush();
+    expect(condition()).toBe(true);
+}
+
 function setup(options: Partial<WorkspaceManagerOptions> = {}) {
     const clock = new ControllableClock(new Date(1_000_000));
     const provider = createFakeProvider({ clock });
@@ -93,6 +99,7 @@ describe('workspace manager: acquire', () => {
             image: 'node:24',
             env: { FOO: 'bar' },
             limits: { memory: '1Gi' },
+            deployment: 'default',
             signal: expect.any(AbortSignal),
         });
         // the caller's signal reaches create
@@ -116,12 +123,12 @@ describe('workspace manager: acquire', () => {
     it('keeps runs apart', async () => {
         const { provider, manager } = setup();
         const { workspace } = await manager.acquire('r1', {});
-        expect(() => manager.get('r2', workspace.id)).toThrow(SandboxError);
-        expect(() => manager.get('r2', workspace.id)).toThrow(/not found/);
+        await expect(manager.get('r2', workspace.id)).rejects.toThrow(SandboxError);
+        await expect(manager.get('r2', workspace.id)).rejects.toThrow(/not found/);
         await expect(manager.release('r2', workspace.id)).rejects.toThrow(SandboxError);
         await expect(manager.release('r2', workspace.id)).rejects.toThrow(/not found/);
         expect(provider.disposed).toEqual([]);
-        expect(manager.get('r1', workspace.id)).toBe(workspace);
+        expect(await manager.get('r1', workspace.id)).toBe(workspace);
         await expect(manager.release('r2')).resolves.toBeUndefined();
         expect(provider.disposed).toEqual([]);
     });
@@ -133,10 +140,10 @@ describe('workspace manager: acquire', () => {
         const c = await manager.acquire('r1', { repo: 'octo/c' });
         await manager.release('r1', a.workspace.id);
         expect(provider.disposed).toEqual([a.workspace.id]);
-        expect(() => manager.get('r1', a.workspace.id)).toThrow(/not found/);
+        await expect(manager.get('r1', a.workspace.id)).rejects.toThrow(/not found/);
         await manager.release('r1');
         expect([...provider.disposed].sort()).toEqual([a.workspace.id, b.workspace.id, c.workspace.id].sort());
-        expect(() => manager.get('r1')).toThrow(/create_workspace/);
+        await expect(manager.get('r1')).rejects.toThrow(/create_workspace/);
     });
 
     it('caps workspaces per run', async () => {
@@ -152,6 +159,8 @@ describe('workspace manager: acquire', () => {
         const { provider, manager } = setup({ maxWorkspacesPerRun: 1 });
         const first = manager.acquire('r1', { repo: 'octo/a' });
         await expect(manager.acquire('r1', { repo: 'octo/b' })).rejects.toThrow(SandboxError);
+        await expect(manager.acquire('r1', { repo: 'octo/b' })).rejects.toThrow('A run holds at most 1 workspace; dispose one first ' +
+            '(dispose_workspace), or have the operator raise maxWorkspacesPerRun of the workspace manager.');
         await first;
         expect(provider.created).toHaveLength(1);
     });
@@ -191,15 +200,15 @@ describe('workspace manager: acquire', () => {
 
     it('get without an id', async () => {
         const { manager } = setup();
-        expect(() => manager.get('r1')).toThrow(SandboxError);
-        expect(() => manager.get('r1')).toThrow(/create_workspace/);
+        await expect(manager.get('r1')).rejects.toThrow(SandboxError);
+        await expect(manager.get('r1')).rejects.toThrow(/create_workspace/);
         const a = await manager.acquire('r1', { repo: 'octo/a' });
-        expect(manager.get('r1')).toBe(a.workspace);
+        expect(await manager.get('r1')).toBe(a.workspace);
         const b = await manager.acquire('r1', { repo: 'octo/b' });
-        expect(() => manager.get('r1')).toThrow(ValidationError);
+        await expect(manager.get('r1')).rejects.toThrow(ValidationError);
         let message = '';
         try {
-            manager.get('r1');
+            await manager.get('r1');
         } catch (error) {
             message = (error as Error).message;
         }
@@ -212,25 +221,25 @@ describe('workspace manager: acquire', () => {
             clock, 
             provider, 
             manager, 
-        } = setup({ limits: { timeoutMs: 60_000 } });
+        } = setup({ limits: { maxLifetimeMs: 60_000 } });
         const { workspace } = await manager.acquire('r1', {});
         clock.advance(59_999);
-        expect(manager.get('r1', workspace.id)).toBe(workspace);
+        expect(await manager.get('r1', workspace.id)).toBe(workspace);
         clock.advance(1);
-        expect(() => manager.get('r1', workspace.id)).toThrow(SandboxError);
+        await expect(manager.get('r1', workspace.id)).rejects.toThrow(SandboxError);
         await flush();
         expect(provider.disposed).toEqual([workspace.id]);
-        expect(() => manager.get('r1', workspace.id)).toThrow(/not found/);
+        await expect(manager.get('r1', workspace.id)).rejects.toThrow(/not found/);
         const again = await manager.acquire('r1', {});
         expect(again.reused).toBe(false);
         expect(provider.created).toHaveLength(2);
     });
 
     it('reports an expired workspace as expired', async () => {
-        const { clock, manager } = setup({ limits: { timeoutMs: 60_000 } });
+        const { clock, manager } = setup({ limits: { maxLifetimeMs: 60_000 } });
         const { workspace } = await manager.acquire('r1', {});
         clock.advance(60_000);
-        expect(() => manager.get('r1', workspace.id)).toThrow(/expired/);
+        await expect(manager.get('r1', workspace.id)).rejects.toThrow(/expired/);
     });
 
     it('creates anew on acquire when the workspace expired', async () => {
@@ -238,7 +247,7 @@ describe('workspace manager: acquire', () => {
             clock, 
             provider, 
             manager, 
-        } = setup({ limits: { timeoutMs: 60_000 } });
+        } = setup({ limits: { maxLifetimeMs: 60_000 } });
         const first = await manager.acquire('r1', {});
         clock.advance(60_000);
         const second = await manager.acquire('r1', {});
@@ -283,7 +292,7 @@ describe('workspace manager: acquire', () => {
             clock, 
             provider, 
             manager, 
-        } = setup({ limits: { timeoutMs: 60_000 }, gcIntervalMs: 0 });
+        } = setup({ limits: { maxLifetimeMs: 60_000 }, gcIntervalMs: 0 });
         const { workspace } = await manager.acquire('r1', {});
         clock.advance(60_000);
         await expect(manager.collectGarbage()).resolves.toBe(1);
@@ -295,7 +304,7 @@ describe('workspace manager: acquire', () => {
             clock,
             provider,
             manager,
-        } = setup({ limits: { timeoutMs: 60_000 }, gcIntervalMs: 0 });
+        } = setup({ limits: { maxLifetimeMs: 60_000 }, gcIntervalMs: 0 });
         const { workspace } = await manager.acquire('r1', {});
         clock.advance(60_000);
         const collect = provider.collectGarbage.bind(provider);
@@ -314,23 +323,23 @@ describe('workspace manager: acquire', () => {
             provider,
             manager,
             errors,
-        } = setup({ limits: { timeoutMs: 60_000 }, gcIntervalMs: 0 });
+        } = setup({ limits: { maxLifetimeMs: 60_000 }, gcIntervalMs: 0 });
         const old = await manager.acquire('r1', { repo: 'octo/demo' });
         clock.advance(30_000);
         const live = await manager.acquire('r1', { repo: 'octo/other' });
         clock.advance(30_000);
-        expect(manager.get('r1')).toBe(live.workspace);
+        expect(await manager.get('r1')).toBe(live.workspace);
         await flush();
         expect(provider.disposed).toEqual([old.workspace.id]);
         expect(errors).toEqual([]);
     });
 
     it('reports the only workspace as expired when get has no id', async () => {
-        const { clock, manager } = setup({ limits: { timeoutMs: 60_000 } });
+        const { clock, manager } = setup({ limits: { maxLifetimeMs: 60_000 } });
         await manager.acquire('r1', {});
         clock.advance(60_000);
-        expect(() => manager.get('r1')).toThrow(/expired/);
-        expect(() => manager.get('r1')).toThrow(/create_workspace first/);
+        await expect(manager.get('r1')).rejects.toThrow(/expired/);
+        await expect(manager.get('r1')).rejects.toThrow(/create_workspace first/);
     });
 
     it('creates anew on acquire when the workspace died outside the manager', async () => {
@@ -345,20 +354,88 @@ describe('workspace manager: acquire', () => {
         expect(second.workspace.id).not.toBe(first.workspace.id);
         expect(second.workspace.disposed).toBe(false);
         expect(provider.created).toHaveLength(2);
-        expect(manager.get('r1')).toBe(second.workspace);
+        expect(await manager.get('r1')).toBe(second.workspace);
     });
 
     it('reports a workspace that died outside the manager as gone', async () => {
         const { manager } = setup();
         const { workspace } = await manager.acquire('r1', {});
         await workspace.dispose();
-        expect(() => manager.get('r1', workspace.id)).toThrow(/gone/);
-        expect(() => manager.get('r1', workspace.id)).toThrow(/not found/);
+        await expect(manager.get('r1', workspace.id)).rejects.toThrow(/gone/);
+        await expect(manager.get('r1', workspace.id)).rejects.toThrow(/not found/);
 
         const other = await manager.acquire('r2', {});
         await other.workspace.dispose();
-        expect(() => manager.get('r2')).toThrow(/gone.*create_workspace/);
-        expect(() => manager.get('r2')).toThrow(/create_workspace first/);
+        await expect(manager.get('r2')).rejects.toThrow(/gone.*create_workspace/);
+        await expect(manager.get('r2')).rejects.toThrow(/create_workspace first/);
+    });
+
+    it('forgets a gone workspace without disposing it and finds it again on the next get', async () => {
+        const { provider, manager } = setup();
+        const { workspace } = await manager.acquire('r1', {});
+        await workspace.writeFile('work.txt', 'hours of work');
+        // the container stopped (a daemon restart) while the run holds it
+        provider.stop(workspace.id);
+
+        const restarted = await manager.get('r1');
+        expect(restarted).not.toBe(workspace);
+        expect(restarted.id).toBe(workspace.id);
+        expect(await restarted.readFile('work.txt')).toBe('hours of work');
+        // a dispose would have removed the container and its work
+        expect(provider.disposed).toEqual([]);
+
+        provider.stop(workspace.id);
+        const again = await manager.get('r1', workspace.id);
+        expect(again.id).toBe(workspace.id);
+        expect(again.disposed).toBe(false);
+        expect(provider.disposed).toEqual([]);
+    });
+
+    it('finds a gone workspace again on acquire instead of creating one', async () => {
+        const { provider, manager } = setup();
+        const first = await manager.acquire('r1', { repo: 'octo/demo' });
+        provider.stop(first.workspace.id);
+
+        const second = await manager.acquire('r1', { repo: 'octo/demo' });
+        expect(second.reused).toBe(true);
+        expect(second.workspace.id).toBe(first.workspace.id);
+        expect(second.workspace.disposed).toBe(false);
+        expect(provider.created).toHaveLength(1);
+        expect(provider.disposed).toEqual([]);
+    });
+
+    it('asks the provider before picking among the rest when one of several workspaces is gone', async () => {
+        const { provider, manager } = setup();
+        const plain = await manager.acquire('r1', {});
+        await manager.acquire('r1', { repo: 'octo/demo' });
+        provider.stop(plain.workspace.id);
+        // both are back: the model has to name one
+        await expect(manager.get('r1')).rejects.toThrow(/2 workspaces/);
+        expect(provider.disposed).toEqual([]);
+    });
+
+    it('reports a gone workspace nothing finds again as gone, never disposing it', async () => {
+        const { provider, manager } = setup();
+        const { workspace } = await manager.acquire('r1', {});
+        provider.stop(workspace.id, { removed: true });
+        await expect(manager.get('r1')).rejects.toThrow(/gone.*create_workspace/);
+        await expect(manager.get('r1')).rejects.toThrow(/create_workspace first/);
+        expect(await manager.collectGarbage()).toBe(0);
+        expect(provider.disposed).toEqual([]);
+    });
+
+    it('still disposes a gone workspace once it expired', async () => {
+        const {
+            clock, 
+            provider, 
+            manager, 
+        } = setup({ gcIntervalMs: 0 });
+        const { workspace } = await manager.acquire('r1', {});
+        provider.stop(workspace.id, { removed: true });
+        clock.advance(workspace.info.expiresAt.getTime() - clock.now().getTime());
+        await expect(manager.get('r1')).rejects.toThrow(SandboxError);
+        await until(() => provider.disposed.length === 1);
+        expect(provider.disposed).toEqual([workspace.id]);
     });
 
     it('does not count a workspace that died outside the manager as collected', async () => {
@@ -366,24 +443,31 @@ describe('workspace manager: acquire', () => {
         const { workspace } = await manager.acquire('r1', {});
         await workspace.dispose();
         expect(await manager.collectGarbage()).toBe(0);
-        expect(() => manager.get('r1', workspace.id)).toThrow(/not found/);
+        await expect(manager.get('r1', workspace.id)).rejects.toThrow(/not found/);
     });
 
-    it('refuses to acquire after close', async () => {
+    it('refuses to acquire and get after close, keeping the workspaces of live runs', async () => {
         const { provider, manager } = setup();
-        const { workspace } = await manager.acquire('r1', {});
+        await manager.acquire('r1', {});
         await manager.close();
-        expect(provider.disposed).toEqual([workspace.id]);
+        expect(provider.disposed).toEqual([]);
         await expect(manager.acquire('r1', {})).rejects.toThrow(SandboxError);
+        await expect(manager.get('r1')).rejects.toThrow(/closed/);
     });
 
     it('disposes a workspace whose run was released while it was created', async () => {
         const { provider, manager } = setup();
+        const { promise: gate, resolve: open } = Promise.withResolvers<void>();
+        provider.gate = gate;
         const pending = manager.acquire('r1', {});
-        await manager.release('r1');
-        await expect(pending).rejects.toThrow(SandboxError);
+        const rejected = expect(pending).rejects.toThrow(SandboxError);
+        await until(() => provider.created.length === 1);
+        const releasing = manager.release('r1');
+        open();
+        await releasing;
+        await rejected;
         expect(provider.disposed).toHaveLength(1);
-        expect(() => manager.get('r1')).toThrow(/create_workspace/);
+        await expect(manager.get('r1')).rejects.toThrow(/create_workspace/);
     });
 
     it('close() waits for a create in flight, aborts it and disposes what it made', async () => {
@@ -396,8 +480,7 @@ describe('workspace manager: acquire', () => {
         provider.gate = gate;
         const pending = manager.acquire('r1', {});
         const outcome = pending.catch((error: unknown) => error);
-        await flush();
-        expect(provider.created).toHaveLength(1);
+        await until(() => provider.created.length === 1);
 
         let closed = false;
         const closing = manager.close().then(() => { closed = true; });
@@ -417,7 +500,7 @@ describe('workspace manager: acquire', () => {
         const { promise: gate, resolve: open } = Promise.withResolvers<void>();
         provider.gate = gate;
         const pending = manager.acquire('r1', {}).catch((error: unknown) => error);
-        await flush();
+        await until(() => provider.created.length === 1);
 
         let released = false;
         const releasing = manager.release('r1').then(() => { released = true; });
@@ -441,6 +524,7 @@ describe('workspace manager: acquire', () => {
         provider.workspaces.get(workspace.id)!.dispose = () => new Promise<void>(() => {
             // the daemon hangs
         });
+        manager.release('r1', workspace.id).catch(() => undefined);
 
         let closed = false;
         const closing = manager.close({ timeoutMs: 5_000 }).then(() => { closed = true; });
@@ -467,6 +551,7 @@ describe('workspace manager: acquire', () => {
         provider.workspaces.get(workspace.id)!.dispose = () => new Promise<void>(() => {
             // the daemon hangs
         });
+        manager.release('r1', workspace.id).catch(() => undefined);
         const closing = manager.close();
         await flush();
         clock.advance(CLOSE_TIMEOUT_MS);

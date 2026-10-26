@@ -396,6 +396,8 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         // the AI SDK types toolsContext from a concrete tool set; a ToolSet infers none
         toolsContext: toolsContext as never,
         stopWhen,
+        // a tool result's artifact marker (artifactFilePart) gets its bytes per model call, never in a stored message
+        prepareStep: async ({ messages }) => ({ messages: await hydrateMessages(messages, store) }),
         onLanguageModelCallEnd: () => {
             modelCallEnded = true;
         },

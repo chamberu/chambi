@@ -16,7 +16,7 @@ import { SandboxError, systemClock } from '@chamvi/core';
 import type { IWorkspace } from '@chamvi/sandbox';
 import { CONTAINER_NAME_PREFIX, createDockerSandbox } from '@chamvi/sandbox-docker';
 import { ControllableClock } from '@chamvi/test-kit';
-import { describeDocker, dockerImage } from '../../utils/docker.ts';
+import { describeDocker, dockerImage, dockerOptions } from '../../utils/docker.ts';
 
 /**
  * Controllable `now` (the expiry), real timers: the transport polls the
@@ -48,9 +48,9 @@ describeDocker('docker garbage collection', () => {
         // an hour back, so no workspace of a spec running alongside is expired at this clock's time
         const clock = new ExpiryClock(new Date(Date.now() - 3_600_000));
         const provider = createDockerSandbox({
-            image: dockerImage, 
+            ...dockerOptions,
             clock, 
-            limits: { timeoutMs: 600_000 }, 
+            limits: { maxLifetimeMs: 600_000 }, 
         });
 
         const first = await provider.create({ runId: `test-${randomUUID()}` });
@@ -82,6 +82,7 @@ describeDocker('docker garbage collection', () => {
                     'app.kubernetes.io/component': 'sandbox',
                     'chamvi.dev/run': runId,
                     'chamvi.dev/workspace': randomUUID(),
+                    'chamvi.dev/deployment': 'default',
                     'chamvi.dev/expires-at': '1',
                 },
             });
@@ -109,6 +110,24 @@ describeDocker('docker garbage collection', () => {
         expect(left.map((info) => info.Id)).toEqual([stuck]);
     });
 
+    it('removes the workspaces of settled runs with isSettled, in its deployment only', async () => {
+        const provider = createDockerSandbox({ ...dockerOptions });
+        const done = `test-${randomUUID()}`;
+        const live = `test-${randomUUID()}`;
+        // a deployment of its own: workspaces of specs alongside stay out of the pass
+        const deployment = `test-${randomUUID().slice(0, 8)}`;
+        const settled = await provider.create({ runId: done, deployment });
+        const kept = await provider.create({ runId: live, deployment });
+        const other = await provider.create({ runId: done, deployment: 'test-other' });
+        workspaces.push(settled, kept, other);
+
+        expect(await provider.collectGarbage({ deployment, isSettled: async (runId) => runId === done })).toBe(1);
+        await expect(docker.getContainer(`${CONTAINER_NAME_PREFIX}${settled.id}`).inspect())
+            .rejects.toSatisfy((error) => statusCode(error) === 404);
+        expect((await docker.getContainer(`${CONTAINER_NAME_PREFIX}${kept.id}`).inspect()).State.Running).toBe(true);
+        expect((await docker.getContainer(`${CONTAINER_NAME_PREFIX}${other.id}`).inspect()).State.Running).toBe(true);
+    });
+
     it('never touches containers without the managed-by label', async () => {
         const container = await docker.createContainer({
             Image: dockerImage,
@@ -121,7 +140,7 @@ describeDocker('docker garbage collection', () => {
         });
         strangers.push(container);
 
-        const provider = createDockerSandbox({ image: dockerImage, clock: new ExpiryClock(new Date(Date.now() - 3_600_000)) });
+        const provider = createDockerSandbox({ ...dockerOptions, clock: new ExpiryClock(new Date(Date.now() - 3_600_000)) });
         await provider.collectGarbage();
 
         await expect(container.inspect()).resolves.toBeDefined();

@@ -52,6 +52,25 @@ const hang = () => new Promise<FakeExecAnswer>(() => {
 });
 
 describe('remote workspace: exec', () => {
+    it('accepts a closed connection once the exit marker arrived', async () => {
+        const { workspace } = setup(() => ({
+            exitCode: 3, 
+            stdout: encode('all\n'), 
+            closed: true, 
+        }));
+        await expect(workspace.exec(['true'])).resolves.toMatchObject({ exitCode: 3, stdout: 'all\n' });
+    });
+
+    it('rejects a closed connection without the exit marker: the output may be cut', async () => {
+        const { workspace } = setup(() => ({
+            stdout: encode('part'), 
+            marker: false, 
+            closed: true, 
+        }));
+        await expect(workspace.exec(['true'])).rejects.toThrow(SandboxError);
+        await expect(workspace.exec(['true'])).rejects.toThrow(/connection closed before the command reported its exit/);
+    });
+
     it('wraps argv in timeout', async () => {
         const { transport, workspace } = setup();
         const result = await workspace.exec(['npm', 'test'], { timeoutMs: 1500 });
@@ -157,6 +176,20 @@ describe('remote workspace: exec', () => {
             return { exitCode: 1 };
         });
         expect(await failed.workspace.exec(['false'], { timeoutMs: 1500 })).toMatchObject({ exitCode: 1, timedOut: false });
+    });
+
+    it('reports a timeout of a timeout that signals the command only (BusyBox: exit 143)', async () => {
+        const busybox = setup(() => {
+            busybox.clock.advance(1500);
+            return { exitCode: 143 };
+        });
+        expect(await busybox.workspace.exec(['sleep', '30'], { timeoutMs: 1500 })).toMatchObject({ exitCode: 143, timedOut: true });
+
+        const own = setup(() => {
+            own.clock.advance(10);
+            return { exitCode: 143 };
+        });
+        expect(await own.workspace.exec(['sh', '-c', 'kill $$'], { timeoutMs: 1500 })).toMatchObject({ exitCode: 143, timedOut: false });
     });
 
     it('guards a hung transport', async () => {

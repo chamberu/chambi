@@ -13,6 +13,9 @@ export const DEFAULT_ROOT_NAME = 'chamvi-workspaces';
 /** `{ runId, expiresAt }` of a workspace, read by the garbage collection. */
 export const WORKSPACE_RECORD = 'workspace.json';
 
+/** The package cache every workspace of a root shares, `<root>/.cache` (no workspace id, so never collected). */
+export const CACHE_DIR_NAME = '.cache';
+
 /** The workspace root (`/workspace` for the model) inside a workspace folder. */
 export const REPO_DIR = 'repo';
 

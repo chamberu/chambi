@@ -7,4 +7,4 @@
 
 export * from './constants.ts';
 export * from './module.ts';
-export type { KubernetesSandboxOptions } from './types.ts';
+export type { KubernetesSandboxOptions, PodUser } from './types.ts';

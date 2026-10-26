@@ -12,7 +12,7 @@ import type { ToolContext } from '@chamvi/core';
 import { resolveWorkspacePath } from '@chamvi/sandbox';
 import type { ExecResult, IWorkspace } from '@chamvi/sandbox';
 import { isObject } from 'smob';
-import { GIT_ERROR_MAX_CHARS, WORKSPACE_PROPERTY } from './constants.ts';
+import { GIT_ERROR_MAX_CHARS, HOME_LOG_PATTERN, WORKSPACE_PROPERTY } from './constants.ts';
 import type { CodingWorkspaces } from './types.ts';
 
 /** The tool input as an object, else a ValidationError (a tool error the model can correct). */
@@ -68,18 +68,27 @@ export function requirePath(value: unknown, name = 'path'): string {
     return resolveWorkspacePath(requireString(value, name));
 }
 
+/**
+ * The path below `$HOME` of an output log (`~/.chamvi/out/<id>.stdout.log`,
+ * `~/.chamvi/jobs/<id>/output`), undefined for any other path.
+ */
+export function homeLogPath(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    return HOME_LOG_PATTERN.exec(value)?.[1];
+}
+
 /** An optional workspace-relative path, '.' when omitted. */
 export function optionalPath(value: unknown, name = 'path'): string {
     if (value === undefined) return '.';
     return requirePath(value, name);
 }
 
-/** The calling run's workspace named by `input.workspace`, or its only one. */
-export function workspaceOf(
+/** The calling run's workspace named by `input.workspace`, or its only one (found again after a restart). */
+export async function workspaceOf(
     workspaces: CodingWorkspaces,
     body: Record<string, unknown>,
     context: ToolContext,
-): IWorkspace {
+): Promise<IWorkspace> {
     const id = optionalString(body.workspace, 'workspace');
     return workspaces.get(context.run.runId, id);
 }
@@ -113,6 +122,29 @@ export function cutText(text: string, max: number): string {
     return text.slice(0, end);
 }
 
+/** The lines of `text`; a trailing newline ends the last line, it opens none. */
+export function linesOf(text: string): string[] {
+    if (text.length === 0) return [];
+    const lines = text.split('\n');
+    if (lines.at(-1) === '') lines.pop();
+    return lines;
+}
+
+/** The media type of a png, jpeg, gif or webp image by its first bytes, else undefined. */
+export function imageTypeOf(bytes: Uint8Array): 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' | undefined {
+    const ascii = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
+    if (bytes.length >= 8 && bytes[0] === 0x89 && ascii(1, 8) === 'PNG\r\n\x1A\n') return 'image/png';
+    if (bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'image/jpeg';
+    if (bytes.length >= 6 && (ascii(0, 6) === 'GIF87a' || ascii(0, 6) === 'GIF89a')) return 'image/gif';
+    if (bytes.length >= 12 && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'image/webp';
+    return undefined;
+}
+
+/** The queue key of a file: workspace ids are UUIDs, so no two workspaces share one. */
+export function fileKey(workspaceId: string, path: string): string {
+    return `${workspaceId}:${path}`;
+}
+
 /**
  * A queue per key: each call runs `fn` once every earlier call with the same
  * key settled. The AI SDK runs the tool calls of one step at once, so this
@@ -139,4 +171,9 @@ export function objectSchema<T>(properties: Record<string, JSONSchema7>, require
         required,
         additionalProperties: false,
     });
+}
+
+/** `text` through the workspace's credential redaction (`IWorkspace.redact`), when it has one. */
+export function redactText(workspace: IWorkspace, text: string): string {
+    return workspace.redact ? workspace.redact(text) : text;
 }

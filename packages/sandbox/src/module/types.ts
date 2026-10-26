@@ -14,7 +14,9 @@ export type SandboxProviderName = 'local' | 'docker' | 'kubernetes';
 
 /**
  * `createWorkspaceManager()` options; the manager's `env` is `workspaceEnv`
- * here, since `env` is the process env the factory reads.
+ * here, since `env` is the process env the factory reads. `deployment`:
+ * `CHAMVI_DEPLOYMENT` wins; `isSettled` defaults to the engine's `getRun`
+ * (a settled run, and with a named deployment also a missing one).
  */
 export type SandboxModuleOptions = Omit<WorkspaceManagerOptions, 'provider' | 'env'> & {
     /** A provider name (`CHAMVI_SANDBOX_PROVIDER` wins) or an instance; default `'local'`. */

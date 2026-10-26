@@ -40,7 +40,7 @@ export function gitDiffTool(workspaces: CodingWorkspaces): Tool<GitDiffInput, Gi
             const body = inputObject(input);
             const staged = optionalBoolean(body.staged, 'staged') ?? false;
             const path = optionalPath(body.path);
-            const workspace = workspaceOf(workspaces, body, context);
+            const workspace = await workspaceOf(workspaces, body, context);
             const signal = signalOf(abortSignal, context);
 
             const status = await workspace.exec(['git', '--literal-pathspecs', 'status', '--short', '--', path], { signal });

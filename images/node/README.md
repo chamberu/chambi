@@ -1,6 +1,6 @@
 # node
 
-The runtime base of chamvi agent images: `ghcr.io/chamvi/node`. It is not the sandbox image; workspaces run [`sandbox-node`](../sandbox-node).
+The runtime base of chamvi agent images: `ghcr.io/chamvi/node`. It is not the sandbox image; workspaces run [`sandbox-dev`](../sandbox-dev).
 
 ## What is inside
 

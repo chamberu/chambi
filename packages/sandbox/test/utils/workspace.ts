@@ -62,9 +62,12 @@ export function createScriptedWorkspace(
             if (content === undefined) throw new SandboxError(`file not found: ${path}`);
             return content;
         },
+        async readBytes(path) {
+            return new TextEncoder().encode(await workspace.readFile(path));
+        },
         async writeFile(path, content) {
             if (workspace.disposed) throw new SandboxError('workspace disposed');
-            files.set(path, content);
+            files.set(path, typeof content === 'string' ? content : new TextDecoder().decode(content));
         },
         async dispose() {
             workspace.disposed = true;

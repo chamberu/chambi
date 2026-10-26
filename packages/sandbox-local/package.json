@@ -48,6 +48,9 @@
         "access": "public"
     },
     "license": "Apache-2.0",
+    "dependencies": {
+        "smob": "^1.6.2"
+    },
     "devDependencies": {
         "@chamvi/core": "^0.2.1",
         "@chamvi/sandbox": "^0.2.1",

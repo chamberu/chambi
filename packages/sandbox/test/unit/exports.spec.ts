@@ -28,14 +28,27 @@ describe('public api', () => {
         'assertCreateInput',
         'abortedCreate',
         'assertImageOption',
+        'assertTmpSizeOption',
         'assertClockOption',
         'buildWorkspaceInfo',
         'isExpiredAt',
         'collectionError',
+        'assertDeployment',
+        'workspaceLabels',
+        'workspaceMetadata',
+        'readWorkspaceInfo',
+        'repoKey',
+        'readCheckout',
+        'createSettledCheck',
         'createSinkStream',
         'delay',
         'injectSandboxContext',
         'provideSandboxContext',
+        'assertImage',
+        'cacheEnv',
+        'isRootUser',
+        'probeImage',
+        'staticGitCredentials',
     ])('exports %s', (name) => {
         expect(sandbox).toHaveProperty(name);
         expect(sandbox[name as keyof typeof sandbox]).toBeTypeOf('function');
@@ -43,12 +56,13 @@ describe('public api', () => {
 
     it('exports the workspace constants', () => {
         expect(sandbox.WORKSPACE_ROOT).toBe('/workspace');
+        expect(sandbox.WORKSPACE_HOME).toBe('/home/sandbox');
         expect(sandbox.OUTPUT_MAX_BYTES).toBe(65_536);
-        expect(sandbox.FILE_MAX_BYTES).toBe(1_048_576);
+        expect(sandbox.FILE_MAX_BYTES).toBe(16_777_216);
         expect(sandbox.EXEC_TIMEOUT_MS).toBe(300_000);
         expect(sandbox.EXEC_TIMEOUT_MAX_MS).toBe(1_800_000);
         expect(sandbox.SANDBOX_ENV).toEqual({
-            HOME: '/tmp',
+            HOME: '/home/sandbox',
             GIT_TERMINAL_PROMPT: '0',
             GIT_CONFIG_NOSYSTEM: '1',
             GIT_CONFIG_COUNT: '1',
@@ -60,16 +74,24 @@ describe('public api', () => {
         expect(sandbox.SANDBOX_ENV.GIT_CONFIG_NOSYSTEM).toBe('1');
     });
 
+    it('exports the credential constants', () => {
+        expect(sandbox.REDACTED).toBe('[redacted]');
+        expect(sandbox.CREDENTIAL_REFRESH_MS).toBe(600_000);
+        expect(sandbox.CREDENTIAL_RETRY_MS).toBe(60_000);
+        expect(sandbox.CREDENTIALS_FILE).toBe('.chamvi/credentials');
+        expect(sandbox.REDACT_MIN_LENGTH).toBe(4);
+    });
+
     it('exports the provider constants', () => {
         expect(sandbox.DEFAULT_LIMITS).toEqual({
             cpu: '1',
             memory: '2Gi',
             storage: '4Gi',
             pids: 512,
-            timeoutMs: 1_800_000,
+            maxLifetimeMs: 604_800_000,
         });
-        expect(sandbox.DEFAULT_SANDBOX_IMAGE).toBe('ghcr.io/chamvi/sandbox-node:24');
-        expect(sandbox.TMP_SIZE).toBe('512Mi');
+        expect(sandbox.DEFAULT_SANDBOX_IMAGE).toBe('ghcr.io/chamvi/sandbox-dev:trixie');
+        expect(sandbox.TMP_SIZE).toBe('1Gi');
         expect(sandbox.SANDBOX_LABELS).toEqual({
             'app.kubernetes.io/managed-by': 'chamvi',
             'app.kubernetes.io/component': 'sandbox',
@@ -77,6 +99,13 @@ describe('public api', () => {
         expect(sandbox.RUN_LABEL).toBe('chamvi.dev/run');
         expect(sandbox.WORKSPACE_LABEL).toBe('chamvi.dev/workspace');
         expect(sandbox.EXPIRES_AT_KEY).toBe('chamvi.dev/expires-at');
+        expect(sandbox.CREATED_AT_KEY).toBe('chamvi.dev/created-at');
+        expect(sandbox.DEPLOYMENT_LABEL).toBe('chamvi.dev/deployment');
+        expect(sandbox.REPO_KEY_LABEL).toBe('chamvi.dev/repo-key');
+        expect(sandbox.REPO_URL_KEY).toBe('chamvi.dev/repo');
+        expect(sandbox.REF_KEY).toBe('chamvi.dev/ref');
+        expect(sandbox.IMAGE_KEY).toBe('chamvi.dev/image');
+        expect(sandbox.DEFAULT_DEPLOYMENT).toBe('default');
         expect(sandbox.SANDBOX_LABEL_SELECTORS).toEqual([
             'app.kubernetes.io/managed-by=chamvi',
             'app.kubernetes.io/component=sandbox',
@@ -85,8 +114,18 @@ describe('public api', () => {
 
     it('exports the manager constants', () => {
         expect(sandbox.MAX_WORKSPACES_PER_RUN).toBe(3);
+        expect(sandbox.CREDENTIAL_INSTALL_TIMEOUT_MS).toBe(30_000);
+        expect(sandbox.PUSH_LOG_MAX_COMMITS).toBe(50);
         expect(sandbox.GC_INTERVAL_MS).toBe(600_000);
         expect(sandbox.CLOSE_TIMEOUT_MS).toBe(30_000);
+    });
+
+    it('exports the image constants', () => {
+        expect(sandbox.CACHE_DIR).toBe('/cache');
+        expect(sandbox.CACHE_ENV.MISE_DATA_DIR).toBe('/cache/mise');
+        expect(sandbox.IMAGE_PROBE_TIMEOUT_MS).toBe(30_000);
+        expect(sandbox.IMAGE_REQUIREMENTS).toEqual(['sh', 'git', 'timeout']);
+        expect(sandbox.ROOT_CAPABILITIES).toContain('SETUID');
     });
 
     it('exports the remote constants', () => {
@@ -108,6 +147,9 @@ describe('public api', () => {
         'wrapTimeout',
         'isTimeoutExit',
         'isName',
+        'IMAGE_PATTERN',
+        'IMAGE_PROBE_SCRIPT',
+        'CACHE_FOLDERS',
         'SANDBOX_CONTEXT',
     ])('keeps %s internal', (name) => {
         expect(sandbox).not.toHaveProperty(name);

@@ -5,6 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { PATH_GUARD_SCRIPT } from '../image/constants.ts';
+
 /** Seconds GNU `timeout -k` waits after TERM before it sends KILL. */
 export const TIMEOUT_KILL_AFTER_SECONDS = 5;
 
@@ -29,8 +31,11 @@ export const EXIT_MARKER_CWD = 'cwd';
  * the marker `$1` followed by the exit status (or `EXIT_MARKER_CWD` for a
  * directory it cannot enter) and a newline. The marker tells the workspace
  * that the command exited, although a background job may hold its output.
+ * `PATH_GUARD_SCRIPT` runs first, so neither the `timeout` wrapper nor the
+ * checkout's `git` resolve to a program in the shared cache.
  */
-export const EXEC_SCRIPT = 'cd -- "$2" 2>/dev/null || { printf \'%s%s\\n\' "$1" cwd >&2; exit 127; }; ' +
+export const EXEC_SCRIPT = `${PATH_GUARD_SCRIPT}; ` +
+    'cd -- "$2" 2>/dev/null || { printf \'%s%s\\n\' "$1" cwd >&2; exit 127; }; ' +
     'm=$1; shift 2; "$@"; s=$?; printf \'%s%s\\n\' "$m" "$s" >&2; exit "$s"';
 
 /** How long a failed exec waits for `IExecTransport.alive` before it reads the workspace as alive. */
