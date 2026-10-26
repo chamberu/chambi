@@ -341,7 +341,7 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 | `channels` | `IChannel[]` | `[]` | Channels by unique name, started by `start()` and stopped first by `drain()`/`stop()`; tools reach them through `ctx.channels` |
 | `maxConcurrentRuns` | `number` | `4` | Runs executing at once in this process |
 | `model` | `ModelRef` | none | The model of agents without one; a string is checked through `models` at construction |
-| `models` | `IModelResolver` | none | Resolves `'<provider>/<model id>'` strings; registration checks every string ref through it, and without it a string goes to the AI SDK unchanged |
+| `models` | `IModelResolver` | none | Resolves `'<provider>/<model id>'` strings; registration checks every string ref through it; without it a string ref is an `InvalidAgentDefinitionError` (pass a `LanguageModel` object) |
 | `claimTtlMs` | `number` | `60_000` | Lease on a running run, renewed every `claimTtlMs / 3`; the poll for new work, expired approvals and abandoned runs uses the same interval |
 | `owner` | `string` | `` `${hostname}-${pid}` `` | Identity of this replica in claims |
 | `clock` | `IClock` | `systemClock` | Time source, replaceable in tests |
