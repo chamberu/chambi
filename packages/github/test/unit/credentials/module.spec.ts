@@ -91,6 +91,25 @@ describe('IGithubApp.repositoryToken', () => {
         expect(fake.tokensIssued).toBe(0);
     });
 
+    it('looks up the installation of a repository once, so a cached token survives a failing lookup', async () => {
+        const { fake, gh } = setup();
+        const read = { permissions: { contents: 'read' as const } };
+        await gh.repositoryToken({ owner: 'octo', repo: 'demo' }, read);
+        fake.failNext('GET', '/repos/octo/demo/installation', 502);
+        await expect(gh.repositoryToken({ owner: 'octo', repo: 'demo' }, read)).resolves.toMatchObject({ token: 'ghs_1' });
+        await expect(gh.repositoryToken({ owner: 'Octo', repo: 'Demo' }, read)).resolves.toMatchObject({ token: 'ghs_1' });
+        expect(fake.requests.filter((r) => r.path.toLowerCase() === '/repos/octo/demo/installation')).toHaveLength(1);
+    });
+
+    it('looks the installation up again once its token exchange failed', async () => {
+        const { fake, gh } = setup();
+        await gh.repositoryToken({ owner: 'octo', repo: 'demo' }, { permissions: { contents: 'read' } });
+        fake.failNext('POST', '/app/installations/42/access_tokens', 404);
+        await expect(gh.repositoryToken({ owner: 'octo', repo: 'demo' }, { permissions: { contents: 'write' } })).rejects.toThrow(/404/);
+        await gh.repositoryToken({ owner: 'octo', repo: 'demo' }, { permissions: { contents: 'write' } });
+        expect(fake.requests.filter((r) => r.path === '/repos/octo/demo/installation')).toHaveLength(2);
+    });
+
     it('does not cache a failure', async () => {
         const { fake, gh } = setup();
         fake.failNext('GET', '/repos/octo/demo/installation', 502);

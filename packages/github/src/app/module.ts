@@ -57,6 +57,8 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
     let login: Promise<string> | undefined = slug ? Promise.resolve(`${slug}[bot]`) : undefined;
     let identity: Promise<GithubBotIdentity> | undefined;
 
+    /** The installation id per lower-cased `owner/repo`, so a cached scoped token needs no lookup. */
+    const installations = new Map<string, number>();
     const app: IGithubApp = {
         appId,
         ...(installationId !== undefined ? { installationId } : {}),
@@ -111,13 +113,20 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
         },
         async repositoryToken(target, tokenOptions): Promise<GithubRepositoryToken | undefined> {
             const { owner, repo } = target;
-            const installation = await tokens.app().then((octokit) => octokit.request('GET /repos/{owner}/{repo}/installation', { owner, repo }))
-                .then(({ data }) => data.id, (error: unknown) => {
-                    if ((error as { status?: number })?.status === 404) return undefined;
-                    throw toolError(error);
-                });
-            if (installation === undefined) return undefined;
+            const key = `${owner}/${repo}`.toLowerCase();
+            let installation = installations.get(key);
+            if (installation === undefined) {
+                installation = await tokens.app().then((octokit) => octokit.request('GET /repos/{owner}/{repo}/installation', { owner, repo }))
+                    .then(({ data }) => data.id, (error: unknown) => {
+                        if ((error as { status?: number })?.status === 404) return undefined;
+                        throw toolError(error);
+                    });
+                if (installation === undefined) return undefined;
+                installations.set(key, installation);
+            }
             const scoped = await tokens.repository(installation, repo, tokenOptions.permissions).catch((error: unknown) => {
+                // the App may have been removed from the repository: look it up again next time
+                installations.delete(key);
                 throw toolError(error);
             });
             return { token: scoped.token, expiresAt: new Date(scoped.expiresAt) };
