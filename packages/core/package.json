@@ -1,6 +1,6 @@
 {
     "name": "@chamvi/core",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "type": "module",
     "description": "Core engine for self-hosted, trigger-driven AI agents: agents, triggers and durable runs.",
     "author": {

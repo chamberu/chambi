@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.0](https://github.com/chamvi/chamvi/compare/v0.2.1...v0.3.0) (2026-10-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **app:** resolve models through declared providers and add chamvi doctor ([#58](https://github.com/chamvi/chamvi/issues/58))
+
+### Features
+
+* **app:** resolve models through declared providers and add chamvi doctor ([#58](https://github.com/chamvi/chamvi/issues/58)) ([04309b9](https://github.com/chamvi/chamvi/commit/04309b93b217c270639d0951eb1d5f00009d4ce0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @chamvi/app bumped from ^0.2.1 to ^0.3.0
+    * @chamvi/channel-cron bumped from ^0.2.1 to ^0.2.2
+    * @chamvi/core bumped from ^0.2.1 to ^0.3.0
+    * @chamvi/http bumped from ^0.2.1 to ^0.2.2
+    * @chamvi/test-kit bumped from ^0.2.1 to ^0.3.0
+  * peerDependencies
+    * @chamvi/app bumped from ^0.2.1 to ^0.3.0
+    * @chamvi/core bumped from ^0.2.1 to ^0.3.0
+    * @chamvi/http bumped from ^0.2.1 to ^0.2.2
+
 ## [0.2.1](https://github.com/chamvi/chamvi/compare/v0.2.0...v0.2.1) (2026-10-25)
 
 

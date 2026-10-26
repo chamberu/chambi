@@ -1,6 +1,6 @@
 {
     "name": "@chamvi/github",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "type": "module",
     "description": "The GitHub channel and tools for chamvi agents: App webhooks in, issue comments out.",
     "author": {
@@ -61,17 +61,17 @@
         "smob": "^1.6.2"
     },
     "devDependencies": {
-        "@chamvi/app": "^0.2.1",
-        "@chamvi/core": "^0.2.1",
-        "@chamvi/http": "^0.2.1",
-        "@chamvi/test-kit": "^0.2.1",
+        "@chamvi/app": "^0.3.0",
+        "@chamvi/core": "^0.3.0",
+        "@chamvi/http": "^0.2.2",
+        "@chamvi/test-kit": "^0.3.0",
         "ai": "^7.0.150",
         "zod": "^4.6.7"
     },
     "peerDependencies": {
-        "@chamvi/app": "^0.2.1",
-        "@chamvi/core": "^0.2.1",
-        "@chamvi/http": "^0.2.1",
+        "@chamvi/app": "^0.3.0",
+        "@chamvi/core": "^0.3.0",
+        "@chamvi/http": "^0.2.2",
         "ai": "^7"
     },
     "peerDependenciesMeta": {

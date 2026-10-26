@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/chamvi/chamvi/compare/v0.2.1...v0.3.0) (2026-10-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **app:** replace doctor with start --check and make agent reloads visible ([#61](https://github.com/chamvi/chamvi/issues/61))
+
+### Features
+
+* **app:** replace doctor with start --check and make agent reloads visible ([#61](https://github.com/chamvi/chamvi/issues/61)) ([6c971ec](https://github.com/chamvi/chamvi/commit/6c971ec381b01895dc32f34902c1be52d4090f33))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @chamvi/core bumped from ^0.2.1 to ^0.3.0
+    * @chamvi/test-kit bumped from ^0.2.1 to ^0.3.0
+  * peerDependencies
+    * @chamvi/core bumped from ^0.2.1 to ^0.3.0
+
 ## [0.2.1](https://github.com/chamvi/chamvi/compare/v0.2.0...v0.2.1) (2026-10-25)
 
 
