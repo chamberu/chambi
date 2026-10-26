@@ -6,9 +6,9 @@
  */
 
 import type { ToolSet } from 'ai';
-import { resolveOptions } from './asserts.ts';
+import { resolveOptions } from '../options/module.ts';
+import type { WebToolsOptions } from '../options/types.ts';
 import { webFetchTool } from './fetch.ts';
-import type { WebToolsOptions } from './types.ts';
 
 /**
  * The web tools: `web_fetch` (a public http(s) page as markdown, text or

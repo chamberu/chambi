@@ -5,4 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+export * from './options/index.ts';
+export * from './request/index.ts';
 export * from './tools/index.ts';
+export * from './url/index.ts';

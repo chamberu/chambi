@@ -5,12 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export {
-    WEB_FETCH_MAX_BYTES,
-    WEB_FETCH_MAX_CHARS,
-    WEB_MAX_REDIRECTS,
-    WEB_REQUEST_ERROR_CODE,
-    WEB_TIMEOUT_MS,
-} from './constants.ts';
+export { WEB_FETCH_MAX_CHARS } from './constants.ts';
 export * from './module.ts';
 export type * from './types.ts';

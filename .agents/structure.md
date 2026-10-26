@@ -221,8 +221,11 @@ Folders without an `index.ts` export nothing public; other modules import the fi
 | Path | Purpose |
 |------|---------|
 | `address/` | No barrel: `parseAddress()`, `isBlockedAddress()` (`module.ts`), `BLOCKED_IPV4`, `BLOCKED_IPV6` (`constants.ts`) |
+| `url/` | `parseWebUrl()`, `checkUrl()` (`module.ts`: `allowUrl`, then the address check over `lookup`), `systemLookup` (`lookup.ts`, `dns.lookup` with every address), `WebAddress`, `WebLookup`, `WebUrlPolicy` (`types.ts`, the only export) |
+| `request/` | `getPage()` (`module.ts`: the hapic GET, manual redirects each through `checkUrl`, the timeout on the `IClock`), `requestError()`, `messageOf()`, `readCapped()` (`asserts.ts`), `WEB_FETCH_MAX_BYTES`, `WEB_TIMEOUT_MS`, `WEB_MAX_REDIRECTS`, `WEB_REQUEST_ERROR_CODE` (`constants.ts`, exported), `WebResponse` (`types.ts`, internal) |
+| `options/` | `resolveOptions()` (`module.ts`, `InvalidAgentDefinitionError` for bad options), `TIMER_MAX_MS` (`constants.ts`), `WebToolsOptions` (exported) and `ResolvedWebOptions` (`types.ts`) |
 | `html/` | No barrel: `mediaTypeOf()`, `isHtml()`, `isText()`, `decodeBody()`, `htmlToMarkdown()`, `htmlToText()` (`module.ts`, both through mdream), `TEXT_MEDIA_TYPES`, `PAGE_CHROME_ELEMENTS`, `FRONTMATTER` (`constants.ts`), `ConvertedPage` (`types.ts`) |
-| `tools/` | `webTools()` (`module.ts`), `webFetchTool()` (`fetch.ts`), `resolveOptions()`, `systemLookup`, `checkUrl()`, `getPage()`, `readCapped()`, `requestError()` and the input helpers (`asserts.ts`), `WEB_FETCH_MAX_BYTES`, `WEB_FETCH_MAX_CHARS`, `WEB_TIMEOUT_MS`, `WEB_MAX_REDIRECTS`, `WEB_REQUEST_ERROR_CODE` (public) and `TIMER_MAX_MS`, `WEB_FETCH_FORMATS`, `UNTRUSTED_NOTE` (`constants.ts`), `WebToolsOptions`, `WebFetchResult`, `WebFetchFormat`, `WebLookup`, `WebAddress`, `WebUrlPolicy` (`types.ts`) |
+| `tools/` | `webTools()` (`module.ts`), `webFetchTool()` (`fetch.ts`), the tool input helpers `inputObject()`, `requireString()`, `optionalInteger()`, `optionalOneOf()`, `signalOf()`, `cutText()`, `objectSchema()` (`asserts.ts`), `WEB_FETCH_MAX_CHARS` (exported), `WEB_FETCH_FORMATS`, `UNTRUSTED_NOTE` (`constants.ts`), `WebFetchFormat`, `WebFetchResult` (`types.ts`) |
 
 ## App Module Map (`packages/app/src`)
 

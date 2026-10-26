@@ -15,19 +15,19 @@ import {
     isText,
     mediaTypeOf,
 } from '../html/module.ts';
-import { UNTRUSTED_NOTE, WEB_FETCH_FORMATS, WEB_FETCH_MAX_CHARS } from './constants.ts';
+import type { ResolvedWebOptions } from '../options/types.ts';
+import { requestError } from '../request/asserts.ts';
+import { getPage } from '../request/module.ts';
 import {
     cutText,
-    getPage,
     inputObject,
     objectSchema,
     optionalInteger,
     optionalOneOf,
-    requestError,
     requireString,
     signalOf,
 } from './asserts.ts';
-import type { ResolvedWebOptions } from './asserts.ts';
+import { UNTRUSTED_NOTE, WEB_FETCH_FORMATS, WEB_FETCH_MAX_CHARS } from './constants.ts';
 import type { WebFetchFormat, WebFetchResult } from './types.ts';
 
 type WebFetchInput = {
