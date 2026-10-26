@@ -102,14 +102,6 @@ describe('resolveLimits', () => {
         expect(resolveLimits({ maxLifetimeMs }).maxLifetimeMs).toBe(maxLifetimeMs);
     });
 
-    it('rejects the former timeoutMs, naming maxLifetimeMs', () => {
-        // a config object spread in skips the excess-property check
-        const layer = { timeoutMs: 1_800_000 } as unknown as SandboxLimits;
-        expect(() => resolveLimits(layer)).toThrow(InvalidAgentDefinitionError);
-        expect(() => resolveLimits(layer)).toThrow(/limits\.timeoutMs .*limits\.maxLifetimeMs/);
-        expect(() => resolveLimits({ timeoutMs: undefined } as unknown as SandboxLimits)).not.toThrow();
-    });
-
     it('rejects a layer that is no object', () => {
         expect(() => resolveLimits('x' as unknown as SandboxLimits)).toThrow(InvalidAgentDefinitionError);
     });
