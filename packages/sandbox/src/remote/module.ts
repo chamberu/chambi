@@ -223,8 +223,12 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
                 pending = Promise.reject(error);
             }
 
-            pending.then(({ exitCode }) => {
+            pending.then(({ exitCode, closed }) => {
                 if (!finish() || interrupted()) return;
+                if (closed && exitedAt === undefined) {
+                    reject(new SandboxError('exec failed: the connection closed before the command reported its exit, so its output may be cut.'));
+                    return;
+                }
                 resolve(result(exitCode));
             }, (error: unknown) => {
                 if (!finish() || interrupted()) return;

@@ -52,6 +52,25 @@ const hang = () => new Promise<FakeExecAnswer>(() => {
 });
 
 describe('remote workspace: exec', () => {
+    it('accepts a closed connection once the exit marker arrived', async () => {
+        const { workspace } = setup(() => ({
+            exitCode: 3, 
+            stdout: encode('all\n'), 
+            closed: true, 
+        }));
+        await expect(workspace.exec(['true'])).resolves.toMatchObject({ exitCode: 3, stdout: 'all\n' });
+    });
+
+    it('rejects a closed connection without the exit marker: the output may be cut', async () => {
+        const { workspace } = setup(() => ({
+            stdout: encode('part'), 
+            marker: false, 
+            closed: true, 
+        }));
+        await expect(workspace.exec(['true'])).rejects.toThrow(SandboxError);
+        await expect(workspace.exec(['true'])).rejects.toThrow(/connection closed before the command reported its exit/);
+    });
+
     it('wraps argv in timeout', async () => {
         const { transport, workspace } = setup();
         const result = await workspace.exec(['npm', 'test'], { timeoutMs: 1500 });

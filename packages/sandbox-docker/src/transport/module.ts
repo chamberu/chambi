@@ -58,8 +58,9 @@ export function createDockerTransport(
                 // after the demux listeners, so no output is lost; end() half-closes the socket (stdin EOF)
                 stream.end(stdin);
             }
+            let end: 'ended' | 'closed';
             try {
-                await ended;
+                end = await ended;
             } finally {
                 // drops stdin still queued instead of flushing it into a closed connection
                 stream.destroy();
@@ -74,7 +75,10 @@ export function createDockerTransport(
             }
 
             // a process that could not start reports no exit code
-            return { exitCode: typeof info.ExitCode === 'number' ? info.ExitCode : 127 };
+            return {
+                exitCode: typeof info.ExitCode === 'number' ? info.ExitCode : 127,
+                ...(end === 'closed' && { closed: true }),
+            };
         },
 
         async alive(signal: AbortSignal): Promise<boolean> {

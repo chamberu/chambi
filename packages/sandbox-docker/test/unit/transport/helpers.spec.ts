@@ -14,11 +14,19 @@ function failWith(code: string): Error {
 }
 
 describe('streamEnded', () => {
-    it.each(['ECONNRESET', 'EPIPE'])('resolves when the daemon closes the connection (%s): the exit code comes from inspect', async (code) => {
+    it.each(['ECONNRESET', 'EPIPE'])('reports a connection the daemon closed (%s) as closed: the exit code comes from inspect', async (code) => {
         const stream = new PassThrough();
         const ended = streamEnded(stream, new AbortController().signal);
         stream.emit('error', failWith(code));
-        await expect(ended).resolves.toBeUndefined();
+        await expect(ended).resolves.toBe('closed');
+    });
+
+    it('reports a stream that ended as ended', async () => {
+        const stream = new PassThrough();
+        const ended = streamEnded(stream, new AbortController().signal);
+        stream.end();
+        stream.resume();
+        await expect(ended).resolves.toBe('ended');
     });
 
     it('rejects on any other stream error', async () => {
