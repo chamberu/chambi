@@ -20,6 +20,10 @@ export type ModuleHarnessOptions = {
     modules?: IModule[];
     agents?: Agent[];
     models?: AppContext['models'];
+    /** createApp's `model`, copied into the context. */
+    model?: AppContext['model'];
+    /** createApp's `providers`, copied into the context. */
+    providers?: AppContext['providers'];
     /** Registered as `AppToken.CLOCK` before setup (a config module may replace it). */
     clock?: IClock;
 };

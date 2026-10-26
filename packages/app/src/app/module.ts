@@ -6,7 +6,7 @@
  */
 
 import { InvalidAgentDefinitionError } from '@chamvi/core';
-import type { Agent } from '@chamvi/core';
+import type { Agent, ModelRef } from '@chamvi/core';
 import { runJob } from '@chamvi/channel-cron';
 import { Container } from 'eldin';
 import type { IContainer } from 'eldin';
@@ -14,9 +14,16 @@ import { Application } from 'orkos';
 import type { IModule } from 'orkos';
 import { isObject } from 'smob';
 import type { Env } from '../env/types.ts';
-import type { ModelProviders } from '../models/types.ts';
+import { inspectApp } from '../inspect/module.ts';
+import type { AppReport } from '../inspect/types.ts';
+import type { ModelProviders, ProviderConfig } from '../models/types.ts';
 import { AppToken } from '../module/constants.ts';
-import { createStoppedError, reportingModule, runHooks } from '../module/helpers.ts';
+import {
+    createStoppedError,
+    isAgentCheckSource,
+    reportingModule,
+    runHooks,
+} from '../module/helpers.ts';
 import { runStartSteps } from '../module/start.ts';
 import type { AppContext, AppMode } from '../module/types.ts';
 import { APP_BRAND } from './constants.ts';
@@ -24,6 +31,7 @@ import {
     buildModules,
     createInUseError,
     createStopFailedError,
+    isModelRef,
     logReported,
     toSetupError,
 } from './helpers.ts';
@@ -63,6 +71,10 @@ export class App implements IApp {
 
     protected models: ModelProviders | undefined;
 
+    protected model: ModelRef | undefined;
+
+    protected providers: Record<string, ProviderConfig> | undefined;
+
     protected used = false;
 
     protected lifecycle: Lifecycle | undefined;
@@ -75,15 +87,37 @@ export class App implements IApp {
             throw new InvalidAgentDefinitionError('createApp needs an options object whose agents is an array.');
         }
 
+        if (options.model !== undefined && !isModelRef(options.model)) {
+            throw new InvalidAgentDefinitionError('createApp\'s model must be a "<provider>/<model>" string or a LanguageModel object.');
+        }
+        if (options.providers !== undefined && !isObject(options.providers)) {
+            throw new InvalidAgentDefinitionError('createApp\'s providers must be an object of provider configs by name.');
+        }
+
         this.agents = Object.freeze([...options.agents ?? []]);
         this.modules = buildModules(options.modules);
         this.models = options.models;
+        this.model = options.model;
+        this.providers = options.providers;
     }
 
     async start(options: AppStartOptions = {}): Promise<void> {
         const lifecycle = this.begin('start', options, options.dev ?? false);
         lifecycle.done = this.setup(lifecycle);
         await lifecycle.done;
+    }
+
+    /** Read-only (no lifecycle, no container): never marks the app used. */
+    async inspect(options: AppLifecycleOptions = {}): Promise<AppReport> {
+        return inspectApp({
+            env: options.env ?? process.env,
+            cwd: process.cwd(),
+            agents: this.agents,
+            checks: this.modules.flatMap((module) => (isAgentCheckSource(module) ? module.agentChecks() : [])),
+            ...(this.model !== undefined && { model: this.model }),
+            ...(this.providers !== undefined && { providers: this.providers }),
+            ...(this.models !== undefined && { models: this.models }),
+        });
     }
 
     async runJob(options: AppRunJobOptions): Promise<AppRunJobResult> {
@@ -126,6 +160,8 @@ export class App implements IApp {
             signal: controller.signal,
             report,
             models: this.models,
+            ...(this.model !== undefined && { model: this.model }),
+            ...(this.providers !== undefined && { providers: this.providers }),
             agents: this.agents,
         };
         container.register(AppToken.CONTEXT, { useValue: context });

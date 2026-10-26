@@ -24,7 +24,7 @@ describe('runCli', () => {
         const fake = createFakeProcess();
         await runCli(['--help'], fake.context());
         const out = fake.stdout.join('');
-        ['start', 'run-job', 'migrate'].forEach((command) => expect(out).toContain(command));
+        ['start', 'run-job', 'migrate', 'doctor'].forEach((command) => expect(out).toContain(command));
         expect(fake.exitCodes).toEqual([]);
     });
 

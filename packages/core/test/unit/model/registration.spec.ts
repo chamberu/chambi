@@ -30,6 +30,8 @@ import { MemoryStore } from '../../../src/store/index.ts';
 
 const NO_MODEL = 'Agent "triage" has no model and the engine sets no default (EngineOptions.model; CHAMVI_MODEL in @chamvi/app).';
 const SHAPE = 'Agent "triage": model must be a "<provider>/<model>" string or a LanguageModel object.';
+const NO_RESOLVER = 'Agent "triage" uses the model string "anthropic/m", but the engine has no model resolver (EngineOptions.models); pass a LanguageModel object.';
+const DEFAULT_NO_RESOLVER = 'The default model "anthropic/m" is a model string, but the engine has no model resolver (EngineOptions.models); pass a LanguageModel object.';
 const DEFAULT_SHAPE = 'The default model must be a "<provider>/<model>" string or a LanguageModel object.';
 
 /** Records every check; refuses the refs in `refused`. */
@@ -175,11 +177,13 @@ describe('model registration', () => {
         }
     });
 
-    it('without models strings pass', async () => {
-        const { engine } = make({ agents: [withModel('anthropic/claude')] });
-        expect(engine.getAgent('triage')).toBeDefined();
-        await expect(engine.putAgent(withModel('any/thing', 'digest'))).resolves.toBe('added');
-        expect(() => make({ model: 'any/default' })).not.toThrow();
+    it('without models refuses strings', async () => {
+        expect(() => make({ agents: [withModel('anthropic/m')] })).toThrow(NO_RESOLVER);
+        const { engine } = make();
+        await expect(engine.putAgent(withModel('anthropic/m'))).rejects.toThrow(NO_RESOLVER);
+        expect(engine.getAgent('triage')).toBeUndefined();
+        expect(() => make({ model: 'anthropic/m' })).toThrow(DEFAULT_NO_RESOLVER);
+        expect(() => checkAgentModel(withModel(undefined), { model: 'anthropic/m' })).toThrow(NO_RESOLVER);
     });
 
     it('checkAgentModel applies the same rules', () => {

@@ -19,8 +19,8 @@ export function noModelMessage(agent: string): string {
 /**
  * The model an execution runs: an object as is, a string through the
  * resolver (any refusal an InvalidAgentDefinitionError naming the ref).
- * Without a resolver a string goes to the AI SDK unchanged (its global
- * default provider).
+ * Without a resolver a string is refused, a guard behind the registration
+ * check (checkAgentModel).
  */
 export function toLanguageModel(
     ref: ModelRef | undefined,
@@ -30,7 +30,12 @@ export function toLanguageModel(
     if (ref === undefined) {
         throw new InvalidAgentDefinitionError(noModelMessage(agent));
     }
-    if (typeof ref !== 'string' || !models) return ref;
+    if (typeof ref !== 'string') return ref;
+    if (!models) {
+        throw new InvalidAgentDefinitionError(
+            `Agent "${agent}" uses the model string "${ref}", but the engine has no model resolver (EngineOptions.models); pass a LanguageModel object.`,
+        );
+    }
     try {
         return models.resolve(ref);
     } catch (error) {

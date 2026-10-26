@@ -6,6 +6,7 @@
  */
 
 import { ChamviError, InvalidAgentDefinitionError } from '@chamvi/core';
+import type { ModelRef } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import { ApplicationError, ApplicationErrorCode } from 'orkos';
 import type { IModule } from 'orkos';
@@ -19,6 +20,11 @@ import { schedulerModule } from '../modules/scheduler/module.ts';
 import { staticTokensModule } from '../modules/static-tokens/module.ts';
 import { storeModule } from '../modules/store/module.ts';
 import type { AppOptions } from './types.ts';
+
+/** A model createApp accepts: a non-empty string or an object (a LanguageModel). */
+export function isModelRef(value: unknown): value is ModelRef {
+    return (typeof value === 'string' && value.length > 0) || isObject(value);
+}
 
 function isModule(value: unknown): value is IModule {
     return isObject(value) &&

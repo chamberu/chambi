@@ -38,7 +38,6 @@ describe('start', () => {
     beforeEach(async () => {
         // every test imports a fresh entry, so a fresh App
         vi.resetModules();
-        globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
         fake = createFakeProcess();
         port = await freePort();
     });
@@ -47,7 +46,6 @@ describe('start', () => {
         // stop whatever a test left running
         fake.signals.emit('SIGTERM');
         await vi.waitFor(() => expect(fake.exitCodes.length + fake.exits.length).toBeGreaterThan(0));
-        globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
         vi.restoreAllMocks();
     });
 

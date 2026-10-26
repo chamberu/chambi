@@ -6,5 +6,14 @@
  */
 
 export { BUILTIN_PROVIDERS } from './constants.ts';
-export * from './module.ts';
-export type * from './types.ts';
+export type {
+    BuiltinProvider,
+    ModelIssue,
+    ModelProviders,
+    ModelSettings,
+    ProviderConfig,
+    ProviderSettings,
+    ProviderType,
+    SecretValue,
+    SettingSource,
+} from './types.ts';

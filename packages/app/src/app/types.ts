@@ -5,10 +5,11 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Agent } from '@chamvi/core';
+import type { Agent, ModelRef } from '@chamvi/core';
 import type { IModule } from 'orkos';
 import type { Env } from '../env/types.ts';
-import type { ModelProviders } from '../models/types.ts';
+import type { AppReport } from '../inspect/types.ts';
+import type { ModelProviders, ProviderConfig } from '../models/types.ts';
 import type { APP_BRAND } from './constants.ts';
 
 export type AppOptions = {
@@ -16,7 +17,11 @@ export type AppOptions = {
     agents?: Agent[];
     /** Extra modules; one named like a built-in (`ModuleName`) replaces it. */
     modules?: IModule[];
-    /** Providers for string models, passed to the AI SDK's createProviderRegistry. */
+    /** The default model of agents without one; CHAMVI_MODEL and the config file win. */
+    model?: ModelRef;
+    /** Named providers model strings resolve through; env and the config file win per field. */
+    providers?: Record<string, ProviderConfig>;
+    /** AI SDK providers by id; they win over every provider setting for their ids. */
     models?: ModelProviders;
 };
 
@@ -60,4 +65,11 @@ export interface IApp {
     runJob(options: AppRunJobOptions): Promise<AppRunJobResult>;
     /** Migrates the store (DATABASE_URL required) and closes it. */
     migrate(options?: AppLifecycleOptions): Promise<void>;
+    /**
+     * Read-only: resolves the config, the model settings and the providers
+     * and checks every code and folder agent like a start would, without a
+     * store, an engine or any module lifecycle. Never throws for a setting;
+     * callable any number of times, before or after another lifecycle.
+     */
+    inspect(options?: AppLifecycleOptions): Promise<AppReport>;
 }

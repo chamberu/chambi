@@ -42,7 +42,6 @@ let apps: IApp[] = [];
 afterEach(async () => {
     await Promise.all(apps.map((app) => app.stop().catch(() => {})));
     apps = [];
-    globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
 });
 
 function sweep(model: Agent['definition']['model'], channels = [cron.on('*/5 * * * *')]): Agent {

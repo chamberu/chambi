@@ -34,7 +34,6 @@ export const AppToken = {
     AGENT_ISSUES: token('AGENT_ISSUES'),
     AGENT_CHECKS: token('AGENT_CHECKS'),
     GIT_CREDENTIALS: token('GIT_CREDENTIALS'),
-    MODEL_CHECK: token('MODEL_CHECK'),
 } as const;
 
 /**

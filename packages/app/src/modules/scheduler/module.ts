@@ -10,6 +10,7 @@ import type { IChannel } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
 import { AppToken, ModuleName } from '../../module/constants.ts';
+import type { AgentCheck, IAgentCheckSource } from '../../module/types.ts';
 import type { SchedulerModuleOptions } from './types.ts';
 
 /**
@@ -21,7 +22,7 @@ import type { SchedulerModuleOptions } from './types.ts';
  * fires nothing. `setup` also contributes the folder agents' cron check
  * (`AGENT_CHECKS`).
  */
-export class SchedulerModule implements IModule {
+export class SchedulerModule implements IModule, IAgentCheckSource {
     readonly name: string = ModuleName.SCHEDULER;
 
     readonly dependencies = [ModuleName.CONFIG];
@@ -32,12 +33,19 @@ export class SchedulerModule implements IModule {
         this.options = options;
     }
 
+    /** What this module contributes to AGENT_CHECKS (also read by IApp.inspect()). */
+    agentChecks(): AgentCheck[] {
+        return [(agent) => assertSchedulable(agent)];
+    }
+
     async setup(container: IContainer): Promise<void> {
         const context = container.resolve(AppToken.CONTEXT);
         if (context.mode === 'migrate') return;
 
         // a folder agent with a cron subscription hubwire refuses is a load issue, in every mode, so the modes agree
-        container.registerMany(AppToken.AGENT_CHECKS, { useValue: (agent) => assertSchedulable(agent) });
+        for (const check of this.agentChecks()) {
+            container.registerMany(AppToken.AGENT_CHECKS, { useValue: check });
+        }
 
         const enabled = context.mode === 'job' || container.resolve(AppToken.CONFIG).scheduler.enabled;
         const channel: IChannel = enabled ?

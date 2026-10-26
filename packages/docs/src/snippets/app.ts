@@ -10,8 +10,7 @@ import {
 
 const digest = defineAgent({
     name: 'digest',
-    // resolved through @ai-sdk/anthropic and ANTHROPIC_API_KEY, never the Vercel Gateway
-    model: 'anthropic/claude-sonnet-5-5',
+    // no model: the app's default below
     instructions: 'Summarize what happened since the last digest.',
     channels: [
         // POST /agents/digest/runs, the dashboard and MCP
@@ -23,6 +22,8 @@ const digest = defineAgent({
 
 // synchronous and side-effect free: chamvi start | run-job | migrate load this default export
 export default createApp({
+    // the default model; CHAMVI_MODEL overrides it, ANTHROPIC_API_KEY configures the provider
+    model: 'anthropic/claude-sonnet-5-5',
     agents: [digest],
     // tools write to it with ctx.channels.findOneOrFail('console').emit(...)
     modules: [consoleChannelModule()],
