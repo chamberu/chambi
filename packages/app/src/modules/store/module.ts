@@ -33,8 +33,9 @@ import type {
  * migrated in migrate mode or with `CHAMVI_MIGRATE`, `DATA_SOURCE` registered
  * too); else a MemoryStore. A store with `purgeExpired` gets the purge timer
  * in start mode. A check (`context.check`) writes nothing: it never
- * migrates, and without `CHAMVI_MIGRATE` a TypeORM store with pending
- * migrations fails with `store_not_migrated`.
+ * migrates, and with `CHAMVI_MIGRATE=false` a TypeORM store with pending
+ * migrations fails with `store_not_migrated` (by default a start would
+ * apply them, so they pass).
  */
 export class StoreModule implements IModule {
     readonly name: string = ModuleName.STORE;
@@ -161,7 +162,7 @@ export class StoreModule implements IModule {
             pendingMigrations, 
         } = await import('@chamvi/store-typeorm');
         if (context.check) {
-            // read-only: a start with CHAMVI_MIGRATE would apply them, else it cannot run
+            // read-only: a start with CHAMVI_MIGRATE (the default) would apply them, else it cannot run
             if (!migrate) {
                 const pending = await pendingMigrations(dataSource);
                 if (pending.length > 0) {
