@@ -5,18 +5,21 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { InvalidAgentDefinitionError } from '@chamvi/core';
+import { InvalidAgentDefinitionError, InvalidRunStateError } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
 import { AppToken, ModuleName } from '../../module/constants.ts';
 import {
     AGENTS_WATCHER_HOOK_NAME,
+    AGENT_RELOADED_MESSAGE,
+    AGENT_REMOVED_MESSAGE,
+    HASH_PREFIX_LENGTH,
     NO_AGENTS_MESSAGE,
     NO_DIRECTORY_MESSAGE,
 } from './constants.ts';
 import { isDirectory, resolveAgentsRoot } from './helpers.ts';
 import type { AgentCheck } from '../../module/types.ts';
-import type { IAgentsWatcher } from './types.ts';
+import type { AgentsWatcherRole, IAgentsWatcher } from './types.ts';
 import { createAgentsWatcher } from './watcher.ts';
 
 /**
@@ -25,10 +28,13 @@ import { createAgentsWatcher } from './watcher.ts';
  * app without code agents starts empty (a warning). With one, `setup` registers `AGENT_ISSUES` and (start mode) the watcher's
  * lifecycle hook; `onReady` loads every folder into the engine before any
  * start step runs (a folder changed while the app was down cancels its old
- * runs once; in start mode a marker without a folder removes that agent, a
- * job never removes one), and the watcher
- * polls every `CHAMVI_AGENTS_POLL_MS` from `started` until `stopping` or
- * `teardown`, awaiting a reload in flight.
+ * runs once, logged `agent reloaded`/`agent removed` with the cancelled run
+ * ids; in start mode a marker without a folder removes that agent), and the
+ * watcher polls every `CHAMVI_AGENTS_POLL_MS` from `started` until
+ * `stopping` or `teardown`, awaiting a reload in flight. A job never cancels:
+ * a revision conflict of the job's own agent fails the job
+ * (InvalidRunStateError), another agent's is an issue. A check
+ * (`context.check`) only loads and checks, writing nothing.
  */
 export class AgentsModule implements IModule {
     readonly name: string = ModuleName.AGENTS;
@@ -36,6 +42,9 @@ export class AgentsModule implements IModule {
     readonly dependencies = [ModuleName.CONFIG, ModuleName.ENGINE];
 
     protected watcher: IAgentsWatcher | undefined;
+
+    /** Ends the `agents.cancelled` subscription (start and job mode). */
+    protected unsubscribe: (() => void) | undefined;
 
     /** The agents dir this lifecycle loads, absolute; set by `setup`. */
     protected root: string | undefined;
@@ -57,7 +66,7 @@ export class AgentsModule implements IModule {
         }
 
         container.register(AppToken.AGENT_ISSUES, { useValue: () => this.watcher?.issues() ?? [] });
-        if (context.mode === 'start') {
+        if (context.mode === 'start' && !context.check) {
             container.registerMany(AppToken.LIFECYCLE_HOOKS, {
                 useValue: {
                     name: AGENTS_WATCHER_HOOK_NAME,
@@ -80,19 +89,39 @@ export class AgentsModule implements IModule {
             throw new InvalidAgentDefinitionError(NO_DIRECTORY_MESSAGE);
         }
 
+        const engine = container.resolve(AppToken.ENGINE);
+        const logger = container.resolve(AppToken.LOGGER);
+        if (!context.check) {
+            // before the boot: a folder changed while the app was down is logged too
+            this.unsubscribe = engine.on('agents.cancelled', (event) => {
+                logger.info(event.reason === 'agent_removed' ? AGENT_REMOVED_MESSAGE : AGENT_RELOADED_MESSAGE, {
+                    agent: event.name,
+                    ...(event.revision !== undefined && { revision: event.revision.slice(0, HASH_PREFIX_LENGTH) }),
+                    cancelled: event.runIds,
+                });
+            });
+        }
+
+        let role: AgentsWatcherRole = 'start';
+        if (context.check) role = 'check';
+        else if (context.mode === 'job') role = 'job';
         const watcher = createAgentsWatcher({
             root,
-            engine: container.resolve(AppToken.ENGINE),
+            engine,
             codeNames: new Set(context.agents.map((agent) => agent.name)),
             check: createAgentCheck(container),
             clock: container.resolve(AppToken.CLOCK),
-            logger: container.resolve(AppToken.LOGGER),
+            logger,
             pollMs: config.agents.pollMs,
             signal: context.signal,
-            removeOrphans: context.mode === 'start',
+            role,
         });
         this.watcher = watcher;
         await watcher.boot();
+        const conflict = context.job ? watcher.conflict(context.job.agent) : undefined;
+        if (conflict !== undefined) {
+            throw new InvalidRunStateError(conflict);
+        }
     }
 
     /** Resolves once the watcher's poll in flight, if any, settled. */
@@ -102,6 +131,8 @@ export class AgentsModule implements IModule {
 
     async teardown(): Promise<void> {
         // idempotent; the issues stay readable
+        this.unsubscribe?.();
+        this.unsubscribe = undefined;
         await this.watcher?.stop();
     }
 }

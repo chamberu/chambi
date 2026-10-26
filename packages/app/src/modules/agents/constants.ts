@@ -21,3 +21,15 @@ export const BOOT_LOAD_ATTEMPTS = 3;
 
 /** Logged once when the agents dir has no entry at all (an unmounted volume's mount point). */
 export const EMPTY_ROOT_MESSAGE = 'the agents dir is empty; no agent is removed';
+
+/** Logged (info) once per sweep when a folder change cancelled the agent's unsettled runs. */
+export const AGENT_RELOADED_MESSAGE = 'agent reloaded';
+
+/** Logged (info) once per sweep when a removal cancelled the agent's unsettled runs. */
+export const AGENT_REMOVED_MESSAGE = 'agent removed';
+
+/** How many characters of a folder hash a log line or a message names. */
+export const HASH_PREFIX_LENGTH = 12;
+
+/** Appended to a job-role revision conflict. */
+export const JOB_CONFLICT_HINT = 'A job never reloads an agent: start the app to apply the change.';

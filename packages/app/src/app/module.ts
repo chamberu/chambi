@@ -121,7 +121,7 @@ export class App implements IApp {
     }
 
     async runJob(options: AppRunJobOptions): Promise<AppRunJobResult> {
-        const lifecycle = this.begin('job', options, false);
+        const lifecycle = this.begin('job', options, false, { job: { agent: options.agent } });
         const job = this.job(lifecycle, options);
         lifecycle.done = job;
         return job;
@@ -138,7 +138,12 @@ export class App implements IApp {
         return this.stopping;
     }
 
-    protected begin(mode: AppMode, options: AppLifecycleOptions, dev: boolean): Lifecycle {
+    protected begin(
+        mode: AppMode,
+        options: AppLifecycleOptions,
+        dev: boolean,
+        extra: Pick<AppContext, 'check' | 'job'> = {},
+    ): Lifecycle {
         if (this.used || this.stopping) {
             throw createInUseError();
         }
@@ -163,6 +168,7 @@ export class App implements IApp {
             ...(this.model !== undefined && { model: this.model }),
             ...(this.providers !== undefined && { providers: this.providers }),
             agents: this.agents,
+            ...extra,
         };
         container.register(AppToken.CONTEXT, { useValue: context });
 

@@ -6,12 +6,12 @@
  */
 
 import { join } from 'node:path';
-import { InvalidAgentDefinitionError } from '@chamvi/core';
+import { InvalidAgentDefinitionError, InvalidRunStateError } from '@chamvi/core';
 import type { AgentIssue } from '@chamvi/http';
 import { messageOf, relativize } from '../../loader/helpers.ts';
 import { hashAgentFolder, listAgentFolders, loadAgent } from '../../loader/module.ts';
 import type { LoadedAgent } from '../../loader/types.ts';
-import { BOOT_LOAD_ATTEMPTS, EMPTY_ROOT_MESSAGE } from './constants.ts';
+import { BOOT_LOAD_ATTEMPTS, EMPTY_ROOT_MESSAGE, JOB_CONFLICT_HINT } from './constants.ts';
 import { isDirectory, isEmptyDirectory } from './helpers.ts';
 import type { AgentsWatcherOptions, IAgentsWatcher } from './types.ts';
 
@@ -26,6 +26,7 @@ import type { AgentsWatcherOptions, IAgentsWatcher } from './types.ts';
  * engine. A failed load or check keeps the registered agent and writes no
  * revision marker. Every poll compares the stored markers with the applied
  * hashes and records an agent whose marker another process moved as an issue.
+ * The role decides what reaches the store (see `AgentsWatcherOptions.role`).
  */
 export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatcher {
     const {
@@ -37,7 +38,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         logger,
         pollMs,
         signal,
-        removeOrphans = true,
+        role,
     } = options;
 
     const issues = new Map<string, AgentIssue>();
@@ -47,6 +48,8 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
     const missing = new Set<string>();
     // agents whose marker another process moved (an issue until it matches again)
     const drifted = new Set<string>();
+    // job role: agents whose stored marker differs while they have unsettled runs, by issue message
+    const conflicts = new Map<string, string>();
 
     let timer: { clear(): void } | undefined;
     let started = false;
@@ -121,11 +124,23 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         }
 
         try {
-            await engine.putAgent(loaded.agent, { revision: hash });
+            if (role === 'check') {
+                // read-only: what putAgent would refuse, nothing registered or written
+                engine.checkAgent(loaded.agent);
+                return 'done';
+            }
+            await engine.putAgent(loaded.agent, { revision: hash, reload: role === 'start' });
         } catch (error) {
             // refused before any store write (a model that cannot resolve, a subscription to an unknown channel): an issue until the content changes
             if (error instanceof InvalidAgentDefinitionError) {
                 record(name, relativize(messageOf(error), root));
+                return 'done';
+            }
+            // a job never reloads: the marker differs while the agent has unsettled runs
+            if (role === 'job' && error instanceof InvalidRunStateError) {
+                const message = `${name}: ${messageOf(error)} ${JOB_CONFLICT_HINT}`;
+                conflicts.set(name, message);
+                record(name, message);
                 return 'done';
             }
             throw error;
@@ -271,7 +286,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
                 }
             }
 
-            if (!removeOrphans) return;
+            if (role !== 'start') return;
             if (await isEmptyDirectory(root)) {
                 // an empty mount point must not remove every agent with a marker
                 logger.warn(EMPTY_ROOT_MESSAGE);
@@ -297,6 +312,9 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         },
         async idle() {
             await inFlight;
+        },
+        conflict(name) {
+            return conflicts.get(name);
         },
         issues() {
             return issues.values().toArray().map((issue) => ({ ...issue }));

@@ -368,6 +368,74 @@ describe('agentsModule', () => {
         expect((await store.getAgentRevision('greeter'))?.hash).toBe(v2);
     });
 
+    it('logs agent reloaded once with the cancelled run ids', async () => {
+        await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1', 'test/hang') });
+        const {
+            harness,
+            engine,
+            store,
+            logger,
+            watch,
+            poll,
+        } = build();
+        await harness.setup();
+        await watch();
+        const { runId } = await engine().dispatch({
+            agent: 'greeter',
+            trigger: 'http',
+            channel: 'http',
+            payload: {},
+        });
+        await expect.poll(async () => (await store.getRun(runId))?.status).toBe('running');
+
+        await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
+        const v2 = await hashAgentFolder(folder());
+        await poll();
+        await poll();
+        await engine().idle();
+
+        const reloaded = logger.entries.filter((entry) => entry.msg === 'agent reloaded');
+        expect(reloaded).toEqual([expect.objectContaining({
+            level: 'info',
+            agent: 'greeter',
+            revision: v2.slice(0, 12),
+            cancelled: [runId],
+        })]);
+        expect(await store.getRun(runId)).toMatchObject({ status: 'cancelled', error: { code: 'agent_replaced' } });
+    });
+
+    it('logs agent removed', async () => {
+        await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1', 'test/hang'), '.keep': '' });
+        const {
+            harness,
+            engine,
+            logger,
+            watch,
+            poll,
+        } = build();
+        await harness.setup();
+        await watch();
+        await rm(folder(), { recursive: true, force: true });
+        await poll();
+        await poll();
+        await engine().idle();
+
+        const removed = logger.entries.filter((entry) => entry.msg === 'agent removed');
+        expect(removed).toEqual([expect.objectContaining({
+            level: 'info',
+            agent: 'greeter',
+            cancelled: [],
+        })]);
+        expect(removed[0]).not.toHaveProperty('revision');
+    });
+
+    it('a normal boot logs no reload', async () => {
+        await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+        const { harness, logger } = build();
+        await harness.setup();
+        expect(logger.entries.filter((entry) => entry.msg === 'agent reloaded' || entry.msg === 'agent removed')).toEqual([]);
+    });
+
     it('a new folder is loaded once it is stable for one poll', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const {

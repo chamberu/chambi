@@ -47,6 +47,13 @@ export type AppContext = {
     providers?: Readonly<Record<string, ProviderConfig>>;
     /** createApp's agents (the code agents); the live set is `engine.listAgents()`. */
     agents: readonly Agent[];
+    /**
+     * `IApp.check()` (mode `start`): every module sets up and checks as for a
+     * start, but nothing writes the store and no start step runs.
+     */
+    check?: boolean;
+    /** `IApp.runJob()` (mode `job`): the agent the job runs. */
+    job?: { agent: string };
 };
 
 /**

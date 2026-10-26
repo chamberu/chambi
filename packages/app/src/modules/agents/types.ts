@@ -27,17 +27,24 @@ export type AgentsWatcherOptions = {
     /** Aborts the boot load between folders. */
     signal?: AbortSignal;
     /**
-     * Whether the boot removes the agents with a revision marker but neither a
-     * folder nor a code agent (default true; false in job mode, which only
-     * dispatches and must not cancel the replicas' runs over its own view).
+     * What the watcher may do to the store. `start`: register each folder
+     * agent at its revision (a changed one cancels its old runs) and remove
+     * the agents with a marker but neither a folder nor a code agent. `job`:
+     * register without ever cancelling (`putAgent(..., { reload: false })`):
+     * a missing marker is written, a different one moved only while the agent
+     * has no unsettled run, else the agent is a conflict (an issue, not
+     * registered); no orphan is removed. `check`: only `engine.checkAgent()`,
+     * no store read or write, nothing registered.
      */
-    removeOrphans?: boolean;
+    role: AgentsWatcherRole;
 };
+
+export type AgentsWatcherRole = 'start' | 'job' | 'check';
 
 export interface IAgentsWatcher {
     /**
      * Loads every folder and registers its agent (code agents win a name
-     * clash), then (`removeOrphans`) removes every agent with a revision
+     * clash), then (role `start`) removes every agent with a revision
      * marker but neither a folder nor a code agent. Load failures and refused
      * checks are issues; store failures throw.
      */
@@ -48,6 +55,11 @@ export interface IAgentsWatcher {
     stop(): Promise<void>;
     /** Resolves once the poll in flight, if any, settled. */
     idle(): Promise<void>;
+    /**
+     * The issue message of a job-role revision conflict of `name` (its stored
+     * marker differs while it has unsettled runs), else undefined.
+     */
+    conflict(name: string): string | undefined;
     /** The current load issues, as a fresh array. */
     issues(): AgentIssue[];
 }

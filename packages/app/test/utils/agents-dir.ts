@@ -83,6 +83,10 @@ export async function queueRun(store: IStore, clock: ControllableClock, name: st
 export type AgentsDirHarnessOptions = {
     root: string;
     mode?: AppMode;
+    /** The job identity (job mode): the agent `runJob` runs. */
+    job?: { agent: string };
+    /** Check mode (`IApp.check()`): mode stays `start`. */
+    check?: boolean;
     store?: IStore;
     clock?: ControllableClock;
     agents?: Agent[];
@@ -99,6 +103,8 @@ export function buildAgentsDirHarness(options: AgentsDirHarnessOptions) {
     const module = new AgentsModule();
     const harness: Harness = buildHarness({
         mode: options.mode,
+        ...(options.job && { job: options.job }),
+        ...(options.check && { check: options.check }),
         env: {
             CHAMVI_AGENTS_DIR: options.root,
             CHAMVI_AGENTS_POLL_MS: String(POLL_MS),
