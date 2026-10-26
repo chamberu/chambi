@@ -44,14 +44,23 @@ function factoryInput(provider: ProviderSettings): Record<string, unknown> {
     return input;
 }
 
-/** The prefix of a message about `ref`: the agent's, or the app's default model. */
-function subjectOf(ref: string, agent: string | undefined): string {
-    return typeof agent === 'undefined' ?
-        `The default model "${ref}"` :
-        `Agent "${agent}"`;
+/**
+ * The prefix of a message about `ref`: the agent's, the app's default model
+ * (`check` without an agent), or a model a tool resolves (`resolve`, which
+ * cannot tell an agent's model from one the tool named).
+ */
+type Subject = { kind: 'agent'; agent: string } | { kind: 'default' } | { kind: 'model' };
+
+function subjectOf(ref: string, subject: Subject): string {
+    if (subject.kind === 'agent') return `Agent "${subject.agent}"`;
+    return subject.kind === 'default' ? `The default model "${ref}"` : `The model "${ref}"`;
 }
 
-function splitRef(ref: string, agent: string | undefined): { provider: string; modelId: string } {
+function checkSubject(agent: string | undefined): Subject {
+    return typeof agent === 'undefined' ? { kind: 'default' } : { kind: 'agent', agent };
+}
+
+function splitRef(ref: string, subject: Subject): { provider: string; modelId: string } {
     const index = ref.indexOf(MODEL_SEPARATOR);
     if (index <= 0 || index === ref.length - 1) {
         // the AI SDK registry's former default separator; name the string to write instead
@@ -59,21 +68,21 @@ function splitRef(ref: string, agent: string | undefined): { provider: string; m
         const hint = colon > 0 && colon < ref.length - 1 ?
             ` (${ref.slice(0, colon)}${MODEL_SEPARATOR}${ref.slice(colon + 1)})` :
             '';
-        const subject = typeof agent === 'undefined' ? subjectOf(ref, agent) : `${subjectOf(ref, agent)}: model "${ref}"`;
-        throw new InvalidAgentDefinitionError(`${subject} must be "<provider>/<model>"${hint}.`);
+        const prefix = subject.kind === 'agent' ? `${subjectOf(ref, subject)}: model "${ref}"` : subjectOf(ref, subject);
+        throw new InvalidAgentDefinitionError(`${prefix} must be "<provider>/<model>"${hint}.`);
     }
 
     return { provider: ref.slice(0, index), modelId: ref.slice(index + 1) };
 }
 
-function notConfigured(ref: string, provider: string, agent: string | undefined): InvalidAgentDefinitionError {
+function notConfigured(ref: string, provider: string, subject: Subject): InvalidAgentDefinitionError {
     const envName = `CHAMVI_PROVIDER_${providerEnvName(provider)}`;
     const builtin = BUILTIN_PROVIDERS.find((entry) => entry.id === provider);
     const set = builtin ?
         `Set ${builtin.apiKey}, or ${envName}_TYPE and ${envName}_API_KEY` :
         `Set ${envName}_TYPE and ${envName}_API_KEY`;
     return new InvalidAgentDefinitionError(
-        `${subjectOf(ref, agent)} uses provider "${provider}", which is not configured. ${set}, or declare it in chamvi.json.`,
+        `${subjectOf(ref, subject)} uses provider "${provider}", which is not configured. ${set}, or declare it in chamvi.json.`,
     );
 }
 
@@ -135,8 +144,8 @@ export async function createModelResolver(
         instances.set(name, (factory as Factory)(factoryInput(provider)));
     }
 
-    const providerOf = (ref: string, agent: string | undefined): { instance: Provider; modelId: string } => {
-        const { provider, modelId } = splitRef(ref, agent);
+    const providerOf = (ref: string, subject: Subject): { instance: Provider; modelId: string } => {
+        const { provider, modelId } = splitRef(ref, subject);
         if (hasOwn(models, provider)) {
             return { instance: models[provider] as Provider, modelId };
         }
@@ -148,7 +157,7 @@ export async function createModelResolver(
 
         const instance = instances.get(provider);
         if (!instance) {
-            throw notConfigured(ref, provider, agent);
+            throw notConfigured(ref, provider, subject);
         }
 
         return { instance, modelId };
@@ -157,10 +166,10 @@ export async function createModelResolver(
     return {
         errors,
         check(ref: string, agent?: string): void {
-            providerOf(ref, agent);
+            providerOf(ref, checkSubject(agent));
         },
         resolve(ref: string): LanguageModel {
-            const { instance, modelId } = providerOf(ref, undefined);
+            const { instance, modelId } = providerOf(ref, { kind: 'model' });
             return instance.languageModel(modelId) as LanguageModel;
         },
     };
