@@ -5,18 +5,24 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-/** The checkout as argv lists (Decisions: Checkout); only `git init` without a repo. */
-export function checkoutCommands(repo?: string, ref?: string): string[][] {
-    const commands: string[][] = [['git', 'init', '-q', '.']];
-    if (repo === undefined) return commands;
-    commands.push(
-        ['git', 'remote', 'add', 'origin', repo],
-        // the empty value resets every configured credential helper
-        ['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', ref ?? 'HEAD'],
-        ['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD'],
-        ['git', 'rev-parse', 'HEAD'],
-    );
-    return commands;
+import { REF_PATTERN } from './constants.ts';
+
+/** True for a branch, tag or commit name `assertGitRef` accepts. */
+export function isGitRef(ref: unknown): ref is string {
+    return typeof ref === 'string' &&
+        REF_PATTERN.test(ref) &&
+        !ref.includes('..') &&
+        !ref.includes('//') &&
+        !ref.includes('@{') &&
+        !ref.includes('/.') &&
+        !ref.endsWith('/') &&
+        !ref.endsWith('.') &&
+        !ref.endsWith('.lock');
+}
+
+/** The default branch from `git ls-remote --symref <url> HEAD` output, else undefined. */
+export function parseDefaultBranch(output: string): string | undefined {
+    return /^ref: refs\/heads\/(\S+)\tHEAD$/m.exec(output)?.[1];
 }
 
 export function parseUrl(input: string): URL | undefined {

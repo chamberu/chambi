@@ -6,11 +6,11 @@ Boots chamvi agents as an app. The public API of `packages/app/src/index.ts` and
 npm install @chamvi/app ai typeorm pg
 ```
 
-`ai`, `typeorm` and `pg` are peer dependencies. The provider packages (`@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/google`, `@ai-sdk/mistral`, `@ai-sdk/xai`) and the `@authup/*` packages behind `@chamvi/app/authup` are optional peers. The other optional modules ship with their feature packages (`@chamvi/github/module`, ...), so `@chamvi/app` depends on none of them. The main entry re-exports `@chamvi/core` and `agentPermission`, `Permission` and the `Authenticator`, `Principal`, `HttpRoute`, `HttpRouteContext`, `HttpRouteRequest`, `HttpRouteResult` and `StaticToken` types of `@chamvi/http`.
+`ai`, `typeorm` and `pg` are peer dependencies. The provider packages (`@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, `@ai-sdk/google`, `@ai-sdk/mistral`, `@ai-sdk/xai`) and the `@authup/*` packages behind `@chamvi/app/authup` are optional peers. The other optional modules ship with their feature packages (`@chamvi/github/module`, ...), so `@chamvi/app` depends on none of them. The main entry re-exports `@chamvi/core` and `agentPermission`, `Permission` and the `Authenticator`, `Principal`, `HttpRoute`, `HttpRouteContext`, `HttpRouteRequest`, `HttpRouteResult` and `StaticToken` types of `@chamvi/http`.
 
 | Entry | Exports | Needs |
 |---|---|---|
-| `@chamvi/app` | `createApp`, `isApp`, the built-in modules, the module contract (tokens, `ModuleName`, `AppContext`, `ILifecycleHook`, the `IModule` and `IContainer` types), env readers, `approvalUrlOf`, `readConfig`, `createLogger`, `createModelRegistry` | |
+| `@chamvi/app` | `createApp`, `isApp`, the built-in modules, the module contract (tokens, `ModuleName`, `AppContext`, `ILifecycleHook`, the `IModule` and `IContainer` types), env readers, `approvalUrlOf`, `readConfig`, `createLogger`, `BUILTIN_PROVIDERS`, the model and report types (`ProviderConfig`, `SecretValue`, `AppReport`, ...) | |
 | `@chamvi/app/authup` | `authupModule`, `oidcModule` | `@authup/server-adapter-kit`, `@authup/core-http-kit` |
 | `@chamvi/app/testing` | `buildModuleHarness`, `createModuleHarness` | |
 
@@ -33,6 +33,7 @@ Synchronous and side-effect free. `agents` may be omitted or empty: the agents c
 | `stop` | the shutdown sequence (see [Start and stop](/guide/app#start-and-stop)); memoized, waits for a setup in flight | `app_stop_failed` when a teardown failed (each failure is logged) |
 | `runJob` | config, store (migrated), engine (not started: `@chamvi/channel-cron` `runJob` starts it without channels, ticks and drains it); no http | the job's error; `app_in_use` |
 | `migrate` | config, store (`migrateStore`), store teardown | `InvalidAgentDefinitionError` without `DATABASE_URL`; `app_in_use` |
+| `inspect` | nothing: reads the config, the [model settings](/guide/models) and the providers, loads the agent folders through `loadAgents()` and checks every agent like `start` (model, `assertSchedulable`, `assertMcpRunTool`); no store, no engine, no module lifecycle, no revision marker. Resolves an `AppReport` (`ok`, the default model and its source, per provider its type, sources per field, base URL origin and path, whether a key is set and the header names, never a value; per agent its model and errors; the issues). Read-only, so it never marks the app used: any number of times, before or after another lifecycle | never for a setting (every problem is in the report) |
 
 `runJob` resolves `exitCode: 0` for a `completed`, `waiting`, `skipped`, queued-behind-an-approval or signal-interrupted run, `1` for `failed` or `cancelled`.
 
@@ -46,7 +47,7 @@ Synchronous and side-effect free. `agents` may be omitted or empty: the agents c
 | `app_in_use` | A second `start`, `runJob` or `migrate` on the same app |
 | `app_stop_failed` | `stop()` (or a job's teardown) after one or more teardown errors, each logged |
 
-Configuration errors (a malformed or missing variable, a model string without its provider, a duplicate module name) are core `InvalidAgentDefinitionError`s; they name the variable and never echo its value.
+Configuration errors (a malformed or missing variable, a model string naming a provider that is not configured, an agent with no model and no default, a duplicate module name) are core `InvalidAgentDefinitionError`s; they name the variable and never echo its value.
 
 ## Environment
 
@@ -73,14 +74,18 @@ Read by `readConfig(env, { mode, dev })` once per lifecycle; the optional module
 | `CHAMVI_TOKENS` | static tokens | JSON `[{ "value", "id", "permissions": [] }]`, `value` at least 16 characters and unique | unset (dev: one random `*` token, warned) | no other authenticator is configured, outside dev |
 | `AUTHUP_URL`, `AUTHUP_CLIENT_ID`, `AUTHUP_CLIENT_SECRET` | `authupModule` | URL, string, string | unset | `authupModule()` without options |
 | `CHAMVI_UI_AUTHUP_CLIENT_ID`, `CHAMVI_UI_AUTHUP_REALM_ID` | `uiModule` | string | unset (token login only) | the dashboard signs in through authup (URL from `AUTHUP_URL`) |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY` | models | string | unset | a model string names that provider and `models` does not override it; `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` are passed on |
+| `CHAMVI_MODEL` | engine | `'<provider>/<model id>'` | the config file's `model`, else `createApp({ model })` | an agent has no model of its own |
+| `CHAMVI_CONFIG_FILE` | engine | path of a JSON file, relative to the working directory | unset: `./chamvi.json` when it exists | never |
+| `CHAMVI_PROVIDER_<NAME>_TYPE`, `_API_KEY`, `_BASE_URL`, `_HEADER_<HEADER>` | engine | type, secret, absolute http(s) URL, secret | unset; each field wins over the config file and code for provider `<name>` (upper snake case: `TEAM_A` is `team-a`) | `_TYPE` when no other source declares `<name>`; `_API_KEY` for every type but `openai-compatible` ([providers](/guide/models#providers)) |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY` | engine | string | unset | a model string names that implicit provider and nothing declares it; `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` set its base URL ([implicit providers](/guide/models#implicit-providers)) |
 | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` (PEM, literal `\n` allowed), `GITHUB_WEBHOOK_SECRET` (comma-separated for rotation) | `githubModule` | string | none | `githubModule()` without options |
 | `GITHUB_INSTALLATION_ID`, `GITHUB_APP_SLUG`, `GITHUB_API_URL` | `githubModule` | int, slug, https URL | unset | never |
 | `OPENCLAW_BASE_URL`, `OPENCLAW_HOOKS_TOKEN`, `OPENCLAW_CHANNEL`, `OPENCLAW_TO` | `openclawModule` | URL, string, string, string | none | `openclawModule()` without options |
 | `OPENCLAW_HOOKS_PATH`, `OPENCLAW_AGENT_ID`, `OPENCLAW_ACCOUNT_ID` | `openclawModule` | string | `/hooks`, unset, unset | never |
 | `CHAMVI_SANDBOX_PROVIDER` | `sandboxModule` | `local`, `docker`, `kubernetes` | the `provider` option, else `local` | never |
 | `CHAMVI_SANDBOX_NAMESPACE` | `sandboxModule` | string | none | provider `kubernetes` |
-| `CHAMVI_SANDBOX_IMAGE` | `sandboxModule` | image ref | `ghcr.io/chamvi/sandbox-node:24` | never |
+| `CHAMVI_SANDBOX_IMAGE` | `sandboxModule` | image ref | `ghcr.io/chamvi/sandbox-dev:trixie` | never |
+| `CHAMVI_DEPLOYMENT` | `sandboxModule` | label value (at most 63 letters, digits, `-`, `_`, `.`) | the `deployment` option, else `default` | several apps share one Docker host or namespace (one value per app); only with a value are the workspaces of runs the store does not hold collected |
 
 ```ts
 function readConfig(env: Env, options: ReadConfigOptions): AppConfig;
@@ -116,7 +121,7 @@ function httpModule(options?: HttpModuleOptions): IModule;                // 'ch
 function consoleChannelModule(options?: ConsoleChannelModuleOptions): IModule; // 'chamvi:console' ('chamvi:console:<name>' with a name)
 ```
 
-Listing one of them in `createApp({ modules })` replaces the default instance. `agentsModule()` (no options) reads `CHAMVI_AGENTS_DIR`, else takes `./agents` when it is a directory: in `start` and `job` mode its `onReady` loads every folder into the engine before any start step (a dir that is no directory is `InvalidAgentDefinitionError`), and in `start` mode a lifecycle hook polls the dir from `started` until `stopping`; it registers `AppToken.AGENT_ISSUES`, which the http module passes on as `agentIssues`. A folder agent passes `AppToken.MODEL_CHECK` and every `AppToken.AGENT_CHECKS` contribution (the scheduler module's `assertSchedulable`, the http module's `assertMcpRunTool` unless `mcp: false`) and the engine's channel check (every subscription names a registered channel) before it is registered; a refusal is a load issue, never a failed boot. Only `start` mode removes an agent whose marker has no folder; a job never does. Without a dir it only refuses an app without agents.
+Listing one of them in `createApp({ modules })` replaces the default instance. `engineModule()` reads the [model settings](/guide/models) in `setup` (`start` and `job` mode: env over the config file over `createApp({ model, providers })`, `models` over all for its ids), refusing every settings issue at once (`The model settings have <n> issue(s):` and one line each), imports the provider packages the settings need and passes the default model and the resolver to the `Engine` as `model` and `models`, which checks every agent when it is registered; it never reads or sets the AI SDK's global default provider. `agentsModule()` (no options) reads `CHAMVI_AGENTS_DIR`, else takes `./agents` when it is a directory: in `start` and `job` mode its `onReady` loads every folder into the engine before any start step (a dir that is no directory is `InvalidAgentDefinitionError`), and in `start` mode a lifecycle hook polls the dir from `started` until `stopping`; it registers `AppToken.AGENT_ISSUES`, which the http module passes on as `agentIssues`. A folder agent passes every `AppToken.AGENT_CHECKS` contribution (the scheduler module's `assertSchedulable`, the http module's `assertMcpRunTool` unless `mcp: false`) and the engine's registration checks in `putAgent` (every subscription names a registered channel, the model resolves through the app's providers) before it is registered; a refusal is a load issue, never a failed boot. Only `start` mode removes an agent whose marker has no folder; a job never does. Without a dir it only refuses an app without agents.
 
 <<< ../../../app/src/modules/config/types.ts{ts}
 
@@ -152,7 +157,7 @@ function authupModule(options?: AuthupModuleOptions): IModule;             // 'c
 function oidcModule(options: OidcOptions): IModule;                        // 'chamvi:oidc', no env form
 ```
 
-Each factory reads `options.env ?? process.env` when it is called and throws `InvalidAgentDefinitionError` naming a missing or malformed variable. Options win over env, except `CHAMVI_SANDBOX_PROVIDER`, `CHAMVI_SANDBOX_NAMESPACE` and `CHAMVI_SANDBOX_IMAGE`, which win over the sandbox options. The GitHub and OpenClaw modules contribute their channel to `AppToken.CHANNELS`, defaulting `approvalUrl` to the dashboard link built from `CHAMVI_PUBLIC_URL` and using the app's clock; tools reach a channel with `ctx.channels.findOne(name)`. `githubModule` and `sandboxModule` provide their instance on the engine in the `engineCreated` hook; tools reach it through the package's context pair ([github](/reference/github#context), [sandbox](/reference/sandbox#context)).
+Each factory reads `options.env ?? process.env` when it is called and throws `InvalidAgentDefinitionError` naming a missing or malformed variable. Options win over env, except `CHAMVI_SANDBOX_PROVIDER`, `CHAMVI_SANDBOX_NAMESPACE`, `CHAMVI_SANDBOX_IMAGE` and `CHAMVI_DEPLOYMENT`, which win over the sandbox options. The GitHub and OpenClaw modules contribute their channel to `AppToken.CHANNELS`, defaulting `approvalUrl` to the dashboard link built from `CHAMVI_PUBLIC_URL` and using the app's clock; tools reach a channel with `ctx.channels.findOne(name)`. `githubModule` and `sandboxModule` provide their instance on the engine in the `engineCreated` hook; tools reach it through the package's context pair ([github](/reference/github#context), [sandbox](/reference/sandbox#context)).
 
 <<< ../../../github/src/module/types.ts{ts}
 
@@ -207,16 +212,18 @@ function hashAgentFolder(dir: string): Promise<string>;
 ## Models
 
 ```ts
-function createModelRegistry(options: ModelRegistryOptions): Promise<ProviderRegistryProvider>;
-function resolveModels(options: ModelRegistryOptions): Promise<ResolvedModels>;
-function installDefaultProvider(registry: ProviderRegistryProvider): () => void;
-
-const BUILTIN_PROVIDERS: readonly BuiltinProvider[]; // anthropic, openai, google, mistral, xai
+const BUILTIN_PROVIDERS: readonly BuiltinProvider[]; // anthropic, openai, google, mistral, xai: the implicit providers
 ```
 
-`createModelRegistry` imports every installed built-in provider package with its key from env, adds `models`, and checks every string model of `agents`: `Agent "<a>": model "<m>" needs the <id> provider; install <pkg>.`, `... needs an API key; set <VAR>.` or `... names the unknown provider "<id>"; available: <ids>.` (each an `InvalidAgentDefinitionError`). `resolveModels` returns that registry with the check itself (`ResolvedModels.check`), which the engine module registers as `AppToken.MODEL_CHECK` for folder agents loaded later (a no-op when a default provider was preset). `installDefaultProvider` sets `globalThis.AI_SDK_DEFAULT_PROVIDER` only when none is set and returns the undo; the engine module does both at `start` and `runJob`. The global is process-wide: two apps in one process share the first one's registry until it stops, and a default provider set before `start` is left alone (no model strings are checked then).
+See [Pick a Model](/guide/models) for the whole picture. `createApp({ model, providers, models })` sets the default model, the named providers and AI SDK provider objects by id; `CHAMVI_MODEL`, `CHAMVI_CONFIG_FILE` (else `./chamvi.json`) and `CHAMVI_PROVIDER_<NAME>_*` set the same from the deployment. Sources, highest first: env, the config file, code; providers merge per name and field, a higher source with another `type` replaces the provider, a `CHAMVI_PROVIDER_<NAME>_*` variable without `_TYPE` needs another source to declare `<name>`, and a declared provider replaces the implicit one of its name. `models` wins over everything for its ids (no package imported), the test seam.
 
-<<< ../../../app/src/models/types.ts{ts}
+Model strings are split at the first `/`. Every provider gets an explicit key and base URL (the type's public URL when none is set), read from the app's `env` only, never from `process.env` behind its back; `{ file }` secrets are read relative to the working directory with one trailing newline trimmed. The config file refuses a literal `apiKey` and literal credential headers. Errors name the variable or file field and never echo a value: `Agent "<a>" uses provider "<p>", which is not configured. Set CHAMVI_PROVIDER_<P>_TYPE and CHAMVI_PROVIDER_<P>_API_KEY, or declare it in chamvi.json.`, `Provider "<p>" (<type>) needs CHAMVI_PROVIDER_<P>_API_KEY.`, `Provider type "<type>" needs package <pkg>.` Nothing reads or sets the AI SDK's global default provider, so two apps in one process keep their own providers.
+
+<<< ../../../app/src/models/types.ts#public{ts}
+
+`app.inspect({ env? })` (`chamvi doctor`) reports the same settings without starting anything:
+
+<<< ../../../app/src/inspect/types.ts#public{ts}
 
 ## Logger
 

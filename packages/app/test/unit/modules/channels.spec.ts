@@ -43,7 +43,6 @@ afterEach(async () => {
     await Promise.all(apps.map((app) => app.stop().catch(() => {})));
     harnesses = [];
     apps = [];
-    globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
 });
 
 function triage(): Agent {

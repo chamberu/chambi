@@ -66,7 +66,6 @@ let harnesses: ModuleHarness[] = [];
 afterEach(async () => {
     await Promise.all(harnesses.map((h) => h.stop()));
     harnesses = [];
-    globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
 });
 
 describe('githubModule', () => {
@@ -160,6 +159,40 @@ describe('githubModule', () => {
         expect(channels[0]!.in).toBeTypeOf('function');
         expect(channels[0]!.out).toBeTypeOf('function');
         expect(harness.container.resolveAll(AppToken.HTTP_ROUTES)).toEqual([]);
+    });
+
+    it('contributes the App\'s git credentials, with the given permissions, unless switched off', async () => {
+        const gh = createGithubApp({
+            appId: 1,
+            privateKey: fake.privateKey,
+            webhookSecret: 'webhook-secret',
+            clock,
+            fetch: fake.fetch,
+        });
+        fake.installations.set('octo/module-demo', 77);
+        const harness = await createModuleHarness({
+            env: {},
+            modules: [configModule({ logger: createRecordingLogger() }), githubModule({ app: gh, credentials: { permissions: { workflows: 'write' } } })],
+        });
+        harnesses.push(harness);
+        const [source] = harness.container.resolveAll(AppToken.GIT_CREDENTIALS);
+        const answer = await source!.get({
+            url: 'https://github.com/octo/module-demo.git',
+            host: 'github.com',
+            path: 'octo/module-demo',
+            access: 'write',
+            runId: 'r1',
+        });
+        expect(answer).toMatchObject({ username: 'x-access-token' });
+        const exchange = fake.requests.findLast((r) => r.path === '/app/installations/77/access_tokens');
+        expect(exchange?.body).toEqual({ repositories: ['module-demo'], permissions: { contents: 'write', workflows: 'write' } });
+
+        const off = await createModuleHarness({
+            env: {},
+            modules: [configModule({ logger: createRecordingLogger() }), githubModule({ app: gh, credentials: false })],
+        });
+        harnesses.push(off);
+        expect(off.container.resolveAll(AppToken.GIT_CREDENTIALS)).toEqual([]);
     });
 
     it('takes the channel options', async () => {

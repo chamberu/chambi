@@ -91,8 +91,8 @@ Pick one of the others when you want what chamvi does not have yet: a hosted ser
 | [`@chamvi/channel-openclaw`](./packages/channel-openclaw) | [![npm](https://img.shields.io/npm/v/@chamvi/channel-openclaw)](https://www.npmjs.com/package/@chamvi/channel-openclaw) | The OpenClaw channel: messages and approval requests into an OpenClaw chat |
 | [`@chamvi/sandbox`](./packages/sandbox) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox)](https://www.npmjs.com/package/@chamvi/sandbox) | Sandbox contracts and the workspace manager: one workspace per run and repository, `create_workspace` / `dispose_workspace` tools, cleanup when the run settles |
 | [`@chamvi/sandbox-local`](./packages/sandbox-local) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox-local)](https://www.npmjs.com/package/@chamvi/sandbox-local) | Workspaces in a temporary directory, for development and tests (no isolation) |
-| [`@chamvi/sandbox-docker`](./packages/sandbox-docker) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox-docker)](https://www.npmjs.com/package/@chamvi/sandbox-docker) | One hardened container per workspace: non-root, read-only root, no capabilities, resource limits |
-| [`@chamvi/sandbox-k8s`](./packages/sandbox-k8s) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox-k8s)](https://www.npmjs.com/package/@chamvi/sandbox-k8s) | One hardened pod per workspace, without a service account token |
+| [`@chamvi/sandbox-docker`](./packages/sandbox-docker) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox-docker)](https://www.npmjs.com/package/@chamvi/sandbox-docker) | One container per workspace: root inside so package managers work, a few capabilities, resource limits, a shared package cache |
+| [`@chamvi/sandbox-k8s`](./packages/sandbox-k8s) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox-k8s)](https://www.npmjs.com/package/@chamvi/sandbox-k8s) | One pod per workspace: the same, without a service account token |
 | [`@chamvi/coding`](./packages/coding) | [![npm](https://img.shields.io/npm/v/@chamvi/coding)](https://www.npmjs.com/package/@chamvi/coding) | `read_file`, `write_file`, `edit_file`, `grep`, `list_files`, `bash` and `git_diff` inside a workspace |
 | [`@chamvi/tool-web`](./packages/tool-web) | [![npm](https://img.shields.io/npm/v/@chamvi/tool-web)](https://www.npmjs.com/package/@chamvi/tool-web) | `web_fetch`: any public page as markdown through a hapic client, behind an address check |
 | [`@chamvi/ui`](./packages/ui) | [![npm](https://img.shields.io/npm/v/@chamvi/ui)](https://www.npmjs.com/package/@chamvi/ui) | The dashboard: an agents overview with runs started from the agent page, runs with live steps, an approvals inbox, agent state and schedules, served by `uiRoutes()` |
@@ -175,7 +175,7 @@ import { createWorkspaceManager } from '@chamvi/sandbox';
 import { createDockerSandbox } from '@chamvi/sandbox-docker';
 
 const workspaces = createWorkspaceManager({
-    // one container per workspace from ghcr.io/chamvi/sandbox-node:24
+    // one container per workspace from ghcr.io/chamvi/sandbox-dev:trixie
     provider: createDockerSandbox(),
     // the model can only clone your own repositories
     allowRepo: (url) => url.startsWith('https://github.com/acme/'),

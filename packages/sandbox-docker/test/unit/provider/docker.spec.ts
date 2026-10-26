@@ -13,13 +13,33 @@ import {
     it,
 } from 'vitest';
 import { SandboxError } from '@chamvi/core';
+import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
 import { CONTAINER_NAME_PREFIX, createDockerSandbox } from '@chamvi/sandbox-docker';
-import { describeDocker, dockerImage } from '../../utils/docker.ts';
+import { ControllableClock } from '@chamvi/test-kit';
+import {
+    buildFixtureImage,
+    describeDocker,
+    dockerImage,
+    dockerOptions,
+} from '../../utils/docker.ts';
 
 const offline = Boolean(process.env.CHAMVI_OFFLINE);
 
 const MISSING_IMAGE = 'chamvi/does-not-exist:none';
+
+const NO_GIT_IMAGE = 'chamvi/sandbox-no-git:test';
+
+const NO_CACHE_IMAGE = 'chamvi/sandbox-no-cache:test';
+const NO_INIT_IMAGE = 'chamvi/sandbox-no-init:test';
+
+/** Leaves 20 orphans that exit at once, waits, then prints how many processes are zombies. */
+const ORPHANS = 'for i in $(seq 20); do sh -c "sleep 0.1 &"; done; sleep 1; ' +
+    'cat /proc/[0-9]*/stat 2>/dev/null | awk \'$3 == "Z"\' | wc -l';
+
+/** Writes into the cache folders of `CACHE_ENV` and into HOME as the workspace user would (npm's logs, Go's module cache, cargo's home). */
+const WRITE_CACHE = 'mkdir -p "$npm_config_cache/_logs" "$GOMODCACHE" "$HOME/.cargo" && ' +
+    'touch "$npm_config_cache/_logs/probe" "$GOMODCACHE/probe" /cache/probe "$HOME/.cargo/probe"';
 
 function statusCode(error: unknown): number | undefined {
     return (error as { statusCode?: number } | undefined)?.statusCode;
@@ -31,7 +51,7 @@ describeDocker('docker sandbox', () => {
 
     async function create(options: Parameters<typeof createDockerSandbox>[0] = {}, input: { repo?: string; ref?: string } = {}) {
         const runId = `test-${randomUUID()}`;
-        const workspace = await createDockerSandbox({ image: dockerImage, ...options }).create({ runId, ...input });
+        const workspace = await createDockerSandbox({ ...dockerOptions, ...options }).create({ runId, ...input });
         workspaces.push(workspace);
         return { runId, workspace };
     }
@@ -77,16 +97,214 @@ describeDocker('docker sandbox', () => {
         await workspace.dispose();
     });
 
+    it('a second provider finds the workspace again and restarts its stopped container', async () => {
+        const { runId, workspace } = await create();
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        // the host restarted: the container stopped, its volume holds the work
+        await container.stop({ t: 0 });
+
+        const found = await createDockerSandbox({ ...dockerOptions }).find(runId);
+        workspaces.push(...found);
+        expect(found.map((item) => item.id)).toEqual([workspace.id]);
+        expect(found[0]!.info).toEqual({ ...workspace.info, image: dockerImage });
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('never finds a stopped container whose create died before the checkout finished', async () => {
+        const { runId, workspace } = await create();
+        // the state a create killed during the fetch leaves: no checkout record
+        expect((await workspace.exec(['git', 'config', '--unset', 'chamvi.checkout'])).exitCode).toBe(0);
+        await docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`).stop({ t: 0 });
+
+        expect(await createDockerSandbox({ ...dockerOptions }).find(runId)).toEqual([]);
+    });
+
+    it('restarts the stopped container of a workspace the manager still holds', async () => {
+        const provider = createDockerSandbox({ ...dockerOptions });
+        const errors: unknown[] = [];
+        const manager = createWorkspaceManager({
+            provider, 
+            gcIntervalMs: 0, 
+            onError: (error) => { errors.push(error); }, 
+        });
+        const runId = `test-${randomUUID()}`;
+        const { workspace } = await manager.acquire(runId, {});
+        workspaces.push(workspace);
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        // the daemon restarted while the run waited on an approval
+        await container.stop({ t: 0 });
+
+        const held = await manager.get(runId);
+        await expect(held.exec(['cat', 'kept.txt'])).rejects.toThrow(/is gone/);
+
+        const restarted = await manager.get(runId);
+        workspaces.push(restarted);
+        expect(restarted.id).toBe(workspace.id);
+        expect(restarted).not.toBe(workspace);
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await restarted.readFile('kept.txt')).toBe('work');
+        expect(await provider.find(runId)).toEqual([restarted]);
+        expect(errors).toEqual([]);
+    });
+
+    it('finds a workspace listed as exited that is running again by the time it starts it', async () => {
+        const { runId, workspace } = await create();
+        await workspace.writeFile('kept.txt', 'work');
+        // the list is older than the start: an operator's docker start, live-restore, another replica's find
+        const client = Object.create(docker) as Docker;
+        const list = async (options?: Docker.ContainerListOptions) => (await docker.listContainers(options))
+            .map((item) => ({ ...item, State: 'exited' }));
+        client.listContainers = list as Docker['listContainers'];
+
+        const found = await createDockerSandbox({ ...dockerOptions, docker: client }).find(runId);
+        workspaces.push(...found);
+        expect(found.map((item) => item.id)).toEqual([workspace.id]);
+        expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('restarts a stopped container the list still shows as running', async () => {
+        const { runId, workspace } = await create();
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        await container.stop({ t: 0 });
+        // Docker's list is a view that may lag behind a stop
+        const client = Object.create(docker) as Docker;
+        const list = async (options?: Docker.ContainerListOptions) => (await docker.listContainers(options))
+            .map((item) => ({ ...item, State: 'running' }));
+        client.listContainers = list as Docker['listContainers'];
+
+        const found = await createDockerSandbox({ ...dockerOptions, docker: client }).find(runId);
+        workspaces.push(...found);
+        expect(found.map((item) => item.id)).toEqual([workspace.id]);
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('unpauses a paused container it finds', async () => {
+        const { runId, workspace } = await create();
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        await container.pause();
+
+        const found = await createDockerSandbox({ ...dockerOptions }).find(runId);
+        workspaces.push(...found);
+        expect(found.map((item) => item.id)).toEqual([workspace.id]);
+        expect((await container.inspect()).State.Paused).toBe(false);
+        expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('fails find on an inspect error other than a removed container', async () => {
+        const { runId } = await create();
+        const client = Object.create(docker) as Docker;
+        client.getContainer = ((id: string) => {
+            const container = docker.getContainer(id);
+            container.inspect = (async () => {
+                throw Object.assign(new Error('(HTTP code 500) server error - daemon busy'), { statusCode: 500 });
+            }) as Docker.Container['inspect'];
+            return container;
+        }) as Docker['getContainer'];
+
+        await expect(createDockerSandbox({ ...dockerOptions, docker: client }).find(runId)).rejects.toThrow(/daemon busy/);
+    });
+
+    it('restarts the stopped container of a held workspace on find and keeps the handle', async () => {
+        const provider = createDockerSandbox({ ...dockerOptions });
+        const runId = `test-${randomUUID()}`;
+        const workspace = await provider.create({ runId });
+        workspaces.push(workspace);
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        await container.stop({ t: 0 });
+
+        expect(await provider.find(runId)).toEqual([workspace]);
+        expect((await provider.find(runId))[0]).toBe(workspace);
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await workspace.readFile('kept.txt')).toBe('work');
+        expect(workspace.disposed).toBe(false);
+    });
+
+    it('keeps HOME on disk: more than tmpSize fits, outside the memory limit', async () => {
+        const { workspace } = await create({ tmpSize: '32Mi', limits: { memory: '256Mi' } });
+        // cargo's registry, rustup's toolchains, ~/.m2 and ~/.gradle land in $HOME
+        const result = await workspace.exec(['sh', '-c', 'mkdir -p "$HOME/.cargo/registry" && ' +
+            'head -c 100000000 /dev/zero > "$HOME/.cargo/registry/blob" && stat -f -c %T "$HOME"']);
+        expect(result.stderr).toBe('');
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout.trim()).not.toBe('tmpfs');
+    });
+
+    it('keeps HOME and the mise shims across a restart of a stopped container', async () => {
+        const { runId, workspace } = await create();
+        // a shim `mise use -g` would make, and the global config it writes
+        const prepared = await workspace.exec(['sh', '-c', 'mkdir -p "$MISE_SHIMS_DIR" "$HOME/.config/mise" && ' +
+            'printf \'#!/bin/sh\\necho shimmed\\n\' > "$MISE_SHIMS_DIR/probe-tool" && chmod +x "$MISE_SHIMS_DIR/probe-tool" && ' +
+            'echo kept > "$HOME/.config/mise/config.toml" && probe-tool']);
+        expect(prepared.stderr).toBe('');
+        expect(prepared.stdout.trim()).toBe('shimmed');
+        await docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`).stop({ t: 0 });
+
+        const [found] = await createDockerSandbox({ ...dockerOptions }).find(runId);
+        workspaces.push(found!);
+        const result = await found!.exec(['sh', '-c', 'probe-tool && cat "$HOME/.config/mise/config.toml"']);
+        expect(result.stderr).toBe('');
+        expect(result.stdout).toBe('shimmed\nkept\n');
+    });
+
+    it.skipIf(offline)('resolves a mise tool installed with `mise use -g` after a restart', async () => {
+        const { runId, workspace } = await create();
+        const installed = await workspace.exec(['sh', '-c', 'mise use -g node@22 >/dev/null && node --version'], { timeoutMs: 170_000 });
+        expect(installed.exitCode).toBe(0);
+        await docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`).stop({ t: 0 });
+
+        const [found] = await createDockerSandbox({ ...dockerOptions }).find(runId);
+        workspaces.push(found!);
+        const result = await found!.exec(['sh', '-c', 'node --version']);
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toMatch(/^v22\./);
+    }, 180_000);
+
+    it('never finds a workspace again that it is disposing', async () => {
+        const provider = createDockerSandbox({ ...dockerOptions });
+        const runId = `test-${randomUUID()}`;
+        const workspace = await provider.create({ runId });
+        workspaces.push(workspace);
+        const disposal = workspace.dispose();
+        expect(await provider.find(runId)).toEqual([]);
+        await disposal;
+        expect(await containersOf(runId)).toEqual([]);
+    });
+
+    it('finds the instance it holds, never another deployment\'s or an expired one', async () => {
+        const provider = createDockerSandbox({ ...dockerOptions });
+        const runId = `test-${randomUUID()}`;
+        const workspace = await provider.create({ runId, deployment: 'test-a' });
+        workspaces.push(workspace);
+        expect(await provider.find(runId, { deployment: 'test-a' })).toEqual([workspace]);
+        expect((await provider.find(runId, { deployment: 'test-a' }))[0]).toBe(workspace);
+        expect(await provider.find(runId)).toEqual([]);
+
+        const later = new ControllableClock(new Date(workspace.info.expiresAt.getTime()));
+        expect(await createDockerSandbox({ ...dockerOptions, clock: later }).find(runId, { deployment: 'test-a' })).toEqual([]);
+    });
+
     it('dispose removes container and volume', async () => {
         const { workspace } = await create();
         const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
-        const volume = (await container.inspect()).Mounts[0]?.Name as string;
-        expect(volume).toBeTruthy();
+        // the workspace and the home volume; the named cache volume outlives the container
+        const volumes = (await container.inspect()).Mounts
+            .filter((mount) => mount.Destination !== '/cache')
+            .map((mount) => mount.Name as string);
+        expect(volumes).toHaveLength(2);
 
         await workspace.dispose();
 
         await expect(container.inspect()).rejects.toSatisfy((error) => statusCode(error) === 404);
-        await expect(docker.getVolume(volume).inspect()).rejects.toSatisfy((error) => statusCode(error) === 404);
+        for (const volume of volumes) {
+            await expect(docker.getVolume(volume).inspect()).rejects.toSatisfy((error) => statusCode(error) === 404);
+        }
     });
 
     it('survives stdin the command never read when the container goes', async () => {
@@ -122,7 +340,7 @@ describeDocker('docker sandbox', () => {
         expect(result.exitCode).not.toBe(0);
 
         const runId = `test-${randomUUID()}`;
-        await expect(createDockerSandbox({ image: dockerImage, network: 'none' }).create({
+        await expect(createDockerSandbox({ ...dockerOptions, network: 'none' }).create({
             runId,
             repo: 'https://github.com/octocat/Hello-World.git',
         })).rejects.toBeInstanceOf(SandboxError);
@@ -151,14 +369,22 @@ describeDocker('docker sandbox', () => {
 
     it('a missing image fails cleanly', async () => {
         const runId = `test-${randomUUID()}`;
-        await expect(createDockerSandbox({ image: MISSING_IMAGE, pull: 'never' }).create({ runId }))
+        await expect(createDockerSandbox({
+            ...dockerOptions, 
+            image: MISSING_IMAGE, 
+            pull: 'never', 
+        }).create({ runId }))
             .rejects.toBeInstanceOf(SandboxError);
         expect(await containersOf(runId)).toEqual([]);
     });
 
     it.skipIf(offline)('a failed pull fails cleanly', async () => {
         const runId = `test-${randomUUID()}`;
-        const error = await createDockerSandbox({ image: MISSING_IMAGE, pull: 'missing' })
+        const error = await createDockerSandbox({
+            ...dockerOptions, 
+            image: MISSING_IMAGE, 
+            pull: 'missing', 
+        })
             .create({ runId })
             .catch((e: unknown) => e);
         expect(error).toBeInstanceOf(SandboxError);
@@ -169,11 +395,171 @@ describeDocker('docker sandbox', () => {
     it.skipIf(offline)('pull always pulls', async () => {
         const runId = `test-${randomUUID()}`;
         // the test image is a local-only tag, so a pull must fail
-        const error = await createDockerSandbox({ image: dockerImage, pull: 'always' })
+        const error = await createDockerSandbox({ ...dockerOptions, pull: 'always' })
             .create({ runId })
             .catch((e: unknown) => e);
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toContain(dockerImage as string);
+        expect(await containersOf(runId)).toEqual([]);
+    });
+
+    it('runs a workspace as root with a writable root, so apt-style installs work', async () => {
+        const { workspace } = await create();
+        expect((await workspace.exec(['id', '-u'])).stdout.trim()).toBe('0');
+        const result = await workspace.exec(['sh', '-c', 'touch /usr/local/bin/probe && echo ok']);
+        expect(result).toMatchObject({ exitCode: 0, stdout: 'ok\n' });
+    });
+
+    it('shares the cache volume between workspaces of different runs', async () => {
+        const { workspace: first } = await create();
+        const { workspace: second } = await create();
+        const marker = randomUUID();
+        expect((await first.exec(['sh', '-c', `mkdir -p "$npm_config_cache" && echo ${marker} > "$npm_config_cache/${marker}"`])).exitCode).toBe(0);
+        const read = await second.exec(['sh', '-c', `cat "$npm_config_cache/${marker}"`]);
+        expect(read.stdout.trim()).toBe(marker);
+        expect((await second.exec(['sh', '-c', 'echo $npm_config_cache'])).stdout.trim()).toBe('/cache/npm');
+    });
+
+    it('never runs a git or timeout another run planted in the shared cache', async () => {
+        const { workspace: planter } = await create();
+        const marker = randomUUID();
+        const evil = `/cache/evil-${marker}`;
+        // logs every call, then runs the real program, so a hijack stays unnoticed but for the log
+        await planter.writeFile('plant.sh', `#!/bin/sh\necho "$0 $*" >> /cache/${marker}\nexec /usr/bin/$(basename "$0") "$@"\n`);
+        const plant = await planter.exec(['sh', '-c', `for d in /cache/mise/shims ${evil}; do mkdir -p $d && ` +
+            'for n in git timeout; do cp plant.sh $d/$n && chmod +x $d/$n || exit 1; done; done']);
+        expect(plant.exitCode).toBe(0);
+        try {
+            // the image's PATH, and an operator PATH that names a cache folder
+            const { workspace: plain } = await create();
+            const { workspace: operator } = await create({ env: { PATH: `${evil}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` } });
+            expect((await plain.exec(['sh', '-c', 'command -v git; command -v timeout'])).stdout).toBe('/usr/bin/git\n/usr/bin/timeout\n');
+            expect((await operator.exec(['sh', '-c', 'command -v git; command -v timeout'])).stdout).toBe('/usr/bin/git\n/usr/bin/timeout\n');
+            expect((await planter.exec(['sh', '-c', `cat /cache/${marker} 2>/dev/null || echo none`])).stdout).toBe('none\n');
+        } finally {
+            await planter.exec(['rm', '-rf', '/cache/mise/shims', evil, `/cache/${marker}`]);
+        }
+    });
+
+    it('keeps the cache of its own with cache false', async () => {
+        const { workspace: first } = await create({ cache: false });
+        const { workspace: second } = await create({ cache: false });
+        await first.exec(['sh', '-c', 'mkdir -p /cache/npm && echo one > /cache/npm/own']);
+        expect((await second.exec(['cat', '/cache/npm/own'])).exitCode).not.toBe(0);
+        expect((await first.exec(['cat', '/cache/npm/own'])).stdout).toBe('one\n');
+    });
+
+    it('runs the hardened mode as its user on a read-only root', async () => {
+        const { workspace } = await create({
+            user: '1000:1000', 
+            readOnlyRoot: true, 
+            cache: false, 
+        });
+        expect((await workspace.exec(['id', '-u'])).stdout.trim()).toBe('1000');
+        expect((await workspace.exec(['touch', '/etc/probe'])).exitCode).not.toBe(0);
+        await workspace.writeFile('a.txt', 'hardened');
+        expect(await workspace.readFile('a.txt')).toBe('hardened');
+        expect((await workspace.exec(['sh', '-c', 'mkdir -p "$HOME/.cargo" && touch "$HOME/.cargo/probe"'])).exitCode).toBe(0);
+    });
+
+    it('reaps the orphans of an image without an init', async () => {
+        await buildFixtureImage(docker, 'no-init', NO_INIT_IMAGE);
+        try {
+            const { workspace } = await create({ image: NO_INIT_IMAGE, pull: 'never' });
+            expect((await workspace.exec(['cat', '/proc/1/comm'])).stdout.trim()).not.toBe('sleep');
+            const result = await workspace.exec(['sh', '-c', ORPHANS]);
+            expect(result.exitCode).toBe(0);
+            expect(result.stdout.trim()).toBe('0');
+            await workspace.dispose();
+        } finally {
+            await docker.getImage(NO_INIT_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
+    });
+
+    it('opens the cache of an image without /cache to the hardened user', async () => {
+        await buildFixtureImage(docker, 'no-cache', NO_CACHE_IMAGE);
+        try {
+            const { workspace } = await create({
+                image: NO_CACHE_IMAGE,
+                pull: 'never',
+                user: '1000:1000',
+                readOnlyRoot: true,
+                cache: false,
+            });
+            const result = await workspace.exec(['sh', '-c', WRITE_CACHE]);
+            expect(result.stderr).toBe('');
+            expect(result.exitCode).toBe(0);
+        } finally {
+            await docker.getImage(NO_CACHE_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
+    });
+
+    // only the top-level folders: what a root workspace makes below them stays
+    // root's, which is why a non-root user gets a volume of its own by default
+    it('opens the top-level folders a root workspace made in an explicitly shared cache to the hardened user', async () => {
+        await buildFixtureImage(docker, 'no-cache', NO_CACHE_IMAGE);
+        const volume = `chamvi-sandbox-cache-test-${randomUUID()}`;
+        try {
+            const shared = {
+                image: NO_CACHE_IMAGE,
+                pull: 'never' as const,
+                cache: { volume },
+            };
+            const { workspace: root } = await create(shared);
+            expect((await root.exec(['sh', '-c', 'mkdir -p "$npm_config_cache" "$GOMODCACHE"'])).exitCode).toBe(0);
+            await root.dispose();
+
+            const { workspace } = await create({ ...shared, user: '1000:1000' });
+            const result = await workspace.exec(['sh', '-c', WRITE_CACHE]);
+            expect(result.stderr).toBe('');
+            expect(result.exitCode).toBe(0);
+            await workspace.dispose();
+        } finally {
+            await docker.getVolume(volume).remove().catch(() => undefined);
+            await docker.getImage(NO_CACHE_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
+    });
+
+    it('refuses an image without git before any checkout and leaves no container', async () => {
+        await buildFixtureImage(docker, 'no-git', NO_GIT_IMAGE);
+        try {
+            const runId = `test-${randomUUID()}`;
+            const error = await createDockerSandbox({
+                ...dockerOptions, 
+                image: NO_GIT_IMAGE, 
+                pull: 'never', 
+            })
+                .create({ runId, repo: 'https://github.com/octocat/Hello-World.git' })
+                .catch((e: unknown) => e);
+            expect(error).toBeInstanceOf(SandboxError);
+            expect((error as Error).message).toContain(`image ${NO_GIT_IMAGE} lacks what a workspace needs: git.`);
+            expect(await containersOf(runId)).toEqual([]);
+        } finally {
+            await docker.getImage(NO_GIT_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
+    });
+
+    it.skipIf(offline)('pulls a model-chosen image when missing, whatever pull says', async () => {
+        const runId = `test-${randomUUID()}`;
+        const error = await createDockerSandbox({ ...dockerOptions, pull: 'never' })
+            .create({
+                runId,
+                image: MISSING_IMAGE,
+                imageRequested: true,
+            })
+            .catch((e: unknown) => e);
+        expect((error as Error).message).toContain(`cannot pull the image ${MISSING_IMAGE}`);
+        expect(await containersOf(runId)).toEqual([]);
+    });
+
+    it('never pulls the operator\'s image with pull never, also when it is not the provider\'s', async () => {
+        const runId = `test-${randomUUID()}`;
+        const error = await createDockerSandbox({ ...dockerOptions, pull: 'never' })
+            .create({ runId, image: MISSING_IMAGE })
+            .catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).toContain(`cannot create a workspace container from ${MISSING_IMAGE}`);
+        expect((error as Error).message).not.toContain('cannot pull');
         expect(await containersOf(runId)).toEqual([]);
     });
 });

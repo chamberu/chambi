@@ -37,6 +37,18 @@ updates:
 
     # Maintain the base image of the sandbox image
     - package-ecosystem: "docker"
+      directory: "/images/sandbox-dev"
+      schedule:
+          interval: "daily"
+      # the image is published as `trixie`: a Debian release is a new image, not a bump
+      ignore:
+          - dependency-name: "debian"
+            update-types: ["version-update:semver-major"]
+      commit-message:
+          prefix: "build"
+
+    # Maintain the base image of the deprecated sandbox-node image
+    - package-ecosystem: "docker"
       directory: "/images/sandbox-node"
       schedule:
           interval: "daily"

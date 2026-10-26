@@ -5,7 +5,7 @@ export function docker() {
     // #region docker
     const provider = createDockerSandbox({
         // pin a digest in production
-        image: 'ghcr.io/chamvi/sandbox-node:24',
+        image: 'ghcr.io/chamvi/sandbox-dev:trixie',
         // a bridge without inter-container traffic, firewalled from the host
         network: 'chamvi-sandbox',
         limits: {

@@ -6,10 +6,21 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    expectTypeOf,
+    it,
+} from 'vitest';
 import * as app from '@chamvi/app';
 import * as authup from '@chamvi/app/authup';
 import * as testing from '@chamvi/app/testing';
+import type {
+    AgentReport,
+    AppReport,
+    IApp,
+    ProviderReport,
+} from '@chamvi/app';
 
 describe('public api', () => {
     it.each([
@@ -18,9 +29,6 @@ describe('public api', () => {
         'readConfig',
         'approvalUrlOf',
         'createLogger',
-        'createModelRegistry',
-        'installDefaultProvider',
-        'resolveModels',
         'runHooks',
         'throwIfStopped',
         'envString',
@@ -54,9 +62,15 @@ describe('public api', () => {
         'inject',
         'tryInject',
         'agentPermission',
+        'resolveModel',
+        'checkAgentModel',
     ])('exports %s', (name) => {
         expect(app).toHaveProperty(name);
         expect(app[name as keyof typeof app]).toBeTypeOf('function');
+    });
+
+    it.each(['createModelRegistry', 'installDefaultProvider', 'resolveModels'])('does not export %s', (name) => {
+        expect(app).not.toHaveProperty(name);
     });
 
     it.each(['cron', 'http', 'webhook'])('exports the %s subscription builder', (name) => {
@@ -89,10 +103,10 @@ describe('public api', () => {
             'CONTEXT',
             'DATA_SOURCE',
             'ENGINE',
+            'GIT_CREDENTIALS',
             'HTTP_ROUTES',
             'LIFECYCLE_HOOKS',
             'LOGGER',
-            'MODEL_CHECK',
             'SERVER',
             'SHUTDOWN',
             'STORE',
@@ -130,6 +144,13 @@ describe('public api', () => {
             'openai',
             'xai',
         ]);
+    });
+
+    it('exports the inspect report types', () => {
+        expectTypeOf<IApp['inspect']>().returns.resolves.toEqualTypeOf<AppReport>();
+        expectTypeOf<AppReport['agents']>().toEqualTypeOf<AgentReport[]>();
+        expectTypeOf<AppReport['providers']>().toEqualTypeOf<ProviderReport[]>();
+        expect(app.createApp({}).inspect).toBeTypeOf('function');
     });
 
     it('exports the app brand', () => {
@@ -208,6 +229,7 @@ describe('package.json', () => {
             '@ai-sdk/google',
             '@ai-sdk/mistral',
             '@ai-sdk/openai',
+            '@ai-sdk/openai-compatible',
             '@ai-sdk/xai',
             '@authup/core-http-kit',
             '@authup/server-adapter-kit',

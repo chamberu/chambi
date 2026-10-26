@@ -14,7 +14,9 @@ import {
     expect,
     it,
 } from 'vitest';
-import { SandboxError, ValidationError } from '@chamvi/core';
+import { Buffer } from 'node:buffer';
+import type { ToolSet } from 'ai';
+import { SandboxError, ValidationError, artifactFilePart } from '@chamvi/core';
 import type { GitFixture } from '@chamvi/test-kit';
 import { createFixture, setupCoding } from '../../utils/setup.ts';
 import type { CodingSetup } from '../../utils/setup.ts';
@@ -85,7 +87,119 @@ describe('read_file', () => {
     });
 });
 
+/** A 1x1 PNG. */
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+
+/** What the model gets for a tool result, through the tool's toModelOutput. */
+function modelOutput(tools: ToolSet, name: string, output: unknown): unknown {
+    const toModelOutput = tools[name]?.toModelOutput as ((options: unknown) => unknown) | undefined;
+    return toModelOutput?.({
+        toolCallId: 'call-1', 
+        input: {}, 
+        output, 
+    });
+}
+
+describe('read_file: binary files and images', () => {
+    it('reads a binary file as base64', async () => {
+        const bytes = new Uint8Array([0, 1, 2, 255, 254]);
+        await s.workspace.writeFile('bin/data.bin', bytes);
+        await expect(s.call('read_file', { path: 'bin/data.bin', encoding: 'base64' })).resolves.toEqual({
+            path: 'bin/data.bin',
+            encoding: 'base64',
+            content: Buffer.from(bytes).toString('base64'),
+            bytes: 5,
+        });
+    });
+
+    it('refuses base64 reads above 1 MiB', async () => {
+        await s.workspace.writeFile('big.bin', new Uint8Array(1_048_577));
+        await expect(s.call('read_file', { path: 'big.bin', encoding: 'base64' })).rejects.toThrow(ValidationError);
+    });
+
+    it('tells the model to use base64 for a file that is not UTF-8', async () => {
+        await s.workspace.writeFile('latin1.txt', new Uint8Array([0x61, 0xFF, 0x62]));
+        const error = await s.call('read_file', { path: 'latin1.txt' }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).toContain("encoding: 'base64'");
+    });
+
+    it('stores an image as a run artifact and shows it to the model through its marker', async () => {
+        await s.workspace.writeFile('img/logo.png', PNG);
+        const result = await s.call<{ artifactId: string }>('read_file', { path: 'img/logo.png' });
+        expect(result).toEqual({
+            path: 'img/logo.png',
+            type: 'image',
+            mediaType: 'image/png',
+            bytes: PNG.length,
+            artifactId: expect.any(String),
+        });
+        // the step and the checkpoints keep the id only, never the bytes
+        expect(JSON.stringify(result)).not.toContain(PNG.toString('base64'));
+        const stored = await s.artifacts.get(result.artifactId);
+        expect(stored?.artifact).toMatchObject({
+            mediaType: 'image/png', 
+            filename: 'logo.png', 
+            size: PNG.length, 
+        });
+        expect(Buffer.from(stored!.data).equals(PNG)).toBe(true);
+        expect(modelOutput(s.tools, 'read_file', result)).toEqual({
+            type: 'content',
+            value: [
+                { type: 'text', text: `Image img/logo.png (image/png, ${PNG.length} bytes).` },
+                artifactFilePart({ id: result.artifactId, mediaType: 'image/png' }),
+            ],
+        });
+        const text = await s.call('read_file', { path: 'src/a.ts' });
+        expect(modelOutput(s.tools, 'read_file', text)).toEqual({ type: 'json', value: text });
+    });
+
+    it('refuses an image above 5 MiB', async () => {
+        const big = new Uint8Array(5 * 1_048_576 + 1);
+        big.set(PNG.subarray(0, 8));
+        await s.workspace.writeFile('huge.png', big);
+        await expect(s.call('read_file', { path: 'huge.png' })).rejects.toThrow(SandboxError);
+    });
+
+    it('reads a text file past the former 1 MiB limit by range', async () => {
+        const line = `${'x'.repeat(99)}\n`;
+        await s.workspace.writeFile('large.txt', line.repeat(20_000));
+        await expect(s.call('read_file', {
+            path: 'large.txt', 
+            offset: 19_999, 
+            limit: 5, 
+        })).resolves.toMatchObject({
+            startLine: 19_999,
+            endLine: 20_000,
+            totalLines: 20_000,
+        });
+    });
+});
+
 describe('write_file', () => {
+    it('writes base64 content as bytes', async () => {
+        const bytes = new Uint8Array([0, 255, 10]);
+        await expect(s.call('write_file', {
+            path: 'out/b.bin',
+            content: Buffer.from(bytes).toString('base64'),
+            encoding: 'base64',
+        })).resolves.toEqual({ path: 'out/b.bin', bytes: 3 });
+        await expect(s.workspace.readBytes('out/b.bin')).resolves.toEqual(bytes);
+    });
+
+    it('refuses content that is not base64', async () => {
+        await expect(s.call('write_file', {
+            path: 'b.bin', 
+            content: 'not base64!', 
+            encoding: 'base64', 
+        })).rejects.toThrow(ValidationError);
+        await expect(s.call('write_file', {
+            path: 'b.bin', 
+            content: 'abc', 
+            encoding: 'hex', 
+        })).rejects.toThrow(ValidationError);
+    });
+
     it('creates nested files', async () => {
         await expect(s.call('write_file', { path: 'x/y.txt', content: 'hi' })).resolves.toEqual({ path: 'x/y.txt', bytes: 2 });
         await expect(s.workspace.readFile('x/y.txt')).resolves.toBe('hi');

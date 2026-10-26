@@ -34,7 +34,7 @@
 npm install @chamvi/app @chamvi/cli ai @ai-sdk/anthropic typeorm pg
 ```
 
-ESM only, Node.js `>=22`. `ai`, `typeorm` and `pg` are peer dependencies; the provider packages (`@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/google`, `@ai-sdk/mistral`, `@ai-sdk/xai`) are optional peers: install the ones you use. The optional modules ship with the package they configure (`npm install @chamvi/github` for `@chamvi/github/module`, ...), which peers on `@chamvi/app`.
+ESM only, Node.js `>=22`. `ai`, `typeorm` and `pg` are peer dependencies; the provider packages (`@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, `@ai-sdk/google`, `@ai-sdk/mistral`, `@ai-sdk/xai`) are optional peers: install the ones you use. The optional modules ship with the package they configure (`npm install @chamvi/github` for `@chamvi/github/module`, ...), which peers on `@chamvi/app`.
 
 The main entry re-exports `@chamvi/core` and the common part of `@chamvi/http` (`agentPermission`, `Permission`, the `Authenticator`, `Principal`, `HttpRoute*` and `StaticToken` types), so an agent repository imports one package.
 
@@ -53,8 +53,7 @@ import {
 
 const triage = defineAgent({
     name: 'triage',
-    // resolved through the installed provider package (@ai-sdk/anthropic, ANTHROPIC_API_KEY)
-    model: 'anthropic/claude-sonnet-5-5',
+    // no model: the app's default below
     instructions: 'Triage the reported issue: label it and summarize the next step.',
     channels: [
         // POST /agents/triage/runs, the UI and MCP
@@ -66,6 +65,8 @@ const triage = defineAgent({
 
 // chamvi start | run-job | migrate load this default export
 export default createApp({
+    // the default model; CHAMVI_MODEL overrides it, ANTHROPIC_API_KEY configures the provider
+    model: 'anthropic/claude-sonnet-5-5',
     agents: [triage],
     // tools write to it with ctx.channels.findOneOrFail('console').emit(...)
     modules: [consoleChannelModule()],
@@ -80,8 +81,9 @@ export default createApp({
 | `stop()` | first SIGTERM or SIGINT | memoized; aborts a start still setting up, tears every module down |
 | `runJob({ agent, subscription?, env? })` | `chamvi run-job <agent> [subscription]` | fires one cron subscription once and waits for its run (no channel started, no HTTP); `{ runId?, status, exitCode }` |
 | `migrate({ env? })` | `chamvi migrate` | migrates the store (`DATABASE_URL` required) and closes it |
+| `inspect({ env? })` | `chamvi doctor` | read-only: resolves the model settings and providers and checks every code and folder agent like a start would, without a store, an engine or any module; an `AppReport` (`ok`, sources per setting, never a secret) |
 
-`env` defaults to `process.env`. An app runs one lifecycle; a second one rejects with `app_in_use`. `isApp(value)` recognizes an app, also one of another installed copy of the package.
+`env` defaults to `process.env`. An app runs one lifecycle; a second one rejects with `app_in_use` (`inspect` is no lifecycle and may run any time). `isApp(value)` recognizes an app, also one of another installed copy of the package.
 
 ## Environment
 
@@ -103,7 +105,10 @@ Every variable is read once per lifecycle. An empty string counts as unset, inte
 | `CHAMVI_DRAIN_TIMEOUT_MS` | http shutdown | int | `30000` (`--dev` 5000) |
 | `CHAMVI_CLOSE_TIMEOUT_MS` | http shutdown | int | `5000` |
 | `CHAMVI_TOKENS` | static tokens | JSON `[{ "value", "id", "permissions": [] }]`, `value` at least 16 characters and unique | unset (`--dev`: one random `*` token, warned); required when no other authenticator is configured |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY` | models | string | unset; required when a model string names that provider (see [Models](#models)); `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` are passed on |
+| `CHAMVI_MODEL` | engine | `'<provider>/<model id>'` | the config file's `model`, else `createApp({ model })`; required when an agent has no model of its own |
+| `CHAMVI_CONFIG_FILE` | engine | path of a JSON file | unset: `./chamvi.json` when it exists |
+| `CHAMVI_PROVIDER_<NAME>_TYPE`, `_API_KEY`, `_BASE_URL`, `_HEADER_<HEADER>` | engine | type, secret, http(s) URL, secret | unset; each wins over the config file and code for provider `<name>` (see [Models](#models)) |
+| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY` | engine | string | unset; each creates the implicit provider of its type (`ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` set its base URL) unless a source declares that name |
 | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` (PEM, literal `\n` allowed), `GITHUB_WEBHOOK_SECRET` (comma-separated for rotation) | `githubModule` | string | required without options |
 | `GITHUB_INSTALLATION_ID`, `GITHUB_APP_SLUG`, `GITHUB_API_URL` | `githubModule` | int, slug, https URL | unset |
 | `OPENCLAW_BASE_URL`, `OPENCLAW_HOOKS_TOKEN`, `OPENCLAW_CHANNEL`, `OPENCLAW_TO` | `openclawModule` | URL, string, string, string | required without options |
@@ -112,7 +117,8 @@ Every variable is read once per lifecycle. An empty string counts as unset, inte
 | `CHAMVI_UI_AUTHUP_CLIENT_ID`, `CHAMVI_UI_AUTHUP_REALM_ID` | `uiModule` | string | unset (token login only); the authup login then needs `AUTHUP_URL` |
 | `CHAMVI_SANDBOX_PROVIDER` | `sandboxModule` | `local`, `docker`, `kubernetes` | the `provider` option, else `local` |
 | `CHAMVI_SANDBOX_NAMESPACE` | `sandboxModule` | string | required for `kubernetes` |
-| `CHAMVI_SANDBOX_IMAGE` | `sandboxModule` | image ref | `ghcr.io/chamvi/sandbox-node:24` |
+| `CHAMVI_SANDBOX_IMAGE` | `sandboxModule` | image ref | `ghcr.io/chamvi/sandbox-dev:trixie` |
+| `CHAMVI_DEPLOYMENT` | `sandboxModule` | label value | the `deployment` option, else `default` |
 
 The built-in modules read the lifecycle's `env` (`start({ env })`). The optional module factories read `options.env ?? process.env` **when they are called**, that is when the entry is imported, never `start({ env })`; a test configures them through their `env` option:
 
@@ -250,9 +256,19 @@ await harness.stop();
 
 ## Models
 
-A model string `'<provider>/<model>'` (the AI SDK's own form, split at the first `/`) resolves through an AI SDK provider registry of every installed built-in provider (`BUILTIN_PROVIDERS`), overridden by `createApp({ models })`. Every string model is checked at `start` and `runJob`, so a string never falls through to the Vercel Gateway: a provider package that is not installed or an API key that is not set throws `InvalidAgentDefinitionError` naming the package or the variable (the CLI exits 2). Agents with a `LanguageModel` object are not checked.
+An agent's `model` is optional: without one it takes the app's default. A model string `'<provider>/<model id>'` (split at the first `/`, so `router/cc/claude-opus-4-6` is provider `router`) resolves through the providers the app declares, never through the Vercel AI Gateway or the AI SDK's global provider; a `LanguageModel` object is used as is.
 
-The registry is installed as `globalThis.AI_SDK_DEFAULT_PROVIDER`, which is process-wide: two apps in one process share the first one's registry until it stops. A default provider set before `start` is left alone, and chamvi then checks no model strings.
+```bash
+CHAMVI_MODEL=anthropic/claude-sonnet-5-5            # the default model
+ANTHROPIC_API_KEY=...                               # the implicit provider "anthropic"
+CHAMVI_PROVIDER_ROUTER_TYPE=openai-compatible       # a named provider: 9router, OmniRoute, Ollama, vLLM, LiteLLM, OpenRouter
+CHAMVI_PROVIDER_ROUTER_BASE_URL=http://9router:20128/v1
+CHAMVI_PROVIDER_ROUTER_API_KEY=...
+```
+
+The same settings come from `createApp({ model, providers })` and a `chamvi.json` file (`CHAMVI_CONFIG_FILE`); env wins over the file, the file over code, per provider and field, and `createApp({ models })` (AI SDK provider objects by id) wins over all for its ids. An agent with no model and no default, or a string naming a provider that is not configured, fails `start` and `runJob` with `InvalidAgentDefinitionError` naming the variable to set (the CLI exits 2); a folder agent becomes a load issue instead. `chamvi doctor` (`app.inspect()`) prints what a start would use and refuse, without starting anything.
+
+See [Pick a Model](https://chamvi.dev/guide/models) for providers, secrets, gateways, the config file and the precedence rules.
 
 ## License
 

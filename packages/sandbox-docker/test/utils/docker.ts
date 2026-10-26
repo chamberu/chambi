@@ -6,12 +6,15 @@
  */
 
 import { PassThrough } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import type Docker from 'dockerode';
 import { describe, inject } from 'vitest';
 
 export type DockerContext = {
-    /** The sandbox image built from `images/sandbox-node` by the global setup. */
+    /** The sandbox image built from `images/sandbox-dev` by the global setup. */
     image: string;
+    /** The shared cache volume the tests use (removed by the global setup's teardown). */
+    cacheVolume: string;
 };
 
 declare module 'vitest' {
@@ -24,6 +27,15 @@ const context: DockerContext | undefined = inject('docker');
 
 /** The test image, `undefined` when Docker is not available. */
 export const dockerImage: string | undefined = context?.image;
+
+/**
+ * The provider options of the tests: the test image and the tests' own
+ * cache volume, so no run creates the host's default `chamvi-sandbox-cache`.
+ */
+export const dockerOptions = {
+    image: context?.image,
+    cache: { volume: context?.cacheVolume },
+};
 
 /** A `describe` that skips when the global setup found no Docker daemon. */
 export function describeDocker(name: string, fn: () => void): void {
@@ -79,4 +91,21 @@ export async function execInContainer(
         stdout: readStdout(),
         stderr: readStderr(),
     };
+}
+
+/**
+ * Builds the fixture `test/fixtures/<fixture>` as `tag`, its `BASE` build
+ * argument the test image (offline unless the Dockerfile names another base).
+ */
+export async function buildFixtureImage(docker: Docker, fixture: string, tag: string): Promise<void> {
+    const stream = await docker.buildImage(
+        { context: fileURLToPath(new URL(`../fixtures/${fixture}`, import.meta.url)), src: ['Dockerfile'] },
+        { t: tag, buildargs: { BASE: dockerImage as string } },
+    );
+    await new Promise<void>((resolve, reject) => {
+        docker.modem.followProgress(stream, (error: Error | null, output: Array<{ error?: string }>) => {
+            const failed = output.find((event) => typeof event.error === 'string');
+            if (error || failed) reject(error ?? new Error(failed!.error)); else resolve();
+        });
+    });
 }

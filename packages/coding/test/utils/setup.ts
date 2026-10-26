@@ -10,12 +10,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ToolSet } from 'ai';
 import { codingTools } from '@chamvi/coding';
+import type { CodingToolsOptions } from '@chamvi/coding';
+import type { IRunArtifacts } from '@chamvi/core';
 import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { IWorkspace, IWorkspaceManager } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import { createGitFixture } from '@chamvi/test-kit';
 import type { GitFixture } from '@chamvi/test-kit';
-import { callTool, toolContext } from './context.ts';
+import { callTool, createArtifacts, toolContext } from './context.ts';
 
 export const FIXTURE_FILES: Record<string, string> = {
     'src/a.ts': 'export const a = 1;\nexport const b = 2;\n',
@@ -29,6 +31,8 @@ export type CodingSetup = {
     manager: IWorkspaceManager;
     workspace: IWorkspace;
     tools: ToolSet;
+    /** The artifacts every call of run r1 shares. */
+    artifacts: IRunArtifacts;
     /** Calls a coding tool as run `runId` (default r1). */
     call<T = unknown>(name: string, input: unknown, runId?: string, abortSignal?: AbortSignal): Promise<T>;
     cleanup(): Promise<void>;
@@ -39,7 +43,7 @@ export function createFixture(): Promise<GitFixture> {
 }
 
 /** A manager over a local sandbox in a temp root, with run r1 holding a checkout of `fixture`. */
-export async function setupCoding(fixture: GitFixture): Promise<CodingSetup> {
+export async function setupCoding(fixture: GitFixture, options?: CodingToolsOptions): Promise<CodingSetup> {
     const root = await mkdtemp(join(tmpdir(), 'chamvi-coding-'));
     const manager = createWorkspaceManager({
         provider: createLocalSandbox({ root }),
@@ -47,13 +51,21 @@ export async function setupCoding(fixture: GitFixture): Promise<CodingSetup> {
         gcIntervalMs: 0,
     });
     const { workspace } = await manager.acquire('r1', { repo: fixture.url });
-    const tools = codingTools(manager);
+    const tools = codingTools(manager, options);
+    const artifacts = createArtifacts();
     return {
         root,
         manager,
         workspace,
         tools,
-        call: (name, input, runId, abortSignal) => callTool(tools, name, input, toolContext(runId ?? 'r1'), abortSignal),
+        artifacts,
+        call: (name, input, runId, abortSignal) => callTool(
+            tools,
+            name,
+            input,
+            toolContext(runId ?? 'r1', undefined, runId === undefined || runId === 'r1' ? artifacts : undefined),
+            abortSignal,
+        ),
         cleanup: async () => {
             await manager.close();
             await rm(root, { recursive: true, force: true });

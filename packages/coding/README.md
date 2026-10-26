@@ -51,7 +51,7 @@ export function createCodingAgent(model: LanguageModel, workspaces: IWorkspaceMa
         model,
         instructions: 'Check out the repository named in the payload, reproduce the reported bug ' +
             'with a failing test and answer with what you found and the diff.',
-        // create_workspace and dispose_workspace, then the seven coding tools
+        // create_workspace and dispose_workspace, then the coding tools
         tools: { ...workspaces.tools(), ...codingTools(workspaces) },
         hooks: {
             // every shell command waits for a human
@@ -74,19 +74,23 @@ The tools are plain tools you did not write, so the gate lives in the agent's `b
 
 ## Tools
 
-`codingTools(workspaces)` returns a plain AI SDK `ToolSet`. Paths are relative to the workspace root or start with `/workspace/`; anything that leaves the root is a tool error.
+`codingTools(workspaces, { outputLogMaxBytes? })` returns a plain AI SDK `ToolSet`. Paths are relative to the workspace root or start with `/workspace/`; anything that leaves the root is a tool error.
 
 | Tool | Input | Result |
 |---|---|---|
-| `read_file` | `{ path, offset?, limit?, workspace? }` | `{ path, content, startLine, endLine, totalLines, truncated }`: at most 2000 lines and 65 536 characters |
-| `write_file` | `{ path, content, workspace? }` | `{ path, bytes }`: replaces the file, creates missing directories |
+| `read_file` | `{ path, offset?, limit?, encoding?, workspace? }` | `{ path, content, startLine, endLine, totalLines, truncated }`: at most 2000 lines and 65 536 characters of a text file up to 16 MiB; `{ path, encoding: 'base64', content, bytes }` with `encoding: 'base64'` (at most 1 MiB); `{ path, type: 'image', mediaType, bytes, artifactId }` for a png, jpeg, gif or webp up to 5 MiB, stored as a run artifact, which the model gets as an image (steps and checkpoints keep the id only). Also reads the output logs of `bash` |
+| `write_file` | `{ path, content, encoding?, workspace? }` | `{ path, bytes }`: replaces the file (text, or bytes with `encoding: 'base64'`), creates missing directories |
 | `edit_file` | `{ path, oldString, newString, replaceAll?, workspace? }` | `{ path, replacements }`: `oldString` must match exactly once unless `replaceAll`. Calls of `edit_file` and `write_file` on one file run one after the other, so several edits of a file in one step all apply |
-| `grep` | `{ pattern, path?, ignoreCase?, limit?, workspace? }` | `{ matches: [{ path, line, text }], truncated }`: `git grep -E` over tracked and untracked files, git-ignored ones skipped; default 100, at most 500 matches, lines cut at 500 characters |
-| `list_files` | `{ path?, limit?, workspace? }` | `{ files, truncated }`: tracked and untracked, not ignored, sorted; default 1000, at most 5000 |
-| `bash` | `{ command, cwd?, timeoutMs?, workspace? }` | `{ exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, timedOut, durationMs }`: `sh -c` inside the workspace, 64 KiB per stream, default timeout 5 minutes, at most 30 |
+| `multi_edit` | `{ path, edits: [{ oldString, newString, replaceAll? }], workspace? }` | `{ path, edits, replacements }`: the edits in order on the file's content, nothing written when one fails |
+| `grep` | `{ pattern, path?, ignoreCase?, includeIgnored?, limit?, workspace? }` | `{ matches: [{ path, line, text }], truncated, engine }`: ripgrep when the image has it, else `git grep -E`, else `grep -rE` (one `grep` per file for BusyBox); tracked, untracked and hidden files, git-ignored ones with `includeIgnored`; default 100, at most 500 matches, lines cut at 500 characters |
+| `glob` | `{ pattern, path?, includeIgnored?, limit?, workspace? }` | `{ files, truncated }`: files matching a `**` pattern, sorted |
+| `list_files` | `{ path?, includeIgnored?, limit?, workspace? }` | `{ files, truncated }`: tracked and untracked, git-ignored ones with `includeIgnored`, sorted; default 1000, at most 5000 |
+| `bash` | `{ command, cwd?, timeoutMs?, background?, workspace? }` | `{ exitCode, stdout, stderr, stdoutTruncated, stderrTruncated, stdoutBytes, stderrBytes, stdoutLog, stderrLog, cwd, outputCapped, timedOut, durationMs }`: a shell (bash when present) that keeps its working directory and exported variables between calls; the whole output in `~/.chamvi/out/` (at most `outputLogMaxBytes` per stream, 64 MiB by default: past it the call is killed, `outputCapped: true`), the result showing the first 8 KiB and the last 24 KiB of a longer stream; default timeout 5 minutes, at most 30. With `background: true` `{ job, status: 'running', outputLog }` at once |
+| `bash_output` | `{ job, offset?, workspace? }` | `{ job, status, exitCode?, output, offset, nextOffset, size, truncated, outputCapped }`: a background job's output from a byte offset (at most 32 KiB) and its status (`running`, `exited`, `killed`, `lost`); a job whose output passes `outputLogMaxBytes` is killed (`outputCapped: true`) |
+| `bash_kill` | `{ job, workspace? }` | `{ job, status, exitCode? }`: stops the job and every process it started |
 | `git_diff` | `{ staged?, path?, workspace? }` | `{ status, diff, truncated }`: `git status --short` and the unified diff (of the index with `staged`) |
 
-`grep`, `list_files` and `git_diff` run git with `--literal-pathspecs`, so a path like `:!src` names a file and is never pathspec magic. A model mistake (an unknown file, an `oldString` that is missing or ambiguous, a bad path) comes back as a tool error it can correct; a broken sandbox is a `SandboxError` tool error, never a failed run.
+`git_diff`, `list_files` and `grep` (with git grep) read paths literally, so a path like `:!src` names a file and is never pathspec magic. A model mistake (an unknown file, an `oldString` that is missing or ambiguous, a bad path) comes back as a tool error it can correct; a broken sandbox is a `SandboxError` tool error, never a failed run.
 
 ## Workspaces
 
@@ -94,7 +98,7 @@ Every tool takes an optional `workspace` id (from `create_workspace`). Omitted, 
 
 ## Not effect tools
 
-`write_file`, `edit_file` and `bash` change state but are deliberately not effect tools. A workspace lives in one process and dies with it, while an effect record survives in the store: after a crash the redone step runs on a fresh workspace, where a recorded "applied" result would skip the write. Re-applying is safe instead: `write_file` is idempotent, `edit_file` fails with "oldString not found" when it already applied, and `bash` runs in a disposable sandbox. Nothing outside the workspace changes (no push).
+`write_file`, `edit_file`, `multi_edit` and `bash` change state but are deliberately not effect tools. A workspace lives in one process and dies with it, while an effect record survives in the store: after a crash the redone step runs on a fresh workspace, where a recorded "applied" result would skip the write. Re-applying is safe instead: `write_file` is idempotent, `edit_file` fails with "oldString not found" when it already applied, and `bash` runs in a disposable sandbox. Nothing outside the workspace changes (no push).
 
 ## Security
 
@@ -118,12 +122,13 @@ The package ships the contract only; backends are planned.
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `codingTools` | function | The seven coding tools over a workspace manager |
+| `codingTools` | function | The coding tools over a workspace manager |
 | `READ_MAX_LINES`, `READ_MAX_CHARS` | constant | `2_000`, `65_536` |
 | `SEARCH_MAX_RESULTS`, `LIST_MAX_RESULTS` | constant | `500`, `5_000` |
 | `LINE_MAX_CHARS` | constant | `500` |
+| `OUTPUT_LOG_MAX_BYTES` | constant | `64 * 1_048_576` (64 MiB), the default `outputLogMaxBytes` of `codingTools()` |
 
-Types: `CodingWorkspaces`, `ReadFileResult`, `WriteFileResult`, `EditFileResult`, `GrepMatch`, `GrepResult`, `ListFilesResult`, `GitDiffResult`, `ICodingBackend`, `CodingTask`, `CodingResult`, `CodingBudget`.
+Types: `CodingWorkspaces`, `CodingToolsOptions`, `ReadFileResult`, `ReadFileBinaryResult`, `ReadFileImageResult`, `WriteFileResult`, `EditFileResult`, `MultiEditResult`, `GrepEngine`, `GrepMatch`, `GrepResult`, `GlobResult`, `ListFilesResult`, `BashResult`, `BashJobResult`, `BashJobStatus`, `BashOutputResult`, `BashKillResult`, `GitDiffResult`, `ICodingBackend`, `CodingTask`, `CodingResult`, `CodingBudget`.
 
 ## License
 

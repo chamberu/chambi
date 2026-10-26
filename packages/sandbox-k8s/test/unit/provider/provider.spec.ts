@@ -25,9 +25,17 @@ const REPO = 'https://github.com/octo/demo.git';
 
 const pending = { phase: 'Pending' };
 
-const answerRevParse: FakeExecHandler = (argv) => (
-    unwrap(argv)[1] === 'rev-parse' ? { stdout: `${COMMIT}\n` } : {}
-);
+/** The image probe a create runs first, straight on the pod (no timeout wrapper). */
+const PROBE = ['sh', '-c', expect.stringContaining('command -v git')];
+
+/** HEAD for `rev-parse HEAD`; no remote branch of that name for `rev-parse -q --verify` (a tag). */
+const answerRevParse: FakeExecHandler = (argv) => {
+    const command = unwrap(argv);
+    if (command[1] !== 'rev-parse') return {};
+    return command[2] === '-q' ? { exitCode: 1 } : { stdout: `${COMMIT}\n` };
+};
+
+const NO_CREDENTIAL = ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null'];
 
 function setup(onExec: FakeExecHandler = answerRevParse, options: Partial<KubernetesSandboxOptions> = {}) {
     const clock = new ControllableClock(new Date(START));
@@ -78,13 +86,17 @@ describe('kubernetes sandbox', () => {
         const name = `chamvi-ws-${workspace.id}`;
         expect(client.created[0]!.metadata?.name).toBe(name);
         expect(client.created[0]!.metadata?.labels?.['chamvi.dev/run']).toBe('r1');
-        expect(client.execs.map((call) => call.name)).toEqual(Array(5).fill(name));
+        expect(client.execs.map((call) => call.name)).toEqual(Array(9).fill(name));
         expect(client.execs.map((call) => call.argv)).toEqual([
+            PROBE,
             wrapped(['git', 'init', '-q', '.']),
             wrapped(['git', 'remote', 'add', 'origin', REPO]),
-            wrapped(['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'v1']),
+            wrapped([...NO_CREDENTIAL, 'ls-remote', '--symref', REPO, 'HEAD']),
+            wrapped([...NO_CREDENTIAL, 'fetch', '-q', 'origin', 'v1']),
+            wrapped(['git', 'rev-parse', '-q', '--verify', 'refs/remotes/origin/v1']),
             wrapped(['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']),
             wrapped(['git', 'rev-parse', 'HEAD']),
+            wrapped(['git', 'config', 'chamvi.checkout', COMMIT]),
         ]);
         expect(workspace.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
         expect(workspace.info).toEqual({
@@ -93,8 +105,9 @@ describe('kubernetes sandbox', () => {
             repo: REPO,
             ref: 'v1',
             commit: COMMIT,
+            image: 'img',
             createdAt: new Date(START),
-            expiresAt: new Date(START + 1_800_000),
+            expiresAt: new Date(START + 604_800_000),
         });
         expect(client.deleted).toEqual([]);
     });
@@ -112,7 +125,11 @@ describe('kubernetes sandbox', () => {
             unwrap(argv)[0] === 'cat' ? { stdout: new TextDecoder().decode(input.stdin), exitCode: 3 } : {}
         ));
         const workspace = await provider.create({ runId: 'r1' });
-        expect(client.execs.map((call) => call.argv)).toEqual([wrapped(['git', 'init', '-q', '.'])]);
+        expect(client.execs.map((call) => call.argv)).toEqual([
+            PROBE,
+            wrapped(['git', 'init', '-q', '.']),
+            wrapped(['git', 'config', 'chamvi.checkout', 'none']),
+        ]);
         expect(workspace.info.commit).toBeUndefined();
 
         const result = await workspace.exec(['cat'], {
@@ -132,6 +149,66 @@ describe('kubernetes sandbox', () => {
             stdoutTruncated: false,
             timedOut: false,
         });
+    });
+
+    it('refuses an image without git before the checkout and deletes the pod', async () => {
+        const { client, provider } = setup((argv) => (argv[0] === 'sh' && argv.length === 3 ? { exitCode: 3, stdout: 'git\n' } : {}));
+        const error = await provider.create({ runId: 'r1', repo: REPO }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).toContain('image img lacks what a workspace needs: git.');
+        expect(client.execs).toHaveLength(1);
+        expect(client.deleted).toEqual([client.created[0]!.metadata!.name]);
+    });
+
+    it('pulls a model-chosen image if not present, the provider\'s own and the operator\'s as configured', async () => {
+        const { client, provider } = setup(answerRevParse, { imagePullPolicy: 'Always' });
+        await provider.create({ runId: 'r1' });
+        await provider.create({
+            runId: 'r2', 
+            image: 'python:3.13', 
+            imageRequested: true, 
+        });
+        await provider.create({ runId: 'r3', image: 'registry.local/acme/builder:2' });
+        await provider.create({
+            runId: 'r4', 
+            image: 'img', 
+            imageRequested: true, 
+        });
+        expect(client.created.map((pod) => pod.spec?.containers[0]?.imagePullPolicy)).toEqual(['Always', 'IfNotPresent', 'Always', 'Always']);
+        expect(client.created[1]!.spec?.containers[0]?.image).toBe('python:3.13');
+    });
+
+    it('passes the privilege, cache and tmp options to the pod', async () => {
+        const { client, provider } = setup(answerRevParse, {
+            user: { uid: 1000, gid: 1000 },
+            readOnlyRoot: true,
+            cache: { claimName: 'chamvi-cache' },
+            tmpSize: '2Gi',
+        });
+        await provider.create({ runId: 'r1' });
+        const { spec } = client.created[0]!;
+        expect(spec?.securityContext?.runAsUser).toBe(1000);
+        expect(spec?.containers[0]?.securityContext?.readOnlyRootFilesystem).toBe(true);
+        expect(spec?.volumes).toContainEqual({ name: 'cache', persistentVolumeClaim: { claimName: 'chamvi-cache' } });
+        expect(spec?.volumes).toContainEqual({ name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: '2Gi' } });
+    });
+
+    it.each([
+        ['a negative uid', { user: { uid: -1, gid: 0 } }],
+        ['a fractional gid', { user: { uid: 0, gid: 1.5 } }],
+        ['a user that is no object', { user: '0:0' }],
+        ['a readOnlyRoot that is no boolean', { readOnlyRoot: 1 }],
+        ['a cache without a claim', { cache: {} }],
+        ['an invalid claim name', { cache: { claimName: 'Not_A_Name' } }],
+        ['cache false', { cache: false }],
+        ['a bad tmpSize', { tmpSize: 'lots' }],
+    ])('refuses %s', (_name, options) => {
+        expect(() => createKubernetesSandbox({
+            namespace: 'agents', 
+            client: createFakePodClient(), 
+            ...options, 
+        } as never))
+            .toThrow(InvalidAgentDefinitionError);
     });
 
     it('fails fast on an image pull error', async () => {
@@ -194,7 +271,7 @@ describe('kubernetes sandbox', () => {
 
     it('disposes a failed checkout', async () => {
         const { client, provider } = setup((argv) => (
-            unwrap(argv)[3] === 'fetch' ?
+            unwrap(argv).includes('fetch') ?
                 { exitCode: 128, stderr: "fatal: couldn't find remote ref nope\n" } :
                 {}
         ));
@@ -307,15 +384,16 @@ describe('kubernetes sandbox', () => {
             runId: 'r1',
             image: 'other',
             env: { B: '2' },
-            limits: { cpu: '2', timeoutMs: 60_000 },
+            limits: { cpu: '2', maxLifetimeMs: 60_000 },
         });
 
         const pod = client.created[0]!;
         const container = pod.spec!.containers[0]!;
         expect(pod.metadata?.namespace).toBe('agents');
         expect(pod.metadata?.labels?.team).toBe('x');
-        expect(pod.spec?.activeDeadlineSeconds).toBe(60);
+        expect(pod.metadata?.annotations?.['chamvi.dev/expires-at']).toBe(String(START + 60_000));
         expect(container.image).toBe('other');
+        // an image the model did not ask for follows the configured policy
         expect(container.imagePullPolicy).toBe('Always');
         expect(container.resources?.limits).toEqual({
             cpu: '2',
@@ -380,6 +458,8 @@ describe('kubernetes sandbox', () => {
     it.each([
         'chamvi.dev/run',
         'chamvi.dev/workspace',
+        'chamvi.dev/deployment',
+        'chamvi.dev/repo-key',
         'app.kubernetes.io/managed-by',
         'app.kubernetes.io/component',
     ])('rejects podLabels that override %s', (key) => {
@@ -417,5 +497,107 @@ describe('kubernetes sandbox', () => {
         await expect(provider.create({ runId: '' })).rejects.toThrow(/runId/);
         await expect(provider.create({ runId: 'r1', env: { 'A B': 'x' } })).rejects.toBeInstanceOf(InvalidAgentDefinitionError);
         expect(client.created).toHaveLength(0);
+    });
+
+    describe('find', () => {
+        /** Answers the remote's default branch (main), else like answerRevParse. */
+        const answerCommit: FakeExecHandler = (argv, input) => {
+            if (unwrap(argv).includes('ls-remote')) return { stdout: `ref: refs/heads/main\tHEAD\n${COMMIT}\tHEAD\n` };
+            return answerRevParse(argv, input);
+        };
+
+        it('rebuilds a running pod\'s workspace in another provider from its labels and annotations', async () => {
+            const {
+                client, 
+                clock, 
+                provider, 
+            } = setup(answerCommit);
+            const created = await provider.create({
+                runId: 'r1', 
+                repo: REPO, 
+                ref: 'v1', 
+            });
+
+            const replica = createKubernetesSandbox({
+                namespace: 'agents',
+                image: 'img',
+                client,
+                clock,
+            });
+            client.selectors.length = 0;
+            const found = await replica.find('r1');
+            expect(client.selectors).toEqual(['app.kubernetes.io/managed-by=chamvi,app.kubernetes.io/component=sandbox,chamvi.dev/deployment=default,chamvi.dev/run=r1']);
+            expect(found.map((workspace) => workspace.id)).toEqual([created.id]);
+            expect(created.info.defaultBranch).toBe('main');
+            expect(found[0]!.info).toEqual(created.info);
+            await expect(found[0]!.exec(['true'])).resolves.toMatchObject({ exitCode: 0 });
+            expect(client.execs.at(-1)!.name).toBe(`chamvi-ws-${created.id}`);
+        });
+
+        it('answers the instance it holds', async () => {
+            const { provider } = setup();
+            const workspace = await provider.create({ runId: 'r1' });
+            const [found] = await provider.find('r1');
+            expect(found).toBe(workspace);
+        });
+
+        it('never answers a held workspace past its expiry', async () => {
+            const { provider, clock } = setup();
+            const workspace = await provider.create({ runId: 'r1' });
+            clock.advance(workspace.info.expiresAt.getTime() - clock.now().getTime());
+            expect(await provider.find('r1')).toEqual([]);
+        });
+
+        it('skips pods that do not run, are being deleted, expired or belong to another deployment', async () => {
+            const {
+                client, 
+                clock, 
+                provider, 
+            } = setup();
+            const failed = await provider.create({ runId: 'r1' });
+            const deleting = await provider.create({ runId: 'r1' });
+            const expired = await provider.create({ runId: 'r1', limits: { maxLifetimeMs: 60_000 } });
+            await provider.create({ runId: 'r1', deployment: 'ci' });
+            const running = await provider.create({ runId: 'r1' });
+            client.pods.get(`chamvi-ws-${failed.id}`)!.status = { phase: 'Failed' };
+            client.pods.get(`chamvi-ws-${deleting.id}`)!.metadata!.deletionTimestamp = new Date();
+            clock.advance(60_000);
+
+            const replica = createKubernetesSandbox({
+                namespace: 'agents', 
+                client, 
+                clock, 
+            });
+            expect((await replica.find('r1')).map((workspace) => workspace.id)).toEqual([running.id]);
+            expect(expired.info.expiresAt.getTime()).toBe(START + 60_000);
+        });
+
+        it('skips a running pod whose create died before the checkout finished', async () => {
+            const {
+                client,
+                clock,
+                provider,
+            } = setup();
+            const half = await provider.create({ runId: 'r1', repo: REPO });
+            const done = await provider.create({ runId: 'r1' });
+            // the record a finished checkout writes last is missing
+            client.gitConfig.get(`chamvi-ws-${half.id}`)!.delete('chamvi.checkout');
+
+            const replica = createKubernetesSandbox({
+                namespace: 'agents',
+                client,
+                clock,
+            });
+            expect((await replica.find('r1')).map((workspace) => workspace.id)).toEqual([done.id]);
+            // left to the garbage collection
+            expect(client.deleted).toEqual([]);
+        });
+
+        it('finds nothing for a runId that is no label value, without a request', async () => {
+            const { client, provider } = setup();
+            expect(await provider.find('not a label!')).toEqual([]);
+            expect(client.selectors).toEqual([]);
+            await expect(provider.find('r1', { deployment: 'a b' })).rejects.toBeInstanceOf(ValidationError);
+        });
     });
 });

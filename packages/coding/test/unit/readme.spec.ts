@@ -47,12 +47,19 @@ describe('README example', () => {
 
         expect(Object.keys(agent.definition.tools as object).sort()).toEqual([
             'bash',
+            'bash_kill',
+            'bash_output',
             'create_workspace',
             'dispose_workspace',
             'edit_file',
             'git_diff',
+            'git_fetch',
+            'git_pull',
+            'git_push',
+            'glob',
             'grep',
             'list_files',
+            'multi_edit',
             'read_file',
             'write_file',
         ]);

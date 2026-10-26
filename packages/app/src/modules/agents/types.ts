@@ -16,7 +16,10 @@ export type AgentsWatcherOptions = {
     engine: Engine;
     /** The code agents' names: a folder of such a name is an issue, never loaded or removed. */
     codeNames: ReadonlySet<string>;
-    /** The checks a folder agent passes before it is registered (model, `AGENT_CHECKS`): a throw is a load issue. */
+    /**
+     * The checks a folder agent passes before it is registered (`AGENT_CHECKS`;
+     * `putAgent` then refuses a model that cannot resolve): a throw is a load issue.
+     */
     check: AgentCheck;
     clock: IClock;
     logger: ILogger;

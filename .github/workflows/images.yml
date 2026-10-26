@@ -26,6 +26,56 @@ concurrency:
     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+    sandbox-dev:
+        name: sandbox-dev
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v7
+
+            - name: Smoke test
+              run: |
+                  set -eu
+                  IMAGE=sandbox-dev:smoke
+                  docker build -t "$IMAGE" images/sandbox-dev
+                  # root, tini, /workspace, the tools every workspace needs (timeout with -k)
+                  test "$(docker run --rm "$IMAGE" id -u)" = "0"
+                  test "$(docker image inspect -f '{{json .Config.Entrypoint}}' "$IMAGE")" = '["/usr/bin/tini","--"]'
+                  test "$(docker image inspect -f '{{.Config.WorkingDir}}' "$IMAGE")" = '/workspace'
+                  docker run --rm "$IMAGE" sh -c 'git --version && timeout -k 1 5 true && curl --version >/dev/null && rg --version && jq --version && cc --version >/dev/null && unzip -v >/dev/null && mise --version'
+                  # no language toolchain is baked in
+                  docker run --rm "$IMAGE" sh -c '! command -v node && ! command -v python3'
+                  # the providers' capability set: apt and mise work as root, a toolchain lands in /cache
+                  docker run --rm --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add FSETID \
+                      --cap-add SETUID --cap-add SETGID --cap-add KILL --security-opt no-new-privileges:true "$IMAGE" \
+                      sh -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends file >/dev/null && file --version && mise use -g node@22 && node --version && test -d /cache/mise/installs/node'
+                  # the hardened mode: uid 1000 on a read-only root writes /workspace, HOME and /cache
+                  docker run --rm --user 1000:1000 --read-only --tmpfs /tmp -v /workspace -v /home/sandbox -v /cache "$IMAGE" \
+                      sh -c 'touch /workspace/probe && mkdir -p /cache/npm /home/sandbox/.cargo && touch /tmp/probe && mise reshim && test -d "$MISE_SHIMS_DIR"'
+                  echo 'smoke ok'
+
+            # trixie-<short sha> only for the push of a commit: a scheduled or
+            # manual rebuild of the same commit would move it to a new digest
+            - name: Tags
+              id: tags
+              run: |
+                  {
+                      echo 'list<<TAGS'
+                      echo 'trixie'
+                      if [ "$GITHUB_EVENT_NAME" = 'push' ]; then echo "trixie-$(git rev-parse --short HEAD)"; fi
+                      echo 'TAGS'
+                  } >> "$GITHUB_OUTPUT"
+
+            - name: Publish
+              if: github.event_name != 'pull_request'
+              uses: tada5hi/craneship@v4
+              with:
+                  dockerFilePath: images/sandbox-dev
+                  registryRepository: chamvi/sandbox-dev
+                  registryTag: ${{ steps.tags.outputs.list }}
+                  platforms: linux/amd64,linux/arm64
+
+    # deprecated: replaced by sandbox-dev, kept building for one release
     sandbox-node:
         name: sandbox-node
         runs-on: ubuntu-latest

@@ -25,6 +25,12 @@ export type TransportExecOptions = {
 
 export type TransportExecResult = {
     exitCode: number;
+    /**
+     * The connection closed before the stream ended (e.g. the daemon reset it
+     * after the command exited with stdin still queued): the output may be
+     * cut, so the workspace accepts the result only after the exit marker.
+     */
+    closed?: boolean;
 };
 
 /**

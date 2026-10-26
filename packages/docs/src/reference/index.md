@@ -150,6 +150,8 @@ class MemoryStore implements IStore {
 
 `isArtifactMediaType(value: unknown): value is string` is the media type rule `dispatch` and `artifacts.put()` apply: `type/subtype` (RFC 6838 restricted names) without parameters. An intake layer can check attachments with it before dispatching (`@chamvi/http` does).
 
+`artifactFilePart(artifact)` is the file item a tool's `toModelOutput` returns to show an artifact of the run to the model (an image it stored with `artifacts.put()`): its data is the artifact's marker, so the tool step and the checkpoints keep the id while the engine hands the model the bytes before each model call.
+
 See [Files](/guide/agents#files) and [Attachments](/guide/channels#attachments).
 
 ## Tools
@@ -182,6 +184,19 @@ function tryInject<T>(ctx: ToolContext, key: ContextKey<T>): T | undefined;
 `engine.provide(key, value)` (`Engine` implements `IContextProvider`) keeps the value by reference and refuses a foreign key, `undefined` and a second value for one key (`InvalidAgentDefinitionError` naming the key). `inject` reads the engine's values for the `ToolContext` the engine built for the execution (tool `execute`, the tools factory, `alreadyApplied`, `effectKey`); `ToolContext` (`{ run, state, artifacts, channels }`) gains no field for a provided value, and nothing provided is stored or serialized. A missing value is a tool error in `execute` and the effect hooks and fails the run in the factory. See [Context](/guide/tools#context-shared-instances-for-tools).
 
 <<< ../../../core/src/context/types.ts{ts}
+
+## Models
+
+```ts
+function resolveModel<S extends StateSchema = StateSchema>(ctx: ToolContext<S>, ref?: ModelRef): LanguageModel;
+function checkAgentModel(agent: Agent, options: ModelCheckOptions): void;      // InvalidAgentDefinitionError
+```
+
+A `ModelRef` is a `'<provider>/<model id>'` string or an AI SDK `LanguageModel` object (used as is). An agent's `model` falls back to `EngineOptions.model`; the engine refuses an agent with neither, a ref of another shape, a string without `EngineOptions.models` (`IModelResolver`; pass a `LanguageModel` object then) and a string the resolver refuses, at construction and in `putAgent` (`checkAgentModel` is that check; a string default without a resolver is refused at construction too). Strings resolve through `models.resolve()` when an execution starts; the engine never hands the AI SDK a string. `@chamvi/app` passes both from its [model settings](/guide/models) (`CHAMVI_MODEL`, `chamvi.json`, `createApp({ model, providers })`).
+
+`resolveModel(ctx, ref?)` gives tool code (`execute`, the tools factory, the effect hooks) a model: `ref`, else the run's agent model from the live registry, else the default. An object is returned as is; a string needs `models` (`resolveModel(): the model string "<ref>" needs a model resolver (EngineOptions.models).`) and a ref it cannot resolve is an `InvalidAgentDefinitionError` too, a tool error in `execute`. It reads the engine's models through the context mechanism, so `ToolContext` keeps its shape and a hand-built context throws `ContextNotProvidedError`.
+
+<<< ../../../core/src/model/types.ts#public{ts}
 
 ## Effect tools
 

@@ -5,7 +5,7 @@
 <h1 align="center">@chamvi/cli</h1>
 
 <p align="center">
-    <b>The chamvi command line: dev, build, start, run-job and migrate for an app built with <a href="https://www.npmjs.com/package/@chamvi/app">@chamvi/app</a>.</b>
+    <b>The chamvi command line: dev, build, start, run-job, migrate and doctor for an app built with <a href="https://www.npmjs.com/package/@chamvi/app">@chamvi/app</a>.</b>
 </p>
 
 <p align="center">
@@ -77,8 +77,9 @@ Relative imports carry `.ts` and there is no `enum`, so `chamvi dev` (Node's typ
 | `start` | `--entry` | Starts the app: store (and migrations), engine and its channels (cron among them), then HTTP |
 | `run-job` | `<agent>`, `[subscriptionId]`, `--entry` | Fires one cron subscription once and waits for its run (a Kubernetes CronJob; no channel is started); `subscriptionId` defaults to the agent's only cron subscription |
 | `migrate` | `--entry` | Migrates the Postgres store (`DATABASE_URL` required) |
+| `doctor` | `--entry`, `--dev` | Prints what a start would use and refuse, starting nothing (`app.inspect()`): the default model and its source, each provider (type, the source of each field, whether a key is set, base URL origin and path, header names; never a value) and each code and folder agent (its model, `ok` or its errors). Exits 0 when everything resolves, 2 otherwise, so it fits CI or a `kubectl exec`. `--dev` checks the source entry with `.env` loaded, as `dev` runs it. See [Pick a Model](https://chamvi.dev/guide/models) |
 
-The entry is `--entry`, else for the source commands (`dev`, `build`) the `package.json` field `"chamvi": { "entry": "<path>" }`, else `src/index.ts`. The built commands (`start`, `run-job`, `migrate`) never read that field and default to `dist/index.mjs`, so an image built from a repository that sets it still starts; a `.ts` entry runs through type stripping too. With none of them (no `--entry`, no `chamvi.entry`, no default file), `dev`, `start`, `run-job` and `migrate` run the default app, `createApp({})` configured by env alone, with its agents from `./agents` (or `CHAMVI_AGENTS_DIR`), and say so on stderr; `build` exits 2 (nothing to build). A missing `dist/index.mjs` beside a `src/index.ts` still exits 2 with the build hint.
+The entry is `--entry`, else for the source commands (`dev`, `build`, `doctor --dev`) the `package.json` field `"chamvi": { "entry": "<path>" }`, else `src/index.ts`. The built commands (`start`, `run-job`, `migrate`, `doctor`) never read that field and default to `dist/index.mjs`, so an image built from a repository that sets it still starts; a `.ts` entry runs through type stripping too. With none of them (no `--entry`, no `chamvi.entry`, no default file), `dev`, `start`, `run-job`, `migrate` and `doctor` run the default app, `createApp({})` configured by env alone, with its agents from `./agents` (or `CHAMVI_AGENTS_DIR`), and say so on stderr; `build` exits 2 (nothing to build). A missing `dist/index.mjs` beside a `src/index.ts` still exits 2 with the build hint.
 
 `chamvi dev` runs `start --dev`: the source entry, `.env` from the working directory (never overriding a set variable), a `MemoryStore` unless `DATABASE_URL` is set and, without another authenticator, one random `*` token, logged with a warning, and shorter timeouts (`CHAMVI_DRAIN_TIMEOUT_MS` 5000, `CHAMVI_FORCE_EXIT_MS` 15000).
 
@@ -86,9 +87,9 @@ The entry is `--entry`, else for the source commands (`dev`, `build`) the `packa
 
 | Code | When |
 |------|------|
-| `0` | Success: a clean stop, a built bundle, a migrated store; `run-job` for a completed, waiting, skipped, queued-behind-an-approval or signal-interrupted run |
+| `0` | Success: a clean stop, a built bundle, a migrated store, a `doctor` report without problems; `run-job` for a completed, waiting, skipped, queued-behind-an-approval or signal-interrupted run |
 | `1` | Runtime failure: a start, build or migrate error, a failed or cancelled job, a forced exit |
-| `2` | Usage or configuration: an unknown command or flag, an entry that is missing or no chamvi app, missing or invalid env (named, its value never echoed), a model string whose provider package or API key is missing |
+| `2` | Usage or configuration: an unknown command or flag, an entry that is missing or no chamvi app, missing or invalid env (named, its value never echoed), model settings with an issue, an agent with no model and no default or a model string whose provider is not configured or whose package is missing, a `doctor` report with a problem |
 
 The CLI sets `process.exitCode` and lets Node exit; it calls `process.exit()` only for a forced exit.
 

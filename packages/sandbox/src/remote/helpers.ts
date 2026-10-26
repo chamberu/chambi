@@ -12,8 +12,8 @@ import type { IOutputSink } from '../output/types.ts';
 import { ERROR_STDERR_MAX_LENGTH, EXEC_SCRIPT, TIMEOUT_KILL_AFTER_SECONDS } from './constants.ts';
 
 /**
- * `argv` behind GNU `timeout -k 5 <seconds>`, which signals the command's
- * whole process group. Seconds of the timeout rounded up to whole
+ * `argv` behind `timeout -k 5 <seconds>`: GNU `timeout` signals the
+ * command's whole process group, BusyBox `timeout` the command alone. Seconds of the timeout rounded up to whole
  * milliseconds, without trailing zeros (`1500` -> `'1.5'`).
  */
 export function wrapTimeout(argv: readonly string[], timeoutMs: number): string[] {
@@ -27,12 +27,14 @@ export function wrapTimeout(argv: readonly string[], timeoutMs: number): string[
 }
 
 /**
- * Whether `timeout` ended the command: exit 124 (TERM) or 137 (KILL after
- * the grace) once the timeout passed. A command exiting 124 by itself
- * before that is no timeout.
+ * Whether `timeout` ended the command once the timeout passed: exit 124
+ * (GNU `timeout` after its TERM), 137 (KILL after the grace) or 143 (the
+ * command's own death by TERM, as BusyBox `timeout` execs the command and
+ * signals it alone). A command exiting so by itself before that is no
+ * timeout.
  */
 export function isTimeoutExit(exitCode: number, durationMs: number, timeoutMs: number): boolean {
-    return (exitCode === 124 || exitCode === 137) && durationMs >= timeoutMs;
+    return (exitCode === 124 || exitCode === 137 || exitCode === 143) && durationMs >= timeoutMs;
 }
 
 /** UTF-8 text of `bytes`; a sequence the cap cut short is dropped. */

@@ -23,7 +23,6 @@ const sandbox = sandboxModule({
 
 const repro = defineAgent({
     name: 'repro',
-    model: 'anthropic/claude-sonnet-5-5',
     instructions: 'Reproduce the reported bug with a failing test and comment the result.',
     channels: [github.on('issues.labeled')],
     // each module provides its instance on the engine; a factory injects it per execution
@@ -51,6 +50,8 @@ const repro = defineAgent({
 });
 
 export default createApp({
+    // repro has no model of its own: it takes this default
+    model: 'anthropic/claude-sonnet-5-5',
     agents: [repro],
     modules: [
         // the github channel: deliveries at POST /channels/github, comments out

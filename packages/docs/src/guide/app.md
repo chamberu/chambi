@@ -1,6 +1,6 @@
 # Apps & Modules
 
-An agent repository is one entry file: `export default createApp({ agents, modules })`. [`@chamvi/app`](/reference/app) boots config, store, engine, channels and HTTP from environment variables and shuts them down in order; [`@chamvi/cli`](/reference/cli) turns that into a process with `chamvi dev | build | start | run-job | migrate`, signals and exit codes.
+An agent repository is one entry file: `export default createApp({ agents, modules })`. [`@chamvi/app`](/reference/app) boots config, store, engine, channels and HTTP from environment variables and shuts them down in order; [`@chamvi/cli`](/reference/cli) turns that into a process with `chamvi dev | build | start | run-job | migrate | doctor`, signals and exit codes.
 
 ```bash
 npm install @chamvi/app @chamvi/cli ai @ai-sdk/anthropic typeorm pg
@@ -37,9 +37,9 @@ npm install --save-dev tsdown   # only for chamvi build
 }
 ```
 
-## Model strings
+## Models
 
-An agent's `model` may be a string `'<provider>/<model>'`, the AI SDK's own form (`'openai/gpt-5'`); the provider is the part before the first `/`, so a model id may hold one (`'openrouter/meta-llama/llama-3.1'`). It resolves through an AI SDK provider registry of every installed provider package (`@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/google`, `@ai-sdk/mistral`, `@ai-sdk/xai`) with its key from env (`ANTHROPIC_API_KEY`, ...), overridden per provider by `createApp({ models })`. `start` and `runJob` check every string model first: a provider package that is not installed or a key that is not set throws `InvalidAgentDefinitionError` naming the package or the variable, and the CLI exits 2. A string never reaches the Vercel Gateway. A `LanguageModel` object is used as is.
+An agent's `model` is optional: without one it uses the app's default (`CHAMVI_MODEL`, `chamvi.json` or `createApp({ model })`). Model strings `'<provider>/<model id>'` resolve through the providers the app declares (env, `chamvi.json`, `createApp({ providers })`), never through the Vercel Gateway or the AI SDK's global provider; `chamvi doctor` checks them before a start. See [Pick a Model](/guide/models).
 
 ## Modules
 
@@ -50,7 +50,7 @@ Modules are [orkos](https://github.com/tada5hi/orkos) `IModule`s on an [eldin](h
 | `configModule()` | Reads every variable once ([environment](/reference/app#environment)) and registers the config, the clock and the JSON line logger |
 | `storeModule()` | A `TypeormStore` over `DATABASE_URL`, migrated unless `CHAMVI_MIGRATE=false`, plus the hourly `purgeExpired()`; without `DATABASE_URL` a `MemoryStore` (warned outside dev) |
 | `staticTokensModule()` | The `staticTokens()` authenticator from `CHAMVI_TOKENS` |
-| `engineModule()` | Checks the model strings, builds the `Engine` with every contributed channel (`AppToken.CHANNELS`) and starts it, which starts the channels |
+| `engineModule()` | Reads the [model settings](/guide/models) (env, `chamvi.json`, code) into the default model and the provider resolver, builds the `Engine` (which checks every agent's model) with every contributed channel (`AppToken.CHANNELS`) and starts it, which starts the channels |
 | `agentsModule()` | Loads the [agent folders](/guide/agent-folders) of `CHAMVI_AGENTS_DIR` (else `./agents` when it exists) before the engine starts and watches them; an app with no agent at all starts with a warning |
 | `schedulerModule()` | The `cron` channel (`cronChannel()` from `@chamvi/channel-cron`); `CHAMVI_SCHEDULER=false` leaves firing to Kubernetes CronJobs and `chamvi run-job` (`cron.on()` subscriptions still validate) |
 | `httpModule()` | The `http`, `mcp` and `webhook` channels, `createHttpApp()` with every contributed route and authenticator, mounting every contributed channel with an `in` at `/channels/<name>`, the graceful shutdown, `serve()` on `HOST`:`PORT` |
@@ -130,6 +130,7 @@ The optional module factories read `options.env ?? process.env` when they are ca
 
 ## Read next
 
+- [Pick a Model](/guide/models): the default model, providers, gateways and `chamvi doctor`
 - [`@chamvi/app` reference](/reference/app): every factory, option, token and variable
 - [`@chamvi/cli` reference](/reference/cli): commands, exit codes, signals and `dev`
 - [Deployment](/deployment/): the image, chart and template built on the CLI

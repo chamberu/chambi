@@ -11,6 +11,7 @@ import {
     readFile,
     readdir,
     rm,
+    stat,
     writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -27,6 +28,7 @@ import { InvalidAgentDefinitionError, SandboxError, ValidationError } from '@cha
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import { ControllableClock, createGitFixture } from '@chamvi/test-kit';
 import { KILL_GRACE_MS, LINGER_CHECK_MS } from '../../../src/provider/constants.ts';
+import { killLingeringJobs } from '../../../src/provider/exit.ts';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
@@ -81,6 +83,57 @@ describe('local sandbox', () => {
                 expect(workspace.info.ref).toBe('v1');
                 expect(workspace.info.provider).toBe('local');
                 expect(workspace.info.runId).toBe('r1');
+            } finally {
+                await workspace.dispose();
+            }
+        } finally {
+            await fixture.cleanup();
+        }
+    }, 30_000);
+
+    it('checks out a branch with its history, tracking origin, and the default branch next to it', async () => {
+        const fixture = await createGitFixture({ 'README.md': '# demo\n' });
+        try {
+            await fixture.git('switch', '-q', '-c', 'feature');
+            await fixture.git('commit', '-q', '--allow-empty', '-m', 'feature work');
+            await fixture.git('switch', '-q', 'main');
+            const provider = createLocalSandbox({ root });
+            const workspace = await provider.create({
+                runId: 'r1',
+                repo: fixture.url,
+                ref: 'feature',
+            });
+            try {
+                const git = async (...args: string[]) => (await workspace.exec(['git', ...args])).stdout.trim();
+                expect(workspace.info.defaultBranch).toBe('main');
+                expect(await git('log', '--format=%s')).toBe('feature work\nfixture');
+                expect(await git('rev-parse', '--abbrev-ref', 'HEAD')).toBe('feature');
+                expect(await git('rev-parse', '--abbrev-ref', '@{upstream}')).toBe('origin/feature');
+                expect(await git('rev-parse', 'origin/main')).toBe(fixture.commit);
+
+                const [found] = await createLocalSandbox({ root }).find('r1');
+                expect(found!.info.defaultBranch).toBe('main');
+                expect(found!.info.commit).toBe(workspace.info.commit);
+            } finally {
+                await workspace.dispose();
+            }
+        } finally {
+            await fixture.cleanup();
+        }
+    }, 30_000);
+
+    it('fetches only depth commits when asked', async () => {
+        const fixture = await createGitFixture({ 'README.md': '# demo\n' });
+        try {
+            await fixture.git('commit', '-q', '--allow-empty', '-m', 'second');
+            const workspace = await createLocalSandbox({ root }).create({
+                runId: 'r1',
+                repo: fixture.url,
+                checkout: { depth: 1 },
+            });
+            try {
+                const log = await workspace.exec(['git', 'log', '--format=%s']);
+                expect(log.stdout).toBe('second\n');
             } finally {
                 await workspace.dispose();
             }
@@ -216,6 +269,23 @@ describe('local sandbox', () => {
         }
     }, 30_000);
 
+    it('kills the background jobs of its open workspaces when the process exits, keeping the folders', async () => {
+        const workspace = await createLocalSandbox({ root }).create({ runId: 'r1' });
+        try {
+            const { stdout } = await workspace.exec(['sh', '-c', 'sleep 600 >/dev/null 2>&1 & echo $!']);
+            const job = Number(stdout.trim());
+            expect(isAlive(job)).toBe(true);
+            expect(process.listeners('exit')).toContain(killLingeringJobs);
+
+            killLingeringJobs();
+            await waitFor(async () => (isAlive(job) ? undefined : true), 5_000);
+            expect(workspace.disposed).toBe(false);
+            expect(await readdir(join(root, workspace.id))).toContain('workspace.json');
+        } finally {
+            await workspace.dispose();
+        }
+    }, 30_000);
+
     it('rejects an exec aborted while it checks its cwd', async () => {
         const workspace = await createLocalSandbox({ root }).create({ runId: 'r1' });
         try {
@@ -316,7 +386,7 @@ describe('local sandbox', () => {
         const workspace = await createLocalSandbox({
             root,
             clock,
-            limits: { timeoutMs: 60_000 },
+            limits: { maxLifetimeMs: 60_000 },
         }).create({ runId: 'r1' });
         try {
             expect(workspace.info.expiresAt.getTime() - workspace.info.createdAt.getTime()).toBe(60_000);
@@ -334,7 +404,7 @@ describe('local sandbox', () => {
         const workspace = await createLocalSandbox({
             root,
             clock,
-            limits: { timeoutMs: 2_000 },
+            limits: { maxLifetimeMs: 2_000 },
         }).create({ runId: 'r1' });
         try {
             const pending = workspace.exec(['sleep', '30'], { timeoutMs: 60_000 });
@@ -360,6 +430,22 @@ describe('local sandbox', () => {
         await workspace.dispose();
     });
 
+    it('kills its background jobs once it finds its directory gone, since nothing disposes it then', async () => {
+        const workspace = await createLocalSandbox({ root }).create({ runId: 'r1' });
+        const pidFile = join(tmp, 'pid');
+        try {
+            await workspace.exec(['sh', '-c', 'sleep 60 > /dev/null 2>&1 & echo $! > "$1"', 'sh', pidFile]);
+            const pid = Number((await readFile(pidFile, 'utf8')).trim());
+            expect(isAlive(pid)).toBe(true);
+
+            await rm(join(root, workspace.id), { recursive: true, force: true });
+            await expect(workspace.exec(['true'])).rejects.toThrow(/is gone/);
+            await waitFor(async () => (isAlive(pid) ? undefined : true), 2_000);
+        } finally {
+            await workspace.dispose();
+        }
+    }, 30_000);
+
     it('reads a vanished directory as gone on write and read too', async () => {
         const sandbox = createLocalSandbox({ root });
         const writer = await sandbox.create({ runId: 'r1' });
@@ -382,15 +468,28 @@ describe('local sandbox', () => {
 
     it('rejects invalid options', () => {
         expect(() => createLocalSandbox({ env: { 'A-B': 'x' } })).toThrow(InvalidAgentDefinitionError);
-        expect(() => createLocalSandbox({ limits: { timeoutMs: 10 } })).toThrow(InvalidAgentDefinitionError);
+        expect(() => createLocalSandbox({ limits: { maxLifetimeMs: 10 } })).toThrow(InvalidAgentDefinitionError);
         expect(() => createLocalSandbox({ root: '' })).toThrow(InvalidAgentDefinitionError);
     });
 
     it('writes the workspace record and removes the directory on dispose', async () => {
         const workspace = await createLocalSandbox({ root }).create({ runId: 'r1' });
         const record = JSON.parse(await readFile(join(root, workspace.id, 'workspace.json'), 'utf8'));
-        expect(record).toEqual({ runId: 'r1', expiresAt: workspace.info.expiresAt.toISOString() });
+        expect(record).toEqual({
+            runId: 'r1',
+            deployment: 'default',
+            createdAt: workspace.info.createdAt.toISOString(),
+            expiresAt: workspace.info.expiresAt.toISOString(),
+        });
         await workspace.dispose();
         expect(await readdir(root)).toEqual([]);
+    });
+
+    it('keeps the record, which holds the create env, readable by the owner only', async () => {
+        const workspace = await createLocalSandbox({ root }).create({ runId: 'r1', env: { NPM_TOKEN: 'npm_SECRET123' } });
+        const dir = join(root, workspace.id);
+        expect((await stat(dir)).mode & 0o777).toBe(0o700);
+        expect((await stat(join(dir, 'workspace.json'))).mode & 0o777).toBe(0o600);
+        await workspace.dispose();
     });
 });

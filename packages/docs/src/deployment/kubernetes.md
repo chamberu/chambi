@@ -33,13 +33,25 @@ Each agent repository gets:
 
 [`@chamvi/sandbox-k8s`](/reference/sandbox#chamvi-sandbox-k8s) ships today; only the chart that wires it up is planned. Untrusted code runs in one bare pod per workspace (`chamvi-ws-<id>`):
 
-- `runAsNonRoot` as uid 1000, seccomp `RuntimeDefault`, a read-only root filesystem, no capabilities, no privilege escalation
+- root (uid and gid 0) with a writable root filesystem, every capability dropped but `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID` and `KILL`, seccomp `RuntimeDefault`, no privilege escalation, not privileged; the hardened mode (`user: { uid: 1000, gid: 1000 }`, `readOnlyRoot: true`) runs non-root on a read-only root without any capability
 - `automountServiceAccountToken: false`, `enableServiceLinks: false`, no chamvi Secrets or environment
-- requests equal to limits for `cpu`, `memory` and `ephemeral-storage`; `/workspace` an emptyDir with a `sizeLimit`, `/tmp` a 512 MiB memory emptyDir; pids through the kubelet's `podPidsLimit`
-- `restartPolicy: Never` and `activeDeadlineSeconds` set to the workspace lifetime, so a pod stops itself at expiry
+- requests equal to limits for `cpu`, `memory` and `ephemeral-storage`; `/workspace` an emptyDir with a `sizeLimit`, `/tmp` a 1 GiB memory emptyDir (`tmpSize`), HOME `/home/sandbox` a disk emptyDir, `/cache` the ReadWriteMany claim of `cache: { claimName }` shared by every workspace (else an emptyDir per pod) with the package-cache variables pointing into it; pids through the kubelet's `podPidsLimit`
+- `restartPolicy: Never` and no `activeDeadlineSeconds`: a workspace pod lives as long as its run (through approval pauses and chamvi restarts) and is found again by label, up to the hard cap `limits.maxLifetimeMs` (7 days)
 - labels `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>` plus your `podLabels`; the expiry as the annotation `chamvi.dev/expires-at`
 
-Expired, failed and finished sandbox pods are garbage-collected by the provider. Run the pods in their own namespace and give chamvi's service account this Role there:
+### Pod Security
+
+The default pods run as root, which the Pod Security level `restricted` refuses; the capability set above is within `baseline`. Label the sandbox namespace `baseline`, never chamvi's own namespace:
+
+```bash
+kubectl label namespace agents-sandbox pod-security.kubernetes.io/enforce=baseline
+```
+
+Where a cluster allows only `restricted`, use the hardened mode: non-root with `runAsNonRoot` and `fsGroup`, a read-only root, no capability. `apt-get` then fails; toolchains still install into `/cache` with mise. A shared cache claim must honour `fsGroup` (NFS-style volume plugins ignore it) or be world-writable, else the hardened user cannot write it.
+
+A shared cache claim is shared trust: a malicious package one run fetched can sit in another run's cache (npm verifies integrity hashes, pip and Go's build cache less). Leave `cache` unset, or use one claim per trust level, where runs must not influence each other.
+
+Expired, failed and finished sandbox pods, and the pods of settled runs, are garbage-collected by the provider; each pod carries its `chamvi.dev/deployment` (`CHAMVI_DEPLOYMENT`), so deployments sharing a namespace leave each other's pods alone. Run the pods in their own namespace and give chamvi's service account this Role there:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1

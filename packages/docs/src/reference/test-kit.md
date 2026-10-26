@@ -25,12 +25,13 @@ See [Writing a Store](/stores/writing-a-store) for what the suite covers.
 ## describeWorkspaceContract
 
 ```ts
-function describeWorkspaceContract(name: string, factory: WorkspaceContractFactory): void;
+function describeWorkspaceContract(name: string, factory: WorkspaceContractFactory, options?: WorkspaceContractOptions): void;
 
-type WorkspaceContractFactory = () => Promise<ContractWorkspace>; // every IWorkspace is a ContractWorkspace
+type WorkspaceContractFactory = (input?: { runId?: string }) => Promise<ContractWorkspace>; // every IWorkspace is a ContractWorkspace
+type WorkspaceContractOptions = { find?: (runId: string) => Promise<ContractWorkspace[]> };
 ```
 
-Registers the Vitest suite every sandbox provider's workspaces must pass: argv exec and exit codes (127 for a command that cannot start), stdin, `cwd` and path escapes (`../..`, `/etc`, an empty path, a NUL byte), the 64 KiB output caps under a flood, a process-group kill on timeout that takes a backgrounded grandchild with it, abort, UTF-8 files and their size cap, and dispose during an exec. `factory` returns a fresh, repo-less workspace per test; the suite disposes it. It runs real processes with short real timeouts, not a `ControllableClock`.
+Registers the Vitest suite every sandbox provider's workspaces must pass: argv exec and exit codes (127 for a command that cannot start), stdin, `cwd` and path escapes (`../..`, `/etc`, an empty path, a NUL byte), the 64 KiB output caps under a flood, a process-group kill on timeout that takes a backgrounded grandchild with it, abort, UTF-8 files and their size cap, and dispose during an exec. `factory` returns a fresh, repo-less workspace per test (of `input.runId` when given); the suite disposes it. With `find` (a second provider instance's `find`, like a restarted process) it also creates a workspace, drops the handle and expects `find` to return it with its files. It runs real processes with short real timeouts, not a `ControllableClock`.
 
 ```ts
 describeWorkspaceContract('local', () => createLocalSandbox().create({ runId: 'r1' }));

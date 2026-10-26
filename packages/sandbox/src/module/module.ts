@@ -5,17 +5,32 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { AppToken, envOneOf, envString } from '@chamvi/app';
-import type { AppContext, IContainer, IModule } from '@chamvi/app';
-import { InvalidAgentDefinitionError } from '@chamvi/core';
+import {
+    AppToken,
+    envJson,
+    envOneOf,
+    envString,
+} from '@chamvi/app';
+import type {
+    AppContext,
+    Env,
+    GitCredentialSource,
+    IContainer,
+    IModule,
+} from '@chamvi/app';
+import { InvalidAgentDefinitionError, MemoryStore } from '@chamvi/core';
 import type { Engine } from '@chamvi/core';
 import { isObject } from 'smob';
 import { provideSandboxContext } from '../context/module.ts';
+import { staticGitCredentials } from '../credentials/module.ts';
+import type { IGitCredentials, StaticGitCredential } from '../credentials/types.ts';
+import { isTerminal } from '../manager/helpers.ts';
 import { createWorkspaceManager } from '../manager/module.ts';
 import type { IWorkspaceManager } from '../manager/types.ts';
 import { DEFAULT_SANDBOX_IMAGE } from '../provider/constants.ts';
 import type { ISandboxProvider } from '../provider/types.ts';
 import {
+    CREDENTIAL_MODES,
     SANDBOX_MODULE_NAME,
     SANDBOX_PROVIDER_IDS,
     SANDBOX_PROVIDER_NAMES,
@@ -36,7 +51,8 @@ import type {
  * Run-scoped workspaces (`.manager`, built when the factory is called). In
  * start and job mode `setup` loads the provider package and contributes the
  * lifecycle hook that attaches the manager to the engine and closes it after
- * the engine drained; migrate mode does nothing.
+ * the engine drained (disposing the held workspaces too when the store is a
+ * MemoryStore, whose runs no restart resumes); migrate mode does nothing.
  */
 export class SandboxModule implements IModule {
     readonly name: string = SANDBOX_MODULE_NAME;
@@ -46,6 +62,48 @@ export class SandboxModule implements IModule {
     protected lazy: LazyProvider | undefined;
 
     protected report: AppContext['report'] | undefined;
+
+    /** Set in `engineCreated`: answers `isSettled` for the garbage collection. */
+    protected engine: Engine | undefined;
+
+    /**
+     * True when the deployment was named (`CHAMVI_DEPLOYMENT` or the option):
+     * only then is a run this engine does not know settled, since several
+     * apps share the default deployment on one host.
+     */
+    protected ownsDeployment = false;
+
+    /** The sources other modules contribute to `AppToken.GIT_CREDENTIALS`, readable once `setup` ran. */
+    protected contributed: () => readonly GitCredentialSource[] = () => [];
+
+    /**
+     * The manager's sources: the `credentials` option, the tokens of
+     * `CHAMVI_GIT_TOKENS`, then the contributed ones (asked on each lookup,
+     * so modules set up after this one count too).
+     */
+    protected credentialSources(env: Env, credentials: SandboxModuleOptions['credentials']): IGitCredentials[] {
+        const sources = credentials === undefined ? [] : [credentials].flat();
+        const tokens = envJson(env, 'CHAMVI_GIT_TOKENS');
+        if (tokens !== undefined) {
+            try {
+                sources.push(staticGitCredentials(tokens as StaticGitCredential[]));
+            } catch (error) {
+                // the message names an entry and a rule, never a token
+                const message = error instanceof Error ? error.message.replace(/^staticGitCredentials\(\) ?/, '') : 'is invalid';
+                throw new InvalidAgentDefinitionError(`CHAMVI_GIT_TOKENS ${message}`);
+            }
+        }
+        sources.push({
+            get: async (input) => {
+                for (const source of this.contributed()) {
+                    const answer = await source.get(input);
+                    if (answer) return answer;
+                }
+                return undefined;
+            },
+        });
+        return sources;
+    }
 
     constructor(options: SandboxModuleOptions = {}) {
         const {
@@ -64,6 +122,8 @@ export class SandboxModule implements IModule {
         }
 
         const env = input ?? process.env;
+        const deployment = envString(env, 'CHAMVI_DEPLOYMENT') ?? managerOptions.deployment;
+        this.ownsDeployment = deployment !== undefined;
         const name = envOneOf(env, 'CHAMVI_SANDBOX_PROVIDER', SANDBOX_PROVIDER_NAMES) ??
             (typeof provider === 'string' ? provider : undefined);
 
@@ -86,12 +146,26 @@ export class SandboxModule implements IModule {
             target = this.lazy;
         }
 
-        this.manager = createWorkspaceManager({
-            ...managerOptions,
-            provider: target,
-            ...(workspaceEnv && { env: workspaceEnv }),
-            onError: managerOptions.onError ?? ((error) => this.reportError(error)),
-        });
+        const credentials = this.credentialSources(env, managerOptions.credentials);
+        const credentialMode = envOneOf(env, 'CHAMVI_GIT_CREDENTIAL_MODE', CREDENTIAL_MODES) ?? managerOptions.credentialMode;
+        try {
+            this.manager = createWorkspaceManager({
+                ...managerOptions,
+                credentials,
+                ...(credentialMode && { credentialMode }),
+                provider: target,
+                ...(workspaceEnv && { env: workspaceEnv }),
+                ...(deployment !== undefined && { deployment }),
+                isSettled: managerOptions.isSettled ?? ((runId) => this.isSettled(runId)),
+                onError: managerOptions.onError ?? ((error) => this.reportError(error)),
+            });
+        } catch (error) {
+            // name the variable, never echo its value
+            if (envString(env, 'CHAMVI_DEPLOYMENT') !== undefined && error instanceof InvalidAgentDefinitionError && /deployment/.test(error.message)) {
+                throw new InvalidAgentDefinitionError(`CHAMVI_DEPLOYMENT ${error.message.replace(/^deployment /, '')}`);
+            }
+            throw error;
+        }
     }
 
     async setup(container: IContainer): Promise<void> {
@@ -102,19 +176,24 @@ export class SandboxModule implements IModule {
 
         this.report = context.report;
         await this.lazy?.load();
+        // after every module's setup: the sources other modules contributed (githubModule()'s App)
+        this.contributed = () => container.resolveAll(AppToken.GIT_CREDENTIALS);
 
         let detach: (() => void) | undefined;
         container.registerMany(AppToken.LIFECYCLE_HOOKS, {
             useValue: {
                 name: SANDBOX_MODULE_NAME,
                 engineCreated: (engine: Engine) => {
+                    this.engine = engine;
                     detach = this.manager.attach(engine);
                     provideSandboxContext(engine, this.manager);
                 },
                 drained: async () => {
                     detach?.();
                     detach = undefined;
-                    await this.manager.close();
+                    // no run of a memory store resumes after this process: its
+                    // workspaces would only wait for maxLifetimeMs
+                    await this.manager.close({ dispose: this.engine?.store instanceof MemoryStore });
                 },
             },
         });
@@ -155,6 +234,19 @@ export class SandboxModule implements IModule {
             }
             throw error;
         }
+    }
+
+    /**
+     * A settled run, or with a named deployment also one that no longer
+     * exists: in the default deployment an unknown run may be another app's
+     * on the same host, so its workspaces stay until `maxLifetimeMs`. False
+     * before the engine exists.
+     */
+    protected async isSettled(runId: string): Promise<boolean> {
+        if (!this.engine) return false;
+        const run = await this.engine.getRun(runId);
+        if (!run) return this.ownsDeployment;
+        return isTerminal(run.status);
     }
 
     protected reportError(error: unknown): void {

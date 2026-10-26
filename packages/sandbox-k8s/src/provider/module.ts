@@ -14,18 +14,31 @@ import {
 } from '@chamvi/core';
 import {
     DEFAULT_SANDBOX_IMAGE,
+    DEPLOYMENT_LABEL,
+    RUN_LABEL,
     SANDBOX_LABEL_SELECTORS,
+    TMP_SIZE,
     WORKSPACE_LABEL,
     abortedCreate,
     assertCreateInput,
+    assertDeployment,
     buildWorkspaceInfo,
     collectionError,
     createRemoteWorkspace,
+    createSettledCheck,
     delay,
     prepareWorkspace,
+    probeImage,
+    readCheckout,
+    readWorkspaceInfo,
     resolveLimits,
 } from '@chamvi/sandbox';
-import type { ISandboxProvider, IWorkspace } from '@chamvi/sandbox';
+import type {
+    IExecTransport,
+    ISandboxProvider,
+    IWorkspace,
+    WorkspaceInfo,
+} from '@chamvi/sandbox';
 import { createPodClient } from '../client/module.ts';
 import { createPodTransport } from '../transport/module.ts';
 import {
@@ -49,10 +62,14 @@ const PROVIDER_NAME = 'k8s';
 const MANAGED_SELECTOR = SANDBOX_LABEL_SELECTORS.join(',');
 
 /**
- * One hardened pod per workspace (see `buildPod`), commands run through the
- * pod exec API inside GNU `timeout`. `create` waits for the pod to run
- * (polling its status on the clock, failing fast on image and config errors),
- * then checks out. Creating the provider contacts nothing.
+ * One pod per workspace (see `buildPod`: root with a writable root and a few
+ * capabilities by default, the hardened mode through `user` and
+ * `readOnlyRoot`), commands run through the pod exec API inside GNU
+ * `timeout`. `create` waits for the pod to run (polling its status on the
+ * clock, failing fast on image and config errors), probes the image
+ * (`probeImage`), then checks out. `find` lists a run's running pods by label and rebuilds
+ * the info from their labels and annotations; a pod that failed, finished
+ * or is being deleted is gone. Creating the provider contacts nothing.
  */
 export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISandboxProvider {
     assertKubernetesOptions(options);
@@ -64,6 +81,9 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
     });
     const image = options.image ?? DEFAULT_SANDBOX_IMAGE;
     const imagePullPolicy = options.imagePullPolicy ?? 'IfNotPresent';
+    const user = options.user ?? { uid: 0, gid: 0 };
+    const readOnlyRoot = options.readOnlyRoot ?? false;
+    const tmpSize = options.tmpSize ?? TMP_SIZE;
     const startTimeoutMs = options.startTimeoutMs ?? START_TIMEOUT_MS;
     const pollMs = options.pollMs ?? POLL_MS;
     const clock = options.clock ?? systemClock;
@@ -87,6 +107,33 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
         }
     }
 
+    /** The workspace of pod `chamvi-ws-<id>`, registered as live until disposed. */
+    function open(id: string, info: WorkspaceInfo, transport: IExecTransport = createPodTransport(client, `${POD_NAME_PREFIX}${id}`)): IWorkspace {
+        const remote = createRemoteWorkspace({
+            id,
+            info,
+            transport,
+            clock,
+        });
+        const workspace: IWorkspace = {
+            id,
+            info,
+            get disposed() {
+                return remote.disposed;
+            },
+            exec: remote.exec,
+            readFile: remote.readFile,
+            readBytes: remote.readBytes,
+            writeFile: remote.writeFile,
+            async dispose() {
+                await remote.dispose();
+                live.delete(id);
+            },
+        };
+        live.set(id, workspace);
+        return workspace;
+    }
+
     return {
         name: PROVIDER_NAME,
 
@@ -98,53 +145,47 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
             if (input.signal?.aborted) {
                 throw abortedCreate();
             }
+            const deployment = assertDeployment(input.deployment);
             const limits = resolveLimits(options.limits, input.limits);
 
             const id = randomUUID();
             const name = `${POD_NAME_PREFIX}${id}`;
-            const info = buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.timeoutMs);
-
-            const remote = createRemoteWorkspace({
-                id,
-                info,
-                transport: createPodTransport(client, name),
-                clock,
-            });
-            const workspace: IWorkspace = {
-                id,
-                info,
-                get disposed() {
-                    return remote.disposed;
-                },
-                exec: remote.exec,
-                readFile: remote.readFile,
-                writeFile: remote.writeFile,
-                async dispose() {
-                    await remote.dispose();
-                    live.delete(id);
-                },
+            const info = {
+                ...buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.maxLifetimeMs),
+                image: input.image ?? image,
             };
+            const transport = createPodTransport(client, name);
+            const workspace = open(id, info, transport);
 
             try {
-                live.set(id, workspace);
                 await client.create(buildPod({
                     id,
-                    runId: input.runId,
+                    deployment,
                     namespace,
-                    image: input.image ?? image,
+                    info,
                     env: { ...options.env, ...input.env },
                     limits,
-                    expiresAt: info.expiresAt,
                     labels: options.podLabels ?? {},
-                    imagePullPolicy,
+                    // an image a run asked for is pulled if not present; the provider's and the operator's follow the option
+                    imagePullPolicy: input.imageRequested === true && info.image !== image ? 'IfNotPresent' : imagePullPolicy,
+                    user,
+                    readOnlyRoot,
+                    ...(options.cache && { cacheClaim: options.cache.claimName }),
+                    tmpSize,
                 }));
                 await waitForRunning(name, input.signal);
-                const { commit } = await prepareWorkspace(workspace, {
+                await probeImage(transport, {
+                    image: info.image, 
+                    clock, 
+                    signal: input.signal, 
+                });
+                // the commit and the default branch, each only when known
+                Object.assign(info, await prepareWorkspace(workspace, {
+                    ...input.checkout,
                     repo: input.repo,
                     ref: input.ref,
                     signal: input.signal,
-                });
-                if (commit !== undefined) info.commit = commit;
+                }));
             } catch (error) {
                 // deleting a pod that was never created is a 404, which is fine
                 await workspace.dispose().catch(() => undefined);
@@ -154,17 +195,57 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
             return workspace;
         },
 
-        async collectGarbage() {
-            const pods = await guard('list the workspace pods', () => client.list(MANAGED_SELECTOR));
+        async find(runId, findOptions = {}) {
+            const deployment = assertDeployment(findOptions.deployment);
+            // no pod can carry a run label that is no label value
+            if (!isLabelValue(runId)) return [];
+            const pods = await guard(
+                'list the workspace pods',
+                () => client.list(`${MANAGED_SELECTOR},${DEPLOYMENT_LABEL}=${deployment},${RUN_LABEL}=${runId}`),
+            );
+            const now = clock.now().getTime();
+            const found: IWorkspace[] = [];
+            for (const pod of pods) {
+                const labels = pod.metadata?.labels ?? {};
+                const id = labels[WORKSPACE_LABEL] ?? '';
+                const held = live.get(id);
+                if (held) {
+                    if (!held.disposed && held.info.expiresAt.getTime() > now) found.push(held);
+                    continue;
+                }
+                if (pod.metadata?.deletionTimestamp || podState(pod).state !== 'running') continue;
+                const info = readWorkspaceInfo({ ...pod.metadata?.annotations, ...labels }, PROVIDER_NAME);
+                if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
+                const workspace = open(id, info);
+                const checkout = await readCheckout(workspace, findOptions.signal, clock);
+                if (!checkout) {
+                    // a create that died before its checkout finished: left to the collection
+                    live.delete(id);
+                    continue;
+                }
+                Object.assign(info, checkout);
+                found.push(workspace);
+            }
+            return found;
+        },
+
+        async collectGarbage(gcOptions = {}) {
+            const deployment = assertDeployment(gcOptions.deployment);
+            const pods = await guard('list the workspace pods', () => client.list(`${MANAGED_SELECTOR},${DEPLOYMENT_LABEL}=${deployment}`));
             const now = clock.now().getTime();
             let count = 0;
             // one pod that cannot go never keeps the others
             const failures: unknown[] = [];
+            const isSettled = createSettledCheck(gcOptions.isSettled);
             for (const pod of pods) {
                 const name = pod.metadata?.name;
                 if (!name) continue;
                 const phase = pod.status?.phase;
-                if (!isExpired(pod, now) && phase !== 'Failed' && phase !== 'Succeeded') continue;
+                if (!isExpired(pod, now) && phase !== 'Failed' && phase !== 'Succeeded') {
+                    const answer = await isSettled(pod.metadata?.labels?.[RUN_LABEL] ?? '');
+                    if (answer instanceof SandboxError) failures.push(answer);
+                    if (answer !== true) continue;
+                }
 
                 // one open here is disposed, so its in-flight commands settle too
                 const workspace = live.get(pod.metadata?.labels?.[WORKSPACE_LABEL] ?? '');

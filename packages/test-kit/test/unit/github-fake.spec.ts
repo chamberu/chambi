@@ -82,4 +82,22 @@ describe('createFakeGithub', () => {
         const reason = new Error('gone');
         await expect(fake.fetch('https://api.github.com/rate_limit', { signal: AbortSignal.abort(reason) })).rejects.toBe(reason);
     });
+
+    it('finds the installation of a repository with an App JWT and answers users without credentials', async () => {
+        const clock = new ControllableClock(new Date('2026-10-21T09:00:00Z'));
+        const fake = createFakeGithub({ appId: '123', clock });
+        fake.installations.set('octo/demo', 42);
+        fake.users.set('chamvi-test[bot]', 7);
+        const jwt = { authorization: `Bearer ${appJwt(fake.privateKey, '123', clock.now())}` };
+        const found = await fake.fetch('https://api.github.com/repos/Octo/Demo/installation', { headers: jwt });
+        expect(await found.json()).toEqual({ id: 42 });
+        expect((await fake.fetch('https://api.github.com/repos/octo/other/installation', { headers: jwt })).status).toBe(404);
+        expect((await fake.fetch('https://api.github.com/repos/octo/demo/installation')).status).toBe(401);
+        const user = await fake.fetch('https://api.github.com/users/chamvi-test%5Bbot%5D');
+        expect(await user.json()).toEqual({
+            login: 'chamvi-test[bot]', 
+            id: 7, 
+            type: 'Bot', 
+        });
+    });
 });

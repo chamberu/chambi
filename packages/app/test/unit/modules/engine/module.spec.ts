@@ -9,11 +9,18 @@ import {
     InvalidAgentDefinitionError,
     MemoryStore,
     defineAgent,
+    defineTool,
+    resolveModel,
 } from '@chamvi/core';
 import { http, httpChannel } from '@chamvi/http';
-import type { Agent, Engine, IChannel } from '@chamvi/core';
+import type {
+    Agent,
+    Engine,
+    IChannel,
+    ModelRef,
+} from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { customProvider } from 'ai';
+import { customProvider, generateText, jsonSchema } from 'ai';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
 import {
@@ -34,7 +41,7 @@ import type { AppMode, ILifecycleHook } from '@chamvi/app';
 import { buildHarness } from '../../../utils/harness.ts';
 import type { Harness } from '../../../utils/harness.ts';
 import { createRecordingLogger } from '../../../utils/logger.ts';
-import { textModel } from '../../../utils/model.ts';
+import { approvalModel, textModel } from '../../../utils/model.ts';
 
 
 function agentWith(model: Agent['definition']['model'], extra: Partial<Parameters<typeof defineAgent>[0]> = {}): Agent {
@@ -61,7 +68,6 @@ let harnesses: Harness[] = [];
 afterEach(async () => {
     await Promise.all(harnesses.map((h) => h.stop()));
     harnesses = [];
-    globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
 });
 
 function build(options: {
@@ -70,6 +76,7 @@ function build(options: {
     env?: Record<string, string>;
     modules?: IModule[];
     models?: Record<string, ReturnType<typeof customProvider>>;
+    model?: ModelRef;
     store?: MemoryStore;
 }) {
     const clock = new ControllableClock(new Date('2026-10-21T00:00:00Z'));
@@ -79,6 +86,7 @@ function build(options: {
         env: { ...options.env },
         agents: options.agents,
         models: options.models,
+        model: options.model,
         modules: [
             configModule({ clock, logger }),
             storeModule(options.store ? { store: options.store } : {}),
@@ -154,7 +162,6 @@ describe('engineModule', () => {
         await harness.setup();
 
         expect(harness.container.has(AppToken.ENGINE)).toBe(false);
-        expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toBeUndefined();
     });
 
     it('channels come from every CHANNELS contribution', async () => {
@@ -225,43 +232,150 @@ describe('engineModule', () => {
         expect(events).toEqual(['engineCreated:1', 'start', 'drain', 'drained']);
     });
 
-    it('a string model is checked at setup', async () => {
-        const agent = agentWith('anthropic/m');
-        const { harness } = build({ agents: [agent] });
-        const error = await rejectionOf(harness.setup());
-        expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
-        expect(error.message).toContain('ANTHROPIC_API_KEY');
-        expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toBeUndefined();
-
+    it('a string model resolves through models', async () => {
         const model = textModel('from fake');
-        const fake = build({
-            agents: [agent],
+        const { harness } = build({
+            agents: [agentWith('anthropic/m')],
             models: { anthropic: customProvider({ languageModels: { m: model } }) },
         });
-        await fake.harness.setup();
+        await harness.setup();
 
-        const engine = fake.harness.container.resolve(AppToken.ENGINE);
+        const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
         await engine.idle();
 
         expect((await engine.getRun(runId))?.output).toBe('from fake');
         expect(model.doStreamCalls).toHaveLength(1);
-
-        await fake.harness.stop();
-        expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toBeUndefined();
     });
 
-    it('a preset global provider skips the checks', async () => {
-        const model = textModel('from global');
-        const preset = customProvider({ languageModels: { 'anthropic/m': model } });
-        globalThis.AI_SDK_DEFAULT_PROVIDER = preset;
-
-        const { harness, logger } = build({ agents: [agentWith('anthropic/m')] });
+    it('CHAMVI_MODEL gives an agent without model its model', async () => {
+        const model = textModel('from default');
+        const { harness } = build({
+            agents: [agentWith(undefined)],
+            env: { CHAMVI_MODEL: 'test/m' },
+            models: { test: customProvider({ languageModels: { m: model } }) },
+        });
         await harness.setup();
 
-        expect(logger.entries.some((entry) => entry.level === 'debug' && entry.msg.includes('default provider'))).toBe(true);
-        await harness.stop();
-        expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toBe(preset);
+        const engine = harness.container.resolve(AppToken.ENGINE);
+        const { runId } = await dispatch(engine);
+        await engine.idle();
+
+        expect((await engine.getRun(runId))?.output).toBe('from default');
+    });
+
+    it('CHAMVI_MODEL overrides the code default', async () => {
+        const fromEnv = textModel('from env');
+        const fromCode = textModel('from code');
+        const { harness } = build({
+            agents: [agentWith(undefined)],
+            env: { CHAMVI_MODEL: 'test/env' },
+            model: 'test/code',
+            models: { test: customProvider({ languageModels: { env: fromEnv, code: fromCode } }) },
+        });
+        await harness.setup();
+
+        const engine = harness.container.resolve(AppToken.ENGINE);
+        const { runId } = await dispatch(engine);
+        await engine.idle();
+
+        expect((await engine.getRun(runId))?.output).toBe('from env');
+        expect(fromCode.doStreamCalls).toHaveLength(0);
+    });
+
+    it('a code default model serves an agent without model', async () => {
+        const { harness } = build({
+            agents: [agentWith(undefined)],
+            model: textModel('from code object'),
+        });
+        await harness.setup();
+
+        const engine = harness.container.resolve(AppToken.ENGINE);
+        const { runId } = await dispatch(engine);
+        await engine.idle();
+
+        expect((await engine.getRun(runId))?.output).toBe('from code object');
+    });
+
+    it('a code agent on an unconfigured provider fails setup naming the variable', async () => {
+        const { harness } = build({ agents: [agentWith('anthropic/m')] });
+        const error = await rejectionOf(harness.setup());
+        expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
+        expect(error.message).toContain('ANTHROPIC_API_KEY');
+        expect(error.message).toContain('CHAMVI_PROVIDER_ANTHROPIC_TYPE');
+    });
+
+    it('an agent without model and no default fails setup', async () => {
+        const { harness } = build({ agents: [agentWith(undefined)] });
+        const error = await rejectionOf(harness.setup());
+        expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
+        expect(error.message).toContain('CHAMVI_MODEL');
+    });
+
+    it('every settings issue fails setup in one error', async () => {
+        const { harness } = build({
+            agents: [agentWith(textModel())],
+            env: {
+                CHAMVI_PROVIDER_ROUTR_API_KEY: 'k',
+                CHAMVI_PROVIDER_LOCAL_TYPE: 'nope',
+            },
+        });
+        const error = await rejectionOf(harness.setup());
+        expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
+        expect(error.message).toContain('CHAMVI_PROVIDER_ROUTR_API_KEY');
+        expect(error.message).toContain('CHAMVI_PROVIDER_LOCAL_TYPE');
+        expect(error.message).not.toContain('"k"');
+    });
+
+    it('never touches the global provider', async () => {
+        const sentinel = customProvider({ languageModels: {} });
+        globalThis.AI_SDK_DEFAULT_PROVIDER = sentinel;
+        try {
+            const { harness } = build({
+                agents: [agentWith('test/m')],
+                models: { test: customProvider({ languageModels: { m: textModel() } }) },
+            });
+            await harness.setup();
+            expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toBe(sentinel);
+            await harness.stop();
+            expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toBe(sentinel);
+        } finally {
+            globalThis.AI_SDK_DEFAULT_PROVIDER = undefined;
+        }
+    });
+
+    it('a tool resolves a model string through the app resolver', async () => {
+        const inner = textModel('inner answer');
+        let answer: string | undefined;
+        const ask = defineTool({
+            description: 'asks another model',
+            inputSchema: jsonSchema<Record<string, never>>({ type: 'object', properties: {} }),
+            execute: async (_input, { context }) => {
+                const result = await generateText({ model: resolveModel(context, 'test/inner'), prompt: 'hi' });
+                answer = result.text;
+                return answer;
+            },
+        });
+        const { harness } = build({
+            agents: [agentWith('test/outer', { tools: { ask } })],
+            models: {
+                test: customProvider({
+                    languageModels: {
+                        outer: approvalModel('ask'),
+                        inner,
+                    },
+                }),
+            },
+        });
+        await harness.setup();
+
+        const engine = harness.container.resolve(AppToken.ENGINE);
+        const { runId } = await dispatch(engine);
+        await engine.idle();
+
+        expect((await engine.getRun(runId))?.status).toBe('completed');
+        expect(answer).toBe('inner answer');
+        expect(inner.doGenerateCalls).toHaveLength(1);
     });
 
     it('engine errors go to the logger', async () => {

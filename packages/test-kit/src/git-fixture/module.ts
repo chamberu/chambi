@@ -30,7 +30,8 @@ const run = promisify(execFile);
  * A temporary git repository with one commit of `files` (paths relative to
  * the repository, directories created) on branch `main`, tagged `v1`. The
  * user's and the system's git config are ignored, so signing or hooks
- * configured on the machine never get in the way.
+ * configured on the machine never get in the way; `git()` runs more git
+ * commands in it the same way.
  */
 export async function createGitFixture(files: Record<string, string>): Promise<GitFixture> {
     for (const name of Object.keys(files)) {
@@ -52,6 +53,12 @@ export async function createGitFixture(files: Record<string, string>): Promise<G
         GIT_COMMITTER_NAME: 'chamvi',
         GIT_COMMITTER_EMAIL: 'fixture@chamvi.dev',
         GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+        // one count per key: commits and tags are never signed
+        GIT_CONFIG_COUNT: '2',
+        GIT_CONFIG_KEY_0: 'commit.gpgsign',
+        GIT_CONFIG_VALUE_0: 'false',
+        GIT_CONFIG_KEY_1: 'tag.gpgsign',
+        GIT_CONFIG_VALUE_1: 'false',
     };
     const git = async (...args: string[]) => {
         const { stdout } = await run('git', args, { cwd: path, env });
@@ -74,6 +81,7 @@ export async function createGitFixture(files: Record<string, string>): Promise<G
             path,
             url: pathToFileURL(path).href,
             commit,
+            git,
             cleanup: () => rm(path, { recursive: true, force: true }),
         };
     } catch (error) {

@@ -37,7 +37,7 @@ describe('README example', () => {
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
-    it('runs a command in a run workspace and removes it on close', async () => {
+    it('runs a command in a run workspace, finds it again after close and removes it on release', async () => {
         const workspaces = createDevWorkspaces(root);
         const { workspace } = await workspaces.acquire('r1', {});
         const result = await workspace.exec(['echo', 'hi']);
@@ -45,6 +45,12 @@ describe('README example', () => {
         expect(result.stdout).toBe('hi\n');
 
         await expect(workspaces.close()).resolves.toBeUndefined();
+        expect(await readdir(root)).toEqual([workspace.id]);
+
+        // a restarted process finds the run's workspace and releases it
+        const restarted = createDevWorkspaces(root);
+        expect((await restarted.get('r1')).id).toBe(workspace.id);
+        await restarted.release('r1');
         expect(await readdir(root)).toEqual([]);
     });
 });
