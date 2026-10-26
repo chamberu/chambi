@@ -26,7 +26,7 @@ The container providers use `ghcr.io/chamvi/sandbox-dev:trixie` by default (Debi
 
 Inside a Docker or Kubernetes workspace the model may do what a developer does on a throwaway machine: it runs as **root** with a **writable root filesystem**, so `apt-get install`, `npm install -g` and any installer work without an approval. The container is the boundary: no privileged mode, every capability dropped but `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID` and `KILL`, `no-new-privileges`, the cpu, memory and pid limits, and no host mount but the package cache.
 
-Where that is too much, the providers' **hardened mode** restores a non-root user and a read-only root (no capability at all; toolchains still install into the cache through mise, `apt` does not work):
+Where that is too much, the providers' **hardened mode** restores a non-root user and a read-only root (no capability at all; toolchains still install into HOME through mise, `apt` does not work):
 
 ```ts
 createDockerSandbox({ user: '1000:1000', readOnlyRoot: true });

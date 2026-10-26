@@ -94,7 +94,7 @@ await workspaces.close();
 
 | Tool | Input | Result |
 |---|---|---|
-| `create_workspace` | `{ repo?, ref?, image? }` | `{ workspace, root: '/workspace', repo, ref, commit, defaultBranch, image, expiresAt, reused }` |
+| `create_workspace` | `{ repo?, ref?, image? }` (`image` only with an allow-list, never on the local provider) | `{ workspace, root: '/workspace', repo, ref, commit, defaultBranch, image, expiresAt, reused }` |
 | `dispose_workspace` | `{ workspace? }` | `{ workspace, disposed: true }` |
 | `git_fetch` | `{ remote?, refspec?, workspace? }` | `{ workspace, remote, refspec, exitCode, stdout, stderr, timedOut }` |
 | `git_pull` | `{ remote?, branch?, rebase?, workspace? }` | the same plus `{ branch, rebase, step }` |
@@ -199,7 +199,7 @@ No host environment reaches a workspace. Containers and pods get `SANDBOX_ENV` (
 
 - **Untrusted code**: the model decides what runs, and an issue body or a README it reads can steer it (prompt injection). Run untrusted repositories on Docker or Kubernetes, never local, and put `bash` behind an approval where a human should see each command: a `beforeToolExecution` hook on the agent that calls `approve()` for `toolName === 'bash'` (see [`@chamvi/coding`](../coding#usage)).
 - **Permissive inside, strict at the edge**: Docker and Kubernetes workspaces run as root with a writable root filesystem by default, so `apt` and every package manager work; the container is the boundary (no privileged mode, only the package-manager capabilities, `no-new-privileges`, no host mount but the cache). The providers' `user` and `readOnlyRoot` restore the hardened mode.
-- **Shared cache**: the default cache volume is shared by every run and agent of a host (or a claim): a malicious package one run fetched can sit in another run's cache. Turn it off per provider (`cache: false` on Docker, no `cache` claim on Kubernetes, `cache: false` locally) where runs must not influence each other.
+- **Shared cache**: Docker gives each workspace an anonymous `/cache` of its own and Kubernetes an emptyDir by default. A cache is shared only when you configure one: `cache: { volume }` on Docker, a `cache: { claimName }` claim on Kubernetes, and locally `<root>/.cache` unless `cache: false`. Such a cache is a trust boundary shared by every run and agent that mounts it: a malicious package one run fetched can sit in another run's cache, so share one only between runs that may influence each other.
 - **Credentials**: repository URLs with credentials are refused, every configured credential helper is reset for chamvi's git calls, and no service account or host variable enters a workspace. Tokens never reach a URL, the environment, a result or an error: in `credentialMode: 'workspace'` a short-lived one sits in a 0600 file the model can read, redacted from everything it sees; `'tools'` keeps it out of the workspace.
 - **Not a network boundary**: a container sandbox stops code from touching the host, not from reaching the network. On a Docker `bridge` network a workspace reaches the host gateway (the chamvi API, Postgres), other containers and cloud metadata (`169.254.169.254`); on Kubernetes every cluster service by DNS. Add an egress firewall or a NetworkPolicy (the Helm chart's is planned), and narrow `allowRepo`.
 
@@ -253,9 +253,9 @@ export default createApp({ agents: [coder], modules: [sandboxModule({ provider: 
 | `limits` | `SandboxLimits` | the provider's | Passed to every `create` |
 | `allowFileRepos` | `boolean` | `false` | Accept `file:///absolute/path` repositories |
 | `allowRepo` | `(url) => boolean` | every https URL | Narrows the accepted repositories (gets the normalized URL) |
-| `allowImage` | `(image) => boolean` | every image | Narrows the images `create_workspace` may ask for |
+| `allowImage` | `(image) => boolean` | none: no `image` offered | The images `create_workspace` may ask for; without it `create_workspace` has no `image` input and `acquire` refuses one. Never offered on the local provider |
 | `maxWorkspacesPerRun` | `number` | `3` | Workspaces one run may hold at once |
-| `gcIntervalMs` | `number` | `600_000` | Minimum interval between the collections `acquire` starts; `0` disables them |
+| `gcIntervalMs` | `number` | `600_000` | Minimum interval between the collections `acquire` starts, and with `sandboxModule()` in start mode the period of its collection timer; `0` disables both |
 | `credentials` | `IGitCredentials \| IGitCredentials[]` | none | Git credential sources, the first answer wins |
 | `credentialMode` | `'workspace' \| 'tools'` | `'workspace'` | How a token reaches git |
 | `depth` | `number` | full history | A shallow checkout |
