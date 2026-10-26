@@ -312,6 +312,36 @@ describe('workspace manager credentials', () => {
             await expect(found.exec(['cat', 'notes.txt'])).resolves.toMatchObject({ stdout: 'leaked [redacted]\n' });
         });
 
+        it('installs nothing while no source answers and the workspace holds no credentials', async () => {
+            const { manager, provider } = setup({ credentials: { get: async () => undefined } });
+            const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+            await workspace.exec(['true']);
+            expect(installs(provider.workspaces.get(workspace.id)!)).toHaveLength(0);
+        });
+
+        it('clears the credentials an earlier process wrote once no source answers', async () => {
+            let file = '';
+            const { manager, provider, build } = setup(
+                { credentials: { get: async () => undefined } },
+                (argv, options) => {
+                    if (argv[0] === 'sh' && argv[2] === READ_CREDENTIALS_SCRIPT) return { stdout: file };
+                    if (isInstall(argv)) file = options.stdin ?? '';
+                    return {};
+                },
+            );
+            const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+            const raw = provider.workspaces.get(workspace.id)!;
+            expect(installs(raw)).toHaveLength(0);
+
+            // an earlier process with a source wrote a token; this one adopts the workspace
+            file = 'https://github.com/octo/demo\tx-access-token\tghs_writtenByTheProcessBeforeTheRestart\n';
+            const adopted = await build().get('r1');
+            await adopted.exec(['true']);
+            await adopted.exec(['true']);
+            expect(installs(raw)).toHaveLength(1);
+            expect(file).toBe('');
+        });
+
         it('installs nothing in a workspace without a repository', async () => {
             const { manager, provider } = setup();
             const { workspace } = await manager.acquire('r1', {});

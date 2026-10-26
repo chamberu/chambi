@@ -60,6 +60,11 @@ type InstallState = {
     learnRetryAt?: number;
     learning?: Promise<void>;
     installed?: boolean;
+    /**
+     * The workspace holds no credentials file content: created by this process,
+     * or read back empty. Undefined while unknown (not read, or the read failed).
+     */
+    empty?: boolean;
     /** When the file must be rewritten (epoch ms); undefined: never (no credential expires). */
     refreshAt?: number;
     /** No new attempt before this (epoch ms) after a failure. */
@@ -102,7 +107,7 @@ export function createCredentialSupport(input: {
     };
 
     /** Writes the file; answers when it must be rewritten. */
-    const install = async (workspace: IWorkspace): Promise<number | undefined> => {
+    const install = async (workspace: IWorkspace, state: InstallState): Promise<number | undefined> => {
         const url = workspace.info.repo!;
         const { runId } = workspace.info;
         const entries: Array<GitCredential & { key: string }> = [];
@@ -124,6 +129,9 @@ export function createCredentialSupport(input: {
         const host = await lookup(`${urlOrigin(url)}/`, 'read', runId);
         if (host) entries.push({ key: `${urlOrigin(url)}/`, ...host });
 
+        // nothing to write into a workspace known to hold nothing: keep its own git config
+        // (a helper of the image) untouched; stale credentials are always cleared
+        if (entries.length === 0 && state.empty === true) return undefined;
         const content = credentialsFileContent(entries);
         const result = await workspace.exec(
             ['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(content))],
@@ -160,6 +168,7 @@ export function createCredentialSupport(input: {
             if (result.exitCode !== 0 || result.timedOut) {
                 throw new SandboxError(`reading the git credentials of workspace ${workspace.id} ${result.timedOut ? 'timed out' : `exited with ${result.exitCode}`}.`);
             }
+            state.empty = result.stdout.trim() === '';
             for (const line of result.stdout.split('\n')) {
                 const password = line.split('\t')[2];
                 if (password !== undefined && password.length >= LEARNED_SECRET_MIN_LENGTH) redactor.add(password);
@@ -178,7 +187,10 @@ export function createCredentialSupport(input: {
     const refresh: CredentialSupport['refresh'] = async (workspace, options = {}) => {
         const state = stateOf(workspace);
         if (!state) return;
-        if (options.fresh) state.learned = true;
+        if (options.fresh) {
+            state.learned = true;
+            state.empty = true;
+        }
         await learn(workspace);
         if (mode !== 'workspace') return;
         const now = clock.now().getTime();
@@ -186,8 +198,9 @@ export function createCredentialSupport(input: {
         if (state.retryAt !== undefined && now < state.retryAt) return;
         if (!state.pending) {
             const current = state;
-            current.pending = install(workspace).then((refreshAt) => {
+            current.pending = install(workspace, current).then((refreshAt) => {
                 current.installed = true;
+                current.empty = undefined;
                 current.refreshAt = refreshAt;
                 delete current.retryAt;
             }, (error: unknown) => {
