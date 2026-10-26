@@ -15,6 +15,8 @@ import type {
     SettingSource,
 } from '../models/types.ts';
 
+// #region public
+
 /** A provider as the report shows it: no secret, only where each field came from. */
 export type ProviderReport = {
     name: string;
@@ -54,6 +56,8 @@ export type AppReport = {
     /** Settings and config problems, and warnings (an app without agents). */
     issues: string[];
 };
+
+// #endregion public
 
 /** inspectApp's input: what the App holds and the lifecycle env. */
 export type InspectInput = {

@@ -8,6 +8,8 @@
 import type { IModelResolver, ModelRef } from '@chamvi/core';
 import type { createProviderRegistry } from 'ai';
 
+// #region public
+
 /** createApp's `models`: providers by id, as `createProviderRegistry()` takes them. */
 export type ModelProviders = Parameters<typeof createProviderRegistry>[0];
 
@@ -73,6 +75,8 @@ export type BuiltinProvider = {
     /** The env variable holding a base URL, when the provider reads one. */
     baseUrl?: string;
 };
+
+// #endregion public
 
 /** createModelResolver's options. */
 export type ModelResolverOptions = {
