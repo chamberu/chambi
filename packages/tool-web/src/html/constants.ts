@@ -5,64 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-/** Elements dropped before a page is converted: code, embeds and page chrome. */
-export const DROPPED_ELEMENTS = [
-    'script',
-    'style',
-    'noscript',
-    'template',
-    'iframe',
-    'object',
-    'embed',
-    'svg',
-    'canvas',
-    'nav',
-    'aside',
-    'footer',
-    'form',
-    'button',
-    'select',
-    'dialog',
-].join(',');
-
-/** Elements that start a new line in text mode. */
-export const BLOCK_ELEMENTS: ReadonlySet<string> = new Set([
-    'ADDRESS', 
-    'ARTICLE', 
-    'BLOCKQUOTE', 
-    'BR', 
-    'DD', 
-    'DETAILS', 
-    'DIV', 
-    'DL', 
-    'DT', 
-    'FIGCAPTION', 
-    'FIGURE',
-    'H1', 
-    'H2', 
-    'H3', 
-    'H4', 
-    'H5', 
-    'H6', 
-    'HEADER', 
-    'HR', 
-    'LI', 
-    'MAIN', 
-    'OL', 
-    'P', 
-    'PRE', 
-    'SECTION',
-    'SUMMARY', 
-    'TABLE', 
-    'TD', 
-    'TH', 
-    'TR', 
-    'UL',
-]);
-
-/** URL schemes a converted link may keep. */
-export const LINK_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:']);
-
 /** Media types read as text besides `text/*`. */
 export const TEXT_MEDIA_TYPES: ReadonlySet<string> = new Set([
     'application/json',
@@ -77,5 +19,22 @@ export const TEXT_MEDIA_TYPES: ReadonlySet<string> = new Set([
     'application/x-ndjson',
 ]);
 
-/** Characters of an HTML page converted at most (its start); the conversion grows faster than linear with size. */
-export const HTML_MAX_CHARS = 1_048_576;
+/** Elements dropped when a page has no main content to isolate: navigation, page chrome and forms. */
+export const PAGE_CHROME_ELEMENTS = [
+    'nav',
+    'header',
+    'footer',
+    'aside',
+    'form',
+    'fieldset',
+    'button',
+    'input',
+    'select',
+    'textarea',
+    'iframe',
+    'object',
+    'embed',
+] as const;
+
+/** The YAML frontmatter mdream puts before the content (the title is read through its callback). */
+export const FRONTMATTER = /^---\n[\s\S]*?\n---\n+/;

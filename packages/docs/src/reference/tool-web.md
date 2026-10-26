@@ -24,7 +24,7 @@ Throws `InvalidAgentDefinitionError` for options that are no object, a `client` 
 
 | Tool | Input | Result |
 |---|---|---|
-| `web_fetch` | `url`, `format?` (`markdown` default, `text`, `raw`), `offset?` | `WebFetchResult`: at most 65 536 characters from `offset`; an HTML page converted (links absolute) unless `raw`, other text as is; `nextOffset` while more follows, `truncated` when the body passed `maxBytes` or the HTML 1 Mi characters |
+| `web_fetch` | `url`, `format?` (`markdown` default, `text`, `raw`), `offset?` | `WebFetchResult`: at most 65 536 characters from `offset`; an HTML page converted by mdream (main content, links absolute) unless `raw`, other text as is; `nextOffset` while more follows, `truncated` when the body passed `maxBytes` |
 
 Every URL and every redirect target (at most 5) is resolved and refused (`ValidationError`) when an address is loopback, private, link-local or metadata, CGNAT, multicast or reserved, unless `allowUrl(url)` answers `true`; `false` refuses a URL outright. The request resolves the name again (DNS rebinding is not covered), and behind a proxy the proxy connects. An error status, a network failure, a binary response and the timeout are `ChamviError`s with code `web_request`, tool errors the model reads.
 

@@ -53,6 +53,6 @@ export type WebFetchResult = {
     totalChars: number;
     /** The offset of the next page, when the content goes on. */
     nextOffset?: number;
-    /** The body was longer than `maxBytes`, or the HTML longer than the converter takes, and was cut. */
+    /** The body was longer than `maxBytes` and was cut. */
     truncated: boolean;
 };

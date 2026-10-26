@@ -60,16 +60,14 @@
     },
     "license": "Apache-2.0",
     "dependencies": {
-        "@mixmark-io/domino": "^2.2.0",
         "hapic": "^3.0.2",
-        "smob": "^1.6.2",
-        "turndown": "^7.2.4"
+        "mdream": "^2.0.3",
+        "smob": "^1.6.2"
     },
     "devDependencies": {
         "@chamvi/core": "^0.2.1",
         "@chamvi/http": "^0.2.1",
         "@chamvi/test-kit": "^0.2.1",
-        "@types/turndown": "^5.0.6",
         "ai": "^7.0.146"
     },
     "peerDependencies": {

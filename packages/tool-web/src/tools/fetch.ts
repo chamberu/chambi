@@ -7,7 +7,6 @@
 
 import type { Tool } from 'ai';
 import { ValidationError, defineTool } from '@chamvi/core';
-import { HTML_MAX_CHARS } from '../html/constants.ts';
 import {
     decodeBody,
     htmlToMarkdown,
@@ -71,14 +70,10 @@ export function webFetchTool(options: ResolvedWebOptions): Tool<WebFetchInput, W
                 throw requestError(`${page.url.href} is ${mediaTypeOf(page.contentType)}, not text; web_fetch reads text only.`);
             }
             let text = decodeBody(page.bytes, page.contentType);
-            let { truncated } = page;
+            const { truncated } = page;
             let title: string | undefined;
             if (format !== 'raw' && isHtml(page.contentType)) {
-                if (text.length > HTML_MAX_CHARS) {
-                    text = text.slice(0, HTML_MAX_CHARS);
-                    truncated = true;
-                }
-                const converted = format === 'text' ? htmlToText(text) : htmlToMarkdown(text, page.url.href);
+                const converted = format === 'text' ? htmlToText(text, page.url.href) : htmlToMarkdown(text, page.url.href);
                 ({ title } = converted);
                 text = converted.content;
             }

@@ -77,7 +77,7 @@ describe('web_fetch', () => {
         web.routes.set('https://example.com/changelog', html(PAGE));
 
         const text = await fetchPage({ url: 'https://example.com/changelog', format: 'text' });
-        expect(text.content).toBe('1.2.0\nFixed #1.');
+        expect(text.content).toBe('1.2.0\n\nFixed #1.');
         expect(text.format).toBe('text');
 
         const raw = await fetchPage({ url: 'https://example.com/changelog', format: 'raw' });

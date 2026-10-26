@@ -55,7 +55,7 @@ describe('htmlToMarkdown', () => {
 
     it('takes the body without a main element, and one article when there is one', () => {
         expect(htmlToMarkdown('<body><p>plain</p></body>', 'https://example.com/').content).toBe('plain');
-        expect(htmlToMarkdown('<body><p>side</p><article><p>story</p></article></body>', 'https://example.com/').content).toBe('story');
+        expect(htmlToMarkdown('<body><nav>menu</nav><article><p>story</p></article></body>', 'https://example.com/').content).toBe('story');
         expect(htmlToMarkdown('<body><article>a</article><article>b</article></body>', 'https://example.com/').content).toBe('a\n\nb');
     });
 
@@ -73,11 +73,11 @@ describe('htmlToMarkdown', () => {
 });
 
 describe('htmlToText', () => {
-    it('keeps block breaks and collapses whitespace', () => {
-        const { title, content } = htmlToText(PAGE);
+    it('keeps block breaks, image alt text and list items, and collapses whitespace', () => {
+        const { title, content } = htmlToText(PAGE, 'https://example.com/docs');
 
         expect(title).toBe('Release notes & more');
-        expect(content).toBe('v2.0.0\nBreaking: read the guide, see .\nconst a = 1 < 2;\none\ntwo');
+        expect(content).toBe('v2.0.0\n\nBreaking: read the guide, see chart.\n\nconst a = 1 < 2;\n\none\ntwo');
     });
 });
 

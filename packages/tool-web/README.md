@@ -65,7 +65,7 @@ export function createResearchAgent(model: LanguageModel) {
 |---|---|---|
 | `web_fetch` | `{ url, format?, offset? }` | `{ url, status, contentType, format, title?, content, offset, totalChars, nextOffset?, truncated }` |
 
-An HTML page comes back as markdown (default; links made absolute, scripts, navigation and footers dropped) or plain text, any other text (JSON, a changelog, a registry document such as `https://registry.npmjs.org/<name>`) as is, and `raw` returns the body unchanged. At most 65 536 characters from `offset`; `nextOffset` names the next page. `truncated` says the response was longer than `maxBytes`, or an HTML page longer than 1 Mi characters was converted from its start. Redirects are followed by hand, at most 5.
+An HTML page comes back as markdown (default, converted by [mdream](https://github.com/harlan-zw/mdream): the main content, links made absolute, scripts, navigation and footers dropped, `javascript:` links reduced to their text) or plain text, any other text (JSON, a changelog, a registry document such as `https://registry.npmjs.org/<name>`) as is, and `raw` returns the body unchanged. At most 65 536 characters from `offset`; `nextOffset` names the next page. `truncated` says the response was longer than `maxBytes`. Redirects are followed by hand, at most 5.
 
 A refused URL or an invalid input is a `ValidationError` tool error; a failed request (an error status, a timeout, an unreachable host, a binary response) a `ChamviError` with code `web_request`. The model reads both and carries on.
 

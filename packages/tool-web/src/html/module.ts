@@ -5,23 +5,9 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { createRequire } from 'node:module';
-import TurndownService from 'turndown';
-import {
-    BLOCK_ELEMENTS,
-    DROPPED_ELEMENTS,
-    LINK_PROTOCOLS,
-    TEXT_MEDIA_TYPES,
-} from './constants.ts';
+import { htmlToMarkdown as mdream } from 'mdream';
+import { FRONTMATTER, PAGE_CHROME_ELEMENTS, TEXT_MEDIA_TYPES } from './constants.ts';
 import type { ConvertedPage } from './types.ts';
-
-/**
- * domino (turndown's own HTML parser) is CommonJS and its bundled types
- * declare another module name, so it is required with the one function used.
- */
-const domino = createRequire(import.meta.url)('@mixmark-io/domino') as {
-    createDocument(html?: string, force?: boolean): Document;
-};
 
 /** The lower-cased `type/subtype` of a content type, else undefined. */
 export function mediaTypeOf(contentType: string | null): string | undefined {
@@ -68,79 +54,41 @@ export function decodeBody(bytes: Uint8Array, contentType: string | null): strin
 }
 
 /** The page's readable part: `<main>`, else its only `<article>`, else `<body>`; chrome dropped. */
-function readableRoot(document: Document): Element {
-    for (const element of Array.from(document.querySelectorAll(DROPPED_ELEMENTS))) element.remove();
-    const main = document.querySelector('main');
-    if (main) return main;
-    const articles = document.querySelectorAll('article');
-    if (articles.length === 1) return articles[0]!;
-    return document.body ?? document.documentElement;
-}
-
-function titleOf(document: Document): string | undefined {
-    const title = document.title.replace(/\s+/g, ' ').trim();
-    return title || undefined;
-}
-
-/** `value` resolved against `base`, else undefined for a scheme a link may not carry. */
-function absolute(value: string, base: string): string | undefined {
-    try {
-        const url = new URL(value, base);
-        return LINK_PROTOCOLS.has(url.protocol) ? url.href : undefined;
-    } catch {
-        return undefined;
+function convert(html: string, baseUrl: string, format: 'markdown' | 'text'): ConvertedPage {
+    let title: string | undefined;
+    const frontmatter = (fields: Record<string, string>) => {
+        title = fields.title?.replace(/\s+/g, ' ').trim() || undefined;
+    };
+    // the page's main content first; a page without main or article (or a fragment)
+    // isolates to nothing, so then the whole body without navigation and forms
+    // emptyLinks: javascript: and data: links become their text
+    const clean = { emptyLinks: true };
+    let content = mdream(html, {
+        origin: baseUrl, 
+        minimal: true, 
+        format, 
+        frontmatter, 
+        clean,
+    });
+    if (content.replace(FRONTMATTER, '').trim() === '') {
+        content = mdream(html, {
+            origin: baseUrl, 
+            format, 
+            frontmatter, 
+            clean, 
+            filter: { exclude: [...PAGE_CHROME_ELEMENTS] },
+        });
     }
+    content = content.replace(FRONTMATTER, '').trim();
+    return title === undefined ? { content } : { title, content };
 }
 
-function absolutize(root: Element, base: string): void {
-    for (const [selector, attribute] of [['a[href]', 'href'], ['img[src]', 'src']] as const) {
-        for (const element of Array.from(root.querySelectorAll(selector))) {
-            const url = absolute(element.getAttribute(attribute) ?? '', base);
-            if (url) element.setAttribute(attribute, url);
-            else element.removeAttribute(attribute);
-        }
-    }
-}
-
-const turndown = new TurndownService({
-    headingStyle: 'atx',
-    codeBlockStyle: 'fenced',
-    bulletListMarker: '-',
-    emDelimiter: '_',
-});
-
-/** An HTML page as markdown, links and images absolute against `baseUrl`. */
+/** An HTML page as markdown (mdream), links and images absolute against `baseUrl`. */
 export function htmlToMarkdown(html: string, baseUrl: string): ConvertedPage {
-    const document = domino.createDocument(html);
-    const title = titleOf(document);
-    const root = readableRoot(document);
-    absolutize(root, baseUrl);
-    const content = turndown.turndown(root as unknown as TurndownService.Node).trim();
-    return title === undefined ? { content } : { title, content };
+    return convert(html, baseUrl, 'markdown');
 }
 
-function collectText(node: Node, out: string[]): void {
-    if (node.nodeType === 3) {
-        out.push(node.nodeValue ?? '');
-        return;
-    }
-    if (node.nodeType !== 1) return;
-    const block = BLOCK_ELEMENTS.has((node as Element).tagName);
-    if (block) out.push('\n');
-    for (const child of Array.from(node.childNodes)) collectText(child, out);
-    if (block) out.push('\n');
-}
-
-/** An HTML page as plain text: one line per block, whitespace collapsed. */
-export function htmlToText(html: string): ConvertedPage {
-    const document = domino.createDocument(html);
-    const title = titleOf(document);
-    const parts: string[] = [];
-    collectText(readableRoot(document), parts);
-    const content = parts.join('')
-        .split('\n')
-        .map((line) => line.replace(/\s+/g, ' ').trim())
-        .filter((line) => line.length > 0)
-        .join('\n');
-    return title === undefined ? { content } : { title, content };
+/** An HTML page as plain text (mdream). */
+export function htmlToText(html: string, baseUrl: string): ConvertedPage {
+    return convert(html, baseUrl, 'text');
 }
