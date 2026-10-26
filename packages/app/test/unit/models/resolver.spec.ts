@@ -29,9 +29,9 @@ function notFound(specifier: string): Error {
 }
 
 type Call = {
-    specifier: string; 
-    factory: string; 
-    input: Record<string, unknown> 
+    specifier: string;
+    factory: string;
+    input: Record<string, unknown>
 };
 
 /**
@@ -50,9 +50,9 @@ function fakeImporter(packages: Record<string, string>, models: Record<string, R
         return {
             [factory]: (input: Record<string, unknown>) => {
                 calls.push({
-                    specifier, 
-                    factory, 
-                    input, 
+                    specifier,
+                    factory,
+                    input,
                 });
                 return customProvider({ languageModels: models });
             },
@@ -115,9 +115,9 @@ describe('createModelResolver', () => {
             specifier: '@ai-sdk/anthropic',
             factory: 'createAnthropic',
             input: {
-                apiKey: 'k', 
-                baseURL: 'https://api.anthropic.com/v1', 
-                headers: {}, 
+                apiKey: 'k',
+                baseURL: 'https://api.anthropic.com/v1',
+                headers: {},
             },
         }]);
         expect(resolver.errors.size).toBe(0);
@@ -141,9 +141,9 @@ describe('createModelResolver', () => {
 
         expect(fake.calls.map((call) => call.input)).toEqual([
             {
-                apiKey: 'k', 
-                baseURL: 'https://proxy.example.com/v1', 
-                headers: { 'x-team': 'a' }, 
+                apiKey: 'k',
+                baseURL: 'https://proxy.example.com/v1',
+                headers: { 'x-team': 'a' },
             },
         ]);
     });
@@ -238,10 +238,10 @@ describe('createModelResolver', () => {
             await settingsOf({
                 providers: {
                     router: {
-                        type: 'openai-compatible', 
-                        apiKey: 'k', 
-                        baseURL: 'https://router.example.com/v1', 
-                    }, 
+                        type: 'openai-compatible',
+                        apiKey: 'k',
+                        baseURL: 'https://router.example.com/v1',
+                    },
                 },
             }),
             { importer: fake.importer },
@@ -281,9 +281,9 @@ describe('createModelResolver', () => {
             specifier: 'ai',
             factory: 'createGateway',
             input: {
-                apiKey: 'k', 
-                baseURL: 'https://ai-gateway.vercel.sh/v4/ai', 
-                headers: {}, 
+                apiKey: 'k',
+                baseURL: 'https://ai-gateway.vercel.sh/v4/ai',
+                headers: {},
             },
         }]);
         expect(resolver.resolve('gw/m')).toBeDefined();

@@ -120,15 +120,15 @@ describe('IApp.inspect()', () => {
     it('reports code and folder agents with their models', async () => {
         await writeTree(agentsDir, { 'greeter/agent.ts': agentFile('hi', 'test/model') });
         const code = defineAgent({
-            name: 'triage', 
-            model: textModel(), 
-            instructions: 'x', 
+            name: 'triage',
+            model: textModel(),
+            instructions: 'x',
         });
         const fallback = defineAgent({ name: 'plain', instructions: 'x' });
         const app = track(createApp({
-            agents: [code, fallback], 
-            model: 'test/model', 
-            models: testModels(), 
+            agents: [code, fallback],
+            model: 'test/model',
+            models: testModels(),
         }));
 
         const report = await app.inspect({ env: { CHAMVI_AGENTS_DIR: agentsDir } });
@@ -137,22 +137,22 @@ describe('IApp.inspect()', () => {
         expect(report.issues).toEqual([]);
         expect(report.agents).toEqual([
             {
-                name: 'triage', 
-                kind: 'code', 
-                model: 'mock-provider:mock-model-id (object)', 
-                errors: [], 
+                name: 'triage',
+                kind: 'code',
+                model: 'mock-provider:mock-model-id (object)',
+                errors: [],
             },
             {
-                name: 'plain', 
-                kind: 'code', 
-                model: 'test/model', 
-                errors: [], 
+                name: 'plain',
+                kind: 'code',
+                model: 'test/model',
+                errors: [],
             },
             {
-                name: 'greeter', 
-                kind: 'folder', 
-                model: 'test/model', 
-                errors: [], 
+                name: 'greeter',
+                kind: 'folder',
+                model: 'test/model',
+                errors: [],
             },
         ]);
     });
@@ -166,9 +166,9 @@ describe('IApp.inspect()', () => {
             'triage/agent.ts': agentFile('x', 'test/model', 'triage'),
         });
         const code = defineAgent({
-            name: 'triage', 
-            model: textModel(), 
-            instructions: 'x', 
+            name: 'triage',
+            model: textModel(),
+            instructions: 'x',
         });
         const app = track(createApp({ agents: [code], models: testModels() }));
 
@@ -181,9 +181,9 @@ describe('IApp.inspect()', () => {
         expect(byName('ticker', 'folder')?.errors).toEqual([expect.stringContaining('ticker')]);
         expect(byName(LONG_NAME, 'folder')?.errors).toEqual([expect.stringContaining('MCP tool')]);
         expect(byName('broken', 'folder')).toEqual({
-            name: 'broken', 
-            kind: 'folder', 
-            errors: [expect.stringContaining('broken')], 
+            name: 'broken',
+            kind: 'folder',
+            errors: [expect.stringContaining('broken')],
         });
         expect(byName('triage', 'folder')?.errors).toEqual([expect.stringContaining('code agent')]);
     });
@@ -200,10 +200,10 @@ describe('IApp.inspect()', () => {
         expect(report.ok).toBe(false);
         expect(report.agents).toEqual([
             {
-                name: 'ticker', 
-                kind: 'code', 
-                model: 'nope/m', 
-                errors: [expect.stringContaining('nope')], 
+                name: 'ticker',
+                kind: 'code',
+                model: 'nope/m',
+                errors: [expect.stringContaining('nope')],
             },
         ]);
     });
@@ -249,9 +249,9 @@ describe('IApp.inspect()', () => {
 
     it('is read-only: no store, repeatable, and start works afterwards', async () => {
         const agent = defineAgent({
-            name: 'triage', 
-            model: textModel(), 
-            instructions: 'x', 
+            name: 'triage',
+            model: textModel(),
+            instructions: 'x',
         });
         const app = track(createApp({ agents: [agent] }));
         const env = {

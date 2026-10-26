@@ -172,9 +172,9 @@ export async function inspectApp(input: InspectInput): Promise<AppReport> {
                         checkAgent(agent, model, resolver),
                 )),
                 ...loaded.issues.map((issue): AgentReport => ({
-                    name: issue.agent, 
-                    kind: 'folder', 
-                    errors: [issue.message], 
+                    name: issue.agent,
+                    kind: 'folder',
+                    errors: [issue.message],
                 })),
             ];
             folders.sort((a, b) => compareNames(a.name, b.name));
