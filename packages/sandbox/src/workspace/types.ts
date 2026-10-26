@@ -73,4 +73,12 @@ export interface IWorkspace {
      * output itself (base64 from an exec) passes the decoded text through it.
      */
     redact?(text: string): string;
+    /**
+     * The unredacted text of a file (as `readFile` without the redaction):
+     * set beside `redact` on the workspaces a manager with credentials hands
+     * out, for tools that write the text back (an edit), so a file holding
+     * an issued token never gets `[redacted]` written into it. Never for
+     * text shown to the model.
+     */
+    readFileRaw?(path: string): Promise<string>;
 }

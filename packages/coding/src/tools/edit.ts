@@ -13,6 +13,7 @@ import {
     inputObject,
     objectSchema,
     optionalBoolean,
+    readRawText,
     requirePath,
     requireString,
     requireText,
@@ -102,7 +103,7 @@ export function editFileTool(workspaces: CodingWorkspaces, queue: FileQueue): To
 
             // read, change and write in one turn of the file's queue
             return queue(fileKey(workspace.id, path), async () => {
-                const result = applyEdit(await workspace.readFile(path), edit, path);
+                const result = applyEdit(await readRawText(workspace, path), edit, path);
                 await workspace.writeFile(path, result.text);
                 return { path, replacements: result.replacements };
             });
@@ -138,7 +139,7 @@ export function multiEditTool(workspaces: CodingWorkspaces, queue: FileQueue): T
             const workspace = await workspaceOf(workspaces, body, context);
 
             return queue(fileKey(workspace.id, path), async () => {
-                let text = await workspace.readFile(path);
+                let text = await readRawText(workspace, path);
                 let replacements = 0;
                 edits.forEach((edit, index) => {
                     const result = applyEdit(text, edit, path, `edit ${index + 1}: `);

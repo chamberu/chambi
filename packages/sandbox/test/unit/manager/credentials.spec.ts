@@ -279,6 +279,16 @@ describe('workspace manager credentials', () => {
             expect(installs(raw)).toHaveLength(4);
         });
 
+        it('hands out a raw read beside the redacted one', async () => {
+            const { manager, provider } = setup();
+            const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+            // the token the install wrote (read-token-1 went to the checkout)
+            const token = 'write-token-2';
+            provider.workspaces.get(workspace.id)!.files.set('/workspace/t.txt', `t=${token}`);
+            await expect(workspace.readFile('/workspace/t.txt')).resolves.toBe('t=[redacted]');
+            await expect(workspace.readFileRaw!('/workspace/t.txt')).resolves.toBe(`t=${token}`);
+        });
+
         it('never reads the credentials file of a found workspace into the redactor', async () => {
             const COMMON = 'common-word-written-by-a-model';
             const file = `https://github.com/octo/demo\tx-access-token\t${COMMON}\n`;

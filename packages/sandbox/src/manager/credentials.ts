@@ -205,6 +205,8 @@ export function createCredentialSupport(input: {
                 return redactResult(await workspace.exec(argv, options));
             }),
             readFile: (path) => guard(async () => redactor.redact(await workspace.readFile(path))),
+            // for tools that write the text back; its errors are redacted like every other call's
+            readFileRaw: (path) => guard(() => workspace.readFile(path)),
             readBytes: (path) => guard(async () => redactor.redactBytes(await workspace.readBytes(path))),
             writeFile: (path, content) => guard(() => workspace.writeFile(path, content)),
             dispose: () => guard(() => workspace.dispose()),

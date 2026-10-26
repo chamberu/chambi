@@ -15,7 +15,10 @@ import {
     it,
 } from 'vitest';
 import { ValidationError } from '@chamvi/core';
+import { codingTools } from '@chamvi/coding';
+import type { IWorkspace } from '@chamvi/sandbox';
 import type { GitFixture } from '@chamvi/test-kit';
+import { callTool, toolContext } from '../../utils/context.ts';
 import { createFixture, setupCoding } from '../../utils/setup.ts';
 import type { CodingSetup } from '../../utils/setup.ts';
 
@@ -167,5 +170,54 @@ describe('multi_edit', () => {
         await expect(s.call('multi_edit', { path: 'src/a.ts', edits: [{ oldString: 'a', newString: 'a' }] })).rejects.toThrow(ValidationError);
         await expect(s.call('multi_edit', { path: 'src/a.ts', edits: 'x' })).rejects.toThrow(ValidationError);
         await expect(s.call('multi_edit', { path: '../a.ts', edits: [{ oldString: 'a', newString: 'b' }] })).rejects.toThrow(ValidationError);
+    });
+});
+
+describe('edits of a file holding an issued token', () => {
+    const SECRET = 'ghs_s3cretTokenValue';
+    const FILE = `export const a = 1;\nconst t = '${SECRET}';\n`;
+
+    /** The tools over the setup's workspace as a manager with credentials hands it out: reads redacted, a raw read beside them. */
+    function redactingTools() {
+        const redact = (text: string) => text.replaceAll(SECRET, '[redacted]');
+        const redacting: IWorkspace = Object.create(s.workspace, {
+            redact: { value: redact },
+            readFile: { value: async (path: string) => redact(await s.workspace.readFile(path)) },
+            readFileRaw: { value: (path: string) => s.workspace.readFile(path) },
+        });
+        const tools = codingTools({ get: async () => redacting });
+        return (name: string, input: unknown) => callTool(tools, name, input, toolContext('r1'));
+    }
+
+    async function bytesOf(path: string): Promise<string> {
+        return new TextDecoder().decode(await s.workspace.readBytes(path));
+    }
+
+    beforeEach(async () => { await s.workspace.writeFile('src/a.ts', FILE); });
+
+    it('keeps the token byte for byte when editing another line', async () => {
+        const call = redactingTools();
+        await call('edit_file', { path: 'src/a.ts', oldString: 'a = 1', newString: 'a = 2' });
+        expect(await bytesOf('src/a.ts')).toBe(`export const a = 2;\nconst t = '${SECRET}';\n`);
+    });
+
+    it('keeps the token byte for byte through multi_edit', async () => {
+        const call = redactingTools();
+        await call('multi_edit', {
+            path: 'src/a.ts',
+            edits: [
+                { oldString: 'a = 1', newString: 'a = 2' },
+                { oldString: 'const t', newString: 'const token' },
+            ],
+        });
+        expect(await bytesOf('src/a.ts')).toBe(`export const a = 2;\nconst token = '${SECRET}';\n`);
+    });
+
+    it('leaves the file untouched and echoes no text when oldString is missing', async () => {
+        const call = redactingTools();
+        const error = await call('edit_file', { path: 'src/a.ts', oldString: 'missing', newString: 'x' }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(ValidationError);
+        expect((error as Error).message).not.toContain(SECRET);
+        expect(await bytesOf('src/a.ts')).toBe(FILE);
     });
 });
