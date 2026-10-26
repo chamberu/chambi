@@ -27,8 +27,14 @@ describeDocker('sandbox image', () => {
     beforeAll(async () => {
         container = await docker.createContainer(buildContainerOptions({
             id: randomUUID(),
-            runId: `test-${randomUUID()}`,
-            image: dockerImage as string,
+            deployment: 'default',
+            info: {
+                runId: `test-${randomUUID()}`,
+                provider: 'docker',
+                image: dockerImage as string,
+                createdAt: new Date(),
+                expiresAt: new Date(Date.now() + 600_000),
+            },
             network: 'none',
             env: {},
             limits: {
@@ -36,9 +42,8 @@ describeDocker('sandbox image', () => {
                 memory: '512Mi',
                 storage: '1Gi',
                 pids: 256,
-                timeoutMs: 600_000,
+                maxLifetimeMs: 600_000,
             },
-            expiresAt: new Date(Date.now() + 600_000),
         }));
         await container.start();
     });

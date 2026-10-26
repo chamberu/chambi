@@ -102,7 +102,7 @@ export function grepTool(workspaces: CodingWorkspaces): Tool<GrepInput, GrepResu
             const path = optionalPath(body.path);
             const ignoreCase = optionalBoolean(body.ignoreCase, 'ignoreCase') ?? false;
             const limit = optionalInteger(body.limit, 'limit', 1, SEARCH_MAX_RESULTS) ?? SEARCH_DEFAULT_RESULTS;
-            const workspace = workspaceOf(workspaces, body, context);
+            const workspace = await workspaceOf(workspaces, body, context);
 
             // --literal-pathspecs: a path such as ':!src' names a file, it is no pathspec magic
             const argv = ['git', '--literal-pathspecs', 'grep', '-z', '-n', '-I', '--untracked', '--no-color', '-E'];
@@ -145,7 +145,7 @@ export function listFilesTool(workspaces: CodingWorkspaces): Tool<ListFilesInput
             const body = inputObject(input);
             const path = optionalPath(body.path);
             const limit = optionalInteger(body.limit, 'limit', 1, LIST_MAX_RESULTS) ?? LIST_DEFAULT_RESULTS;
-            const workspace = workspaceOf(workspaces, body, context);
+            const workspace = await workspaceOf(workspaces, body, context);
 
             const result = await workspace.exec(
                 ['git', '--literal-pathspecs', 'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', path],

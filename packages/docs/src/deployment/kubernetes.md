@@ -36,10 +36,10 @@ Each agent repository gets:
 - `runAsNonRoot` as uid 1000, seccomp `RuntimeDefault`, a read-only root filesystem, no capabilities, no privilege escalation
 - `automountServiceAccountToken: false`, `enableServiceLinks: false`, no chamvi Secrets or environment
 - requests equal to limits for `cpu`, `memory` and `ephemeral-storage`; `/workspace` an emptyDir with a `sizeLimit`, `/tmp` a 512 MiB memory emptyDir; pids through the kubelet's `podPidsLimit`
-- `restartPolicy: Never` and `activeDeadlineSeconds` set to the workspace lifetime, so a pod stops itself at expiry
+- `restartPolicy: Never` and no `activeDeadlineSeconds`: a workspace pod lives as long as its run (through approval pauses and chamvi restarts) and is found again by label, up to the hard cap `limits.maxLifetimeMs` (7 days)
 - labels `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>` plus your `podLabels`; the expiry as the annotation `chamvi.dev/expires-at`
 
-Expired, failed and finished sandbox pods are garbage-collected by the provider. Run the pods in their own namespace and give chamvi's service account this Role there:
+Expired, failed and finished sandbox pods, and the pods of settled runs, are garbage-collected by the provider; each pod carries its `chamvi.dev/deployment` (`CHAMVI_DEPLOYMENT`), so deployments sharing a namespace leave each other's pods alone. Run the pods in their own namespace and give chamvi's service account this Role there:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1

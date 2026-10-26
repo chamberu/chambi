@@ -7,8 +7,15 @@
 
 import { constants } from 'node:os';
 import { join } from 'node:path';
-import { SANDBOX_ENV } from '@chamvi/sandbox';
-import { FALLBACK_PATH } from './constants.ts';
+import {
+    DEFAULT_DEPLOYMENT,
+    SANDBOX_ENV,
+    assertSandboxEnv,
+} from '@chamvi/sandbox';
+import type { WorkspaceInfo } from '@chamvi/sandbox';
+import { isObject } from 'smob';
+import { FALLBACK_PATH, LOCAL_PROVIDER_NAME } from './constants.ts';
+import type { ParsedRecord, WorkspaceRecord } from './types.ts';
 
 /** Kills the process group led by `pid`. Best effort: a gone group (ESRCH) is fine. */
 export function killGroup(pid: number): void {
@@ -61,4 +68,63 @@ export function buildEnv(dir: string, env: Record<string, string>): Record<strin
 export function errnoCode(error: unknown): string | undefined {
     const { code } = (error ?? {}) as { code?: unknown };
     return typeof code === 'string' ? code : undefined;
+}
+
+/** The `workspace.json` of a workspace. */
+export function toRecord(info: WorkspaceInfo, deployment: string, env?: Record<string, string>): WorkspaceRecord {
+    const record: WorkspaceRecord = {
+        runId: info.runId,
+        deployment,
+        createdAt: info.createdAt.toISOString(),
+        expiresAt: info.expiresAt.toISOString(),
+    };
+    if (info.repo !== undefined) record.repo = info.repo;
+    if (info.ref !== undefined) record.ref = info.ref;
+    if (env !== undefined && Object.keys(env).length > 0) record.env = env;
+    return record;
+}
+
+function readTime(value: unknown): Date | undefined {
+    const time = typeof value === 'string' ? Date.parse(value) : NaN;
+    return Number.isNaN(time) ? undefined : new Date(time);
+}
+
+/**
+ * A parsed `workspace.json`; undefined without a run or a readable expiry.
+ * A record of an earlier version (no deployment, no creation time) reads as
+ * the default deployment, created at its expiry.
+ */
+export function parseRecord(value: unknown): ParsedRecord | undefined {
+    if (!isObject(value)) return undefined;
+    const {
+        runId, 
+        deployment, 
+        repo, 
+        ref, 
+        env, 
+    } = value;
+    const expiresAt = readTime(value.expiresAt);
+    if (typeof runId !== 'string' || runId.length === 0 || !expiresAt) return undefined;
+    const info: WorkspaceInfo = {
+        runId,
+        provider: LOCAL_PROVIDER_NAME,
+        createdAt: readTime(value.createdAt) ?? expiresAt,
+        expiresAt,
+    };
+    if (typeof repo === 'string') info.repo = repo;
+    if (typeof ref === 'string') info.ref = ref;
+    const parsed: ParsedRecord = {
+        runId,
+        deployment: typeof deployment === 'string' ? deployment : DEFAULT_DEPLOYMENT,
+        info,
+    };
+    if (env !== undefined) {
+        try {
+            assertSandboxEnv(env as Record<string, string>);
+            parsed.env = env as Record<string, string>;
+        } catch {
+            return undefined;
+        }
+    }
+    return parsed;
 }

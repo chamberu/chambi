@@ -62,7 +62,7 @@ describe('option checks', () => {
 });
 
 describe('buildWorkspaceInfo', () => {
-    it('expires timeoutMs after createdAt and names the repo and ref when given', () => {
+    it('expires maxLifetimeMs after createdAt and names the repo and ref when given', () => {
         const createdAt = new Date(1_000);
         expect(buildWorkspaceInfo({ runId: 'r' }, 'local', createdAt, 5_000)).toEqual({
             runId: 'r',

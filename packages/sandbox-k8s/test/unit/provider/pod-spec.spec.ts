@@ -7,25 +7,30 @@
 
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { SANDBOX_ENV } from '@chamvi/sandbox';
+import { SANDBOX_ENV, repoKey } from '@chamvi/sandbox';
 import { buildPod } from '../../../src/provider/helpers.ts';
 
 type PodInput = Parameters<typeof buildPod>[0];
 
 const input: PodInput = {
     id: 'w1',
-    runId: 'r1',
+    deployment: 'default',
     namespace: 'agents',
-    image: 'img',
+    info: {
+        runId: 'r1',
+        provider: 'k8s',
+        image: 'img',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        expiresAt: new Date('2026-01-01T00:10:00Z'),
+    },
     env: { FOO: 'bar' },
     limits: {
         cpu: '500m',
         memory: '1Gi',
         storage: '4Gi',
         pids: 256,
-        timeoutMs: 600_000,
+        maxLifetimeMs: 600_000,
     },
-    expiresAt: new Date('2026-01-01T00:10:00Z'),
     labels: { team: 'x' },
     imagePullPolicy: 'IfNotPresent',
 };
@@ -48,9 +53,28 @@ describe('buildPod', () => {
             'app.kubernetes.io/component': 'sandbox',
             'chamvi.dev/run': 'r1',
             'chamvi.dev/workspace': 'w1',
+            'chamvi.dev/deployment': 'default',
             team: 'x',
         });
-        expect(pod.metadata?.annotations?.['chamvi.dev/expires-at']).toBe('1767226200000');
+        expect(pod.metadata?.annotations).toEqual({
+            'chamvi.dev/created-at': '1767225600000',
+            'chamvi.dev/expires-at': '1767226200000',
+            'chamvi.dev/image': 'img',
+        });
+    });
+
+    it('labels the repository key and annotates the repository and ref', () => {
+        const repo = 'https://github.com/octo/demo.git';
+        const pod = buildPod({
+            ...input,
+            info: {
+                ...input.info, 
+                repo, 
+                ref: 'main', 
+            }, 
+        });
+        expect(pod.metadata?.labels?.['chamvi.dev/repo-key']).toBe(repoKey(repo));
+        expect(pod.metadata?.annotations).toMatchObject({ 'chamvi.dev/repo': repo, 'chamvi.dev/ref': 'main' });
     });
 
     it('hardens the pod', () => {
@@ -59,9 +83,10 @@ describe('buildPod', () => {
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
             enableServiceLinks: false,
-            activeDeadlineSeconds: 600,
             terminationGracePeriodSeconds: 5,
         });
+        // the lifetime follows the run: nothing ends the pod but the garbage collection
+        expect(spec).not.toHaveProperty('activeDeadlineSeconds');
         expect(spec?.securityContext).toEqual({
             runAsNonRoot: true,
             runAsUser: 1000,
@@ -87,7 +112,7 @@ describe('buildPod', () => {
             name: 'sandbox',
             image: 'img',
             imagePullPolicy: 'IfNotPresent',
-            args: ['sleep', '600'],
+            args: ['sleep', 'infinity'],
             workingDir: '/workspace',
         });
         expect(container).not.toHaveProperty('command');

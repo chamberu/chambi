@@ -10,11 +10,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     InvalidAgentDefinitionError,
+    MemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { Agent, Engine } from '@chamvi/core';
-import { injectSandboxContext, provideSandboxContext } from '@chamvi/sandbox';
+import type {
+    Agent,
+    Engine,
+    IStore,
+    Run,
+} from '@chamvi/core';
+import { createWorkspaceManager, injectSandboxContext, provideSandboxContext } from '@chamvi/sandbox';
 import type { ISandboxProvider, IWorkspaceManager } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import {
@@ -43,6 +49,9 @@ import { createRecordingLogger, rejectionOf } from '../../utils/module.ts';
 class RecordingSandboxModule extends SandboxModule {
     imported: SandboxProviderName[] = [];
 
+    /** Every find and collectGarbage call of the provider it builds. */
+    calls: Array<[string, unknown]> = [];
+
     constructor(options: SandboxModuleOptions, protected failure?: Error) {
         super(options);
     }
@@ -55,17 +64,26 @@ class RecordingSandboxModule extends SandboxModule {
         return {
             name,
             create: async () => { throw new Error('not used'); },
-            collectGarbage: async () => 0,
+            find: async (_runId, options) => {
+                this.calls.push(['find', options]);
+                return [];
+            },
+            collectGarbage: async (options) => {
+                this.calls.push(['collectGarbage', options]);
+                return 0;
+            },
         };
     }
 }
 
-function fakeManager(events: string[]): IWorkspaceManager & { engines: unknown[] } {
+function fakeManager(events: string[]): IWorkspaceManager & { engines: unknown[]; closes: unknown[] } {
     const engines: unknown[] = [];
+    const closes: unknown[] = [];
     return {
         engines,
+        closes,
         acquire: async () => { throw new Error('not used'); },
-        get: () => { throw new Error('not used'); },
+        get: async () => { throw new Error('not used'); },
         release: async () => undefined,
         attach(engine) {
             engines.push(engine);
@@ -74,7 +92,10 @@ function fakeManager(events: string[]): IWorkspaceManager & { engines: unknown[]
         },
         tools: () => ({}),
         collectGarbage: async () => 0,
-        close: async () => { events.push('close'); },
+        close: async (options) => {
+            closes.push(options);
+            events.push('close');
+        },
     };
 }
 
@@ -104,7 +125,8 @@ afterEach(async () => {
 async function harnessWith(module: IModule, options: {
     mode?: AppMode;
     agents?: Agent[];
-    events?: string[]
+    events?: string[];
+    store?: IStore;
 } = {}) {
     const harness = await createModuleHarness({
         mode: options.mode ?? 'start',
@@ -112,7 +134,7 @@ async function harnessWith(module: IModule, options: {
         agents: options.agents ?? [agent()],
         modules: [
             configModule({ logger: createRecordingLogger() }),
-            storeModule(),
+            storeModule(options.store ? { store: options.store } : {}),
             engineModule(),
             module,
         ],
@@ -206,6 +228,43 @@ describe('sandboxModule', () => {
 
         await harness.stop();
         expect(events).toEqual(['attach', 'drain', 'detach', 'close']);
+    });
+
+    it('disposes the held workspaces after drained when the store is a MemoryStore', async () => {
+        // nothing resumes a run of a memory store after the restart
+        const manager = fakeManager([]);
+        await (await harnessWith(sandboxModule({ manager, env: {} }))).stop();
+        expect(manager.closes).toEqual([{ dispose: true }]);
+    });
+
+    it('keeps the held workspaces after drained when the store persists', async () => {
+        const memory = new MemoryStore();
+        // a store of its own kind: the runs outlive the process
+        const store = new Proxy({}, {
+            get: (_target, key) => {
+                const value: unknown = Reflect.get(memory, key);
+                return typeof value === 'function' ? value.bind(memory) : value;
+            },
+        }) as IStore;
+        const manager = fakeManager([]);
+        await (await harnessWith(sandboxModule({ manager, env: {} }), { store })).stop();
+        expect(manager.closes).toEqual([{ dispose: false }]);
+    });
+
+    it('a MemoryStore app disposes a live run\'s workspace on stop', async () => {
+        const root = await mkdtemp(join(tmpdir(), 'chamvi-sandbox-module-'));
+        roots.push(root);
+        const module = sandboxModule({
+            env: {}, 
+            provider: createLocalSandbox({ root }), 
+            gcIntervalMs: 0, 
+        });
+        const harness = await harnessWith(module);
+        const { workspace } = await module.manager.acquire('run-1', {});
+        expect(await readdir(root)).toHaveLength(1);
+        await harness.stop();
+        expect(workspace.disposed).toBe(true);
+        expect(await readdir(root)).toEqual([]);
     });
 
     it('job mode attaches too', async () => {
@@ -359,5 +418,87 @@ describe('sandboxModule', () => {
 
         const { workspace } = await module.manager.acquire('run-1', {});
         expect(workspace.info.provider).toBe('local');
+        await module.manager.release('run-1');
+    });
+
+    it('CHAMVI_DEPLOYMENT wins over the deployment option', async () => {
+        const module = new RecordingSandboxModule({ env: { CHAMVI_DEPLOYMENT: 'prod' }, deployment: 'ci' });
+        await harnessWith(module);
+        await expect(module.manager.get('r1')).rejects.toThrow(/create_workspace/);
+        expect(module.calls[0]).toEqual(['find', { deployment: 'prod' }]);
+
+        const other = new RecordingSandboxModule({ env: {}, deployment: 'ci' });
+        await harnessWith(other);
+        await other.manager.get('r1').catch(() => undefined);
+        expect(other.calls[0]).toEqual(['find', { deployment: 'ci' }]);
+    });
+
+    it('an invalid CHAMVI_DEPLOYMENT fails the factory', () => {
+        expect(() => sandboxModule({ env: { CHAMVI_DEPLOYMENT: 'not valid' } })).toThrow(InvalidAgentDefinitionError);
+    });
+
+    it('answers isSettled through the engine: with the default deployment only a settled run is settled', async () => {
+        // another app sharing the host in deployment `default` holds runs this engine never saw
+        const module = new RecordingSandboxModule({ env: {} });
+        const harness = await harnessWith(module);
+        await module.manager.collectGarbage();
+        const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
+        const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
+
+        const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+        expect(await isSettled('missing')).toBe(false);
+        const getRun = vi.spyOn(engine, 'getRun');
+        getRun.mockResolvedValueOnce({ status: 'waiting' } as Run);
+        expect(await isSettled('r1')).toBe(false);
+        getRun.mockResolvedValueOnce({ status: 'cancelled' } as Run);
+        expect(await isSettled('r1')).toBe(true);
+    });
+
+    it('a GC with the default deployment keeps the workspaces of runs another app holds', async () => {
+        const root = await mkdtemp(join(tmpdir(), 'chamvi-module-shared-'));
+        try {
+            const other = createWorkspaceManager({ provider: createLocalSandbox({ root }), gcIntervalMs: 0 });
+            const { workspace } = await other.acquire('run-of-another-app', {});
+
+            const module = new SandboxModule({
+                env: {}, 
+                provider: createLocalSandbox({ root }), 
+                gcIntervalMs: 0, 
+            });
+            managers.push(module.manager);
+            await harnessWith(module);
+            expect(await module.manager.collectGarbage()).toBe(0);
+
+            expect(workspace.disposed).toBe(false);
+            expect((await workspace.exec(['true'])).exitCode).toBe(0);
+            await other.release('run-of-another-app');
+            await other.close();
+        } finally {
+            await rm(root, { recursive: true, force: true });
+        }
+    });
+
+    it('answers isSettled through the engine: with an explicit deployment a missing or settled run is settled', async () => {
+        const module = new RecordingSandboxModule({ env: { CHAMVI_DEPLOYMENT: 'prod' } });
+        const harness = await harnessWith(module);
+        await module.manager.collectGarbage();
+        const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
+        const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
+
+        const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+        expect(await isSettled('missing')).toBe(true);
+        const getRun = vi.spyOn(engine, 'getRun');
+        getRun.mockResolvedValueOnce({ status: 'waiting' } as Run);
+        expect(await isSettled('r1')).toBe(false);
+        getRun.mockResolvedValueOnce({ status: 'cancelled' } as Run);
+        expect(await isSettled('r1')).toBe(true);
+    });
+
+    it('answers isSettled false before the engine exists', async () => {
+        const module = new RecordingSandboxModule({ env: {} });
+        await module.manager.collectGarbage();
+        const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
+        const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
+        expect(await isSettled('missing')).toBe(false);
     });
 });

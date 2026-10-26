@@ -9,7 +9,9 @@ import { KubeConfig } from '@kubernetes/client-node';
 import type { V1Pod } from '@kubernetes/client-node';
 import { ChamviError, InvalidAgentDefinitionError, SandboxError } from '@chamvi/core';
 import {
+    DEPLOYMENT_LABEL,
     EXPIRES_AT_KEY,
+    REPO_KEY_LABEL,
     RUN_LABEL,
     SANDBOX_ENV,
     SANDBOX_LABELS,
@@ -21,6 +23,8 @@ import {
     assertSandboxEnv,
     isExpiredAt,
     resolveLimits,
+    workspaceLabels,
+    workspaceMetadata,
 } from '@chamvi/sandbox';
 import { isObject } from 'smob';
 import {
@@ -35,7 +39,7 @@ const SANDBOX_UID = 1000;
 
 const PULL_POLICIES = ['Always', 'IfNotPresent'];
 
-const MANAGED_LABELS = [...Object.keys(SANDBOX_LABELS), RUN_LABEL, WORKSPACE_LABEL];
+const MANAGED_LABELS = [...Object.keys(SANDBOX_LABELS), RUN_LABEL, WORKSPACE_LABEL, DEPLOYMENT_LABEL, REPO_KEY_LABEL];
 
 const CLIENT_METHODS = ['create', 'read', 'delete', 'list', 'exec'];
 
@@ -120,12 +124,12 @@ export function assertKubernetesOptions(options: KubernetesSandboxOptions): void
  * seccomp profile, no service account token, no service links, no
  * privilege escalation, a read-only root, no capabilities, equal requests
  * and limits, an emptyDir `/workspace` and an in-memory `/tmp`, and only
- * `SANDBOX_ENV` plus the configured `env` (never the host's). It sleeps for
- * its lifetime and `activeDeadlineSeconds` ends it, so an expired pod stops
- * even when nothing collects it.
+ * `SANDBOX_ENV` plus the configured `env` (never the host's). It sleeps
+ * forever and has no `activeDeadlineSeconds`: its lifetime follows the run,
+ * and only the garbage collection (expiry, settled run) deletes it. Its
+ * labels and annotations hold everything `find` rebuilds the info from.
  */
 export function buildPod(input: PodInput): V1Pod {
-    const seconds = Math.ceil(input.limits.timeoutMs / 1000);
     const env = { ...SANDBOX_ENV, ...input.env };
     const resources = {
         cpu: input.limits.cpu,
@@ -141,17 +145,19 @@ export function buildPod(input: PodInput): V1Pod {
             namespace: input.namespace,
             labels: {
                 ...input.labels,
-                ...SANDBOX_LABELS,
-                [RUN_LABEL]: input.runId,
-                [WORKSPACE_LABEL]: input.id,
+                ...workspaceLabels({
+                    id: input.id,
+                    runId: input.info.runId,
+                    deployment: input.deployment,
+                    repo: input.info.repo,
+                }),
             },
-            annotations: { [EXPIRES_AT_KEY]: String(input.expiresAt.getTime()) },
+            annotations: workspaceMetadata(input.info),
         },
         spec: {
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
             enableServiceLinks: false,
-            activeDeadlineSeconds: seconds,
             terminationGracePeriodSeconds: 5,
             securityContext: {
                 runAsNonRoot: true,
@@ -162,10 +168,10 @@ export function buildPod(input: PodInput): V1Pod {
             },
             containers: [{
                 name: CONTAINER_NAME,
-                image: input.image,
+                image: input.info.image,
                 imagePullPolicy: input.imagePullPolicy,
                 // the image's entrypoint (tini) stays
-                args: ['sleep', String(seconds)],
+                args: ['sleep', 'infinity'],
                 workingDir: WORKSPACE_ROOT,
                 env: Object.entries(env).map(([name, value]) => ({ name, value })),
                 securityContext: {

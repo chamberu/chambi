@@ -9,51 +9,70 @@ import { readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { IClock } from '@chamvi/core';
 import { SandboxError } from '@chamvi/core';
-import { collectionError } from '@chamvi/sandbox';
-import type { IWorkspace } from '@chamvi/sandbox';
+import { collectionError, createSettledCheck } from '@chamvi/sandbox';
+import type { GarbageCollectOptions, IWorkspace } from '@chamvi/sandbox';
 import { WORKSPACE_ID_PATTERN, WORKSPACE_RECORD } from './constants.ts';
-import { errnoCode } from './helpers.ts';
+import { errnoCode, parseRecord } from './helpers.ts';
+import type { ParsedRecord } from './types.ts';
 
-/** Expiry (epoch ms) from a workspace folder's record; undefined when it has none. */
-async function readExpiry(dir: string): Promise<number | undefined> {
+/** The record of a workspace folder; undefined when it has none or it is unreadable. */
+async function readRecord(dir: string): Promise<ParsedRecord | undefined> {
     try {
-        const record = JSON.parse(await readFile(join(dir, WORKSPACE_RECORD), 'utf8')) ?? {};
-        const { expiresAt } = record as { expiresAt?: unknown };
-        const time = typeof expiresAt === 'string' ? Date.parse(expiresAt) : NaN;
-        return Number.isNaN(time) ? undefined : time;
+        return parseRecord(JSON.parse(await readFile(join(dir, WORKSPACE_RECORD), 'utf8')));
     } catch {
         return undefined;
     }
 }
 
 /**
- * Deletes every workspace folder under `root` whose record says it expired
- * (`expiresAt <= now`). A workspace still open in this process is disposed,
- * so its running commands die too. Folders that are no workspace (no uuid
- * name, no readable record) are left alone. Returns how many were deleted;
- * a folder that cannot go never keeps the others (one SandboxError at the end).
+ * Every workspace folder under `root` (a uuid name with a readable record),
+ * in name order; none without a root directory.
+ */
+export async function listRecords(root: string): Promise<Array<{ id: string; record: ParsedRecord }>> {
+    let names: string[];
+    try {
+        names = await readdir(root);
+    } catch (error) {
+        if (errnoCode(error) === 'ENOENT') return [];
+        throw new SandboxError(`cannot list the workspaces (${errnoCode(error) ?? 'unknown error'}).`, { cause: error });
+    }
+    const records: Array<{ id: string; record: ParsedRecord }> = [];
+    for (const name of names.sort()) {
+        if (!WORKSPACE_ID_PATTERN.test(name)) continue;
+        const record = await readRecord(join(root, name));
+        if (record) records.push({ id: name, record });
+    }
+    return records;
+}
+
+/**
+ * Deletes every workspace folder of `deployment` under `root` whose record
+ * says it expired (`expiresAt <= now`) or, with `isSettled`, whose run
+ * settled. A workspace still open in this process is disposed, so its
+ * running commands die too. Folders that are no workspace (no uuid name, no
+ * readable record) are left alone. Returns how many were deleted; a folder
+ * that cannot go (or whose `isSettled` rejects) never keeps the others (one
+ * SandboxError at the end).
  */
 export async function collectExpired(
     root: string,
     clock: IClock,
     live: ReadonlyMap<string, IWorkspace>,
+    options: { deployment: string; isSettled?: GarbageCollectOptions['isSettled'] },
 ): Promise<number> {
-    let names: string[];
-    try {
-        names = await readdir(root);
-    } catch (error) {
-        if (errnoCode(error) === 'ENOENT') return 0;
-        throw new SandboxError(`cannot list the workspaces (${errnoCode(error) ?? 'unknown error'}).`, { cause: error });
-    }
-
+    const records = await listRecords(root);
     const now = clock.now().getTime();
     let count = 0;
     const failures: SandboxError[] = [];
-    for (const name of names) {
-        if (!WORKSPACE_ID_PATTERN.test(name)) continue;
+    const isSettled = createSettledCheck(options.isSettled);
+    for (const { id: name, record } of records) {
+        if (record.deployment !== options.deployment) continue;
         const dir = join(root, name);
-        const expiresAt = await readExpiry(dir);
-        if (expiresAt === undefined || expiresAt > now) continue;
+        if (record.info.expiresAt.getTime() > now) {
+            const answer = await isSettled(record.runId);
+            if (answer instanceof SandboxError) failures.push(answer);
+            if (answer !== true) continue;
+        }
 
         const workspace = live.get(name);
         try {

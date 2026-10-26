@@ -13,8 +13,10 @@ import {
     it,
 } from 'vitest';
 import { SandboxError } from '@chamvi/core';
+import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
 import { CONTAINER_NAME_PREFIX, createDockerSandbox } from '@chamvi/sandbox-docker';
+import { ControllableClock } from '@chamvi/test-kit';
 import { describeDocker, dockerImage } from '../../utils/docker.ts';
 
 const offline = Boolean(process.env.CHAMVI_OFFLINE);
@@ -75,6 +77,114 @@ describeDocker('docker sandbox', () => {
         await expect(workspace.exec(['true'])).rejects.toThrow(/is gone/);
         expect(workspace.disposed).toBe(true);
         await workspace.dispose();
+    });
+
+    it('a second provider finds the workspace again and restarts its stopped container', async () => {
+        const { runId, workspace } = await create();
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        // the host restarted: the container stopped, its volume holds the work
+        await container.stop({ t: 0 });
+
+        const found = await createDockerSandbox({ image: dockerImage }).find(runId);
+        workspaces.push(...found);
+        expect(found.map((item) => item.id)).toEqual([workspace.id]);
+        expect(found[0]!.info).toEqual({ ...workspace.info, image: dockerImage });
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('never finds a stopped container whose create died before the checkout finished', async () => {
+        const { runId, workspace } = await create();
+        // the state a create killed during the fetch leaves: no checkout record
+        expect((await workspace.exec(['git', 'config', '--unset', 'chamvi.checkout'])).exitCode).toBe(0);
+        await docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`).stop({ t: 0 });
+
+        expect(await createDockerSandbox({ image: dockerImage }).find(runId)).toEqual([]);
+    });
+
+    it('restarts the stopped container of a workspace the manager still holds', async () => {
+        const provider = createDockerSandbox({ image: dockerImage });
+        const errors: unknown[] = [];
+        const manager = createWorkspaceManager({
+            provider, 
+            gcIntervalMs: 0, 
+            onError: (error) => { errors.push(error); }, 
+        });
+        const runId = `test-${randomUUID()}`;
+        const { workspace } = await manager.acquire(runId, {});
+        workspaces.push(workspace);
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        // the daemon restarted while the run waited on an approval
+        await container.stop({ t: 0 });
+
+        const held = await manager.get(runId);
+        await expect(held.exec(['cat', 'kept.txt'])).rejects.toThrow(/is gone/);
+
+        const restarted = await manager.get(runId);
+        workspaces.push(restarted);
+        expect(restarted.id).toBe(workspace.id);
+        expect(restarted).not.toBe(workspace);
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await restarted.readFile('kept.txt')).toBe('work');
+        expect(await provider.find(runId)).toEqual([restarted]);
+        expect(errors).toEqual([]);
+    });
+
+    it('finds a workspace listed as exited that is running again by the time it starts it', async () => {
+        const { runId, workspace } = await create();
+        await workspace.writeFile('kept.txt', 'work');
+        // the list is older than the start: an operator's docker start, live-restore, another replica's find
+        const client = Object.create(docker) as Docker;
+        const list = async (options?: Docker.ContainerListOptions) => (await docker.listContainers(options))
+            .map((item) => ({ ...item, State: 'exited' }));
+        client.listContainers = list as Docker['listContainers'];
+
+        const found = await createDockerSandbox({ image: dockerImage, docker: client }).find(runId);
+        workspaces.push(...found);
+        expect(found.map((item) => item.id)).toEqual([workspace.id]);
+        expect(await found[0]!.readFile('kept.txt')).toBe('work');
+    });
+
+    it('restarts the stopped container of a held workspace on find and keeps the handle', async () => {
+        const provider = createDockerSandbox({ image: dockerImage });
+        const runId = `test-${randomUUID()}`;
+        const workspace = await provider.create({ runId });
+        workspaces.push(workspace);
+        await workspace.writeFile('kept.txt', 'work');
+        const container = docker.getContainer(`${CONTAINER_NAME_PREFIX}${workspace.id}`);
+        await container.stop({ t: 0 });
+
+        expect(await provider.find(runId)).toEqual([workspace]);
+        expect((await provider.find(runId))[0]).toBe(workspace);
+        expect((await container.inspect()).State.Running).toBe(true);
+        expect(await workspace.readFile('kept.txt')).toBe('work');
+        expect(workspace.disposed).toBe(false);
+    });
+
+    it('never finds a workspace again that it is disposing', async () => {
+        const provider = createDockerSandbox({ image: dockerImage });
+        const runId = `test-${randomUUID()}`;
+        const workspace = await provider.create({ runId });
+        workspaces.push(workspace);
+        const disposal = workspace.dispose();
+        expect(await provider.find(runId)).toEqual([]);
+        await disposal;
+        expect(await containersOf(runId)).toEqual([]);
+    });
+
+    it('finds the instance it holds, never another deployment\'s or an expired one', async () => {
+        const provider = createDockerSandbox({ image: dockerImage });
+        const runId = `test-${randomUUID()}`;
+        const workspace = await provider.create({ runId, deployment: 'test-a' });
+        workspaces.push(workspace);
+        expect(await provider.find(runId, { deployment: 'test-a' })).toEqual([workspace]);
+        expect((await provider.find(runId, { deployment: 'test-a' }))[0]).toBe(workspace);
+        expect(await provider.find(runId)).toEqual([]);
+
+        const later = new ControllableClock(new Date(workspace.info.expiresAt.getTime()));
+        expect(await createDockerSandbox({ image: dockerImage, clock: later }).find(runId, { deployment: 'test-a' })).toEqual([]);
     });
 
     it('dispose removes container and volume', async () => {

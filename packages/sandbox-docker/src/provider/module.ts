@@ -9,19 +9,25 @@ import { randomUUID } from 'node:crypto';
 import { ChamviError, SandboxError, systemClock } from '@chamvi/core';
 import {
     DEFAULT_SANDBOX_IMAGE,
+    DEPLOYMENT_LABEL,
     EXPIRES_AT_KEY,
+    RUN_LABEL,
     SANDBOX_LABEL_SELECTORS,
     WORKSPACE_LABEL,
     abortedCreate,
     assertCreateInput,
+    assertDeployment,
     buildWorkspaceInfo,
     collectionError,
     createRemoteWorkspace,
+    createSettledCheck,
     isExpiredAt,
     prepareWorkspace,
+    readCheckout,
+    readWorkspaceInfo,
     resolveLimits,
 } from '@chamvi/sandbox';
-import type { ISandboxProvider, IWorkspace } from '@chamvi/sandbox';
+import type { ISandboxProvider, IWorkspace, WorkspaceInfo } from '@chamvi/sandbox';
 import Docker from 'dockerode';
 import { createDockerTransport } from '../transport/module.ts';
 import { DEFAULT_NETWORK } from './constants.ts';
@@ -30,6 +36,7 @@ import {
     buildContainerOptions,
     dockerMessage,
     isMissingImage,
+    isStatus,
     pullImage,
     removeContainer,
 } from './helpers.ts';
@@ -39,8 +46,10 @@ const PROVIDER_NAME = 'docker';
 
 /**
  * One hardened container per workspace (see `buildContainerOptions`), commands
- * run through the Docker exec API inside GNU `timeout`. The client connects
- * lazily, so creating the provider never contacts the daemon.
+ * run through the Docker exec API inside GNU `timeout`. `find` lists a run's
+ * containers by label, starts a stopped one again (its volume holds the
+ * work) and rebuilds the info from the labels. The client connects lazily,
+ * so creating the provider never contacts the daemon.
  */
 export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandboxProvider {
     assertDockerOptions(options);
@@ -51,6 +60,8 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
     const pull = options.pull ?? 'missing';
     const clock = options.clock ?? systemClock;
     const live = new Map<string, IWorkspace>();
+    /** The workspaces whose dispose was called: never found again, also while or after a removal fails. */
+    const disposing = new WeakSet<IWorkspace>();
 
     /** Creates the container, pulling its image first as `pull` says; `signal` drops every request. */
     async function createContainer(
@@ -89,6 +100,44 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
         }
     }
 
+    /** The workspace of a container, registered as live until disposed. */
+    function open(id: string, info: WorkspaceInfo, container: Docker.Container): IWorkspace {
+        const remote = createRemoteWorkspace({
+            id,
+            info,
+            transport: createDockerTransport(docker, container, clock),
+            clock,
+        });
+        const workspace: IWorkspace = {
+            id,
+            info,
+            get disposed() {
+                return remote.disposed;
+            },
+            exec: remote.exec,
+            readFile: remote.readFile,
+            writeFile: remote.writeFile,
+            async dispose() {
+                disposing.add(workspace);
+                await remote.dispose();
+                live.delete(id);
+            },
+        };
+        live.set(id, workspace);
+        return workspace;
+    }
+
+    /** The managed containers of `deployment` (and of `runId` when given), stopped ones too. */
+    async function listWorkspaceContainers(deployment: string, runId?: string): Promise<Docker.ContainerInfo[]> {
+        const label = [...SANDBOX_LABEL_SELECTORS, `${DEPLOYMENT_LABEL}=${deployment}`];
+        if (runId !== undefined) label.push(`${RUN_LABEL}=${runId}`);
+        try {
+            return await docker.listContainers({ all: true, filters: { label } });
+        } catch (error) {
+            throw new SandboxError(`cannot list the workspace containers: ${dockerMessage(error)}`, { cause: error });
+        }
+    }
+
     return {
         name: PROVIDER_NAME,
 
@@ -97,42 +146,22 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             if (input.signal?.aborted) {
                 throw abortedCreate();
             }
+            const deployment = assertDeployment(input.deployment);
             const limits = resolveLimits(options.limits, input.limits);
             const imageName = input.image ?? image;
 
             const id = randomUUID();
-            const info = buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.timeoutMs);
+            const info = { ...buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.maxLifetimeMs), image: imageName };
             const container = await createContainer(buildContainerOptions({
                 id,
-                runId: input.runId,
-                image: imageName,
+                deployment,
+                info,
                 network,
                 env: { ...options.env, ...input.env },
                 limits,
-                expiresAt: info.expiresAt,
             }), imageName, input.signal);
 
-            const remote = createRemoteWorkspace({
-                id,
-                info,
-                transport: createDockerTransport(docker, container, clock),
-                clock,
-            });
-            const workspace: IWorkspace = {
-                id,
-                info,
-                get disposed() {
-                    return remote.disposed;
-                },
-                exec: remote.exec,
-                readFile: remote.readFile,
-                writeFile: remote.writeFile,
-                async dispose() {
-                    await remote.dispose();
-                    live.delete(id);
-                },
-            };
-            live.set(id, workspace);
+            const workspace = open(id, info, container);
 
             try {
                 await container.start(input.signal ? { abortSignal: input.signal } : {});
@@ -154,24 +183,73 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             return workspace;
         },
 
-        async collectGarbage() {
-            let containers: Docker.ContainerInfo[];
-            try {
-                containers = await docker.listContainers({
-                    all: true,
-                    filters: { label: [...SANDBOX_LABEL_SELECTORS] },
-                });
-            } catch (error) {
-                throw new SandboxError(`cannot list the workspace containers: ${dockerMessage(error)}`, { cause: error });
+        async find(runId, findOptions = {}) {
+            const deployment = assertDeployment(findOptions.deployment);
+            const containers = await listWorkspaceContainers(deployment, runId);
+            const now = clock.now().getTime();
+            const found: IWorkspace[] = [];
+            /** Starts a container listed as stopped; false when it cannot run. */
+            const restart = async (item: Docker.ContainerInfo, container: Docker.Container): Promise<boolean> => {
+                if (item.State === 'running') return true;
+                // stopped (a host or daemon restart): the volume still holds the work.
+                // A container never started is a create that crashed: left to the collection
+                if (item.State !== 'exited') return false;
+                try {
+                    await container.start(findOptions.signal ? { abortSignal: findOptions.signal } : {});
+                    return true;
+                } catch (error) {
+                    // started meanwhile (an operator, live-restore, another replica's find)
+                    return isStatus(error, 304);
+                }
+            };
+            for (const item of containers) {
+                const labels = item.Labels ?? {};
+                const id = labels[WORKSPACE_LABEL] ?? '';
+                const held = live.get(id);
+                if (held && (!held.disposed || disposing.has(held))) {
+                    // a disposed one (also after a failed removal) is never found again
+                    if (disposing.has(held)) continue;
+                    // not probed yet: its container may have stopped all the same,
+                    // and the same container started again serves the held handle
+                    if (held.info.expiresAt.getTime() > now && await restart(item, docker.getContainer(item.Id))) found.push(held);
+                    continue;
+                }
+                // gone (its container stopped): a fresh handle, restarted below
+                if (held) live.delete(id);
+                const info = readWorkspaceInfo(labels, PROVIDER_NAME);
+                if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
+                const container = docker.getContainer(item.Id);
+                if (!await restart(item, container)) continue;
+                const workspace = open(id, info, container);
+                const checkout = await readCheckout(workspace, findOptions.signal, clock);
+                if (!checkout) {
+                    // a create that died before its checkout finished (restarted above
+                    // only to read that): left to the collection
+                    live.delete(id);
+                    continue;
+                }
+                if (checkout.commit !== undefined) info.commit = checkout.commit;
+                found.push(workspace);
             }
+            return found;
+        },
+
+        async collectGarbage(gcOptions = {}) {
+            const deployment = assertDeployment(gcOptions.deployment);
+            const containers = await listWorkspaceContainers(deployment);
 
             const now = clock.now().getTime();
             let count = 0;
             // one container that cannot go never keeps the others
             const failures: SandboxError[] = [];
+            const isSettled = createSettledCheck(gcOptions.isSettled);
             for (const container of containers) {
                 const labels = container.Labels ?? {};
-                if (!isExpiredAt(labels[EXPIRES_AT_KEY], now)) continue;
+                if (!isExpiredAt(labels[EXPIRES_AT_KEY], now)) {
+                    const answer = await isSettled(labels[RUN_LABEL] ?? '');
+                    if (answer instanceof SandboxError) failures.push(answer);
+                    if (answer !== true) continue;
+                }
 
                 // one open here is disposed, so its in-flight commands settle too
                 const workspace = live.get(labels[WORKSPACE_LABEL] ?? '');

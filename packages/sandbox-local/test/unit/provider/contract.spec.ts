@@ -22,4 +22,9 @@ afterAll(async () => {
     await rm(root, { recursive: true, force: true });
 });
 
-describeWorkspaceContract('local', () => createLocalSandbox({ root }).create({ runId: 'r1' }));
+describeWorkspaceContract(
+    'local',
+    (input) => createLocalSandbox({ root }).create({ runId: input?.runId ?? 'r1' }),
+    // a second provider over the same root: a restarted process
+    { find: (runId) => createLocalSandbox({ root }).find(runId) },
+);

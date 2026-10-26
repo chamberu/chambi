@@ -23,6 +23,8 @@ export type FakeExecAnswer = {
     marker?: boolean;
     /** true: the exec script found no cwd (marker `cwd`, exit 127). */
     cwdMissing?: boolean;
+    /** true: the connection closed early (`TransportExecResult.closed`). */
+    closed?: boolean;
 };
 
 export type FakeTransportHandler = (
@@ -82,7 +84,7 @@ export function createFakeTransport(handler: FakeTransportHandler = () => ({})):
             if (answer.stdout) options.stdout.write(answer.stdout);
             if (answer.stderr) options.stderr.write(answer.stderr);
             if (answer.marker !== false) options.stderr.write(encode(`${marker}${exitCode}\n`));
-            return { exitCode };
+            return answer.closed ? { exitCode, closed: true } : { exitCode };
         },
         async remove() {
             transport.removed++;

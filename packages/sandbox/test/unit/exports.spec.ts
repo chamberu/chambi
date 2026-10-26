@@ -32,6 +32,13 @@ describe('public api', () => {
         'buildWorkspaceInfo',
         'isExpiredAt',
         'collectionError',
+        'assertDeployment',
+        'workspaceLabels',
+        'workspaceMetadata',
+        'readWorkspaceInfo',
+        'repoKey',
+        'readCheckout',
+        'createSettledCheck',
         'createSinkStream',
         'delay',
         'injectSandboxContext',
@@ -66,7 +73,7 @@ describe('public api', () => {
             memory: '2Gi',
             storage: '4Gi',
             pids: 512,
-            timeoutMs: 1_800_000,
+            maxLifetimeMs: 604_800_000,
         });
         expect(sandbox.DEFAULT_SANDBOX_IMAGE).toBe('ghcr.io/chamvi/sandbox-node:24');
         expect(sandbox.TMP_SIZE).toBe('512Mi');
@@ -77,6 +84,13 @@ describe('public api', () => {
         expect(sandbox.RUN_LABEL).toBe('chamvi.dev/run');
         expect(sandbox.WORKSPACE_LABEL).toBe('chamvi.dev/workspace');
         expect(sandbox.EXPIRES_AT_KEY).toBe('chamvi.dev/expires-at');
+        expect(sandbox.CREATED_AT_KEY).toBe('chamvi.dev/created-at');
+        expect(sandbox.DEPLOYMENT_LABEL).toBe('chamvi.dev/deployment');
+        expect(sandbox.REPO_KEY_LABEL).toBe('chamvi.dev/repo-key');
+        expect(sandbox.REPO_URL_KEY).toBe('chamvi.dev/repo');
+        expect(sandbox.REF_KEY).toBe('chamvi.dev/ref');
+        expect(sandbox.IMAGE_KEY).toBe('chamvi.dev/image');
+        expect(sandbox.DEFAULT_DEPLOYMENT).toBe('default');
         expect(sandbox.SANDBOX_LABEL_SELECTORS).toEqual([
             'app.kubernetes.io/managed-by=chamvi',
             'app.kubernetes.io/component=sandbox',

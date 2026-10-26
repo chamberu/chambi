@@ -26,6 +26,17 @@ export type WorkspaceManagerOptions = {
     maxWorkspacesPerRun?: number;
     /** Minimum interval between the garbage collections `acquire` starts. Default GC_INTERVAL_MS; 0 disables them. */
     gcIntervalMs?: number;
+    /**
+     * The deployment the workspaces belong to (a label value): `find` and the
+     * garbage collection only see their own. Default `DEFAULT_DEPLOYMENT`.
+     */
+    deployment?: string;
+    /**
+     * True when a run settled or no longer exists; the garbage collection then
+     * disposes its workspaces, also ones another process created. Without
+     * it only expired workspaces are collected.
+     */
+    isSettled?: (runId: string) => Promise<boolean>;
     clock?: IClock;
     /** Background failures (disposal, garbage collection). Default console.error. */
     onError?: (error: unknown) => void;
@@ -41,6 +52,11 @@ export type AcquireInput = {
 export type CloseOptions = {
     /** How long close() waits for disposals and creates in flight. Default CLOSE_TIMEOUT_MS (30 s). */
     timeoutMs?: number;
+    /**
+     * Also dispose the workspaces of live runs (default false: they stay for
+     * their runs to find again). For a store nothing resumes from, a MemoryStore.
+     */
+    dispose?: boolean;
 };
 
 export type AcquireResult = {
@@ -55,7 +71,8 @@ export type AcquireResult = {
  */
 export interface IWorkspaceManager {
     /**
-     * The run's workspace of `repo` (none: the repo-less one), created when
+     * The run's workspace of `repo` (none: the repo-less one): held, else
+     * found through `provider.find` (adopted, `reused`), else created when
      * missing, expired or gone (`IWorkspace.disposed`). Concurrent calls share one create. ValidationError for a
      * repository or ref the rules refuse; SandboxError for another ref of a
      * held repository, a reached per-run cap or a failed create.
@@ -63,31 +80,46 @@ export interface IWorkspaceManager {
     acquire(runId: string, input: AcquireInput): Promise<AcquireResult>;
     /**
      * The run's workspace by id, or its only live one when id is omitted
-     * (expired and gone ones are disposed first). SandboxError: unknown,
-     * expired or gone (disposed then), none; ValidationError: several and no id.
+     * (expired and gone ones are disposed first). A run that holds none that
+     * fits is looked up through `provider.find` (one lookup per run at a
+     * time) and the found ones adopted. SandboxError: unknown, expired or gone
+     * (disposed then), none, a failed lookup; ValidationError: several and no id.
      */
-    get(runId: string, workspaceId?: string): IWorkspace;
+    get(runId: string, workspaceId?: string): Promise<IWorkspace>;
     /**
      * Disposes one workspace (SandboxError /not found/ for an id the run does
-     * not hold, like get), or all of the run (never rejects for none); the
-     * latter aborts the run's creates in flight and waits for them.
+     * not hold or find, like get), or all of the run (never rejects for none):
+     * the held ones and every one `provider.find` reports for the run; this
+     * aborts the run's creates and lookups in flight and waits for the creates.
      */
     release(runId: string, workspaceId?: string): Promise<void>;
     /**
-     * Disposes a run's workspaces on completed | failed | cancelled. Returns the
-     * unsubscribe; after close() it subscribes nothing.
+     * Disposes a run's workspaces on completed | failed | cancelled (`release`,
+     * so also those other processes created). With `isSettled`, a run this
+     * process neither holds nor looks up is not looked up (no `provider.find`
+     * per settled run): it starts a garbage collection instead (at most one
+     * per `gcIntervalMs`), which removes what other processes left for it.
+     * Returns the unsubscribe; after close() it subscribes nothing.
      */
     attach(engine: Pick<Engine, 'on'>): () => void;
     /** `create_workspace` and `dispose_workspace`. */
     tools(): ToolSet;
-    /** Disposes the manager's expired workspaces, then runs the provider's collection; returns how many went. */
+    /**
+     * Disposes the manager's expired workspaces and, with `isSettled`, the
+     * ones of settled runs, then runs the provider's collection (deployment
+     * and `isSettled` passed on); returns how many went.
+     */
     collectGarbage(): Promise<number>;
     /**
-     * Unsubscribes every attach, aborts the creates in flight and disposes
-     * every workspace, waiting for both, for disposals started earlier and for
-     * the creates in flight of runs released before (call after engine.drain()); afterwards
-     * acquire rejects and attach subscribes nothing. Resolves after `timeoutMs`
-     * at the latest, reporting what is still being disposed to `onError`.
+     * Unsubscribes every attach, aborts the creates in flight (disposing what
+     * they made) and forgets the held workspaces without disposing them: they
+     * belong to live runs, which find them again after a restart (with
+     * `dispose: true` it disposes them too). Waits for
+     * the creates, for disposals started earlier and for the creates in
+     * flight of runs released before (call after engine.drain()); afterwards
+     * acquire, get and lookups reject and attach subscribes nothing. Resolves
+     * after `timeoutMs` at the latest, reporting what is still being disposed
+     * to `onError`.
      */
     close(options?: CloseOptions): Promise<void>;
 }

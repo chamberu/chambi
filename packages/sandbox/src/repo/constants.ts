@@ -18,3 +18,22 @@ export const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 export const CHECKOUT_STDERR_MAX_LENGTH = 2_000;
 
 export const REPO_RULE = 'repo must be "owner/name" or an https URL without credentials, query or fragment.';
+
+/**
+ * The git config key `prepareWorkspace` writes as its last step: the checked
+ * out commit, or `NO_REPO_CHECKOUT` for a repo-less workspace. A workspace
+ * without it is a create that died before its checkout finished.
+ */
+export const CHECKOUT_KEY = 'chamvi.checkout';
+
+/** The `CHECKOUT_KEY` value of a finished repo-less workspace. */
+export const NO_REPO_CHECKOUT = 'none';
+
+/** Exec timeout of `readCheckout`. */
+export const CHECKOUT_READ_TIMEOUT_MS = 30_000;
+
+/** Reads `readCheckout` makes before it gives up on a workspace it cannot read. */
+export const CHECKOUT_READ_ATTEMPTS = 5;
+
+/** Wait between two `readCheckout` reads (a container just restarted may refuse the first exec). */
+export const CHECKOUT_READ_RETRY_MS = 500;

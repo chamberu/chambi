@@ -40,8 +40,8 @@ describe('local garbage collection', () => {
     it('deletes expired workspaces only', async () => {
         const clock = new ControllableClock();
         const provider = createLocalSandbox({ root, clock });
-        const first = await provider.create({ runId: 'r1', limits: { timeoutMs: 1_000 } });
-        const second = await provider.create({ runId: 'r2', limits: { timeoutMs: 60_000 } });
+        const first = await provider.create({ runId: 'r1', limits: { maxLifetimeMs: 1_000 } });
+        const second = await provider.create({ runId: 'r2', limits: { maxLifetimeMs: 60_000 } });
         const foreign = join(root, 'not-a-workspace');
         await mkdir(foreign);
 
@@ -86,6 +86,41 @@ describe('local garbage collection', () => {
         } finally {
             await chmod(locked, 0o700);
         }
+    });
+
+    it('deletes the workspaces of settled runs with isSettled, in its deployment only', async () => {
+        const clock = new ControllableClock();
+        const provider = createLocalSandbox({ root, clock });
+        const settled = await provider.create({ runId: 'done' });
+        const live = await provider.create({ runId: 'live' });
+        const other = await provider.create({ runId: 'done', deployment: 'ci' });
+        const asked: string[] = [];
+
+        expect(await provider.collectGarbage({
+            isSettled: async (runId) => {
+                asked.push(runId);
+                return runId === 'done';
+            },
+        })).toBe(1);
+        expect(asked.sort()).toEqual(['done', 'live']);
+        expect((await readdir(root)).sort()).toEqual([live.id, other.id].sort());
+        expect(settled.disposed).toBe(true);
+
+        clock.advance(604_800_000);
+        expect(await provider.collectGarbage({ deployment: 'ci' })).toBe(1);
+        expect(await readdir(root)).toEqual([live.id]);
+        await live.dispose();
+    });
+
+    it('keeps a workspace whose isSettled rejects and reports it', async () => {
+        const provider = createLocalSandbox({ root });
+        const workspace = await provider.create({ runId: 'r1' });
+        const error = await provider.collectGarbage({ isSettled: async () => { throw new Error('store down'); } })
+            .catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).toMatch(/removed 0 .*1 failed.*store down/);
+        expect(await readdir(root)).toEqual([workspace.id]);
+        await workspace.dispose();
     });
 
     it('collects nothing without a root directory', async () => {

@@ -7,11 +7,22 @@
 
 import { describe, expect, it } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
-import { EXEC_TIMEOUT_MS, prepareWorkspace } from '@chamvi/sandbox';
+import type { IClock } from '@chamvi/core';
+import { EXEC_TIMEOUT_MS, prepareWorkspace, readCheckout } from '@chamvi/sandbox';
+import { CHECKOUT_READ_ATTEMPTS } from '../../../src/repo/constants.ts';
 import { createScriptedWorkspace } from '../../utils/workspace.ts';
 
 const url = 'https://github.com/octo/demo.git';
 const sha = '0123456789abcdef0123456789abcdef01234567';
+
+/** Fires every timer at once, so the retry waits take no time. */
+const immediateClock: IClock = {
+    now: () => new Date(0),
+    setTimeout: (fn) => {
+        queueMicrotask(fn);
+        return { clear: () => {} };
+    },
+};
 
 describe('prepareWorkspace', () => {
     it('checks out a ref', async () => {
@@ -23,6 +34,7 @@ describe('prepareWorkspace', () => {
             ['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'v1'],
             ['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD'],
             ['git', 'rev-parse', 'HEAD'],
+            ['git', 'config', 'chamvi.checkout', sha],
         ]);
         expect(result).toEqual({ commit: sha });
     });
@@ -52,7 +64,11 @@ describe('prepareWorkspace', () => {
     it('only inits without a repo', async () => {
         const workspace = createScriptedWorkspace();
         const result = await prepareWorkspace(workspace, {});
-        expect(workspace.calls.map((call) => call.argv)).toEqual([['git', 'init', '-q', '.']]);
+        expect(workspace.calls.map((call) => call.argv)).toEqual([
+            ['git', 'init', '-q', '.'],
+            // the end of the checkout is recorded for a repo-less workspace too
+            ['git', 'config', 'chamvi.checkout', 'none'],
+        ]);
         expect(result.commit).toBeUndefined();
     });
 
@@ -99,5 +115,64 @@ describe('prepareWorkspace', () => {
         await expect(prepareWorkspace(workspace, { repo: 'https://user:token@github.com/o/r' })).rejects.toThrow(ValidationError);
         await expect(prepareWorkspace(workspace, { repo: 'https://github.com/o/r?x=1' })).rejects.toThrow(ValidationError);
         expect(workspace.calls).toHaveLength(0);
+    });
+});
+
+describe('readCheckout', () => {
+    const answering = (value: string, repo?: string) => {
+        const workspace = createScriptedWorkspace((argv) => (argv[1] === 'config' ? { stdout: `${value}\n` } : {}));
+        if (repo !== undefined) workspace.info.repo = repo;
+        return workspace;
+    };
+
+    it('reads the commit a finished checkout recorded', async () => {
+        const workspace = answering(sha, url);
+        await expect(readCheckout(workspace)).resolves.toEqual({ commit: sha });
+        expect(workspace.calls[0]?.argv).toEqual(['git', 'config', '--get', 'chamvi.checkout']);
+    });
+
+    it('reads a finished repo-less checkout', async () => {
+        await expect(readCheckout(answering('none'))).resolves.toEqual({});
+    });
+
+    it('is undefined for a checkout that never finished (a create that died during the fetch)', async () => {
+        // nothing recorded: git config exits 1
+        await expect(readCheckout(createScriptedWorkspace(() => ({ exitCode: 1 })))).resolves.toBeUndefined();
+        const halfRepo = createScriptedWorkspace(() => ({ exitCode: 1 }));
+        halfRepo.info.repo = url;
+        await expect(readCheckout(halfRepo)).resolves.toBeUndefined();
+    });
+
+    it('is undefined when the record does not fit the workspace, and for a failed exec', async () => {
+        await expect(readCheckout(answering('none', url))).resolves.toBeUndefined();
+        await expect(readCheckout(answering(sha))).resolves.toBeUndefined();
+        await expect(readCheckout(answering('nope', url))).resolves.toBeUndefined();
+        const broken = createScriptedWorkspace();
+        broken.exec = async () => { throw new SandboxError('workspace disposed'); };
+        await expect(readCheckout(broken, undefined, immediateClock)).resolves.toBeUndefined();
+    });
+
+    it('reads a missing record once, without retrying', async () => {
+        const workspace = createScriptedWorkspace(() => ({ exitCode: 1 }), { repo: url });
+        await expect(readCheckout(workspace, undefined, immediateClock)).resolves.toBeUndefined();
+        expect(workspace.calls).toHaveLength(1);
+    });
+
+    it('retries a read that failed, e.g. right after a container restart', async () => {
+        let failures = 2;
+        const workspace = createScriptedWorkspace(() => ({ stdout: `${sha}\n` }), { repo: url });
+        const exec = workspace.exec.bind(workspace);
+        workspace.exec = async (argv, options) => {
+            if (failures-- > 0) throw new SandboxError('exec failed: container is not running');
+            return exec(argv, options);
+        };
+        await expect(readCheckout(workspace, undefined, immediateClock)).resolves.toEqual({ commit: sha });
+        expect(workspace.calls).toHaveLength(1);
+    });
+
+    it('retries an unexpected exit code, then gives up after CHECKOUT_READ_ATTEMPTS', async () => {
+        const workspace = createScriptedWorkspace(() => ({ exitCode: 126 }), { repo: url });
+        await expect(readCheckout(workspace, undefined, immediateClock)).resolves.toBeUndefined();
+        expect(workspace.calls).toHaveLength(CHECKOUT_READ_ATTEMPTS);
     });
 });

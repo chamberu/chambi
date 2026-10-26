@@ -12,9 +12,9 @@ import type { SandboxLimits } from '../provider/types.ts';
 import {
     CPU_PATTERN,
     ENV_KEY_PATTERN,
+    LIFETIME_MIN_MS,
     MEMORY_PATTERN,
     MEMORY_UNITS,
-    TIMEOUT_MIN_MS,
 } from './constants.ts';
 import { assertPositiveQuantity } from './helpers.ts';
 
@@ -42,8 +42,8 @@ export function parseMemory(value: string): number {
  * Merges limit layers over `DEFAULT_LIMITS`, later layers winning (an
  * `undefined` value keeps the earlier one). Every given value is checked:
  * cpu, memory and storage parse to more than zero, pids is an integer of at
- * least 1, timeoutMs an integer of at least 1_000 (exec timeouts are capped
- * separately). InvalidAgentDefinitionError otherwise.
+ * least 1, maxLifetimeMs an integer of at least 1_000 (exec timeouts are
+ * capped separately). InvalidAgentDefinitionError otherwise.
  */
 export function resolveLimits(...layers: Array<SandboxLimits | undefined>): Required<SandboxLimits> {
     const limits: Required<SandboxLimits> = { ...DEFAULT_LIMITS };
@@ -70,11 +70,11 @@ export function resolveLimits(...layers: Array<SandboxLimits | undefined>): Requ
             }
             limits.pids = layer.pids;
         }
-        if (layer.timeoutMs !== undefined) {
-            if (!Number.isSafeInteger(layer.timeoutMs) || layer.timeoutMs < TIMEOUT_MIN_MS) {
-                throw new InvalidAgentDefinitionError(`limits.timeoutMs must be an integer of at least ${TIMEOUT_MIN_MS}, got ${JSON.stringify(layer.timeoutMs)}.`);
+        if (layer.maxLifetimeMs !== undefined) {
+            if (!Number.isSafeInteger(layer.maxLifetimeMs) || layer.maxLifetimeMs < LIFETIME_MIN_MS) {
+                throw new InvalidAgentDefinitionError(`limits.maxLifetimeMs must be an integer of at least ${LIFETIME_MIN_MS}, got ${JSON.stringify(layer.maxLifetimeMs)}.`);
             }
-            limits.timeoutMs = layer.timeoutMs;
+            limits.maxLifetimeMs = layer.maxLifetimeMs;
         }
     }
     return limits;

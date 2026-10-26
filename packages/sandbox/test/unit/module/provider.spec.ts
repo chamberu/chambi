@@ -9,15 +9,21 @@ import type { ISandboxProvider, IWorkspace } from '@chamvi/sandbox';
 import { describe, expect, it } from 'vitest';
 import { createLazyProvider } from '../../../src/module/provider.ts';
 
-function inner(): ISandboxProvider & { creates: number } {
+function inner(): ISandboxProvider & { creates: number; calls: unknown[][] } {
     const provider = {
         name: 'inner',
         creates: 0,
+        calls: [] as unknown[][],
         async create() {
             provider.creates += 1;
             return { id: `ws-${provider.creates}` } as unknown as IWorkspace;
         },
-        async collectGarbage() {
+        async find(runId: string, options?: unknown) {
+            provider.calls.push(['find', runId, options]);
+            return [];
+        },
+        async collectGarbage(options?: unknown) {
+            provider.calls.push(['collectGarbage', options]);
             return 3;
         },
     };
@@ -49,6 +55,18 @@ describe('createLazyProvider', () => {
         expect([a.id, b.id].sort()).toEqual(['ws-1', 'ws-2']);
         expect(await provider.collectGarbage()).toBe(3);
         expect(loads).toBe(1);
+    });
+
+    it('forwards find and the garbage collection options', async () => {
+        const target = inner();
+        const provider = createLazyProvider('docker', async () => target);
+        const isSettled = async () => true;
+        expect(await provider.find('r1', { deployment: 'prod' })).toEqual([]);
+        expect(await provider.collectGarbage({ deployment: 'prod', isSettled })).toBe(3);
+        expect(target.calls).toEqual([
+            ['find', 'r1', { deployment: 'prod' }],
+            ['collectGarbage', { deployment: 'prod', isSettled }],
+        ]);
     });
 
     it('a failed load is not cached', async () => {

@@ -62,7 +62,7 @@ Each workspace is a container `chamvi-ws-<id>`:
 | Setting | Value |
 |---|---|
 | User | `1000:1000` (`SANDBOX_USER`) |
-| Command | `sleep <lifetime in seconds>`: the container stops itself at expiry |
+| Command | `sleep infinity`: the lifetime follows the run; the garbage collection removes it |
 | Root filesystem | read-only (`ReadonlyRootfs`) |
 | Capabilities | all dropped, `no-new-privileges:true`, not privileged |
 | Limits | `NanoCpus` from `cpu`, `Memory` and `MemorySwap` (no swap) from `memory`, `PidsLimit` from `pids` |
@@ -70,7 +70,7 @@ Each workspace is a container `chamvi-ws-<id>`:
 | `/tmp` | a 512 MiB tmpfs (`exec`, `nosuid`, `nodev`): npm's global prefix and cache and corepack live there, as in a Kubernetes pod's memory `emptyDir` |
 | Network | `network` (default `bridge`) |
 | Environment | `SANDBOX_ENV` plus `env`, nothing from the host |
-| Labels | `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>`, `chamvi.dev/expires-at=<epoch ms>` |
+| Labels | `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>`, `chamvi.dev/deployment=<deployment>`, `chamvi.dev/repo-key=<hash>` (with a repository), `chamvi.dev/created-at` and `chamvi.dev/expires-at` (epoch ms), `chamvi.dev/repo`, `chamvi.dev/ref`, `chamvi.dev/image` |
 
 `limits.storage` is not enforced: a default volume has no size (use a storage driver with quotas, or the Kubernetes provider). Commands run through the Docker exec API in `/workspace`; a file is read with `cat` and written with `head -c` from stdin.
 
@@ -99,13 +99,13 @@ The default image is `ghcr.io/chamvi/sandbox-node:24` (`DEFAULT_SANDBOX_IMAGE`):
 
 Every command runs as `timeout -k 5 <seconds> <argv>`; GNU `timeout` signals its whole process group, so backgrounded grandchildren go too. A client-side guard stops waiting 15 s (`EXEC_GRACE_MS`) after the timeout and reports exit 137 with the output so far. A command that exits while a background job it started holds its output returns about 2 s after its exit with its own exit code.
 
-An abort (`signal`) **detaches**: dockerode tears down the exec stream, and the command runs on until its `timeout` fires or the workspace is disposed. Every settled run disposes its workspaces (`manager.attach(engine)`), and a drain is followed by `manager.close()`, so nothing outlives the run for long. A dispose removes the container, which kills whatever still runs.
+An abort (`signal`) **detaches**: dockerode tears down the exec stream, and the command runs on until its `timeout` fires or the workspace is disposed. Every settled run disposes its workspaces (`manager.attach(engine)`), so nothing outlives the run for long. A dispose removes the container, which kills whatever still runs.
 
 A create's `signal` (aborted by `release(runId)` and `manager.close()`) drops its requests: the image pull (the daemon may finish it on its own), the container create (a container the daemon made anyway is removed) and the start. dockerode sets no request timeout by default, so a hanging daemon stalls a create or a removal. `manager.close()` gives up after its `timeoutMs` (30 s) and reports what is left; to bound every request, pass a client with a timeout: `createDockerSandbox({ docker: new Docker({ timeout: 60_000 }) })` (in ms, longer than your slowest image pull).
 
 ## Garbage collection
 
-`collectGarbage()` lists the daemon's containers with the managed labels and removes every one past its `chamvi.dev/expires-at` (open workspaces of this process are disposed first), including those of crashed processes and other replicas sharing the daemon. The manager calls it from `acquire` at most every 10 minutes. A container that cannot be removed does not stop the pass: the others go, and one `SandboxError` with the count and the first failure is thrown at the end.
+`find(runId, { deployment })` lists the run's containers by label, starts a stopped one again (a host or daemon restart; its volume still holds the work), also one whose handle this process holds and found gone (the manager forgets a gone workspace instead of disposing it), and rebuilds the workspace from the labels, so a run finds its workspace after a restart or on another replica sharing the daemon. `collectGarbage({ deployment, isSettled })` lists the deployment's containers with the managed labels and removes every one past its `chamvi.dev/expires-at` and, with `isSettled`, those of settled runs (open workspaces of this process are disposed first), including those of crashed processes and other replicas sharing the daemon. The manager calls it from `acquire` at most every 10 minutes. A container that cannot be removed does not stop the pass: the others go, and one `SandboxError` with the count and the first failure is thrown at the end.
 
 ## Options
 
@@ -118,7 +118,7 @@ A create's `signal` (aborted by `release(runId)` and `manager.close()`) drops it
 | `network` | `string` | `'bridge'` | `'bridge'`, `'none'` or a user-created network |
 | `pull` | `'missing' \| 'always' \| 'never'` | `'missing'` | When to pull the image |
 | `env` | `Record<string, string>` | none | Added after `SANDBOX_ENV` |
-| `limits` | `SandboxLimits` | `DEFAULT_LIMITS` | `cpu`, `memory`, `pids`, `timeoutMs` (`storage` is not enforced) |
+| `limits` | `SandboxLimits` | `DEFAULT_LIMITS` | `cpu`, `memory`, `pids`, `maxLifetimeMs` (`storage` is not enforced) |
 | `clock` | `IClock` | `systemClock` | Expiry and the exec guard |
 
 Misconfiguration throws core `InvalidAgentDefinitionError`; daemon and container failures are `SandboxError`s.

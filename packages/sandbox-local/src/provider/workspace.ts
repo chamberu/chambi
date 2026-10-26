@@ -46,6 +46,7 @@ import type {
     WorkspaceInfo,
 } from '@chamvi/sandbox';
 import { KILL_GRACE_MS, LINGER_CHECK_MS, REPO_DIR } from './constants.ts';
+import { trackLingering, untrackLingering } from './exit.ts';
 import {
     errnoCode,
     exitCodeOf,
@@ -64,7 +65,9 @@ type LiveExec = { fail(error: SandboxError): void };
  * runs on until the dispose, as on Docker and Kubernetes. The workspace
  * remembers the group of every command that exited while a job of it still
  * ran and forgets it once the group ended (checked every `LINGER_CHECK_MS`),
- * so the dispose kills the jobs but never a group that reused the id. No
+ * so the dispose kills the jobs but never a group that reused the id. Only
+ * this instance knows the groups, so they die with the process too (its
+ * `exit`); a workspace found again after a restart has no jobs. No
  * isolation: the command runs as the host user.
  */
 export class LocalWorkspace implements IWorkspace {
@@ -225,12 +228,7 @@ export class LocalWorkspace implements IWorkspace {
         for (const entry of [...this.live]) {
             entry.fail(new SandboxError('workspace disposed'));
         }
-        this.lingerTimer?.clear();
-        this.lingerTimer = undefined;
-        for (const pid of this.lingering) {
-            if (groupAlive(pid)) killGroup(pid);
-        }
-        this.lingering.clear();
+        this.killLingering();
         this.onDispose();
         try {
             await rm(this.dir, {
@@ -297,11 +295,16 @@ export class LocalWorkspace implements IWorkspace {
         return join(real, ...rest);
     }
 
-    /** Marks the workspace gone and throws when its directory no longer exists. */
+    /**
+     * Marks the workspace gone and throws when its directory no longer
+     * exists. Its background jobs are killed then: the manager forgets a gone
+     * workspace without disposing it.
+     */
     protected async assertRoot(): Promise<void> {
         const stats = await stat(this.root).catch(() => undefined);
         if (stats?.isDirectory() || this.disposing) return;
         this.gone = true;
+        this.killLingering();
         throw new SandboxError(this.goneMessage());
     }
 
@@ -309,12 +312,24 @@ export class LocalWorkspace implements IWorkspace {
         return `workspace ${this.id} is gone (its directory was removed); call create_workspace for a new one.`;
     }
 
+    /** Kills the background jobs of finished execs (dispose, process exit); synchronous. */
+    killLingering(): void {
+        this.lingerTimer?.clear();
+        this.lingerTimer = undefined;
+        for (const pid of this.lingering) {
+            if (groupAlive(pid)) killGroup(pid);
+        }
+        this.lingering.clear();
+        untrackLingering(this);
+    }
+
     /** Remembers the group of an exec whose command exited while a job of it runs on. */
     protected linger(pid: number): void {
         // the leader was reaped: a live member is a job, and the id cannot be reused while it lives
         if (this.disposing || !groupAlive(pid)) return;
         this.lingering.add(pid);
-        this.lingerTimer ??= this.clock.setTimeout(() => this.checkLingering(), LINGER_CHECK_MS);
+        trackLingering(this);
+        this.lingerTimer ??= this.clock.setTimeout(() => this.checkLingering(), LINGER_CHECK_MS, { keepAlive: false });
     }
 
     protected checkLingering(): void {
@@ -322,8 +337,9 @@ export class LocalWorkspace implements IWorkspace {
         for (const pid of this.lingering) {
             if (!groupAlive(pid)) this.lingering.delete(pid);
         }
+        if (this.lingering.size === 0) untrackLingering(this);
         if (this.lingering.size > 0 && !this.disposing) {
-            this.lingerTimer = this.clock.setTimeout(() => this.checkLingering(), LINGER_CHECK_MS);
+            this.lingerTimer = this.clock.setTimeout(() => this.checkLingering(), LINGER_CHECK_MS, { keepAlive: false });
         }
     }
 

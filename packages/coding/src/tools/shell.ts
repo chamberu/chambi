@@ -55,7 +55,7 @@ export function bashTool(workspaces: CodingWorkspaces): Tool<BashInput, ExecResu
             const command = requireString(body.command, 'command');
             const cwd = body.cwd === undefined ? undefined : requirePath(body.cwd, 'cwd');
             const timeoutMs = optionalInteger(body.timeoutMs, 'timeoutMs', 1, EXEC_TIMEOUT_MAX_MS) ?? EXEC_TIMEOUT_MS;
-            const workspace = workspaceOf(workspaces, body, context);
+            const workspace = await workspaceOf(workspaces, body, context);
 
             return workspace.exec(['sh', '-c', command], {
                 cwd,

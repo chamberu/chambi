@@ -12,9 +12,17 @@ export function abortError(signal: AbortSignal): Error {
     return signal.reason instanceof Error ? signal.reason : new Error('exec aborted');
 }
 
-/** Resolves when the hijacked stream ends or closes; rejects on its error or the signal. */
-export function streamEnded(stream: Duplex, signal: AbortSignal): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+/** Socket errors of a connection the daemon closed, e.g. after a command exited with stdin still queued. */
+const CLOSED_CONNECTION_CODES = new Set(['ECONNRESET', 'EPIPE']);
+
+/**
+ * Resolves when the hijacked stream ends or closes (`'ended'`), or the daemon
+ * closed the connection (ECONNRESET, EPIPE: `'closed'`, the exit code comes
+ * from inspect but the output may be cut); rejects on any other error or the
+ * signal.
+ */
+export function streamEnded(stream: Duplex, signal: AbortSignal): Promise<'ended' | 'closed'> {
+    return new Promise<'ended' | 'closed'>((resolve, reject) => {
         const cleanup = () => {
             signal.removeEventListener('abort', onAbort);
             stream.off('end', onEnd);
@@ -23,11 +31,12 @@ export function streamEnded(stream: Duplex, signal: AbortSignal): Promise<void> 
         };
         function onEnd() {
             cleanup();
-            resolve();
+            resolve('ended');
         }
-        function onError(error: Error) {
+        function onError(error: Error & { code?: string }) {
             cleanup();
-            reject(error);
+            if (error.code !== undefined && CLOSED_CONNECTION_CODES.has(error.code)) resolve('closed');
+            else reject(error);
         }
         function onAbort() {
             cleanup();

@@ -30,8 +30,11 @@ export function createLazyProvider(name: string, load: () => Promise<ISandboxPro
         async create(options) {
             return (await target()).create(options);
         },
-        async collectGarbage() {
-            return (await target()).collectGarbage();
+        async find(runId, options) {
+            return (await target()).find(runId, options);
+        },
+        async collectGarbage(options) {
+            return (await target()).collectGarbage(options);
         },
     };
 }
