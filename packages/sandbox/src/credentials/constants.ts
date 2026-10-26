@@ -22,3 +22,10 @@ export const CREDENTIALS_FILE = '.chamvi/credentials';
 
 /** Shorter values are never redacted (they would match everywhere). */
 export const REDACT_MIN_LENGTH = 4;
+
+/**
+ * How long after its `expiresAt` an issued credential stays redacted: a
+ * token is worthless then, and keeping every token a long-lived process
+ * ever issued would grow the redactor without bound.
+ */
+export const REDACT_GRACE_MS = 3_600_000;

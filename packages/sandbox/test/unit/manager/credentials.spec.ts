@@ -16,7 +16,7 @@ import type {
     IGitCredentials,
     WorkspaceManagerOptions,
 } from '@chamvi/sandbox';
-import { INSTALL_CREDENTIALS_SCRIPT, READ_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
+import { INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { createFakeProvider } from '../../utils/provider.ts';
 import type { ScriptedWorkspace } from '../../utils/workspace.ts';
@@ -279,37 +279,47 @@ describe('workspace manager credentials', () => {
             expect(installs(raw)).toHaveLength(4);
         });
 
-        it('redacts the tokens an earlier process wrote into a workspace found again', async () => {
-            const OLD = 'ghs_writtenByTheProcessBeforeTheRestart';
-            const file = `https://github.com/octo/demo\tx-access-token\t${OLD}\n`;
+        it('never reads the credentials file of a found workspace into the redactor', async () => {
+            const COMMON = 'common-word-written-by-a-model';
+            const file = `https://github.com/octo/demo\tx-access-token\t${COMMON}\n`;
             const {
                 manager, 
                 provider, 
                 build, 
-            } = setup({}, (argv) => (argv[0] === 'sh' && argv[2] === READ_CREDENTIALS_SCRIPT ? { stdout: file } : {}));
-            const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
-            const raw = provider.workspaces.get(workspace.id)!;
-            // a workspace this process created has no earlier file to read
-            expect(raw.calls.filter((call) => call.argv[2] === READ_CREDENTIALS_SCRIPT)).toHaveLength(0);
-            raw.files.set('/workspace/notes.txt', `token ${OLD}`);
-
-            const found = await build().get('r1');
-            await expect(found.readFile('/workspace/notes.txt')).resolves.toBe('token [redacted]');
-            await expect(found.exec(['cat', 'notes.txt'])).resolves.toBeDefined();
-            expect(raw.calls.filter((call) => call.argv[2] === READ_CREDENTIALS_SCRIPT)).toHaveLength(1);
-        });
-
-        it('learns the earlier tokens in tools mode too, before the first exec', async () => {
-            const OLD = 'ghs_writtenByAnEarlierWorkspaceModeProcess';
-            const file = `https://github.com/octo/demo\tx-access-token\t${OLD}\n`;
-            const { manager, build } = setup({ credentialMode: 'tools' }, (argv) => {
-                if (argv[0] === 'sh' && argv[2] === READ_CREDENTIALS_SCRIPT) return { stdout: file };
-                if (argv[0] === 'cat') return { stdout: `leaked ${OLD}\n` };
+            } = setup({}, (argv) => {
+                if (argv[0] === 'cat') return { stdout: `notes ${COMMON}\n` };
                 return {};
             });
-            await manager.acquire('r1', { repo: 'octo/demo' });
+            const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+            const raw = provider.workspaces.get(workspace.id)!;
+            // the model wrote a common string where the tokens live
+            raw.files.set('/home/sandbox/.chamvi/credentials', file);
+            raw.files.set('/workspace/notes.txt', `notes ${COMMON}`);
+
+            const restarted = build();
+            const found = await restarted.get('r1');
+            await expect(found.readFile('/workspace/notes.txt')).resolves.toBe(`notes ${COMMON}`);
+            await expect(found.exec(['cat', 'notes.txt'])).resolves.toMatchObject({ stdout: `notes ${COMMON}\n` });
+
+            // another run of the same process sees it unchanged too
+            const { workspace: other } = await restarted.acquire('r2', { repo: 'octo/demo' });
+            provider.workspaces.get(other.id)!.files.set('/workspace/notes.txt', `notes ${COMMON}`);
+            await expect(other.readFile('/workspace/notes.txt')).resolves.toBe(`notes ${COMMON}`);
+
+            // the only shell call naming the credentials file is the install
+            const reads = raw.calls.filter((call) => call.argv.some((arg) => arg.includes('.chamvi/credentials')) && !isInstall(call.argv));
+            expect(reads).toEqual([]);
+        });
+
+        it('writes the credentials of a found workspace before its first exec', async () => {
+            const { manager, provider, build } = setup();
+            const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+            const raw = provider.workspaces.get(workspace.id)!;
+            const before = raw.calls.length;
+
             const found = await build().get('r1');
-            await expect(found.exec(['cat', 'notes.txt'])).resolves.toMatchObject({ stdout: 'leaked [redacted]\n' });
+            await found.exec(['true']);
+            expect(raw.calls.slice(before).map((call) => (isInstall(call.argv) ? 'install' : call.argv.join(' ')))).toEqual(['install', 'true']);
         });
 
         it('installs nothing while no source answers and the workspace holds no credentials', async () => {
@@ -328,7 +338,6 @@ describe('workspace manager credentials', () => {
             } = setup(
                 { credentials: { get: async () => undefined } },
                 (argv, options) => {
-                    if (argv[0] === 'sh' && argv[2] === READ_CREDENTIALS_SCRIPT) return { stdout: file };
                     if (isInstall(argv)) file = options.stdin ?? '';
                     return {};
                 },

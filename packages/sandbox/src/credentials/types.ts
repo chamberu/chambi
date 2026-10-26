@@ -56,7 +56,12 @@ export type CredentialMode = 'workspace' | 'tools';
 
 /** Replaces issued credentials with `REDACTED`. */
 export type Redactor = {
-    add(secret: string): void;
+    /**
+     * Redacts `secret` from now on; with `expiresAt` only until
+     * `REDACT_GRACE_MS` after it (adding it again keeps the later expiry,
+     * none wins).
+     */
+    add(secret: string, expiresAt?: Date): void;
     redact(text: string): string;
     /** The same bytes when they hold no secret. */
     redactBytes(bytes: Uint8Array): Uint8Array;

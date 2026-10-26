@@ -16,7 +16,7 @@ import type {
     IGitCredentials,
     Redactor,
 } from '../credentials/types.ts';
-import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT, READ_CREDENTIALS_SCRIPT } from '../git/constants.ts';
+import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../git/constants.ts';
 import { credentialKey, credentialsFileContent, urlOrigin } from '../git/helpers.ts';
 import type { ExecResult, IWorkspace } from '../workspace/types.ts';
 import { CREDENTIAL_INSTALL_TIMEOUT_MS } from './constants.ts';
@@ -39,30 +39,22 @@ export type CredentialSupport = {
      * `onError`) its read credential. A credential already inside that
      * window is rewritten `CREDENTIAL_RETRY_MS` later at the earliest. A failure goes to
      * `onError` and is retried `CREDENTIAL_RETRY_MS` later; it never throws.
-     * In both modes it first learns (`learn`) the tokens of a workspace this
-     * process did not create (`fresh` false).
+     * A workspace this process created (`fresh`) holds no file yet; one it
+     * found again may hold an earlier process's, which the first install
+     * overwrites (or clears). The file is never read back: it is
+     * model-writable, so its content is no secret to redact.
      */
     refresh(workspace: IWorkspace, options?: { fresh?: boolean }): Promise<void>;
-    /**
-     * Once per workspace this process did not create: adds the tokens of
-     * its credentials file (an earlier process's, still valid) to the
-     * redactor, so a copy the model made of them is redacted too. A failure
-     * goes to `onError` and is retried `CREDENTIAL_RETRY_MS` later.
-     */
-    learn(workspace: IWorkspace): Promise<void>;
-    /** The workspace the manager hands out: redacting, learning and refreshing before each call. One per raw workspace. */
+    /** The workspace the manager hands out: redacting and refreshing before each call. One per raw workspace. */
     wrap(workspace: IWorkspace): IWorkspace;
 };
 
 type InstallState = {
-    /** The earlier credentials file was read (or there is none: a workspace this process created). */
-    learned?: boolean;
-    learnRetryAt?: number;
-    learning?: Promise<void>;
     installed?: boolean;
     /**
-     * The workspace holds no credentials file content: created by this process,
-     * or read back empty. Undefined while unknown (not read, or the read failed).
+     * The workspace holds no credentials file content: created by this
+     * process, or emptied by an install. Undefined while unknown (a workspace
+     * found again, which may hold an earlier process's file).
      */
     empty?: boolean;
     /** When the file must be rewritten (epoch ms); undefined: never (no credential expires). */
@@ -71,13 +63,6 @@ type InstallState = {
     retryAt?: number;
     pending?: Promise<void>;
 };
-
-/**
- * Tokens read back from a credentials file are at least this long: the
- * file is model-writable, and a short value would redact common words in
- * every run of the process.
- */
-const LEARNED_SECRET_MIN_LENGTH = 16;
 
 function isHttps(url: string): boolean {
     return url.startsWith('https://');
@@ -95,14 +80,14 @@ export function createCredentialSupport(input: {
         clock,
         onError,
     } = input;
-    const redactor = createRedactor();
+    const redactor = createRedactor({ clock });
     const states = new WeakMap<IWorkspace, InstallState>();
     const wrapped = new WeakMap<IWorkspace, IWorkspace>();
 
     const lookup: CredentialSupport['lookup'] = async (url, access, runId, signal) => {
         if (!isHttps(url)) return undefined;
         const credential = await resolveGitCredential(sources, credentialRequest(url, access, runId, signal));
-        if (credential) redactor.add(credential.password);
+        if (credential) redactor.add(credential.password, credential.expiresAt);
         return credential;
     };
 
@@ -159,39 +144,10 @@ export function createCredentialSupport(input: {
         return state;
     };
 
-    const learn: CredentialSupport['learn'] = async (workspace) => {
-        const state = stateOf(workspace);
-        if (!state || state.learned) return;
-        if (state.learnRetryAt !== undefined && clock.now().getTime() < state.learnRetryAt) return;
-        state.learning ??= (async () => {
-            const result = await workspace.exec(['sh', '-c', READ_CREDENTIALS_SCRIPT], { timeoutMs: CREDENTIAL_INSTALL_TIMEOUT_MS });
-            if (result.exitCode !== 0 || result.timedOut) {
-                throw new SandboxError(`reading the git credentials of workspace ${workspace.id} ${result.timedOut ? 'timed out' : `exited with ${result.exitCode}`}.`);
-            }
-            state.empty = result.stdout.trim() === '';
-            for (const line of result.stdout.split('\n')) {
-                const password = line.split('\t')[2];
-                if (password !== undefined && password.length >= LEARNED_SECRET_MIN_LENGTH) redactor.add(password);
-            }
-        })().then(() => {
-            state.learned = true;
-        }, (error: unknown) => {
-            state.learnRetryAt = clock.now().getTime() + CREDENTIAL_RETRY_MS;
-            onError(redactor.redactError(error));
-        }).finally(() => {
-            delete state.learning;
-        });
-        await state.learning;
-    };
-
     const refresh: CredentialSupport['refresh'] = async (workspace, options = {}) => {
         const state = stateOf(workspace);
         if (!state) return;
-        if (options.fresh) {
-            state.learned = true;
-            state.empty = true;
-        }
-        await learn(workspace);
+        if (options.fresh) state.empty = true;
         if (mode !== 'workspace') return;
         const now = clock.now().getTime();
         if (state.installed && (state.refreshAt === undefined || now < state.refreshAt)) return;
@@ -248,14 +204,8 @@ export function createCredentialSupport(input: {
                 await refresh(workspace);
                 return redactResult(await workspace.exec(argv, options));
             }),
-            readFile: (path) => guard(async () => {
-                await learn(workspace);
-                return redactor.redact(await workspace.readFile(path));
-            }),
-            readBytes: (path) => guard(async () => {
-                await learn(workspace);
-                return redactor.redactBytes(await workspace.readBytes(path));
-            }),
+            readFile: (path) => guard(async () => redactor.redact(await workspace.readFile(path))),
+            readBytes: (path) => guard(async () => redactor.redactBytes(await workspace.readBytes(path))),
             writeFile: (path, content) => guard(() => workspace.writeFile(path, content)),
             dispose: () => guard(() => workspace.dispose()),
             redact: (text) => redactor.redact(text),
@@ -268,7 +218,6 @@ export function createCredentialSupport(input: {
         mode,
         redactor,
         lookup,
-        learn,
         refresh,
         wrap,
     };

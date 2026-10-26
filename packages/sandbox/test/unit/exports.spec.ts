@@ -81,6 +81,7 @@ describe('public api', () => {
         expect(sandbox.CREDENTIAL_RETRY_MS).toBe(60_000);
         expect(sandbox.CREDENTIALS_FILE).toBe('.chamvi/credentials');
         expect(sandbox.REDACT_MIN_LENGTH).toBe(4);
+        expect(sandbox.REDACT_GRACE_MS).toBe(3_600_000);
     });
 
     it('exports the provider constants', () => {
