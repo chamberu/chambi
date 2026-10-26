@@ -32,6 +32,7 @@ describe('public api', () => {
         'assertClockOption',
         'buildWorkspaceInfo',
         'isExpiredAt',
+        'lifetimeSeconds',
         'collectionError',
         'assertDeployment',
         'workspaceLabels',

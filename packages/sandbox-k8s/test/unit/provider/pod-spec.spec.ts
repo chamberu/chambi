@@ -50,6 +50,13 @@ const hardened: PodInput = {
 };
 
 describe('buildPod', () => {
+    it('sleeps for the lifetime with a deadline, replacing the image entrypoint', () => {
+        const pod = buildPod(input);
+        expect(pod.spec?.containers[0]?.command).toEqual(['sleep', '600']);
+        expect(pod.spec?.containers[0]?.args).toBeUndefined();
+        expect(pod.spec?.activeDeadlineSeconds).toBe(600);
+    });
+
     it('names the pod after the workspace', () => {
         const pod = buildPod(input);
         expect(pod.metadata?.name).toBe('chamvi-ws-w1');
@@ -101,8 +108,8 @@ describe('buildPod', () => {
             shareProcessNamespace: true,
             terminationGracePeriodSeconds: 5,
         });
-        // the lifetime follows the run: nothing ends the pod but the garbage collection
-        expect(spec).not.toHaveProperty('activeDeadlineSeconds');
+        // the pod ends itself at the workspace's lifetime, also when no collection runs
+        expect(spec?.activeDeadlineSeconds).toBe(600);
         expect(spec?.securityContext).toEqual({
             runAsUser: 0,
             runAsGroup: 0,
@@ -130,10 +137,10 @@ describe('buildPod', () => {
             name: 'sandbox',
             image: 'img',
             imagePullPolicy: 'IfNotPresent',
-            args: ['sleep', 'infinity'],
+            command: ['sleep', '600'],
             workingDir: '/workspace',
         });
-        expect(container).not.toHaveProperty('command');
+        expect(container).not.toHaveProperty('args');
         expect(container.env).toEqual([
             ...Object.entries(SANDBOX_ENV).map(([name, value]) => ({ name, value })),
             ...Object.entries(CACHE_ENV).map(([name, value]) => ({ name, value })),

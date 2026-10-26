@@ -57,8 +57,8 @@ describe('buildContainerOptions', () => {
 
         expect(options.name).toBe('chamvi-ws-w1');
         expect(options.Image).toBe('img');
-        // the lifetime follows the run: only the garbage collection removes it
-        expect(options.Cmd).toEqual(['sleep', 'infinity']);
+        // it stops itself at the workspace's lifetime; the garbage collection removes it
+        expect(options.Cmd).toEqual(['sleep', '600']);
         expect(options.User).toBe('0:0');
         expect(options.WorkingDir).toBe('/workspace');
         expect(options.Env).toEqual([
@@ -180,6 +180,13 @@ describe('buildContainerOptions', () => {
         expect(options.Env).toContain('npm_config_cache=/cache/npm');
         // toolchains stay per workspace, never in a cache volume
         expect(options.Env?.some((entry) => entry.startsWith('MISE_DATA_DIR='))).toBe(false);
+    });
+
+    it('sleeps for the workspace lifetime and skips the image entrypoint', () => {
+        const options = buildContainerOptions(input());
+        expect(options.Cmd).toEqual(['sleep', '600']);
+        expect(options.Entrypoint).toEqual([]);
+        expect(options.HostConfig?.Init).toBe(true);
     });
 
     it('mounts a shared volume only when one is named', () => {

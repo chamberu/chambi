@@ -32,6 +32,7 @@ const NO_GIT_IMAGE = 'chamvi/sandbox-no-git:test';
 
 const NO_CACHE_IMAGE = 'chamvi/sandbox-no-cache:test';
 const NO_INIT_IMAGE = 'chamvi/sandbox-no-init:test';
+const ENTRYPOINT_IMAGE = 'chamvi/sandbox-entrypoint:test';
 
 /** Leaves 20 orphans that exit at once, waits, then prints how many processes are zombies. */
 const ORPHANS = 'for i in $(seq 20); do sh -c "sleep 0.1 &"; done; sleep 1; ' +
@@ -536,6 +537,17 @@ describeDocker('docker sandbox', () => {
             expect(await containersOf(runId)).toEqual([]);
         } finally {
             await docker.getImage(NO_GIT_IMAGE).remove({ force: true }).catch(() => undefined);
+        }
+    });
+
+    it('starts an image whose entrypoint is a command', async () => {
+        await buildFixtureImage(docker, 'entrypoint', ENTRYPOINT_IMAGE);
+        try {
+            const { workspace } = await create({ image: ENTRYPOINT_IMAGE, pull: 'never' });
+            expect((await workspace.exec(['true'])).exitCode).toBe(0);
+            await workspace.dispose();
+        } finally {
+            await docker.getImage(ENTRYPOINT_IMAGE).remove({ force: true }).catch(() => undefined);
         }
     });
 

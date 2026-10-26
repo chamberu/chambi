@@ -19,6 +19,7 @@ import {
     assertSandboxEnv,
     assertTmpSizeOption,
     isRootUser,
+    lifetimeSeconds,
     parseCpu,
     parseMemory,
     resolveLimits,
@@ -160,10 +161,13 @@ export async function pullImage(docker: Dockerode, image: string, signal?: Abort
  * then with only the `ROOT_CAPABILITIES`, else none), a writable root unless
  * `readOnlyRoot`, no-new-privileges, docker-init as pid 1 (it reaps the
  * orphans of any image), pid/memory/cpu limits, a `/tmp` tmpfs,
- * anonymous `/workspace` and `WORKSPACE_HOME` volumes, the cache at `/cache` (the shared named
- * volume, or an anonymous one) and only `SANDBOX_ENV`, `CACHE_ENV` and the
- * configured `env` (never the host's). No host mount, no privileged mode. It sleeps forever: its lifetime follows the
- * run, and only the garbage collection (expiry, settled run) removes it.
+ * anonymous `/workspace` and `WORKSPACE_HOME` volumes, the cache at `/cache`
+ * (an anonymous volume, or the named `cache.volume`) and only `SANDBOX_ENV`,
+ * `CACHE_ENV` and the configured `env` (never the host's). No host mount, no
+ * privileged mode. The image's entrypoint is replaced: it sleeps for its
+ * lifetime (`lifetimeSeconds`), so it stops itself at `expiresAt` even when
+ * no collection runs; the garbage collection (expiry, settled run) removes
+ * it.
  * Its labels hold everything `find` rebuilds the info from.
  */
 export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.ContainerCreateOptions {
@@ -178,7 +182,10 @@ export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.C
     return {
         name: `${CONTAINER_NAME_PREFIX}${input.id}`,
         Image: input.info.image,
-        Cmd: ['sleep', 'infinity'],
+        // the image's entrypoint is skipped (an image whose entrypoint is a
+        // command, not an init, would never sleep); Init adds docker-init
+        Entrypoint: [],
+        Cmd: ['sleep', String(lifetimeSeconds(input.info))],
         User: input.user,
         WorkingDir: WORKSPACE_ROOT,
         Env: Object.entries(env).map(([key, value]) => `${key}=${value}`),

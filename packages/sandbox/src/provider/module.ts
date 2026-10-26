@@ -104,6 +104,15 @@ export function buildWorkspaceInfo(
     return info;
 }
 
+/**
+ * The lifetime of a workspace in whole seconds, rounded up, at least 1: how
+ * long a container or pod sleeps (and a pod's `activeDeadlineSeconds`), so a
+ * workspace stops itself at its `expiresAt` even when no collection runs.
+ */
+export function lifetimeSeconds(info: Pick<WorkspaceInfo, 'createdAt' | 'expiresAt'>): number {
+    return Math.max(1, Math.ceil((info.expiresAt.getTime() - info.createdAt.getTime()) / 1000));
+}
+
 /** True when an `EXPIRES_AT_KEY` value (epoch ms as a string) is at or before `now`. */
 export function isExpiredAt(value: string | undefined, now: number): boolean {
     const expiresAt = Number(value);
