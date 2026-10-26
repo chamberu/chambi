@@ -197,7 +197,11 @@ describe('edits of a file holding an issued token', () => {
 
     it('keeps the token byte for byte when editing another line', async () => {
         const call = redactingTools();
-        await call('edit_file', { path: 'src/a.ts', oldString: 'a = 1', newString: 'a = 2' });
+        await call('edit_file', {
+            path: 'src/a.ts', 
+            oldString: 'a = 1', 
+            newString: 'a = 2', 
+        });
         expect(await bytesOf('src/a.ts')).toBe(`export const a = 2;\nconst t = '${SECRET}';\n`);
     });
 
@@ -215,7 +219,11 @@ describe('edits of a file holding an issued token', () => {
 
     it('leaves the file untouched and echoes no text when oldString is missing', async () => {
         const call = redactingTools();
-        const error = await call('edit_file', { path: 'src/a.ts', oldString: 'missing', newString: 'x' }).catch((e: unknown) => e);
+        const error = await call('edit_file', {
+            path: 'src/a.ts', 
+            oldString: 'missing', 
+            newString: 'x', 
+        }).catch((e: unknown) => e);
         expect(error).toBeInstanceOf(ValidationError);
         expect((error as Error).message).not.toContain(SECRET);
         expect(await bytesOf('src/a.ts')).toBe(FILE);

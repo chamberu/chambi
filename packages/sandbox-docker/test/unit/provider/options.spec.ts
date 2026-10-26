@@ -97,7 +97,11 @@ describe('docker sandbox create without a daemon', () => {
 
     it('mounts the named volume only with cache.volume', async () => {
         const docker = fakeDocker(new Error('stop after the create options'));
-        const provider = createDockerSandbox({ docker: docker as never, user: '1000:1000', cache: { volume: 'shared' } });
+        const provider = createDockerSandbox({
+            docker: docker as never, 
+            user: '1000:1000', 
+            cache: { volume: 'shared' }, 
+        });
 
         await expect(provider.create({ runId: 'run-1' })).rejects.toThrow(SandboxError);
         expect(cacheMountOf(docker)).toBe('shared');

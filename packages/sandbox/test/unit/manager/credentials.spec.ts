@@ -322,7 +322,11 @@ describe('workspace manager credentials', () => {
         });
 
         it('writes the credentials of a found workspace before its first exec', async () => {
-            const { manager, provider, build } = setup();
+            const {
+                manager, 
+                provider, 
+                build, 
+            } = setup();
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
             const before = raw.calls.length;
@@ -340,7 +344,7 @@ describe('workspace manager credentials', () => {
         });
 
         it('clears the credentials an earlier process wrote once no source answers', async () => {
-            let file = '';
+            let file: string | undefined;
             const {
                 manager, 
                 provider, 
@@ -357,7 +361,7 @@ describe('workspace manager credentials', () => {
             expect(installs(raw)).toHaveLength(0);
 
             // an earlier process with a source wrote a token; this one adopts the workspace
-            file = 'https://github.com/octo/demo\tx-access-token\tghs_writtenByTheProcessBeforeTheRestart\n';
+            raw.files.set('/home/sandbox/.chamvi/credentials', 'https://github.com/octo/demo\tx-access-token\tghs_writtenByTheProcessBeforeTheRestart\n');
             const adopted = await build().get('r1');
             await adopted.exec(['true']);
             await adopted.exec(['true']);
