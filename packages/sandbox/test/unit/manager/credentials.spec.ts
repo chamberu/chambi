@@ -16,7 +16,7 @@ import type {
     IGitCredentials,
     WorkspaceManagerOptions,
 } from '@chamvi/sandbox';
-import { INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
+import { CLEAR_CREDENTIALS_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { createFakeProvider } from '../../utils/provider.ts';
 import type { ScriptedWorkspace } from '../../utils/workspace.ts';
@@ -390,6 +390,38 @@ describe('workspace manager credentials', () => {
         const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
         await workspace.exec(['true']);
         expect(installs(provider.workspaces.get(workspace.id)!)).toHaveLength(0);
+    });
+
+    it('removes a credentials file an earlier workspace-mode process left, once, before the first exec of a found workspace in credentialMode tools', async () => {
+        const { manager, provider } = setup();
+        const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+        const raw = provider.workspaces.get(workspace.id)!;
+        expect(installs(raw)).toHaveLength(1);
+
+        // the restarted process runs in tools mode: it never issued that token and so never redacts it
+        const restarted = createWorkspaceManager({
+            provider,
+            clock: new ControllableClock(new Date(START)),
+            gcIntervalMs: 0,
+            credentials: tokenSource(new ControllableClock(new Date(START))),
+            credentialMode: 'tools',
+        });
+        const found = await restarted.get('r1');
+        await found.exec(['true']);
+        await found.exec(['true']);
+        const clears = raw.calls.filter((call) => call.argv[0] === 'sh' && call.argv[2] === CLEAR_CREDENTIALS_SCRIPT);
+        expect(clears).toHaveLength(1);
+        expect(raw.calls.at(-3)!.argv[2]).toBe(CLEAR_CREDENTIALS_SCRIPT);
+        expect(raw.calls.at(-1)!.argv).toEqual(['true']);
+        expect(installs(raw)).toHaveLength(1);
+    });
+
+    it('removes nothing from a workspace it created in credentialMode tools', async () => {
+        const { manager, provider } = setup({ credentialMode: 'tools' });
+        const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+        await workspace.exec(['true']);
+        const raw = provider.workspaces.get(workspace.id)!;
+        expect(raw.calls.some((call) => call.argv[2] === CLEAR_CREDENTIALS_SCRIPT)).toBe(false);
     });
 
     it('redacts every issued credential from exec results, file reads and errors', async () => {

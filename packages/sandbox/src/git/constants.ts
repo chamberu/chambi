@@ -97,6 +97,15 @@ export const CREDENTIAL_HELPER_SCRIPT = [
 ].join('\n');
 
 /**
+ * Removes the credentials file of `credentialMode: 'workspace'`: run once
+ * by a `credentialMode: 'tools'` process before the first exec of a
+ * workspace it found again, since an earlier workspace-mode process may
+ * have left still valid tokens in it, which this process never issued and
+ * so never redacts.
+ */
+export const CLEAR_CREDENTIALS_SCRIPT = 'rm -f "$HOME/.chamvi/credentials" "$HOME/.chamvi/credentials.tmp"';
+
+/**
  * Installs the workspace credential helper: `$1` the helper script, `$2`
  * the byte length of the credentials file on stdin (read with `head -c`, so
  * no stdin EOF is needed). Writes `$HOME/.chamvi/credentials` (0600, through

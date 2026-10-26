@@ -16,7 +16,7 @@ import type {
     IGitCredentials,
     Redactor,
 } from '../credentials/types.ts';
-import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../git/constants.ts';
+import { CLEAR_CREDENTIALS_SCRIPT, CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../git/constants.ts';
 import { credentialKey, credentialsFileContent, urlOrigin } from '../git/helpers.ts';
 import type { ExecResult, IWorkspace } from '../workspace/types.ts';
 import { CREDENTIAL_INSTALL_TIMEOUT_MS } from './constants.ts';
@@ -41,7 +41,10 @@ export type CredentialSupport = {
      * `onError` and is retried `CREDENTIAL_RETRY_MS` later; it never throws.
      * A workspace this process created (`fresh`) holds no file yet; one it
      * found again may hold an earlier process's, which the first install
-     * overwrites (or clears). The file is never read back: it is
+     * overwrites (or clears). In `tools` mode it removes that file once,
+     * before the first exec of a workspace found again (an earlier
+     * workspace-mode process's tokens, which this process never issued and
+     * so never redacts). The file is never read back: it is
      * model-writable, so its content is no secret to redact.
      */
     refresh(workspace: IWorkspace, options?: { fresh?: boolean }): Promise<void>;
@@ -133,6 +136,16 @@ export function createCredentialSupport(input: {
         return Math.max(Math.min(...expiries) - CREDENTIAL_REFRESH_MS, clock.now().getTime() + CREDENTIAL_RETRY_MS);
     };
 
+    /** Tools mode: removes the file an earlier workspace-mode process may have left (never rewritten). */
+    const clear = async (workspace: IWorkspace): Promise<undefined> => {
+        const result = await workspace.exec(['sh', '-c', CLEAR_CREDENTIALS_SCRIPT], { timeoutMs: CREDENTIAL_INSTALL_TIMEOUT_MS });
+        if (result.exitCode !== 0 || result.timedOut) {
+            const reason = result.timedOut ? 'timed out' : `exited with ${result.exitCode}`;
+            throw new SandboxError(`removing the git credentials of workspace ${workspace.id} ${reason}: ${redactor.redact(result.stderr.trim()).slice(0, 500)}`);
+        }
+        return undefined;
+    };
+
     const stateOf = (workspace: IWorkspace): InstallState | undefined => {
         const { repo } = workspace.info;
         if (repo === undefined || !isHttps(repo)) return undefined;
@@ -148,13 +161,15 @@ export function createCredentialSupport(input: {
         const state = stateOf(workspace);
         if (!state) return;
         if (options.fresh) state.empty = true;
-        if (mode !== 'workspace') return;
+        // tools mode writes no file; a workspace it created holds none
+        if (mode !== 'workspace' && state.empty === true) return;
         const now = clock.now().getTime();
         if (state.installed && (state.refreshAt === undefined || now < state.refreshAt)) return;
         if (state.retryAt !== undefined && now < state.retryAt) return;
         if (!state.pending) {
             const current = state;
-            current.pending = install(workspace, current).then((refreshAt) => {
+            const write = mode === 'workspace' ? install(workspace, current) : clear(workspace);
+            current.pending = write.then((refreshAt) => {
                 current.installed = true;
                 current.empty = undefined;
                 current.refreshAt = refreshAt;
