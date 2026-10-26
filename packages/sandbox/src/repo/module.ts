@@ -172,10 +172,13 @@ export async function readCheckout(
         try {
             const result = await workspace.exec(['git', 'config', '--get', CHECKOUT_KEY], { timeoutMs: CHECKOUT_READ_TIMEOUT_MS, signal });
             // exit 1 without output: no record, a create that died before its checkout finished
+            // eslint-disable-next-line no-console
+            console.log('DEBUG read', attempt, JSON.stringify({ exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, timedOut: result.timedOut }));
             if (result.exitCode === 1 && !result.timedOut && result.stdout.trim() === '') return undefined;
             if (result.exitCode === 0 && !result.timedOut) value = result.stdout.trim();
-        } catch {
-            // the exec itself failed: read again below
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.log('DEBUG read error', attempt, (error as Error).message);
         }
         if (value !== undefined) break;
         if (attempt >= CHECKOUT_READ_ATTEMPTS || signal?.aborted) return undefined;

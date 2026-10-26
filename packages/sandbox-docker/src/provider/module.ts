@@ -236,6 +236,8 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             const containers = await listWorkspaceContainers(deployment, runId);
             const now = clock.now().getTime();
             const found: IWorkspace[] = [];
+            // eslint-disable-next-line no-console
+            console.log('DEBUG find', runId, JSON.stringify(containers.map((c) => [c.Id.slice(0, 12), c.State, c.Status])));
             /** Starts a container listed as stopped; false when it cannot run. */
             const restart = async (item: Docker.ContainerInfo, container: Docker.Container): Promise<boolean> => {
                 if (item.State === 'running') return true;
@@ -244,8 +246,12 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 if (item.State !== 'exited') return false;
                 try {
                     await container.start(findOptions.signal ? { abortSignal: findOptions.signal } : {});
+                    // eslint-disable-next-line no-console
+                    console.log('DEBUG restart ok', item.Id.slice(0, 12), item.State);
                     return true;
                 } catch (error) {
+                    // eslint-disable-next-line no-console
+                    console.log('DEBUG restart error', item.Id.slice(0, 12), item.State, (error as Error).message);
                     // started meanwhile (an operator, live-restore, another replica's find)
                     return isStatus(error, 304);
                 }
@@ -270,6 +276,8 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 if (!await restart(item, container)) continue;
                 const workspace = open(id, info, createDockerTransport(docker, container, clock, user));
                 const checkout = await readCheckout(workspace, findOptions.signal, clock);
+                // eslint-disable-next-line no-console
+                console.log('DEBUG checkout', item.Id.slice(0, 12), JSON.stringify(checkout));
                 if (!checkout) {
                     // a create that died before its checkout finished (restarted above
                     // only to read that): left to the collection
