@@ -236,12 +236,23 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             const containers = await listWorkspaceContainers(deployment, runId);
             const now = clock.now().getTime();
             const found: IWorkspace[] = [];
-            /** Starts a container listed as stopped; false when it cannot run. */
-            const restart = async (item: Docker.ContainerInfo, container: Docker.Container): Promise<boolean> => {
-                if (item.State === 'running') return true;
+            /**
+             * Starts a stopped container; false when it cannot run. The state
+             * comes from inspect, since the list is a view that may lag behind
+             * a stop or a start.
+             */
+            const restart = async (container: Docker.Container): Promise<boolean> => {
+                let state: Docker.ContainerInspectInfo['State'];
+                try {
+                    ({ State: state } = await container.inspect(findOptions.signal ? { abortSignal: findOptions.signal } : {}));
+                } catch {
+                    // removed meanwhile
+                    return false;
+                }
+                if (state.Running) return true;
                 // stopped (a host or daemon restart): the volume still holds the work.
                 // A container never started is a create that crashed: left to the collection
-                if (item.State !== 'exited') return false;
+                if (state.Status !== 'exited') return false;
                 try {
                     await container.start(findOptions.signal ? { abortSignal: findOptions.signal } : {});
                     return true;
@@ -259,7 +270,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                     if (disposing.has(held)) continue;
                     // not probed yet: its container may have stopped all the same,
                     // and the same container started again serves the held handle
-                    if (held.info.expiresAt.getTime() > now && await restart(item, docker.getContainer(item.Id))) found.push(held);
+                    if (held.info.expiresAt.getTime() > now && await restart(docker.getContainer(item.Id))) found.push(held);
                     continue;
                 }
                 // gone (its container stopped): a fresh handle, restarted below
@@ -267,7 +278,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 const info = readWorkspaceInfo(labels, PROVIDER_NAME);
                 if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
                 const container = docker.getContainer(item.Id);
-                if (!await restart(item, container)) continue;
+                if (!await restart(container)) continue;
                 const workspace = open(id, info, createDockerTransport(docker, container, clock, user));
                 const checkout = await readCheckout(workspace, findOptions.signal, clock);
                 if (!checkout) {
