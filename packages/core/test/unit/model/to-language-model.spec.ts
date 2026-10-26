@@ -13,7 +13,7 @@ describe('toLanguageModel', () => {
     it('refuses a missing ref', () => {
         expect(() => toLanguageModel(undefined, undefined, 'ops')).toThrow(InvalidAgentDefinitionError);
         expect(() => toLanguageModel(undefined, undefined, 'ops'))
-            .toThrow('Agent "ops" has no model and the app sets no default (CHAMVI_MODEL).');
+            .toThrow('Agent "ops" has no model and the engine sets no default (EngineOptions.model; CHAMVI_MODEL in @chamvi/app).');
     });
 
     it('passes a string through without a resolver', () => {

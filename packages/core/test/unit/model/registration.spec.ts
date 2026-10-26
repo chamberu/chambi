@@ -28,7 +28,7 @@ import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import { MemoryStore } from '../../../src/store/index.ts';
 
-const NO_MODEL = 'Agent "triage" has no model and the app sets no default (CHAMVI_MODEL).';
+const NO_MODEL = 'Agent "triage" has no model and the engine sets no default (EngineOptions.model; CHAMVI_MODEL in @chamvi/app).';
 const SHAPE = 'Agent "triage": model must be a "<provider>/<model>" string or a LanguageModel object.';
 const DEFAULT_SHAPE = 'The default model must be a "<provider>/<model>" string or a LanguageModel object.';
 
