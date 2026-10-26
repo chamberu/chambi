@@ -1,0 +1,10 @@
+{
+    "name": "fixture-providers",
+    "type": "module",
+    "private": true,
+    "dependencies": {
+        "@ai-sdk/anthropic": "*",
+        "@chamvi/app": "*",
+        "ai": "*"
+    }
+}
