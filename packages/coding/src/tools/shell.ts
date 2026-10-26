@@ -26,6 +26,7 @@ import {
     objectSchema,
     optionalBoolean,
     optionalInteger,
+    redactText,
     requirePath,
     requireString,
     signalOf,
@@ -90,8 +91,9 @@ async function runCommand(
     const stderr = excerptOf(report.stderr);
     return {
         exitCode: report.status ?? result.exitCode,
-        stdout: stdout.text,
-        stderr: stderr.text,
+        // decoded from base64 here, so the workspace's exec redaction never saw them
+        stdout: redactText(workspace, stdout.text),
+        stderr: redactText(workspace, stderr.text),
         stdoutTruncated: stdout.truncated,
         stderrTruncated: stderr.truncated,
         stdoutBytes: report.stdout.size,
@@ -114,7 +116,8 @@ export function bashTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number
             '(read them with read_file, grep or bash). A command past its timeout is killed (timedOut: true), and so is one whose log ' +
             `passes ${outputLogMaxBytes} bytes (outputCapped: true; redirect huge output to a file). No interactive input. ` +
             'A process the command leaves running (cmd &) keeps writing to the log and is killed once the log passes that size. ' +
-            'For servers and watchers pass background: true and read the output with bash_output.',
+            'For servers and watchers pass background: true and read the output with bash_output. ' +
+            'When git fetch, pull or push fails to authenticate here, use git_fetch, git_pull and git_push, which carry the run\'s credentials.',
         inputSchema: objectSchema<BashInput>({
             command: {
                 type: 'string',

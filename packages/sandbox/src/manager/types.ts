@@ -6,7 +6,8 @@
  */
 
 import type { ToolSet } from 'ai';
-import type { Engine, IClock } from '@chamvi/core';
+import type { Engine, IClock, ToolContext } from '@chamvi/core';
+import type { CredentialMode, IGitCredentials } from '../credentials/types.ts';
 import type { ISandboxProvider, SandboxLimits } from '../provider/types.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 
@@ -43,9 +44,43 @@ export type WorkspaceManagerOptions = {
      * it only expired workspaces are collected.
      */
     isSettled?: (runId: string) => Promise<boolean>;
+    /**
+     * Git credentials for private repositories and pushes: the first source
+     * that answers wins, none answering is anonymous.
+     */
+    credentials?: IGitCredentials | IGitCredentials[];
+    /**
+     * How a credential reaches git. Default `workspace`: a credential helper
+     * and a 0600 file in the workspace's HOME, so plain git in `bash` works
+     * (the push policy then binds `git_push` only). `tools`: no credential in
+     * the workspace, only the checkout and the git tools authenticate.
+     */
+    credentialMode?: CredentialMode;
+    /** A shallow checkout of this many commits for huge repositories; default the full history. */
+    depth?: number;
+    /** The commit identity, set as `GIT_AUTHOR_*` and `GIT_COMMITTER_*` in every workspace's environment. */
+    author?: GitAuthor;
+    /** What `git_push` may push; default every branch but the default branch, no force, no approval. */
+    push?: PushPolicy;
     clock?: IClock;
-    /** Background failures (disposal, garbage collection). Default console.error. */
+    /** Background failures (disposal, garbage collection, credential refreshes). Default console.error. */
     onError?: (error: unknown) => void;
+};
+
+export type GitAuthor = {
+    name: string;
+    email: string;
+};
+
+export type PushPolicy = {
+    /** `auto` (default) pushes; `approve` asks the owner through `approve()` before every push. */
+    mode?: 'auto' | 'approve';
+    /** Allow `git_push({ force: true })` (always `--force-with-lease`). Default false. */
+    allowForce?: boolean;
+    /** The branches `git_push` may push to; default every branch but the repository's default branch. */
+    allowBranch?: (branch: string, ctx: ToolContext) => boolean | Promise<boolean>;
+    /** The channel an approval goes through; default the run's source channel when it has an `out`, else none (inbox only). */
+    channel?: string;
 };
 
 export type AcquireInput = {
@@ -138,6 +173,8 @@ export type WorkspaceToolResult = {
     repo: string | null;
     ref: string | null;
     commit: string | null;
+    /** The remote's default branch, fetched as `origin/<name>` (the base to merge or rebase onto). */
+    defaultBranch: string | null;
     /** The image of a container or pod workspace; null on local. */
     image: string | null;
     expiresAt: string;
@@ -147,4 +184,34 @@ export type WorkspaceToolResult = {
 export type DisposeWorkspaceResult = {
     workspace: string;
     disposed: true;
+};
+
+/** What `git_fetch`, `git_pull` and `git_push` answer: the git call's outcome, redacted. */
+export type GitToolResult = {
+    workspace: string;
+    /** The repository URL git talked to (never a remote name of the repository config). */
+    remote: string;
+    exitCode: number;
+    stdout: string;
+    stderr: string;
+    timedOut: boolean;
+};
+
+export type GitFetchResult = GitToolResult & {
+    refspec: string;
+};
+
+export type GitPullResult = GitToolResult & {
+    branch: string;
+    rebase: boolean;
+    /** The step the result is of: the fetch when it failed, else the merge or rebase. */
+    step: 'fetch' | 'merge' | 'rebase';
+};
+
+export type GitPushResult = GitToolResult & {
+    branch: string;
+    /** The commit pushed. */
+    commit: string;
+    pushed: boolean;
+    forced: boolean;
 };

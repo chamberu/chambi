@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { CheckoutOptions } from '../repo/types.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 
 export type SandboxLimits = {
@@ -28,6 +29,8 @@ export type WorkspaceCreateOptions = {
     /** A normalized repository URL (`normalizeRepo`); without it the workspace is only `git init`-ed. */
     repo?: string;
     ref?: string;
+    /** Passed to `prepareWorkspace`: a shallow `depth`, the read `credential` of a private repository. */
+    checkout?: CheckoutOptions;
     /** The image of a container or pod workspace; default the provider's. */
     image?: string;
     /**
@@ -64,7 +67,8 @@ export interface ISandboxProvider {
     readonly name: string;
     /**
      * A ready workspace (id `randomUUID()`), checked out when `repo` is given
-     * (via `prepareWorkspace`, then `info.commit = commit`).
+     * (via `prepareWorkspace` with `checkout`, then `info.commit` and
+     * `info.defaultBranch` from its result).
      */
     create(options: WorkspaceCreateOptions): Promise<IWorkspace>;
     /**

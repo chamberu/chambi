@@ -28,9 +28,14 @@ const pending = { phase: 'Pending' };
 /** The image probe a create runs first, straight on the pod (no timeout wrapper). */
 const PROBE = ['sh', '-c', expect.stringContaining('command -v git')];
 
-const answerRevParse: FakeExecHandler = (argv) => (
-    unwrap(argv)[1] === 'rev-parse' ? { stdout: `${COMMIT}\n` } : {}
-);
+/** HEAD for `rev-parse HEAD`; no remote branch of that name for `rev-parse -q --verify` (a tag). */
+const answerRevParse: FakeExecHandler = (argv) => {
+    const command = unwrap(argv);
+    if (command[1] !== 'rev-parse') return {};
+    return command[2] === '-q' ? { exitCode: 1 } : { stdout: `${COMMIT}\n` };
+};
+
+const NO_CREDENTIAL = ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null'];
 
 function setup(onExec: FakeExecHandler = answerRevParse, options: Partial<KubernetesSandboxOptions> = {}) {
     const clock = new ControllableClock(new Date(START));
@@ -81,12 +86,14 @@ describe('kubernetes sandbox', () => {
         const name = `chamvi-ws-${workspace.id}`;
         expect(client.created[0]!.metadata?.name).toBe(name);
         expect(client.created[0]!.metadata?.labels?.['chamvi.dev/run']).toBe('r1');
-        expect(client.execs.map((call) => call.name)).toEqual(Array(7).fill(name));
+        expect(client.execs.map((call) => call.name)).toEqual(Array(9).fill(name));
         expect(client.execs.map((call) => call.argv)).toEqual([
             PROBE,
             wrapped(['git', 'init', '-q', '.']),
             wrapped(['git', 'remote', 'add', 'origin', REPO]),
-            wrapped(['git', '-c', 'credential.helper=', 'fetch', '-q', '--depth', '1', 'origin', 'v1']),
+            wrapped([...NO_CREDENTIAL, 'ls-remote', '--symref', REPO, 'HEAD']),
+            wrapped([...NO_CREDENTIAL, 'fetch', '-q', 'origin', 'v1']),
+            wrapped(['git', 'rev-parse', '-q', '--verify', 'refs/remotes/origin/v1']),
             wrapped(['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']),
             wrapped(['git', 'rev-parse', 'HEAD']),
             wrapped(['git', 'config', 'chamvi.checkout', COMMIT]),
@@ -264,7 +271,7 @@ describe('kubernetes sandbox', () => {
 
     it('disposes a failed checkout', async () => {
         const { client, provider } = setup((argv) => (
-            unwrap(argv)[3] === 'fetch' ?
+            unwrap(argv).includes('fetch') ?
                 { exitCode: 128, stderr: "fatal: couldn't find remote ref nope\n" } :
                 {}
         ));
@@ -493,12 +500,18 @@ describe('kubernetes sandbox', () => {
     });
 
     describe('find', () => {
+        /** Answers the remote's default branch (main), else like answerRevParse. */
+        const answerCommit: FakeExecHandler = (argv, input) => {
+            if (unwrap(argv).includes('ls-remote')) return { stdout: `ref: refs/heads/main\tHEAD\n${COMMIT}\tHEAD\n` };
+            return answerRevParse(argv, input);
+        };
+
         it('rebuilds a running pod\'s workspace in another provider from its labels and annotations', async () => {
             const {
                 client, 
                 clock, 
                 provider, 
-            } = setup();
+            } = setup(answerCommit);
             const created = await provider.create({
                 runId: 'r1', 
                 repo: REPO, 
@@ -515,6 +528,7 @@ describe('kubernetes sandbox', () => {
             const found = await replica.find('r1');
             expect(client.selectors).toEqual(['app.kubernetes.io/managed-by=chamvi,app.kubernetes.io/component=sandbox,chamvi.dev/deployment=default,chamvi.dev/run=r1']);
             expect(found.map((workspace) => workspace.id)).toEqual([created.id]);
+            expect(created.info.defaultBranch).toBe('main');
             expect(found[0]!.info).toEqual(created.info);
             await expect(found[0]!.exec(['true'])).resolves.toMatchObject({ exitCode: 0 });
             expect(client.execs.at(-1)!.name).toBe(`chamvi-ws-${created.id}`);

@@ -18,13 +18,35 @@ function createWorkspaceManager(options: WorkspaceManagerOptions): IWorkspaceMan
 const MAX_WORKSPACES_PER_RUN: 3;
 const GC_INTERVAL_MS: 600_000;
 const CLOSE_TIMEOUT_MS: 30_000;
+const CREDENTIAL_INSTALL_TIMEOUT_MS: 30_000;
+const PUSH_LOG_MAX_COMMITS: 50;
 ```
 
-Throws `InvalidAgentDefinitionError` for a provider without `create`, `find` and `collectGarbage`, an empty `image`, invalid `env` or `limits`, a `deployment` that is no label value, an `allowRepo`, `allowImage`, `isSettled` or `onError` that is no function, a `maxWorkspacesPerRun` below 1 or a negative `gcIntervalMs`.
+Throws `InvalidAgentDefinitionError` for a provider without `create`, `find` and `collectGarbage`, an empty `image`, invalid `env` or `limits`, a `deployment` that is no label value, an `allowRepo`, `allowImage`, `isSettled` or `onError` that is no function, a `maxWorkspacesPerRun` below 1, a negative `gcIntervalMs`, `credentials` that are no sources with `get()`, a `credentialMode` other than `workspace` or `tools`, a `depth` below 1, an `author` without a non-empty `name` and `email` (no line break, `<` or `>`) or a malformed `push`.
+
+With `credentials` the manager looks up a read credential for every checkout (`checkout.credential` of the create; a failing source fails the create with a `SandboxError` naming the repository) and hands out each workspace through a view whose exec results, file reads and errors carry `[redacted]` in place of every issued token and whose `redact(text)` does the same for text a tool decodes itself. Before the first call into an https workspace it did not create (one found again after a restart or on another replica), the view reads the workspace's credentials file once and adds its tokens of at least 16 characters, still valid tokens of the earlier process, to the redaction. In `credentialMode: 'workspace'` it writes the credential helper and the credentials file of an https workspace after the create and before the first exec of a workspace this process has not written yet (one found again), and again before an exec once a token expires within `CREDENTIAL_REFRESH_MS` (at most once per `CREDENTIAL_RETRY_MS` while a source keeps answering a token inside that window); a failing write goes to `onError` and is tried again `CREDENTIAL_RETRY_MS` later, never failing the exec. The file holds the repository's write credential (else its read one, also when the write lookup fails, which goes to `onError`) and the host's (a request with an empty `path`).
 
 On a miss (`get` without a held workspace that fits, `acquire` of a repository it does not hold) the manager asks `provider.find(runId, { deployment })` once per run at a time and adopts what it finds, so a run reaches its workspaces after a restart or on another replica. `release(runId)` (and `attach` for a settled run) disposes the held workspaces and every one `find` reports; with `isSettled`, `attach` skips the `find` for a settled run this process neither holds nor looks up and starts a garbage collection instead (at most one per `gcIntervalMs`), which removes what other processes left for it; `close()` disposes nothing a live run holds, `close({ dispose: true })` disposes those too.
 
 <<< ../../../sandbox/src/manager/types.ts{ts}
+
+### Git credentials
+
+```ts
+function staticGitCredentials(entries: readonly StaticGitCredential[]): IGitCredentials;
+
+const REDACTED: '[redacted]';
+const CREDENTIAL_REFRESH_MS: 600_000;
+const CREDENTIAL_RETRY_MS: 60_000;
+const CREDENTIALS_FILE: '.chamvi/credentials'; // below $HOME, mode 0600
+const REDACT_MIN_LENGTH: 4;
+```
+
+`staticGitCredentials` throws `InvalidAgentDefinitionError` for an entry without a host name (an optional port), a token or username with NUL, CR, LF or tab, or a `path` that is no owner or repository, naming the entry and never a token. A source's answer must be non-empty strings without those characters (`expiresAt` a `Date`), else the lookup is a `SandboxError`.
+
+The git tools and the checkout run every remote call as `git -c credential.helper= -c core.hooksPath=/dev/null ...`, or with a credential as `sh -c <script> sh <url> <origin> <path> <git args>` with `<username>\n<password>\n` on stdin: the script hands the credential to git through a one-shot helper on fd 3 that answers only for that origin and path. A URL-specific key in the repository's or the global git config beats a generic `-c`, so the script cannot force settings on; it checks the config for the URL first and refuses (a `SandboxError` naming the keys, nothing sent) when it sets a proxy (`http.proxy`, `remote.<name>.proxy`), turns `http.sslVerify` off, names another CA (`http.sslCAInfo`, `http.sslCAPath`), overrides name resolution (`http.curloptResolve`) or rewrites URLs (`url.<base>.insteadOf`, `pushInsteadOf`). It also allows git only the https transport (`GIT_ALLOW_PROTOCOL=https`, which no config can override), so a transport the config names for the URL (`remote.<url>.vcs`) never starts and cannot read the credential git hands its helpers. The workspace helper (`$HOME/.chamvi/git-credential`, set as the global `credential.helper` with `credential.useHttpPath`) answers from the credentials file, the repository's line first, else the host's.
+
+<<< ../../../sandbox/src/credentials/types.ts{ts}
 
 ### Workspaces and providers
 
@@ -46,8 +68,11 @@ function resolveLimits(...layers: Array<SandboxLimits | undefined>): Required<Sa
 function parseCpu(value: string): number;
 function parseMemory(value: string): number;
 function assertSandboxEnv(env: Record<string, string> | undefined): void;
-function prepareWorkspace(workspace: IWorkspace, input: { repo?: string; ref?: string; signal?: AbortSignal }): Promise<{ commit?: string }>;
-function readCheckout(workspace: IWorkspace, signal?: AbortSignal, clock?: IClock): Promise<{ commit?: string } | undefined>;
+function prepareWorkspace(
+    workspace: IWorkspace,
+    input: { repo?: string; ref?: string; depth?: number; credential?: GitCredential; signal?: AbortSignal },
+): Promise<{ commit?: string; defaultBranch?: string }>;
+function readCheckout(workspace: IWorkspace, signal?: AbortSignal, clock?: IClock): Promise<{ commit?: string; defaultBranch?: string } | undefined>;
 function createOutputCollector(maxBytes: number): IOutputCollector;
 ```
 
@@ -62,7 +87,7 @@ function readWorkspaceInfo(values: Readonly<Record<string, string | undefined>>,
 function createSettledCheck(isSettled?: (runId: string) => Promise<boolean>): (runId: string) => Promise<boolean | SandboxError>;
 ```
 
-`normalizeRepo`, `assertGitRef` and `resolveWorkspacePath` throw `ValidationError` (model input); `resolveLimits`, `parseCpu`, `parseMemory` and `assertSandboxEnv` throw `InvalidAgentDefinitionError` (configuration); `prepareWorkspace` throws `SandboxError` with git's stderr when a checkout step fails and, as its last step, records the checkout as `git config chamvi.checkout` (the commit, or `none` without a repo). `readCheckout` reads it back: `{ commit }`, `{}` for a repo-less workspace, `undefined` for a create that died before its checkout finished, which `find` must skip. A read that fails otherwise (a container restarted a moment ago) is retried on the provider's clock, 5 reads 500 ms apart, before it counts as missing.
+`normalizeRepo`, `assertGitRef` and `resolveWorkspacePath` throw `ValidationError` (model input); `resolveLimits`, `parseCpu`, `parseMemory` and `assertSandboxEnv` throw `InvalidAgentDefinitionError` (configuration); `prepareWorkspace` throws `SandboxError` with git's stderr when a checkout step fails, records the default branch as `git config chamvi.defaultBranch` and, as its last step, the checkout as `git config chamvi.checkout` (the commit, or `none` without a repo). `readCheckout` reads both back: `{ commit, defaultBranch? }`, `{}` for a repo-less workspace, `undefined` for a create that died before its checkout finished, which `find` must skip.
 
 ### Images, privileges and the cache
 
@@ -115,7 +140,7 @@ function sandboxModule(options?: SandboxModuleOptions): SandboxModule; // name S
 const SANDBOX_PROVIDER_NAMES: readonly SandboxProviderName[]; // ['local', 'docker', 'kubernetes']
 ```
 
-The provider is `CHAMVI_SANDBOX_PROVIDER`, else `options.provider`, else `local`, read from `options.env ?? process.env` when the factory is called; `CHAMVI_SANDBOX_NAMESPACE`, `CHAMVI_SANDBOX_IMAGE` and `CHAMVI_DEPLOYMENT` (the manager's `deployment`) win over the options too. `isSettled` defaults to the engine's `getRun`: a settled run's workspaces are collected, and a missing run's only with a named deployment (`CHAMVI_DEPLOYMENT` or `deployment`), since in `default` an unknown run may be another app's on the same host; give each app sharing a host its own name. In start and job mode `setup` imports the provider package (`@chamvi/sandbox-local`, `@chamvi/sandbox-docker` or `@chamvi/sandbox-k8s`, installed beside `@chamvi/sandbox` and resolved from there; they are no declared peers, since every provider depends on `@chamvi/sandbox` and release-please refuses the cycle; a missing one throws `InvalidAgentDefinitionError` naming it, and under a strict layout that hides undeclared packages (Yarn PnP, pnpm with `hoist=false`) pass a built provider as `options.provider`), and the lifecycle hooks attach the manager to the engine, provide it (`engineCreated`) and close it after the engine drained; migrate mode does nothing. `@chamvi/app` is an optional peer: the main entry never imports it.
+Git credentials: the `credentials` option, then the tokens of `CHAMVI_GIT_TOKENS` (a JSON list of `StaticGitCredential`; an error names the variable and the entry, never a token), then every source other modules contribute to `AppToken.GIT_CREDENTIALS` (`githubModule()`'s App), asked on each lookup; `CHAMVI_GIT_CREDENTIAL_MODE` (`workspace` or `tools`) wins over `credentialMode`. The provider is `CHAMVI_SANDBOX_PROVIDER`, else `options.provider`, else `local`, read from `options.env ?? process.env` when the factory is called; `CHAMVI_SANDBOX_NAMESPACE`, `CHAMVI_SANDBOX_IMAGE` and `CHAMVI_DEPLOYMENT` (the manager's `deployment`) win over the options too. `isSettled` defaults to the engine's `getRun`: a settled run's workspaces are collected, and a missing run's only with a named deployment (`CHAMVI_DEPLOYMENT` or `deployment`), since in `default` an unknown run may be another app's on the same host; give each app sharing a host its own name. In start and job mode `setup` imports the provider package (`@chamvi/sandbox-local`, `@chamvi/sandbox-docker` or `@chamvi/sandbox-k8s`, installed beside `@chamvi/sandbox` and resolved from there; they are no declared peers, since every provider depends on `@chamvi/sandbox` and release-please refuses the cycle; a missing one throws `InvalidAgentDefinitionError` naming it, and under a strict layout that hides undeclared packages (Yarn PnP, pnpm with `hoist=false`) pass a built provider as `options.provider`), and the lifecycle hooks attach the manager to the engine, provide it (`engineCreated`) and close it after the engine drained; migrate mode does nothing. `@chamvi/app` is an optional peer: the main entry never imports it.
 
 <<< ../../../sandbox/src/module/types.ts#public{ts}
 

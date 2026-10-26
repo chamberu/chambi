@@ -15,6 +15,8 @@ export type WorkspaceInfo = {
     ref?: string;
     /** HEAD after the checkout. */
     commit?: string;
+    /** The remote's default branch (its HEAD), fetched next to `ref`: the base of a merge or rebase. */
+    defaultBranch?: string;
     /** The image of a container or pod workspace. */
     image?: string;
     createdAt: Date;
@@ -64,4 +66,11 @@ export interface IWorkspace {
     writeFile(path: string, content: string | Uint8Array): Promise<void>;
     /** Idempotent. Every call after it rejects with SandboxError. */
     dispose(): Promise<void>;
+    /**
+     * Replaces the git credentials issued for the workspace with
+     * `[redacted]`: set on the workspaces a manager with credentials hands
+     * out, whose results and errors are already redacted. A tool that decodes
+     * output itself (base64 from an exec) passes the decoded text through it.
+     */
+    redact?(text: string): string;
 }

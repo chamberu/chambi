@@ -31,7 +31,7 @@ export function createWorkspaceTools(manager: IWorkspaceManager): ToolSet {
             ref?: string; 
             image?: string 
         }, WorkspaceToolResult>({
-            description: 'Create a disposable workspace for this run, mounted at /workspace: a shallow checkout of a git repository at a ref, or an empty git repository without one. ' +
+            description: 'Create a disposable workspace for this run, mounted at /workspace: a checkout of a git repository at a ref with its history (a branch tracks origin, the default branch is fetched as origin/<defaultBranch>), or an empty git repository without one. ' +
                 'Calling it again with the same repository returns the same workspace (reused: true). Pass the returned workspace id to the other tools when the run holds several.',
             inputSchema: optionalObjectSchema({
                 repo: {

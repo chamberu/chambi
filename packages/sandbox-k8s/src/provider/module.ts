@@ -179,12 +179,13 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                     clock, 
                     signal: input.signal, 
                 });
-                const { commit } = await prepareWorkspace(workspace, {
+                // the commit and the default branch, each only when known
+                Object.assign(info, await prepareWorkspace(workspace, {
+                    ...input.checkout,
                     repo: input.repo,
                     ref: input.ref,
                     signal: input.signal,
-                });
-                if (commit !== undefined) info.commit = commit;
+                }));
             } catch (error) {
                 // deleting a pod that was never created is a 404, which is fine
                 await workspace.dispose().catch(() => undefined);
@@ -222,7 +223,7 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                     live.delete(id);
                     continue;
                 }
-                if (checkout.commit !== undefined) info.commit = checkout.commit;
+                Object.assign(info, checkout);
                 found.push(workspace);
             }
             return found;

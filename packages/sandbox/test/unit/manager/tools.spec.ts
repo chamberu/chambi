@@ -44,6 +44,7 @@ describe('workspace tools', () => {
             repo: 'https://github.com/octo/demo.git',
             ref: 'v1',
             commit: FAKE_COMMIT,
+            defaultBranch: 'main',
             image: null,
             expiresAt: new Date(1_000_000 + 604_800_000).toISOString(),
             reused: false,
@@ -58,6 +59,7 @@ describe('workspace tools', () => {
             repo: null,
             ref: null,
             commit: null,
+            defaultBranch: null,
             reused: false,
         });
         const again = await callTool<WorkspaceToolResult>(tools, 'create_workspace', {}, toolContext('r1'));
@@ -107,7 +109,7 @@ describe('workspace tools', () => {
 
     it('are chamvi tools and not effect tools', () => {
         const { tools } = setup();
-        expect(Object.keys(tools).sort()).toEqual(['create_workspace', 'dispose_workspace']);
+        expect(Object.keys(tools).sort()).toEqual(['create_workspace', 'dispose_workspace', 'git_fetch', 'git_pull', 'git_push']);
         for (const tool of Object.values(tools)) {
             expect(tool.contextSchema).toBe(toolContextSchema);
             expect(EFFECT in tool).toBe(false);

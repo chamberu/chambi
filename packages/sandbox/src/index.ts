@@ -7,6 +7,7 @@
 
 export * from './clock/index.ts';
 export * from './context/index.ts';
+export * from './credentials/index.ts';
 export * from './image/index.ts';
 export * from './limits/index.ts';
 export * from './manager/index.ts';

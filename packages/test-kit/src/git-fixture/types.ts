@@ -12,5 +12,11 @@ export type GitFixture = {
     url: string;
     /** The one commit (branch `main`, tag `v1`). */
     commit: string;
+    /**
+     * Runs `git <args>` in `path` with the fixture's identity, dates and
+     * isolated config (signing off), answering stdout: more commits,
+     * branches and tags.
+     */
+    git(...args: string[]): Promise<string>;
     cleanup(): Promise<void>;
 };
