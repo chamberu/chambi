@@ -178,6 +178,20 @@ describe('remote workspace: exec', () => {
         expect(await failed.workspace.exec(['false'], { timeoutMs: 1500 })).toMatchObject({ exitCode: 1, timedOut: false });
     });
 
+    it('reports a timeout of a timeout that signals the command only (BusyBox: exit 143)', async () => {
+        const busybox = setup(() => {
+            busybox.clock.advance(1500);
+            return { exitCode: 143 };
+        });
+        expect(await busybox.workspace.exec(['sleep', '30'], { timeoutMs: 1500 })).toMatchObject({ exitCode: 143, timedOut: true });
+
+        const own = setup(() => {
+            own.clock.advance(10);
+            return { exitCode: 143 };
+        });
+        expect(await own.workspace.exec(['sh', '-c', 'kill $$'], { timeoutMs: 1500 })).toMatchObject({ exitCode: 143, timedOut: false });
+    });
+
     it('guards a hung transport', async () => {
         const {
             clock,

@@ -6,6 +6,7 @@
  */
 
 import { PassThrough } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 import type Docker from 'dockerode';
 import { describe, inject } from 'vitest';
 
@@ -90,4 +91,21 @@ export async function execInContainer(
         stdout: readStdout(),
         stderr: readStderr(),
     };
+}
+
+/**
+ * Builds the fixture `test/fixtures/<fixture>` as `tag`, its `BASE` build
+ * argument the test image (offline unless the Dockerfile names another base).
+ */
+export async function buildFixtureImage(docker: Docker, fixture: string, tag: string): Promise<void> {
+    const stream = await docker.buildImage(
+        { context: fileURLToPath(new URL(`../fixtures/${fixture}`, import.meta.url)), src: ['Dockerfile'] },
+        { t: tag, buildargs: { BASE: dockerImage as string } },
+    );
+    await new Promise<void>((resolve, reject) => {
+        docker.modem.followProgress(stream, (error: Error | null, output: Array<{ error?: string }>) => {
+            const failed = output.find((event) => typeof event.error === 'string');
+            if (error || failed) reject(error ?? new Error(failed!.error)); else resolve();
+        });
+    });
 }

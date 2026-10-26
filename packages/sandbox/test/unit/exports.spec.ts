@@ -57,7 +57,7 @@ describe('public api', () => {
         expect(sandbox.WORKSPACE_ROOT).toBe('/workspace');
         expect(sandbox.WORKSPACE_HOME).toBe('/home/sandbox');
         expect(sandbox.OUTPUT_MAX_BYTES).toBe(65_536);
-        expect(sandbox.FILE_MAX_BYTES).toBe(1_048_576);
+        expect(sandbox.FILE_MAX_BYTES).toBe(16_777_216);
         expect(sandbox.EXEC_TIMEOUT_MS).toBe(300_000);
         expect(sandbox.EXEC_TIMEOUT_MAX_MS).toBe(1_800_000);
         expect(sandbox.SANDBOX_ENV).toEqual({

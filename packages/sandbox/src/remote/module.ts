@@ -247,6 +247,37 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
         });
     };
 
+    /** The bytes of the workspace file `path` (at most FILE_MAX_BYTES) and its absolute path. */
+    const readRaw = async (path: string): Promise<{ file: string; bytes: Uint8Array }> => {
+        assertUsable();
+        const relative = resolveWorkspacePath(path);
+        if (relative === '.') {
+            throw new SandboxError(`${WORKSPACE_ROOT} is no file.`);
+        }
+        const file = absoluteWorkspacePath(relative);
+
+        // one byte past the limit tells an oversized file apart
+        const result = await run(['cat', '--', file], {
+            cwd: WORKSPACE_ROOT,
+            timeoutMs: timeoutOf(undefined),
+            maxOutputBytes: FILE_MAX_BYTES + 1,
+        });
+        if (result.timedOut) {
+            throw new SandboxError(`cannot read ${file}: timed out.`);
+        }
+        if (result.exitCode !== 0) {
+            const stderr = stderrMessage(result.stderr);
+            if (stderr.endsWith('No such file or directory')) {
+                throw new SandboxError(`file not found: ${file}`);
+            }
+            throw new SandboxError(`cannot read ${file}: cat exited with ${result.exitCode}${stderr ? `: ${stderr}` : ''}`);
+        }
+        if (result.stdoutTruncated || result.stdout.length > FILE_MAX_BYTES) {
+            throw new SandboxError(`${file} is larger than the ${FILE_MAX_BYTES} bytes a file may have.`);
+        }
+        return { file, bytes: result.stdout };
+    };
+
     return {
         id,
         info,
@@ -283,45 +314,24 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
         },
 
         async readFile(path: string): Promise<string> {
-            assertUsable();
-            const relative = resolveWorkspacePath(path);
-            if (relative === '.') {
-                throw new SandboxError(`${WORKSPACE_ROOT} is no file.`);
-            }
-            const file = absoluteWorkspacePath(relative);
-
-            // one byte past the limit tells an oversized file apart
-            const result = await run(['cat', '--', file], {
-                cwd: WORKSPACE_ROOT,
-                timeoutMs: timeoutOf(undefined),
-                maxOutputBytes: FILE_MAX_BYTES + 1,
-            });
-            if (result.timedOut) {
-                throw new SandboxError(`cannot read ${file}: timed out.`);
-            }
-            if (result.exitCode !== 0) {
-                const stderr = stderrMessage(result.stderr);
-                if (stderr.endsWith('No such file or directory')) {
-                    throw new SandboxError(`file not found: ${file}`);
-                }
-                throw new SandboxError(`cannot read ${file}: cat exited with ${result.exitCode}${stderr ? `: ${stderr}` : ''}`);
-            }
-            if (result.stdoutTruncated || result.stdout.length > FILE_MAX_BYTES) {
-                throw new SandboxError(`${file} is larger than the ${FILE_MAX_BYTES} bytes a file may have.`);
-            }
-            return decodeUtf8File(result.stdout, file);
+            const { file, bytes } = await readRaw(path);
+            return decodeUtf8File(bytes, file);
         },
 
-        async writeFile(path: string, content: string): Promise<void> {
+        async readBytes(path: string): Promise<Uint8Array> {
+            return (await readRaw(path)).bytes;
+        },
+
+        async writeFile(path: string, content: string | Uint8Array): Promise<void> {
             assertUsable();
             const relative = resolveWorkspacePath(path);
             if (relative === '.') {
                 throw new ValidationError('path must name a file, not the workspace root.');
             }
-            if (typeof content !== 'string') {
-                throw new ValidationError('content must be a string.');
+            if (typeof content !== 'string' && !(content instanceof Uint8Array)) {
+                throw new ValidationError('content must be a string or bytes.');
             }
-            const bytes = new TextEncoder().encode(content);
+            const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content;
             if (bytes.length > FILE_MAX_BYTES) {
                 throw new ValidationError(`content has ${bytes.length} bytes, more than the ${FILE_MAX_BYTES} a file may have.`);
             }

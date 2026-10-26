@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import Docker from 'dockerode';
 import {
     afterAll,
@@ -18,7 +17,12 @@ import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
 import { CONTAINER_NAME_PREFIX, createDockerSandbox } from '@chamvi/sandbox-docker';
 import { ControllableClock } from '@chamvi/test-kit';
-import { describeDocker, dockerImage, dockerOptions } from '../../utils/docker.ts';
+import {
+    buildFixtureImage,
+    describeDocker,
+    dockerImage,
+    dockerOptions,
+} from '../../utils/docker.ts';
 
 const offline = Boolean(process.env.CHAMVI_OFFLINE);
 
@@ -32,20 +36,6 @@ const NO_INIT_IMAGE = 'chamvi/sandbox-no-init:test';
 /** Leaves 20 orphans that exit at once, waits, then prints how many processes are zombies. */
 const ORPHANS = 'for i in $(seq 20); do sh -c "sleep 0.1 &"; done; sleep 1; ' +
     'cat /proc/[0-9]*/stat 2>/dev/null | awk \'$3 == "Z"\' | wc -l';
-
-/** Builds the fixture `test/fixtures/<fixture>` on top of the test image (offline) as `tag`. */
-async function buildFixtureImage(docker: Docker, fixture: string, tag: string): Promise<void> {
-    const stream = await docker.buildImage(
-        { context: fileURLToPath(new URL(`../../fixtures/${fixture}`, import.meta.url)), src: ['Dockerfile'] },
-        { t: tag, buildargs: { BASE: dockerImage as string } },
-    );
-    await new Promise<void>((resolve, reject) => {
-        docker.modem.followProgress(stream, (error: Error | null, output: Array<{ error?: string }>) => {
-            const failed = output.find((event) => typeof event.error === 'string');
-            if (error || failed) reject(error ?? new Error(failed!.error)); else resolve();
-        });
-    });
-}
 
 /** Writes into the cache folders of `CACHE_ENV` and into HOME as the workspace user would (npm's logs, Go's module cache, cargo's home). */
 const WRITE_CACHE = 'mkdir -p "$npm_config_cache/_logs" "$GOMODCACHE" "$HOME/.cargo" && ' +

@@ -56,9 +56,12 @@ export interface IWorkspace {
      */
     readonly disposed: boolean;
     exec(argv: readonly string[], options?: ExecOptions): Promise<ExecResult>;
-    /** UTF-8 text of at most `FILE_MAX_BYTES`. */
+    /** UTF-8 text of at most `FILE_MAX_BYTES`; SandboxError for a file that is not UTF-8. */
     readFile(path: string): Promise<string>;
-    writeFile(path: string, content: string): Promise<void>;
+    /** The raw bytes of a file of at most `FILE_MAX_BYTES`. */
+    readBytes(path: string): Promise<Uint8Array>;
+    /** A string is written as UTF-8, bytes as they are; at most `FILE_MAX_BYTES`. */
+    writeFile(path: string, content: string | Uint8Array): Promise<void>;
     /** Idempotent. Every call after it rejects with SandboxError. */
     dispose(): Promise<void>;
 }

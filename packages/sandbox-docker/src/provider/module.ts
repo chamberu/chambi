@@ -144,6 +144,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             },
             exec: remote.exec,
             readFile: remote.readFile,
+            readBytes: remote.readBytes,
             writeFile: remote.writeFile,
             async dispose() {
                 disposing.add(workspace);

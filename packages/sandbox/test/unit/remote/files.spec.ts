@@ -108,7 +108,36 @@ describe('remote workspace: readFile', () => {
     });
 });
 
+describe('remote workspace: readBytes', () => {
+    it('returns the raw bytes of a file that is not UTF-8', async () => {
+        const bytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0xFF, 0x00]);
+        const { transport, workspace } = setup(() => ({ stdout: bytes }));
+        expect(await workspace.readBytes('img.png')).toEqual(bytes);
+        expect(transport.calls[0]!.argv.slice(4)).toEqual(['cat', '--', '/workspace/img.png']);
+        await expect(workspace.readFile('img.png')).rejects.toThrow('/workspace/img.png is not UTF-8 text.');
+    });
+
+    it('refuses a file larger than the limit', async () => {
+        const { workspace } = setup(() => ({ stdout: new Uint8Array(FILE_MAX_BYTES + 1) }));
+        await expect(workspace.readBytes('big')).rejects.toThrow(/larger than/);
+    });
+});
+
 describe('remote workspace: writeFile', () => {
+    it('writes bytes as they are', async () => {
+        const { transport, workspace } = setup();
+        const bytes = new Uint8Array([0, 255, 10, 13]);
+        await workspace.writeFile('a.bin', bytes);
+        expect(transport.calls[0]!.argv.slice(-3, -1)).toEqual(['/workspace/a.bin', '4']);
+        expect(transport.calls[0]!.options.stdin).toEqual(bytes);
+    });
+
+    it('refuses oversized bytes without a call', async () => {
+        const { transport, workspace } = setup();
+        await expect(workspace.writeFile('big', new Uint8Array(FILE_MAX_BYTES + 1))).rejects.toBeInstanceOf(ValidationError);
+        expect(transport.calls).toHaveLength(0);
+    });
+
     it('pipes the bytes into head inside the timeout wrapper', async () => {
         const { transport, workspace } = setup();
         await workspace.writeFile('a/b.txt', 'hé');

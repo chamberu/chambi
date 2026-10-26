@@ -55,25 +55,29 @@ chamvi's own commands never run from the cache: every workspace command starts w
 
 The coding tools are not yours to edit, so the approval for `bash` sits in the agent's `beforeToolExecution` hook: `approve()` there pauses the run (keeping its workspaces on this replica) until someone answers, and a refused command reaches the model as a `ToolDeniedError` tool error. See [Approvals & Hooks](/guide/approvals#gating-tools-you-did-not-write).
 
-`workspaces.tools()` gives the model two tools; `codingTools(workspaces)` adds seven more. Every tool resolves its workspace with the calling run's id, so a run can only reach its own workspaces.
+`workspaces.tools()` gives the model two tools; `codingTools(workspaces)` adds eleven more. Every tool resolves its workspace with the calling run's id, so a run can only reach its own workspaces.
 
 | Tool | Package | What it does |
 |---|---|---|
 | `create_workspace` | sandbox | `{ repo?, ref?, image? }`: a shallow checkout of `repo` at `ref`, or an empty git repository, in the image asked for; the same repository again returns the same workspace (`reused: true`) |
 | `dispose_workspace` | sandbox | `{ workspace? }`: disposes one workspace |
-| `read_file` | coding | A line range of a text file (at most 2000 lines, 65 536 characters) |
-| `write_file` | coding | Replaces a file, creating directories |
+| `read_file` | coding | A line range of a text file (at most 2000 lines, 65 536 characters, files up to 16 MiB); an image as an image the model sees; any file up to 1 MiB as base64; the output logs of `bash` |
+| `write_file` | coding | Replaces a file (text, or bytes as base64), creating directories |
 | `edit_file` | coding | Replaces an exact string, once (or every match with `replaceAll`); edits and writes of one file run one after the other, so several in one step all apply |
-| `grep` | coding | `git grep -E` over tracked and untracked files |
-| `list_files` | coding | Tracked and untracked files, git-ignored ones skipped |
-| `bash` | coding | `sh -c <command>` inside the workspace, exit code and capped output |
+| `multi_edit` | coding | Several exact-string edits of one file in order; nothing is written when one fails |
+| `grep` | coding | ripgrep when the image has it, else `git grep -E`, else `grep -rE`; hidden files always, git-ignored ones with `includeIgnored` |
+| `glob` | coding | Files by a `**` pattern, git-ignored ones with `includeIgnored` |
+| `list_files` | coding | Tracked and untracked files, git-ignored ones with `includeIgnored` |
+| `bash` | coding | A shell that keeps its working directory and exported variables between calls; long output in a log file with an excerpt in the result; `background: true` for servers and watchers |
+| `bash_output` | coding | New output and the status of a background job, from a byte offset |
+| `bash_kill` | coding | Stops a background job and every process it started |
 | `git_diff` | coding | `git status --short` and the unified diff |
 
 The coding tools take an optional `workspace` id; omitted, they use the run's only workspace. The model sees every workspace at `/workspace`, whatever the provider maps it to. See the [`@chamvi/coding` reference](/reference/coding) for inputs and results.
 
 With [`@chamvi/app`](/guide/app#modules), `sandboxModule()` (`@chamvi/sandbox/module`) builds the manager, attaches and closes it and provides it on the engine: a tools factory takes it with `injectSandboxContext(ctx)` and builds `manager.tools()` and `codingTools(manager)` per execution, without importing the module instance (see [Context](/guide/tools#context-shared-instances-for-tools)). A hand-built engine calls `provideSandboxContext(engine, manager)` once after `new Engine()`.
 
-A run may hold `maxWorkspacesPerRun` (3) workspaces at once. Repositories are `owner/name` (GitHub) or an `https:` URL without credentials, query or fragment; `allowRepo` narrows them, `allowFileRepos` adds `file:///absolute/path` for development. Refs are plain branch, tag or commit names that git can never read as an option or a range.
+A run may hold `maxWorkspacesPerRun` (3) workspaces at once; raise it on the manager (`createWorkspaceManager({ maxWorkspacesPerRun })`), and the tool error says so. Repositories are `owner/name` (GitHub) or an `https:` URL without credentials, query or fragment; `allowRepo` narrows them, `allowFileRepos` adds `file:///absolute/path` for development. Refs are plain branch, tag or commit names that git can never read as an option or a range.
 
 ## Lifecycle
 
@@ -95,10 +99,20 @@ For development, the local provider runs everything in a temporary directory:
 
 <<< @/snippets/workspaces.ts#local
 
+## The shell
+
+`bash` behaves like a terminal tab. The working directory and the exported variables carry over from one call to the next: `cd src` in one call, `npm test` in the next runs in `src`; `export NODE_ENV=test` stays set. The result's `cwd` is where the next call starts. A `cwd` argument runs that one call elsewhere and leaves the kept directory alone. The command runs in bash when the image has it, else in `sh`. An `exit 1`, a failed `cd` or `set -e` keep the state consistent; functions, aliases and shell options are not kept, and neither is the `unset` of a variable the workspace started with. A call that timed out keeps the state from before it.
+
+The whole output of every call goes to `~/.chamvi/out/<id>.stdout.log` and `.stderr.log` (`stdoutLog`, `stderrLog`), outside `/workspace`; the newest 100 logs are kept, and older ones go once the logs take more than four times `outputLogMaxBytes` (256 MiB by default; the logs of a call still running always stay, also those of a parallel call), since `HOME` shares the workspace's disk. A call that cannot write its logs or its report (no space left in `HOME`, or a folder that takes no file) is a `SandboxError` saying so, never a garbled result. Up to 32 KiB per stream the result holds all of it; past that the first 8 KiB and the last 24 KiB with a `[... <n> bytes cut, full output in <log>]` line between them, so a long test run still shows the summary at its end. `read_file` reads a log by line range, `grep` searches it, and `bash` can `tail` it.
+
+Servers and watchers run as **background jobs**: `bash({ command: 'npm run dev', background: true })` returns `{ job, status: 'running' }` at once. `bash_output({ job, offset? })` returns the job's new output (stdout and stderr together, at most 32 KiB from `offset`; pass `nextOffset` to read on) and its status (`running`, `exited` with the exit code, `killed`, or `lost` after a container restart); a job whose output passes `outputLogMaxBytes` is killed with every process it started (checked every second, `outputCapped: true`, status `killed`) and its output cut back to the cap; `bash_kill({ job })` stops it with every process it started (TERM, then KILL after 3 seconds). A job lives in a process group of its own and dies with the workspace; on local, also with the chamvi process. Docker workspaces run `docker-init` as PID 1 (`Init: true`) and Kubernetes pods share the process namespace with the pause container, so the processes a job or a call leaves behind are reaped whatever the image (an image without `tini` runs `sleep` as PID 1, which reaps nothing, so every orphan would stay a zombie and count against the pid limit).
+
+`HOME` is `/home/sandbox` in every container and pod (`WORKSPACE_HOME`, a disk-backed volume of the workspace), so the shell state, the logs and the jobs survive a container restart and never fill the memory-backed `/tmp`. Local keeps `<root>/<id>/home`.
+
 ## Commands, output and timeouts
 
-- `exec` takes **argv only**; the only shell is the `bash` tool's `sh -c` inside the workspace.
-- stdout and stderr are capped at 64 KiB each (`stdoutTruncated`, `stderrTruncated`); output past the cap is drained, never buffered, so `yes` cannot block the child or fill the host's memory.
+- `exec` takes **argv only**; the only shells are the coding tools' `sh -c` scripts inside the workspace, which take the command as an argument, never pasted into the script.
+- `exec` caps stdout and stderr at 64 KiB each (`stdoutTruncated`, `stderrTruncated`); output past the cap is drained, never buffered, so `yes` cannot block the child or fill the host's memory. The `bash` tool writes the output to its log files instead, each capped at 64 MiB (`codingTools(manager, { outputLogMaxBytes })`): a command whose log passes the cap is killed with its jobs like a timeout (`outputCapped: true`) and the log keeps its first 64 MiB. A `background: true` job is capped the same way (see above). A process the command leaves running (`cmd &`) is watched after the call too: it is killed with its process group once its log passes the cap, or once the log rotation of later calls (the newest 100 logs are kept, about 50 calls) deletes its logs. For a long-running server use `background: true`, whose output `bash_output` can read.
 - A command times out after `timeoutMs` (default 5 minutes, at most 30, never past the workspace's hard cap) with `timedOut: true` as a result, not an error. The whole process group is killed, background jobs included: local sends `SIGKILL` to the group, Docker and Kubernetes run every command inside GNU `timeout -k 5`. A command that exits on its own returns with its exit code even when a background job it started (`node server.js & echo started`) holds its output (after about 2 seconds); the job runs on until the workspace is disposed, so the next call can probe the server.
 - A `cwd` that is no directory in the workspace rejects with a `SandboxError` on every provider.
 - **Abort** (a cancelled run, a run timeout): local kills the process group. Docker and Kubernetes **detach**: the client stops waiting, and the command runs on until its `timeout` fires or the workspace is disposed, which the settled run's `attach` does right after.
@@ -108,7 +122,7 @@ For development, the local provider runs everything in a temporary directory:
 
 `write_file`, `edit_file`, `bash`, `create_workspace` and `dispose_workspace` change state, yet they are plain [`defineTool()`](/guide/tools) tools, not [effect tools](/guide/effect-tools). An effect record lives in the store forever; a workspace can be removed, expire or be collected. A redone step could then run on a fresh workspace, where a recorded "applied" result would skip the write and leave the workspace and the history out of step. Effect tools would also merge two identical calls of one step (`npm test` twice) into one.
 
-Re-applying is safe instead: `write_file` is idempotent, `edit_file` fails with "oldString not found" when it already applied (the model sees that), and `bash` runs in a disposable sandbox. Nothing outside the workspace changes; pushing is not part of these tools.
+Re-applying is safe instead: `write_file` is idempotent, `edit_file` and `multi_edit` fail with "oldString not found" when it already applied (the model sees that), and `bash` runs in a disposable sandbox. Nothing outside the workspace changes; pushing is not part of these tools.
 
 ## Security model
 

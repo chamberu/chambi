@@ -19,6 +19,9 @@ import type { ContractWorkspace, WorkspaceContractFactory, WorkspaceContractOpti
 
 const TEST_TIMEOUT_MS = 30_000;
 
+/** `@chamvi/sandbox`'s `FILE_MAX_BYTES`, written out (an import would close a package cycle, see `types.ts`). */
+const FILE_MAX_BYTES = 16_777_216;
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 // The suite runs real processes, so it waits on real time (documented exception to IClock).
@@ -30,11 +33,11 @@ const sleep = (ms: number) => new Promise<void>((resolve) => {
  * Shared behavioural contract for every `IWorkspace` a sandbox provider
  * creates: argv exec, exit codes, stdin, cwd and path escapes, a missing
  * cwd, a background job holding the output, output caps, process-group
- * kills on timeout, abort, UTF-8 files, size caps and dispose, and with
- * `options.find` a workspace found again after its handle was dropped and
- * never one whose checkout record (`git config chamvi.checkout`, written last
- * by `prepareWorkspace`) is missing. It runs real processes with short real
- * timeouts.
+ * kills on timeout, abort, UTF-8 and binary files, size caps and dispose,
+ * and with `options.find` a workspace found again after its handle was
+ * dropped and never one whose checkout record (`git config chamvi.checkout`,
+ * written last by `prepareWorkspace`) is missing. It runs real processes
+ * with short real timeouts.
  *
  * @param name     Suite name, e.g. the provider name.
  * @param factory  A fresh, repo-less workspace per call; the suite disposes it.
@@ -176,15 +179,32 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
             expect(listing.stdout).not.toContain('.chamvi-write-');
         }, TEST_TIMEOUT_MS);
 
+        it('round-trips binary files, also past the former 1 MiB cap', async () => {
+            const bytes = new Uint8Array(256).map((_, index) => index);
+            await workspace.writeFile('bin/all.bin', bytes);
+            expect(await workspace.readBytes('bin/all.bin')).toEqual(bytes);
+            await expect(workspace.readFile('bin/all.bin')).rejects.toBeInstanceOf(SandboxError);
+
+            const large = new Uint8Array(2 * 1_048_576).map((_, index) => index % 251);
+            await workspace.writeFile('bin/large.bin', large);
+            const read = await workspace.readBytes('bin/large.bin');
+            expect(read.length).toBe(large.length);
+            expect(Buffer.from(read).equals(Buffer.from(large))).toBe(true);
+            const size = await workspace.exec(['sh', '-c', 'wc -c < bin/large.bin']);
+            expect(size.stdout.trim()).toBe(String(large.length));
+        }, TEST_TIMEOUT_MS);
+
         it('refuses escaping, missing and oversized files', async () => {
             await expect(workspace.readFile('../x')).rejects.toBeInstanceOf(ValidationError);
             await expect(workspace.readFile('')).rejects.toBeInstanceOf(ValidationError);
+            await expect(workspace.readBytes('../x')).rejects.toBeInstanceOf(ValidationError);
             await expect(workspace.readFile('missing.txt')).rejects.toBeInstanceOf(SandboxError);
-            await expect(workspace.writeFile('big', 'a'.repeat(1_048_577))).rejects.toBeInstanceOf(ValidationError);
+            await expect(workspace.readBytes('missing.txt')).rejects.toBeInstanceOf(SandboxError);
+            await expect(workspace.writeFile('big', new Uint8Array(FILE_MAX_BYTES + 1))).rejects.toBeInstanceOf(ValidationError);
 
-            const created = await workspace.exec(['sh', '-c', 'head -c 1048577 /dev/zero > big2']);
+            const created = await workspace.exec(['sh', '-c', `head -c ${FILE_MAX_BYTES + 1} /dev/zero > big2`]);
             expect(created.exitCode).toBe(0);
-            await expect(workspace.readFile('big2')).rejects.toBeInstanceOf(SandboxError);
+            await expect(workspace.readBytes('big2')).rejects.toBeInstanceOf(SandboxError);
         }, TEST_TIMEOUT_MS);
 
         it('has a writable HOME', async () => {
