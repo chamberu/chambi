@@ -54,9 +54,9 @@
     "devDependencies": {
         "@chamvi/core": "^0.2.1",
         "@chamvi/test-kit": "^0.2.1",
-        "@swc/core": "^1.16.18",
+        "@swc/core": "^1.16.20",
         "@testcontainers/postgresql": "^12.2.1",
-        "ai": "^7.0.146",
+        "ai": "^7.0.150",
         "pg": "^8.23.1",
         "typeorm": "^1.1.2",
         "unplugin-swc": "^2.0.0",
