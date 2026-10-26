@@ -124,7 +124,7 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
                 // a folder without its repo directory is no workspace any more
                 if (!(await stat(join(root, id, REPO_DIR)).catch(() => undefined))?.isDirectory()) continue;
                 const workspace = open(id, { ...record.info, provider: LOCAL_PROVIDER_NAME }, record.env);
-                const checkout = await readCheckout(workspace, findOptions.signal);
+                const checkout = await readCheckout(workspace, findOptions.signal, clock);
                 if (!checkout) {
                     // a create that died before its checkout finished: left to the collection
                     live.delete(id);

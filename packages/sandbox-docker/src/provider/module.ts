@@ -221,7 +221,7 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 const container = docker.getContainer(item.Id);
                 if (!await restart(item, container)) continue;
                 const workspace = open(id, info, container);
-                const checkout = await readCheckout(workspace, findOptions.signal);
+                const checkout = await readCheckout(workspace, findOptions.signal, clock);
                 if (!checkout) {
                     // a create that died before its checkout finished (restarted above
                     // only to read that): left to the collection

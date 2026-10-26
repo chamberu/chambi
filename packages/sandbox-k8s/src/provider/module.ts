@@ -192,7 +192,7 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                 const info = readWorkspaceInfo({ ...pod.metadata?.annotations, ...labels }, PROVIDER_NAME);
                 if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
                 const workspace = open(id, info);
-                const checkout = await readCheckout(workspace, findOptions.signal);
+                const checkout = await readCheckout(workspace, findOptions.signal, clock);
                 if (!checkout) {
                     // a create that died before its checkout finished: left to the collection
                     live.delete(id);

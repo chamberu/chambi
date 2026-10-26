@@ -5,11 +5,15 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { SandboxError, ValidationError } from '@chamvi/core';
+import { SandboxError, ValidationError, systemClock } from '@chamvi/core';
+import type { IClock } from '@chamvi/core';
+import { delay } from '../clock/module.ts';
 import { EXEC_TIMEOUT_MS } from '../workspace/constants.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 import {
     CHECKOUT_KEY,
+    CHECKOUT_READ_ATTEMPTS,
+    CHECKOUT_READ_RETRY_MS,
     CHECKOUT_READ_TIMEOUT_MS,
     CHECKOUT_STDERR_MAX_LENGTH,
     COMMIT_PATTERN,
@@ -152,17 +156,34 @@ export async function prepareWorkspace(
  * git config (`chamvi.checkout`): `{ commit }` for a workspace of a
  * repository, `{}` for a repo-less one. Undefined when the record is missing
  * (a create that died before its checkout finished, e.g. a process killed
- * during the fetch), does not fit `workspace.info.repo`, or the exec failed:
- * such a workspace is not found again.
+ * during the fetch: git exits 1) or does not fit `workspace.info.repo`: such
+ * a workspace is not found again. A read that fails otherwise (the exec
+ * throws, another exit code, a timeout; a container restarted a moment ago)
+ * is retried on `clock` every `CHECKOUT_READ_RETRY_MS`, at most
+ * `CHECKOUT_READ_ATTEMPTS` reads, then undefined too.
  */
-export async function readCheckout(workspace: IWorkspace, signal?: AbortSignal): Promise<{ commit?: string } | undefined> {
-    let value: string;
-    try {
-        const result = await workspace.exec(['git', 'config', '--get', CHECKOUT_KEY], { timeoutMs: CHECKOUT_READ_TIMEOUT_MS, signal });
-        if (result.exitCode !== 0 || result.timedOut) return undefined;
-        value = result.stdout.trim();
-    } catch {
-        return undefined;
+export async function readCheckout(
+    workspace: IWorkspace,
+    signal?: AbortSignal,
+    clock: IClock = systemClock,
+): Promise<{ commit?: string } | undefined> {
+    let value: string | undefined;
+    for (let attempt = 1; value === undefined; attempt++) {
+        try {
+            const result = await workspace.exec(['git', 'config', '--get', CHECKOUT_KEY], { timeoutMs: CHECKOUT_READ_TIMEOUT_MS, signal });
+            // exit 1 without output: no record, a create that died before its checkout finished
+            if (result.exitCode === 1 && !result.timedOut && result.stdout.trim() === '') return undefined;
+            if (result.exitCode === 0 && !result.timedOut) value = result.stdout.trim();
+        } catch {
+            // the exec itself failed: read again below
+        }
+        if (value !== undefined) break;
+        if (attempt >= CHECKOUT_READ_ATTEMPTS || signal?.aborted) return undefined;
+        try {
+            await delay(clock, CHECKOUT_READ_RETRY_MS, signal, () => new SandboxError('checkout read aborted'));
+        } catch {
+            return undefined;
+        }
     }
     if (workspace.info.repo === undefined) return value === NO_REPO_CHECKOUT ? {} : undefined;
     return COMMIT_PATTERN.test(value) ? { commit: value } : undefined;

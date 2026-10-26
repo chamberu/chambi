@@ -31,3 +31,9 @@ export const NO_REPO_CHECKOUT = 'none';
 
 /** Exec timeout of `readCheckout`. */
 export const CHECKOUT_READ_TIMEOUT_MS = 30_000;
+
+/** Reads `readCheckout` makes before it gives up on a workspace it cannot read. */
+export const CHECKOUT_READ_ATTEMPTS = 5;
+
+/** Wait between two `readCheckout` reads (a container just restarted may refuse the first exec). */
+export const CHECKOUT_READ_RETRY_MS = 500;
