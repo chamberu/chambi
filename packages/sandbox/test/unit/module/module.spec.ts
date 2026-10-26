@@ -288,6 +288,22 @@ describe('sandboxModule: image allow-list', () => {
         await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
     });
 
+    it('reads a CHAMVI_SANDBOX_IMAGES of separators and blanks as unset', () => {
+        for (const value of [',', ' , ', '  ']) {
+            const module = sandboxModule({ provider: dockerProvider(), env: { CHAMVI_SANDBOX_IMAGES: value } });
+            expect(imageParameterOf(module)).toBe(false);
+        }
+    });
+
+    it('keeps the allowImage option under a CHAMVI_SANDBOX_IMAGES without an entry', async () => {
+        const allowImage = vi.fn(() => false);
+        const module = sandboxModule({ provider: dockerProvider(), allowImage, env: { CHAMVI_SANDBOX_IMAGES: ' , ' } });
+        managers.push(module.manager);
+        expect(imageParameterOf(module)).toBe(true);
+        await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
+        expect(allowImage).toHaveBeenCalled();
+    });
+
     it('names CHAMVI_SANDBOX_IMAGES for an entry that is no image reference, never echoing it', () => {
         let error: unknown;
         try {

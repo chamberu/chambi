@@ -13,7 +13,8 @@ import { assertImage } from '../image/module.ts';
 
 /**
  * The image allow-list of `CHAMVI_SANDBOX_IMAGES` (a comma list, exact
- * references), or undefined when the variable is unset. An entry that is no
+ * references), or undefined when the variable is unset or holds no entry
+ * (only separators and blanks), so no image parameter is offered. An entry that is no
  * image reference is an InvalidAgentDefinitionError naming the variable,
  * never the entry.
  */
@@ -28,6 +29,7 @@ export function readImageAllowList(env: Env): ((image: string) => boolean) | und
             throw new InvalidAgentDefinitionError('CHAMVI_SANDBOX_IMAGES holds an entry that is no image reference.');
         }
     }
+    if (images.size === 0) return undefined;
     return (image) => images.has(image);
 }
 

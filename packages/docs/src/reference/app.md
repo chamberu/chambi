@@ -85,7 +85,7 @@ Read by `readConfig(env, { mode, dev })` once per lifecycle; the optional module
 | `CHAMVI_SANDBOX_PROVIDER` | `sandboxModule` | `local`, `docker`, `kubernetes` | the `provider` option, else `local` | never |
 | `CHAMVI_SANDBOX_NAMESPACE` | `sandboxModule` | string | none | provider `kubernetes` |
 | `CHAMVI_SANDBOX_IMAGE` | `sandboxModule` | image ref | `ghcr.io/chamvi/sandbox-dev:trixie` | never |
-| `CHAMVI_SANDBOX_IMAGES` | `sandboxModule` | comma list of image refs | none: `create_workspace` offers no `image` | never |
+| `CHAMVI_SANDBOX_IMAGES` | `sandboxModule` | comma list of image refs | none (also a list without an entry): `create_workspace` offers no `image` | never |
 | `CHAMVI_DEPLOYMENT` | `sandboxModule` | label value (at most 63 letters, digits, `-`, `_`, `.`) | the `deployment` option, else `default` | several apps share one Docker host or namespace (one value per app); only with a value are the workspaces of runs the store does not hold collected |
 
 ```ts
