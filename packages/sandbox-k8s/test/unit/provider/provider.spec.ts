@@ -461,6 +461,13 @@ describe('kubernetes sandbox', () => {
             expect(found).toBe(workspace);
         });
 
+        it('never answers a held workspace past its expiry', async () => {
+            const { provider, clock } = setup();
+            const workspace = await provider.create({ runId: 'r1' });
+            clock.advance(workspace.info.expiresAt.getTime() - clock.now().getTime());
+            expect(await provider.find('r1')).toEqual([]);
+        });
+
         it('skips pods that do not run, are being deleted, expired or belong to another deployment', async () => {
             const {
                 client, 

@@ -185,7 +185,7 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                 const id = labels[WORKSPACE_LABEL] ?? '';
                 const held = live.get(id);
                 if (held) {
-                    if (!held.disposed) found.push(held);
+                    if (!held.disposed && held.info.expiresAt.getTime() > now) found.push(held);
                     continue;
                 }
                 if (pod.metadata?.deletionTimestamp || podState(pod).state !== 'running') continue;
