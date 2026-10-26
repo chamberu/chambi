@@ -6,9 +6,7 @@
  */
 
 
-import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import {
     basename,
@@ -31,6 +29,7 @@ import {
 import {
     compareCodePoints,
     defaultExportOf,
+    hashFolder,
     isDirectory,
     isFile,
     isHashIgnored,
@@ -170,22 +169,7 @@ function forgetRequired(dir: string): void {
  * as `path + '\0' + bytes + '\0'`.
  */
 export async function hashAgentFolder(dir: string): Promise<string> {
-    const found = await locateMany('**/*', {
-        cwd: dir, 
-        onlyFiles: true, 
-        dot: false, 
-    });
-    const files = found
-        .map((info) => ({ path: info.path, key: relative(dir, info.path).split(sep).join('/') }))
-        .filter((file) => !isHashIgnored(file.key))
-        .sort((a, b) => compareCodePoints(a.key, b.key));
-    const hash = createHash('sha256');
-    for (const file of files) {
-        hash.update(`${file.key}\0`);
-        hash.update(await readFile(file.path));
-        hash.update('\0');
-    }
-    return hash.digest('hex');
+    return hashFolder(dir, (key) => !isHashIgnored(key));
 }
 
 async function buildAgent(dir: string, load: (path: string) => Promise<unknown>): Promise<Agent> {

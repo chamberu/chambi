@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { AgentRevision } from '../../agent/types.ts';
 import { InvalidRunStateError, RunNotFoundError } from '../../errors/index.ts';
 import { RunStatus } from '../../run/constants.ts';
 import { REVISION_PREFIX_LENGTH } from '../constants.ts';
@@ -17,7 +18,10 @@ const UNSETTLED = [RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING, RunSt
  * Cancels the agent's unsettled runs (created before `before`, when given),
  * concurrently, storing `reason` on each. A run that settled or vanished
  * meanwhile is skipped; any other failure goes to onError and the other runs
- * are still cancelled. Resolves the ids whose cancel went through.
+ * are still cancelled. Resolves the ids whose cancel went through: a run
+ * executing on another replica only gets cancelRequested (it may still
+ * complete first) and a local execution being drained settles interrupted,
+ * so an id names a requested cancel, not always a cancelled run.
  */
 export async function cancelAgentRuns(
     ctx: RegistryContext,
@@ -53,11 +57,19 @@ export async function cancelAgentRuns(
  * replica at the old hash may create and start a run until the write lands;
  * from the write on no replica at the old hash starts one. Resolves the
  * cancelled run ids, or undefined when no sweep ran (first sight, unchanged).
+ * A marker at `former` (the same content under an earlier hash algorithm) is
+ * moved to `revision` without a sweep.
  */
-export async function syncRevision(ctx: RegistryContext, agent: string, revision: string): Promise<string[] | undefined> {
+export async function syncRevision(
+    ctx: RegistryContext,
+    agent: string,
+    revision: string,
+    former?: string,
+): Promise<string[] | undefined> {
     return withAgentLock(ctx, agent, async () => {
         const marker = await ctx.store.getAgentRevision(agent);
         if (marker?.hash === revision) return undefined;
+        if (await moveFormerMarker(ctx, marker, revision, former)) return undefined;
         const reason = agentCancelReason(agent, 'replaced', revision);
         const cancelled = marker ? await cancelAgentRuns(ctx, agent, reason, ctx.clock.now()) : [];
         const changedAt = ctx.clock.now();
@@ -75,14 +87,21 @@ export async function syncRevision(ctx: RegistryContext, agent: string, revision
 /**
  * Brings the stored revision marker of `agent` to `revision` without ever
  * cancelling (a process that does not reload agents, e.g. a job), under the
- * registry lock: no marker is written, an equal one kept, a different one
+ * registry lock: a missing marker is written, an equal one kept, a different one
  * moved only while the agent has no unsettled run; else InvalidRunStateError
- * naming both revisions, marker and runs untouched.
+ * naming both revisions, marker and runs untouched. A marker at `former`
+ * is moved to `revision` like an equal one.
  */
-export async function claimRevision(ctx: RegistryContext, agent: string, revision: string): Promise<void> {
+export async function claimRevision(
+    ctx: RegistryContext,
+    agent: string,
+    revision: string,
+    former?: string,
+): Promise<void> {
     await withAgentLock(ctx, agent, async () => {
         const marker = await ctx.store.getAgentRevision(agent);
         if (marker?.hash === revision) return;
+        if (await moveFormerMarker(ctx, marker, revision, former)) return;
         if (marker) {
             const { data } = await ctx.store.listRuns({
                 agent,
@@ -126,4 +145,19 @@ export async function dropRevision(ctx: RegistryContext, agent: string, options:
         if (options.registered) return cancelAgentRuns(ctx, agent, reason);
         return undefined;
     });
+}
+
+/**
+ * Moves a marker at `former` (the same content, hashed by an earlier
+ * algorithm) to `revision`, keeping its `changedAt`; true when it did.
+ */
+async function moveFormerMarker(
+    ctx: RegistryContext,
+    marker: AgentRevision | undefined,
+    revision: string,
+    former: string | undefined,
+): Promise<boolean> {
+    if (marker === undefined || former === undefined || marker.hash !== former) return false;
+    await ctx.store.setAgentRevision({ ...marker, hash: revision });
+    return true;
 }

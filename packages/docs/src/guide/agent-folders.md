@@ -71,7 +71,7 @@ A new version of an agent's code cancels the agent's unsettled runs (`queued`, `
 - **While the app was down**: a folder changed while every replica was stopped cancels once at the next boot; a normal boot cancels nothing. A marker whose folder is gone at boot removes that agent.
 - **Removal** cancels every unsettled run of the agent and deletes its marker; a replica that removes it later cancels the runs it created meanwhile. A replica that still has an older version leaves a newer marker (and its runs) alone.
 - **Visible**: each cancelled run stores why as its `error`: `{ code: 'agent_replaced', message: 'Agent "<a>" was reloaded at revision <12 hex>; its unsettled runs were cancelled.' }`, or `agent_removed` for a removal (`GET /runs/:id`, the dashboard). The replica that swept logs it once (`info`): `agent reloaded` or `agent removed` with `{ agent, revision, cancelled: [<run ids>] }`.
-- **Upgrading chamvi**: the ignore list above changed folder hashes, so the first start after upgrading to it cancels the unsettled runs of every folder holding an ignored file once (`agent_replaced`). Settle waiting runs before upgrading.
+- **Upgrading chamvi**: the ignore list above changed the hash of every folder holding an ignored file. A marker written by an earlier version at the full-folder hash of the same content is moved to the new hash without a cancel, so the upgrade itself cancels no run and no waiting approval. A folder that also changed while the app was down cancels once, as any change does.
 
 ### Jobs never reload
 

@@ -319,14 +319,26 @@ export class Engine implements IContextProvider {
      * is cancelled: a missing marker is written, a different one moved only
      * while the agent has no unsettled run, else InvalidRunStateError and the
      * agent stays unregistered.
+     *
+     * A marker at `formerRevision` (the same content hashed by an earlier
+     * algorithm) counts as equal: it is moved to `revision` and nothing is
+     * cancelled, so a hash change of the loader never cancels runs.
      */
     async putAgent(
         agent: Agent,
-        options: { revision?: string; reload?: boolean } = {},
+        options: {
+            revision?: string; 
+            formerRevision?: string; 
+            reload?: boolean 
+        } = {},
     ): Promise<'added' | 'replaced' | 'unchanged'> {
         this.assertRegistrable(agent);
         const { name } = agent;
-        const { revision, reload = true } = options;
+        const {
+            revision, 
+            formerRevision, 
+            reload = true, 
+        } = options;
         const registered = this.agents.has(name);
         if (registered && this.agents.get(name) === agent && this.revisions.get(name) === revision) return 'unchanged';
         let cancelled: string[] | undefined;
@@ -334,9 +346,9 @@ export class Engine implements IContextProvider {
             this.syncing.add(name);
             try {
                 if (reload) {
-                    cancelled = await syncRevision(this.registry(), name, revision);
+                    cancelled = await syncRevision(this.registry(), name, revision, formerRevision);
                 } else {
-                    await claimRevision(this.registry(), name, revision);
+                    await claimRevision(this.registry(), name, revision, formerRevision);
                 }
             } finally {
                 this.syncing.delete(name);

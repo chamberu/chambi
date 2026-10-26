@@ -751,3 +751,56 @@ describe('checkAgent and putAgent reload: false', () => {
         expect(changes).toEqual([]);
     });
 });
+
+describe('putAgent formerRevision', () => {
+    const revA = 'a'.repeat(64);
+    const revB = 'b'.repeat(64);
+    const revC = 'c'.repeat(64);
+    const next = defineAgent({
+        name: 'triage',
+        model,
+        instructions: 'v2',
+    });
+
+    it.each([true, false])('moves a marker at formerRevision without a cancel (reload: %s)', async (reload) => {
+        const clock = new ControllableClock(new Date(1_000_000));
+        const store = new CountingStore({ clock });
+        const other = make({ store, clock });
+        await other.engine.putAgent(triage, { revision: revA });
+        const { runId } = await other.engine.dispatch(env());
+        const { engine } = make({
+            store,
+            clock,
+            agents: [],
+        });
+        const cancelled: unknown[] = [];
+        engine.on('agents.cancelled', (event) => { cancelled.push(event); });
+
+        await expect(engine.putAgent(next, {
+            revision: revB,
+            formerRevision: revA,
+            reload,
+        })).resolves.toBe('added');
+        expect((await store.getAgentRevision('triage'))?.hash).toBe(revB);
+        expect(await statusOf(engine, runId)).toBe('queued');
+        expect(cancelled).toEqual([]);
+        expect(engine.agentRevision('triage')).toBe(revB);
+    });
+
+    it('still cancels for a marker at neither revision', async () => {
+        const clock = new ControllableClock(new Date(1_000_000));
+        const store = new CountingStore({ clock });
+        const other = make({ store, clock });
+        await other.engine.putAgent(triage, { revision: revC });
+        const { runId } = await other.engine.dispatch(env());
+        clock.advance(1);
+        const { engine } = make({
+            store,
+            clock,
+            agents: [],
+        });
+        await engine.putAgent(next, { revision: revB, formerRevision: revA });
+        expect((await store.getAgentRevision('triage'))?.hash).toBe(revB);
+        expect(await statusOf(engine, runId)).toBe('cancelled');
+    });
+});

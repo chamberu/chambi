@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { createHash } from 'node:crypto';
 import { rm, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import {
@@ -222,6 +223,33 @@ describe('agentsModule', () => {
         await engine().idle();
 
         expect((await store.getRun(runId))?.status).toBe('completed');
+    });
+
+    it('an upgrade from the full-folder hash moves the marker and cancels nothing', async () => {
+        await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1'), 'greeter/README.md': '# greeter' });
+        // the hash before README* and editor leftovers were ignored: every file but dot-entries
+        const legacy = createHash('sha256');
+        for (const [key, content] of [['README.md', '# greeter'], ['agent.ts', agentFile('v1')]] as const) {
+            legacy.update(`${key}\0`);
+            legacy.update(content);
+            legacy.update('\0');
+        }
+        const clock = new ControllableClock(START);
+        const store = new MemoryStore({ clock });
+        await store.setAgentRevision({
+            agent: 'greeter',
+            hash: legacy.digest('hex'),
+            changedAt: START,
+        });
+        const runId = await queueRun(store, clock, 'greeter');
+        clock.advance(1_000);
+
+        const { harness, engine } = build({ store, clock });
+        await harness.setup();
+        await engine().idle();
+
+        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.getAgentRevision('greeter'))?.hash).toBe(await hashAgentFolder(folder()));
     });
 
     it('a code agent wins a name clash and the folder is an issue', async () => {

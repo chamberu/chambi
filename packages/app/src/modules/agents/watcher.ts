@@ -8,7 +8,7 @@
 import { join } from 'node:path';
 import { InvalidAgentDefinitionError, InvalidRunStateError } from '@chamvi/core';
 import type { AgentIssue } from '@chamvi/http';
-import { messageOf, relativize } from '../../loader/helpers.ts';
+import { formerAgentFolderHash, messageOf, relativize } from '../../loader/helpers.ts';
 import { hashAgentFolder, listAgentFolders, loadAgent } from '../../loader/module.ts';
 import type { LoadedAgent } from '../../loader/types.ts';
 import { BOOT_LOAD_ATTEMPTS, EMPTY_ROOT_MESSAGE, JOB_CONFLICT_HINT } from './constants.ts';
@@ -129,7 +129,13 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
                 engine.checkAgent(loaded.agent);
                 return 'done';
             }
-            await engine.putAgent(loaded.agent, { revision: hash, reload: role === 'start' });
+            // a marker from before HASH_IGNORE_PATTERNS holds the same content: moved, never a cancel
+            const formerRevision = await formerAgentFolderHash(join(root, name), hash);
+            await engine.putAgent(loaded.agent, {
+                revision: hash,
+                reload: role === 'start',
+                ...(formerRevision !== undefined && { formerRevision }),
+            });
         } catch (error) {
             // refused before any store write (a model that cannot resolve, a subscription to an unknown channel): an issue until the content changes
             if (error instanceof InvalidAgentDefinitionError) {
