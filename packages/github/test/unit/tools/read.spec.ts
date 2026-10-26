@@ -368,6 +368,21 @@ describe('read tools', () => {
             expect(result.truncated).toBe(false);
         });
 
+        it('reads every page with exhaustive, also past a whole page below from', async () => {
+            const { fake, call } = setup();
+            // a page of old-line releases published after the one in range (the fake lists newest last)
+            fake.releases.set('octo/demo', [
+                release('v2.1.0', 1),
+                ...Array.from({ length: 100 }, (_, i) => release(`v1.${i}.0`, 20)),
+            ]);
+            const input = { repo: 'octo/demo', from: '2.0.0' };
+
+            const quick = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', input);
+            expect(quick.releases).toEqual([]);
+            const full = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', { ...input, exhaustive: true });
+            expect(full.releases.map((r) => r.tag)).toEqual(['v2.1.0']);
+        });
+
         it('reads one page for the newest releases without from', async () => {
             const { fake, call } = setup();
             fake.releases.set('octo/demo', Array.from({ length: 1_000 }, (_, i) => release(`v1.${i}.0`, (i % 28) + 1)));

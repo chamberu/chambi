@@ -301,7 +301,8 @@ export function createReadTools(app: IGithubApp): ToolSet {
         github_list_releases: defineTool<RepoInput & {
             from?: string;
             to?: string;
-            tagPrefix?: string
+            tagPrefix?: string;
+            exhaustive?: boolean;
         }, GithubReleaseList>({
             description: 'List the published releases of a repository between two versions (after from, up to and including to), oldest first, ' +
                 `with their notes (each cut at ${RELEASE_BODY_MAX_CHARS} characters, at most ${RELEASES_MAX} releases). ` +
@@ -327,10 +328,20 @@ export function createReadTools(app: IGithubApp): ToolSet {
                     minLength: 1,
                     description: 'A tag prefix before the version, for monorepos, e.g. "@babel/core@" or "pkg-".',
                 },
-            }, ['from', 'to', 'tagPrefix']),
+                exhaustive: {
+                    type: 'boolean',
+                    description: `Read every page (up to ${RELEASE_PAGES_MAX * 100} releases) instead of stopping at the first page whose ` +
+                        'releases are all at or below from. Releases are listed by publication date, so a repository that publishes ' +
+                        'many releases of an older line after the range can hide a release; use it when one seems missing. Default false.',
+                },
+            }, ['from', 'to', 'tagPrefix', 'exhaustive']),
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const tagPrefix = input.tagPrefix === undefined ? '' : requireString(input.tagPrefix, 'tagPrefix');
+                if (input.exhaustive !== undefined && typeof input.exhaustive !== 'boolean') {
+                    throw new ValidationError('exhaustive must be a boolean.');
+                }
+                const exhaustive = input.exhaustive === true;
                 const from = versionBound(input.from, 'from', tagPrefix);
                 const to = versionBound(input.to, 'to', tagPrefix);
                 const bounded = from !== undefined || to !== undefined;
@@ -380,7 +391,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                             const match = pick(release);
                             if (match) matching.push(match);
                         }
-                        if (data.length < 100 || settled(data)) break;
+                        if (data.length < 100 || (!exhaustive && settled(data))) break;
                         unread = page === RELEASE_PAGES_MAX;
                     }
 
