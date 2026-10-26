@@ -55,6 +55,12 @@ export type StaticGitCredential = {
 export type CredentialMode = 'workspace' | 'tools';
 
 /** Replaces issued credentials with `REDACTED`. */
+/** A span of a text, `start` inclusive and `end` exclusive (UTF-16 code units). */
+export type RedactedSpan = {
+    start: number;
+    end: number;
+};
+
 export type Redactor = {
     /**
      * Redacts `secret` from now on; with `expiresAt` only until
@@ -63,6 +69,8 @@ export type Redactor = {
      */
     add(secret: string, expiresAt?: Date): void;
     redact(text: string): string;
+    /** The spans of `text` that `redact` replaces, in order and without overlap. */
+    redactedSpans(text: string): RedactedSpan[];
     /** The same bytes when they hold no secret. */
     redactBytes(bytes: Uint8Array): Uint8Array;
     /** The same error when its message holds no secret, else a SandboxError with the redacted message and no cause. */

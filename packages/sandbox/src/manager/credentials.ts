@@ -211,6 +211,7 @@ export function createCredentialSupport(input: {
             writeFile: (path, content) => guard(() => workspace.writeFile(path, content)),
             dispose: () => guard(() => workspace.dispose()),
             redact: (text) => redactor.redact(text),
+            redactedSpans: (text) => redactor.redactedSpans(text),
         };
         wrapped.set(workspace, proxy);
         return proxy;

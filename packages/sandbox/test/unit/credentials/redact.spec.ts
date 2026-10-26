@@ -25,6 +25,16 @@ describe('createRedactor', () => {
         expect(new TextDecoder().decode(redactor.redactBytes(new TextEncoder().encode('ghs_expiring_token')))).toBe('ghs_expiring_token');
     });
 
+    it('answers the spans it redacts, a secret inside a longer one covered by it', () => {
+        const redactor = createRedactor({ clock: new ControllableClock(new Date(1_000_000)) });
+        redactor.add('token');
+        redactor.add('ghs_token_long');
+        const text = 'a ghs_token_long b token c';
+        expect(redactor.redactedSpans(text)).toEqual([{ start: 2, end: 16 }, { start: 19, end: 24 }]);
+        expect(redactor.redact(text)).toBe(`a ${REDACTED} b ${REDACTED} c`);
+        expect(redactor.redactedSpans('nothing here')).toEqual([]);
+    });
+
     it('keeps a secret without expiry', () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const redactor = createRedactor({ clock });

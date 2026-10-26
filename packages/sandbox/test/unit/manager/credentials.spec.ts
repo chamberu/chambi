@@ -402,6 +402,7 @@ describe('workspace manager credentials', () => {
         expect(result.stdout).toBe('token=[redacted]\n');
         expect(result.stderr).toBe('again [redacted]');
         expect(workspace.redact?.('a read-token-1 b')).toBe('a [redacted] b');
+        expect(workspace.redactedSpans?.('a read-token-1 b')).toEqual([{ start: 2, end: 14 }]);
 
         expect(await manager.get('r1')).toBe(workspace);
         await workspace.writeFile('notes.txt', 'leaked write-token-2');

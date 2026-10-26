@@ -14,6 +14,7 @@ import type {
     GitCredential,
     GitCredentialRequest,
     IGitCredentials,
+    RedactedSpan,
     Redactor,
 } from './types.ts';
 
@@ -114,13 +115,31 @@ export function createRedactor(options: { clock?: IClock } = {}): Redactor {
         if (dropped) secrets = secrets.filter((secret) => encoded.has(secret));
     };
 
-    const redact = (text: string): string => {
+    const redactedSpans = (text: string): RedactedSpan[] => {
         prune();
-        let result = text;
+        const spans: RedactedSpan[] = [];
+        // longest first: a secret inside a longer one is covered by it
         for (const secret of secrets) {
-            if (result.includes(secret)) result = result.replaceAll(secret, REDACTED);
+            for (let at = text.indexOf(secret); at !== -1; at = text.indexOf(secret, at + 1)) {
+                const end = at + secret.length;
+                if (spans.some((span) => at < span.end && span.start < end)) continue;
+                spans.push({ start: at, end });
+                at = end - 1;
+            }
         }
-        return result;
+        return spans.sort((a, b) => a.start - b.start);
+    };
+
+    const redact = (text: string): string => {
+        const spans = redactedSpans(text);
+        if (spans.length === 0) return text;
+        let result = '';
+        let from = 0;
+        for (const span of spans) {
+            result += `${text.slice(from, span.start)}${REDACTED}`;
+            from = span.end;
+        }
+        return result + text.slice(from);
     };
 
     return {
@@ -139,6 +158,7 @@ export function createRedactor(options: { clock?: IClock } = {}): Redactor {
             secrets = [...secrets, secret].sort((a, b) => b.length - a.length);
         },
         redact,
+        redactedSpans,
         redactBytes(bytes) {
             prune();
             let buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);

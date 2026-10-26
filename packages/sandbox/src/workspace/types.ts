@@ -81,4 +81,11 @@ export interface IWorkspace {
      * text shown to the model.
      */
     readFileRaw?(path: string): Promise<string>;
+    /**
+     * The spans of `text` that `redact` replaces with `[redacted]`, in order
+     * and without overlap: set beside `redact`, so a tool working on the raw
+     * text (an edit of `readFileRaw`) can match what the model read and keep
+     * every issued token byte for byte.
+     */
+    redactedSpans?(text: string): Array<{ start: number; end: number }>;
 }
