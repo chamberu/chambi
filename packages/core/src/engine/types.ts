@@ -54,8 +54,8 @@ export type EngineOptions = {
     model?: ModelRef;
     /**
      * Resolves `'<provider>/<model id>'` strings. Registration (constructor,
-     * putAgent) checks every string ref through it; without it strings pass
-     * unchecked.
+     * putAgent) checks every string ref through it; without it a string ref is
+     * an `InvalidAgentDefinitionError`.
      */
     models?: IModelResolver;
     /** Default `${hostname}-${pid}`. */
