@@ -126,8 +126,9 @@ The package ships the contract only; backends are planned.
 | `READ_MAX_LINES`, `READ_MAX_CHARS` | constant | `2_000`, `65_536` |
 | `SEARCH_MAX_RESULTS`, `LIST_MAX_RESULTS` | constant | `500`, `5_000` |
 | `LINE_MAX_CHARS` | constant | `500` |
+| `OUTPUT_LOG_MAX_BYTES` | constant | `64 * 1_048_576` (64 MiB), the default `outputLogMaxBytes` of `codingTools()` |
 
-Types: `CodingWorkspaces`, `ReadFileResult`, `WriteFileResult`, `EditFileResult`, `GrepMatch`, `GrepResult`, `ListFilesResult`, `GitDiffResult`, `ICodingBackend`, `CodingTask`, `CodingResult`, `CodingBudget`.
+Types: `CodingWorkspaces`, `CodingToolsOptions`, `ReadFileResult`, `ReadFileBinaryResult`, `ReadFileImageResult`, `WriteFileResult`, `EditFileResult`, `MultiEditResult`, `GrepEngine`, `GrepMatch`, `GrepResult`, `GlobResult`, `ListFilesResult`, `BashResult`, `BashJobResult`, `BashJobStatus`, `BashOutputResult`, `BashKillResult`, `GitDiffResult`, `ICodingBackend`, `CodingTask`, `CodingResult`, `CodingBudget`.
 
 ## License
 

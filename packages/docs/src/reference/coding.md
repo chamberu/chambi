@@ -11,12 +11,12 @@ npm install @chamvi/coding @chamvi/sandbox @chamvi/core ai --save
 ## codingTools
 
 ```ts
-function codingTools(workspaces: CodingWorkspaces): ToolSet;
+function codingTools(workspaces: CodingWorkspaces, options?: CodingToolsOptions): ToolSet;
 
 type CodingWorkspaces = Pick<IWorkspaceManager, 'get'>;
 ```
 
-Throws `InvalidAgentDefinitionError` when `workspaces` has no `get`. Returns `read_file`, `write_file`, `edit_file`, `multi_edit`, `grep`, `glob`, `list_files`, `bash`, `bash_output`, `bash_kill` and `git_diff`, each a [`defineTool()`](/guide/tools) tool that resolves its workspace through `workspaces.get(context.run.runId, input.workspace)`.
+Throws `InvalidAgentDefinitionError` when `workspaces` has no `get`, `options` is no object or `options.outputLogMaxBytes` is no positive integer. Returns `read_file`, `write_file`, `edit_file`, `multi_edit`, `grep`, `glob`, `list_files`, `bash`, `bash_output`, `bash_kill` and `git_diff`, each a [`defineTool()`](/guide/tools) tool that resolves its workspace through `workspaces.get(context.run.runId, input.workspace)`.
 
 | Tool | Input | Result |
 |---|---|---|
@@ -42,6 +42,7 @@ const READ_MAX_CHARS: 65_536;
 const SEARCH_MAX_RESULTS: 500;
 const LIST_MAX_RESULTS: 5_000;
 const LINE_MAX_CHARS: 500;
+const OUTPUT_LOG_MAX_BYTES: 67_108_864; // 64 MiB, the default outputLogMaxBytes
 ```
 
 ## ICodingBackend
