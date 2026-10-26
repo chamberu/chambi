@@ -92,7 +92,7 @@ Each workspace is a bare pod `chamvi-ws-<id>` with one container `sandbox`:
 | Pod | `restartPolicy: Never`, `automountServiceAccountToken: false`, `enableServiceLinks: false`, `shareProcessNamespace: true` (the pause container is pid 1 and reaps orphaned processes for any image, also one without an init, whose zombies would otherwise fill the kubelet's pid limit), `activeDeadlineSeconds` = the workspace's lifetime in seconds (`lifetimeSeconds`), so the pod ends itself at `expiresAt` even when no collection runs, `terminationGracePeriodSeconds: 5` |
 | Pod security | `runAsUser`/`runAsGroup` from `user` (default 0), seccomp `RuntimeDefault`; a non-root user adds `runAsNonRoot` and `fsGroup` |
 | Container security | `allowPrivilegeEscalation: false`, not privileged, `readOnlyRootFilesystem` from `readOnlyRoot` (default false), all capabilities dropped and for root `ROOT_CAPABILITIES` added back |
-| Command | `command: ['sleep', '<lifetime in seconds>']`, replacing the image's entrypoint (an image whose entrypoint is a command works too) |
+| Command | `command: ['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', '<expiresAt in epoch seconds>']` (sleeps until `expiresAt`, so a pod scheduled late stops in time), replacing the image's entrypoint (an image whose entrypoint is a command works too) |
 | Resources | requests equal limits: `cpu`, `memory`, `ephemeral-storage` from `storage` |
 | `/workspace` | an emptyDir with `sizeLimit` from `storage` |
 | `/tmp` | a memory-backed emptyDir of `tmpSize` (default 1 GiB, `TMP_SIZE`) |
@@ -114,7 +114,7 @@ A run may pick an image (`create_workspace({ image })`) only when the manager ha
 
 ## Cache
 
-Every pod mounts `/cache` and gets the cache variables (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`; package downloads only, mise keeps toolchains in HOME). Without `cache` that is an emptyDir of the pod (counted against its `ephemeral-storage`), so installs work but start cold every time. With `cache: { claimName }` every workspace mounts the same ReadWriteMany claim (NFS, CephFS, EFS, Azure Files), so toolchains and packages are fetched once per cluster.
+Every pod mounts `/cache` and gets the cache variables (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`; package downloads only, mise keeps toolchains in HOME). Without `cache` that is an emptyDir of the pod (counted against its `ephemeral-storage`), so installs work but start cold every time. With `cache: { claimName }` every workspace mounts the same ReadWriteMany claim (NFS, CephFS, EFS, Azure Files), so package downloads are fetched once per cluster (toolchains stay per workspace, in HOME).
 
 **Risk**: a shared claim is shared by every run and agent of the namespace. A malicious package one run fetched can sit in another run's cache; npm verifies integrity hashes, pip, Go's build cache and others less. Keep runs that must not influence each other on different claims, or without one.
 

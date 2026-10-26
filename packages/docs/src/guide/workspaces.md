@@ -104,7 +104,7 @@ The push policy (`push` on the manager): `mode: 'auto'` pushes, `'approve'` asks
 
 ## Lifecycle
 
-A workspace is keyed by run and repository, and its lifetime follows the run up to a hard cap: a container sleeps until its expiry (also when it is started again after a host restart) and a pod for its lifetime (`lifetimeSeconds`, also its `activeDeadlineSeconds`), so it stops itself at its expiry even when nothing collects it, while nothing kills it earlier, also through a 24 hour approval. It lives until the first of:
+A workspace is keyed by run and repository, and its lifetime follows the run up to a hard cap: a container sleeps until its expiry (also when it is started again after a host restart) and a pod likewise (`lifetimeSeconds` as its `activeDeadlineSeconds` beside it, so a pod scheduled late still stops at its expiry), so it stops itself at its expiry even when nothing collects it, while nothing kills it earlier, also through a 24 hour approval. It lives until the first of:
 
 - the run settles: `completed`, `failed` or `cancelled` (through `workspaces.attach(engine)`, also for the workspaces another replica created: with `isSettled` those go with the garbage collection a settled run starts, at most one per 10 minutes). A run `waiting` for an approval or `interrupted` keeps its workspaces.
 - `dispose_workspace`, or `workspaces.release(runId, id?)`
