@@ -237,17 +237,29 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             const now = clock.now().getTime();
             const found: IWorkspace[] = [];
             /**
-             * Starts a stopped container; false when it cannot run. The state
-             * comes from inspect, since the list is a view that may lag behind
-             * a stop or a start.
+             * Starts a stopped container and unpauses a paused one; false when
+             * it cannot run, a SandboxError when Docker cannot tell its state.
+             * The state comes from inspect, since the list is a view that may
+             * lag behind a stop or a start.
              */
             const restart = async (container: Docker.Container): Promise<boolean> => {
                 let state: Docker.ContainerInspectInfo['State'];
                 try {
                     ({ State: state } = await container.inspect(findOptions.signal ? { abortSignal: findOptions.signal } : {}));
-                } catch {
-                    // removed meanwhile
-                    return false;
+                } catch (error) {
+                    // removed meanwhile; any other failure is no answer, so find fails
+                    if (isStatus(error, 404)) return false;
+                    throw new SandboxError(`cannot inspect workspace container ${container.id}: ${dockerMessage(error)}`, { cause: error });
+                }
+                if (state.Paused) {
+                    // Running reads true for a paused container, which takes no exec
+                    try {
+                        await container.unpause(findOptions.signal ? { abortSignal: findOptions.signal } : {});
+                    } catch (error) {
+                        // unpaused meanwhile
+                        if (!isStatus(error, 409)) return false;
+                    }
+                    return true;
                 }
                 if (state.Running) return true;
                 // stopped (a host or daemon restart): the volume still holds the work.
