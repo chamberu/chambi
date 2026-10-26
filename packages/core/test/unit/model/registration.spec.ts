@@ -72,9 +72,9 @@ function make(opts: Partial<EngineOptions> = {}) {
     });
     engines.push(engine);
     return {
-        store, 
-        clock, 
-        engine, 
+        store,
+        clock,
+        engine,
     };
 }
 
@@ -108,9 +108,9 @@ describe('model registration', () => {
 
         const defaults = recordingResolver();
         make({
-            agents: [], 
-            model: 'team-b/d', 
-            models: defaults, 
+            agents: [],
+            model: 'team-b/d',
+            models: defaults,
         });
         expect(defaults.checks).toEqual([['team-b/d', undefined]]);
 
@@ -152,9 +152,9 @@ describe('model registration', () => {
     it('object refs are never checked', async () => {
         const models = recordingResolver();
         const { engine } = make({
-            agents: [withModel(mockModel([]))], 
-            model: mockModel([]), 
-            models, 
+            agents: [withModel(mockModel([]))],
+            model: mockModel([]),
+            models,
         });
         await engine.putAgent(withModel(mockModel([]), 'digest'));
         expect(models.checks).toEqual([]);

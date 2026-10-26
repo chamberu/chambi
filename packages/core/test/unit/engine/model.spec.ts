@@ -40,9 +40,9 @@ function resolver(resolve: (ref: string) => ReturnType<IModelResolver['resolve']
 }
 
 async function runAgent(options: {
-    model?: ModelRef, 
-    default?: ModelRef, 
-    models?: IModelResolver 
+    model?: ModelRef,
+    default?: ModelRef,
+    models?: IModelResolver
 }) {
     const clock = new ControllableClock(new Date(1_000_000));
     const store = new MemoryStore({ clock });
@@ -112,9 +112,9 @@ describe('model resolution at execution start', () => {
     it('an object ref never reaches the resolver', async () => {
         const { models, resolved } = resolver(() => mockModel([text('wrong')]));
         const { run } = await runAgent({
-            model: mockModel([text('own')]), 
-            default: 'openai/gpt-5', 
-            models, 
+            model: mockModel([text('own')]),
+            default: 'openai/gpt-5',
+            models,
         });
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('own');

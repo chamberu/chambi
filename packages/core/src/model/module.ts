@@ -60,9 +60,9 @@ export function resolveModel<S extends StateSchema = StateSchema>(
     ref?: ModelRef,
 ): LanguageModel {
     const {
-        model, 
-        models, 
-        agentModel, 
+        model,
+        models,
+        agentModel,
     } = inject(ctx, MODEL_CONTEXT);
     const wanted = ref ?? agentModel(ctx.run.agent) ?? model;
     if (typeof wanted === 'string' && !models) {
