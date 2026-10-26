@@ -128,6 +128,7 @@ describe('public api', () => {
             STOPPED: 'app_stopped',
             IN_USE: 'app_in_use',
             STOP_FAILED: 'app_stop_failed',
+            STORE_NOT_MIGRATED: 'store_not_migrated',
         });
         expect(app.AUTHENTICATOR_ORDER).toEqual({
             STATIC_TOKENS: 0,

@@ -62,4 +62,6 @@ export const APP_ERROR_CODE = {
     STOPPED: 'app_stopped',
     IN_USE: 'app_in_use',
     STOP_FAILED: 'app_stop_failed',
+    /** A check (`IApp.check()`) found migrations a start would not apply (`CHAMVI_MIGRATE=false`). */
+    STORE_NOT_MIGRATED: 'store_not_migrated',
 } as const;
