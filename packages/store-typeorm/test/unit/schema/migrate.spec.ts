@@ -12,7 +12,7 @@ import {
     expect,
     it,
 } from 'vitest';
-import { migrateStore } from '@chamvi/store-typeorm';
+import { migrateStore, pendingMigrations } from '@chamvi/store-typeorm';
 import { TableName } from '../../../src/entities/constants.ts';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import type { TestDataSourceOptions } from '../../utils/database.ts';
@@ -68,6 +68,30 @@ describePostgres('schema', () => {
             [Object.values(TableName)],
         );
         expect(tables.map((t) => t.table_name).sort()).toEqual(Object.values(TableName).sort());
+    });
+
+    it('pendingMigrations lists every migration on an empty database and none after migrateStore', async () => {
+        const ds = await create({ migrate: false });
+        expect(await pendingMigrations(ds)).toEqual([
+            'Init1792195200000',
+            'Artifacts1792368000000',
+            'IdempotencyScope1792454400000',
+            'KvKeyCollation1792540800000',
+            'AgentRevisions1792627200000',
+        ]);
+        await migrateStore(ds);
+        expect(await pendingMigrations(ds)).toEqual([]);
+    });
+
+    it('pendingMigrations does not create the migrations table', async () => {
+        const ds = await create({ migrate: false });
+        await pendingMigrations(ds);
+        const queryRunner = ds.createQueryRunner();
+        try {
+            expect(await queryRunner.hasTable('migrations')).toBe(false);
+        } finally {
+            await queryRunner.release();
+        }
     });
 
     it('the migration reverts in a schema other than public', async () => {
