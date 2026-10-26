@@ -18,6 +18,7 @@ import {
     AgentNotFoundError,
     Engine,
     InvalidAgentDefinitionError,
+    InvalidRunStateError,
     defineAgent,
 } from '@chamvi/core';
 import type {
@@ -633,5 +634,120 @@ describe('cancel reasons', () => {
         const run = await engine.getRun(runId);
         expect(run?.status).toBe('cancelled');
         expect(run?.error).toBeUndefined();
+    });
+});
+
+describe('checkAgent and putAgent reload: false', () => {
+    const revA = 'a'.repeat(64);
+    const revB = 'b'.repeat(64);
+    const next = defineAgent({
+        name: 'triage',
+        model,
+        instructions: 'v2',
+    });
+
+    it('checkAgent refuses an unknown channel without touching the store', () => {
+        const { engine, store } = make();
+        const calls: string[] = [];
+        const spied = new Proxy(store, {
+            get(target, key, receiver) {
+                const value = Reflect.get(target, key, receiver);
+                if (typeof value === 'function') calls.push(String(key));
+                return value;
+            },
+        });
+        Object.defineProperty(engine, 'store', { value: spied });
+        const broken = defineAgent({
+            name: 'x',
+            model,
+            instructions: 'y',
+            channels: [{
+                channel: 'github',
+                id: 'github:issues',
+                options: {},
+            }],
+        });
+        expect(() => engine.checkAgent(broken)).toThrow(InvalidAgentDefinitionError);
+        expect(() => engine.checkAgent(broken)).toThrow('Agent "x" subscribes to unknown channel "github".');
+        expect(calls).toEqual([]);
+        expect(engine.getAgent('x')).toBeUndefined();
+    });
+
+    it('checkAgent refuses a model string without a resolver and passes a valid agent', () => {
+        const { engine } = make();
+        const stringly = defineAgent({
+            name: 'x',
+            model: 'anthropic/claude',
+            instructions: 'y',
+        });
+        expect(() => engine.checkAgent(stringly)).toThrow(InvalidAgentDefinitionError);
+        expect(() => engine.checkAgent(next)).not.toThrow();
+    });
+
+    it('reload: false writes the first marker and cancels nothing', async () => {
+        const { engine, store } = make();
+        const { runId } = await engine.dispatch(env());
+        await expect(engine.putAgent(next, { revision: revA, reload: false })).resolves.toBe('replaced');
+        expect(await statusOf(engine, runId)).toBe('queued');
+        expect((await store.getAgentRevision('triage'))?.hash).toBe(revA);
+    });
+
+    it('reload: false keeps an equal marker', async () => {
+        const { engine, store } = make();
+        await engine.putAgent(triage, { revision: revA });
+        const before = await store.getAgentRevision('triage');
+        const writes = store.revisionWrites;
+        await engine.putAgent(next, { revision: revA, reload: false });
+        expect(await store.getAgentRevision('triage')).toEqual(before);
+        expect(store.revisionWrites).toBe(writes);
+    });
+
+    it('reload: false moves a different marker when the agent has no unsettled runs', async () => {
+        const {
+            engine, 
+            store, 
+            clock, 
+            changes, 
+        } = make();
+        await engine.putAgent(triage, { revision: revA });
+        const { runId } = await engine.dispatch(env());
+        await engine.cancel(runId);
+        clock.advance(1_000);
+        changes.length = 0;
+        const cancelled: AgentRunsCancelled[] = [];
+        engine.on('agents.cancelled', (e) => {
+            cancelled.push(e);
+        });
+        await expect(engine.putAgent(next, { revision: revB, reload: false })).resolves.toBe('replaced');
+        expect((await store.getAgentRevision('triage'))?.hash).toBe(revB);
+        expect(engine.agentRevision('triage')).toBe(revB);
+        expect(cancelled).toEqual([]);
+        expect(changes).toEqual([{
+            type: 'agents.changed',
+            name: 'triage',
+            kind: 'replaced',
+        }]);
+    });
+
+    it('reload: false refuses a different marker while a run is unsettled', async () => {
+        const clock = new ControllableClock(new Date(1_000_000));
+        const store = new CountingStore({ clock });
+        const other = make({ store, clock });
+        await other.engine.putAgent(triage, { revision: revA });
+        const { runId } = await other.engine.dispatch(env());
+        const { engine, changes } = make({
+            store, 
+            clock, 
+            agents: [], 
+        });
+        const attempt = engine.putAgent(next, { revision: revB, reload: false });
+        await expect(attempt).rejects.toThrow(InvalidRunStateError);
+        await expect(engine.putAgent(next, { revision: revB, reload: false })).rejects.toThrow(
+            'Agent "triage" runs revision aaaaaaaaaaaa in the store, not bbbbbbbbbbbb; this process does not reload agents.',
+        );
+        expect((await store.getAgentRevision('triage'))?.hash).toBe(revA);
+        expect(await statusOf(engine, runId)).toBe('queued');
+        expect(engine.getAgent('triage')).toBeUndefined();
+        expect(changes).toEqual([]);
     });
 });

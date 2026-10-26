@@ -7,6 +7,7 @@
 
 import { InvalidRunStateError, RunNotFoundError } from '../../errors/index.ts';
 import { RunStatus } from '../../run/constants.ts';
+import { REVISION_PREFIX_LENGTH } from '../constants.ts';
 import { agentCancelReason, withAgentLock } from './helpers.ts';
 import type { CancelReason, DropRevisionOptions, RegistryContext } from './types.ts';
 
@@ -68,6 +69,39 @@ export async function syncRevision(ctx: RegistryContext, agent: string, revision
         if (!marker) return undefined;
         cancelled.push(...await cancelAgentRuns(ctx, agent, reason, changedAt));
         return cancelled;
+    });
+}
+
+/**
+ * Brings the stored revision marker of `agent` to `revision` without ever
+ * cancelling (a process that does not reload agents, e.g. a job), under the
+ * registry lock: no marker is written, an equal one kept, a different one
+ * moved only while the agent has no unsettled run; else InvalidRunStateError
+ * naming both revisions, marker and runs untouched.
+ */
+export async function claimRevision(ctx: RegistryContext, agent: string, revision: string): Promise<void> {
+    await withAgentLock(ctx, agent, async () => {
+        const marker = await ctx.store.getAgentRevision(agent);
+        if (marker?.hash === revision) return;
+        if (marker) {
+            const { data } = await ctx.store.listRuns({
+                agent,
+                status: UNSETTLED,
+                limit: 1,
+            });
+            if (data.length > 0) {
+                const stored = marker.hash.slice(0, REVISION_PREFIX_LENGTH);
+                const loaded = revision.slice(0, REVISION_PREFIX_LENGTH);
+                throw new InvalidRunStateError(
+                    `Agent "${agent}" runs revision ${stored} in the store, not ${loaded}; this process does not reload agents.`,
+                );
+            }
+        }
+        await ctx.store.setAgentRevision({
+            agent,
+            hash: revision,
+            changedAt: ctx.clock.now(),
+        });
     });
 }
 

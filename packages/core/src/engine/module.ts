@@ -53,7 +53,12 @@ import { executeRun } from './execute/module.ts';
 import type { ApprovalRequest } from './execute/types.ts';
 import { RunQueue } from './queue/module.ts';
 import { agentCancelReason } from './registry/helpers.ts';
-import { cancelAgentRuns, dropRevision, syncRevision } from './registry/module.ts';
+import {
+    cancelAgentRuns,
+    claimRevision,
+    dropRevision,
+    syncRevision,
+} from './registry/module.ts';
 import type { CancelReason, RegistryContext } from './registry/types.ts';
 import type {
     ApprovalAnswer,
@@ -309,22 +314,34 @@ export class Engine implements IContextProvider {
      * change, once across replicas. Without one, replacing a registered agent
      * cancels its unsettled runs created before now. Emits `agents.changed`,
      * except for the same agent at the same revision (`unchanged`).
+     *
+     * With `reload: false` (a process that never reloads, e.g. a job) nothing
+     * is cancelled: a missing marker is written, a different one moved only
+     * while the agent has no unsettled run, else InvalidRunStateError and the
+     * agent stays unregistered.
      */
-    async putAgent(agent: Agent, options: { revision?: string } = {}): Promise<'added' | 'replaced' | 'unchanged'> {
+    async putAgent(
+        agent: Agent,
+        options: { revision?: string; reload?: boolean } = {},
+    ): Promise<'added' | 'replaced' | 'unchanged'> {
         this.assertRegistrable(agent);
         const { name } = agent;
-        const { revision } = options;
+        const { revision, reload = true } = options;
         const registered = this.agents.has(name);
         if (registered && this.agents.get(name) === agent && this.revisions.get(name) === revision) return 'unchanged';
         let cancelled: string[] | undefined;
         if (revision !== undefined) {
             this.syncing.add(name);
             try {
-                cancelled = await syncRevision(this.registry(), name, revision);
+                if (reload) {
+                    cancelled = await syncRevision(this.registry(), name, revision);
+                } else {
+                    await claimRevision(this.registry(), name, revision);
+                }
             } finally {
                 this.syncing.delete(name);
             }
-        } else if (registered) {
+        } else if (registered && reload) {
             cancelled = await cancelAgentRuns(this.registry(), name, agentCancelReason(name, 'replaced'), this.clock.now());
         }
         if (cancelled) {
@@ -1045,6 +1062,15 @@ export class Engine implements IContextProvider {
         execution.stop = 'lease-lost';
         execution.controller.abort();
         this.onError(new LeaseLostError(id));
+    }
+
+    /**
+     * What putAgent() refuses before any store read or write: a model that
+     * does not resolve, a subscription to a channel the engine does not have
+     * (InvalidAgentDefinitionError). Registers nothing.
+     */
+    checkAgent(agent: Agent): void {
+        this.assertRegistrable(agent);
     }
 
     /** Refuses an agent the engine cannot run: one subscribing to a channel it does not have. */
