@@ -514,6 +514,35 @@ describe('read tools', () => {
             expect(result.truncated).toBe(true);
         });
 
+        it('asks for the first, oldest page of commits and reports the rest by total_commits', async () => {
+            const fixture = withComparison(2);
+            fixture.fake.route('GET', '/repos/:owner/:repo/compare/:basehead', () => ({
+                status: 200,
+                body: {
+                    status: 'ahead',
+                    ahead_by: 400,
+                    behind_by: 0,
+                    total_commits: 400,
+                    html_url: 'u',
+                    files: [],
+                    commits: [{
+                        sha: 'oldest', 
+                        commit: { message: 'm', author: { name: 'A', date: 'd' } }, 
+                        author: null, 
+                    }],
+                },
+            }));
+
+            const result = await fixture.call<{ commits: Array<{ sha: string }>; truncated: boolean }>('github_compare', {
+                repo: 'octo/demo', 
+                base: 'a', 
+                head: 'b',
+            });
+            expect(fixture.fake.requests.at(-1)!.query).toMatchObject({ per_page: '100', page: '1' });
+            expect(result.commits.map((commit) => commit.sha)).toEqual(['oldest']);
+            expect(result.truncated).toBe(true);
+        });
+
         it('reports a file list at GitHub\'s cap of 300 as truncated', async () => {
             const { call } = withComparison(2, 300);
 

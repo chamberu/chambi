@@ -77,7 +77,7 @@ npm install --save-dev tsdown   # only for chamvi build
 | `@chamvi/github` | Shipped (0.x), the GitHub channel (deliveries in, comments out) and tools |
 | `@chamvi/sandbox`, `@chamvi/sandbox-local`, `@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s` | Shipped (0.x), disposable workspaces |
 | `@chamvi/coding` | Shipped (0.x), coding tools over a workspace |
-| `@chamvi/tool-web` | Shipped (0.x), web fetch, package registry lookups and a pluggable search |
+| `@chamvi/tool-web` | Shipped (0.x), `web_fetch`: public pages as markdown, registry JSON as is |
 | `@chamvi/channel-openclaw` | Shipped (0.x), the OpenClaw channel: messages and approval requests into a chat |
 | `@chamvi/ui` | Shipped (0.x), the dashboard |
 | `@chamvi/app`, `@chamvi/cli` | Shipped (0.x), `createApp()` and the `chamvi` bin |

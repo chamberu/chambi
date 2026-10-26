@@ -422,6 +422,9 @@ export function createReadTools(app: IGithubApp): ToolSet {
                         owner,
                         repo,
                         basehead: `${base}...${head}`,
+                        // page 1 holds the oldest commits; unpaged, GitHub answers the newest 250
+                        per_page: COMPARE_COMMITS_MAX,
+                        page: 1,
                     });
                     const commits = data.commits ?? [];
                     const files = data.files ?? [];
@@ -443,8 +446,8 @@ export function createReadTools(app: IGithubApp): ToolSet {
                             additions: file.additions,
                             deletions: file.deletions,
                         })),
-                        // GitHub answers at most COMPARE_FILES_MAX files: a full list may be cut
-                        truncated: commits.length > COMPARE_COMMITS_MAX || files.length >= COMPARE_FILES_MAX,
+                        // commits past the first page; GitHub answers at most COMPARE_FILES_MAX files: a full list may be cut
+                        truncated: data.total_commits > Math.min(commits.length, COMPARE_COMMITS_MAX) || files.length >= COMPARE_FILES_MAX,
                     };
                 });
             },

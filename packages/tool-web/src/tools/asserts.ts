@@ -236,7 +236,13 @@ export async function getPage(input: string, options: ResolvedWebOptions, signal
                 if (hop >= WEB_MAX_REDIRECTS) {
                     throw requestError(`${input} redirected more than ${WEB_MAX_REDIRECTS} times.`);
                 }
-                url = parseWebUrl(new URL(location, url));
+                let target: URL;
+                try {
+                    target = new URL(location, url);
+                } catch {
+                    throw requestError(`${url.href} redirected to an invalid location.`);
+                }
+                url = parseWebUrl(target);
                 continue;
             }
             const { bytes, truncated } = await readCapped(response.data ?? response.body, options.maxBytes);

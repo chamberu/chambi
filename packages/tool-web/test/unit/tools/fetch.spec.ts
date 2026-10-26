@@ -167,6 +167,15 @@ describe('web_fetch', () => {
         expect(web.lookups).toEqual(['example.com', 'example.com', 'other.example']);
     });
 
+    it('answers a malformed redirect target as a web_request tool error', async () => {
+        const { web, fetchPage } = setup();
+        web.routes.set('https://example.com/a', redirect('http://['));
+
+        const error = await fetchPage({ url: 'https://example.com/a' }).catch((e: unknown) => e);
+        expect(codeOf(error)).toBe(WEB_REQUEST_ERROR_CODE);
+        expect((error as Error).message).toMatch(/redirect/i);
+    });
+
     it('refuses a redirect to a private address before requesting it', async () => {
         const { web, fetchPage } = setup();
         web.dns.set('metadata.internal', [{ address: '169.254.169.254', family: 4 }]);

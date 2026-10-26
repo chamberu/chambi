@@ -2,7 +2,7 @@
     "name": "@chamvi/tool-web",
     "version": "0.2.1",
     "type": "module",
-    "description": "Web research tools for chamvi agents: URL fetch behind an SSRF guard, package registry lookups and a pluggable web search.",
+    "description": "A web fetch tool for chamvi agents: public pages as markdown through a hapic client, with an address check against private and metadata hosts.",
     "author": {
         "name": "Peter Placzek",
         "email": "contact@tada5hi.net",
