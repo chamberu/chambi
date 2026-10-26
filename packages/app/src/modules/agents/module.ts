@@ -28,8 +28,9 @@ import { createAgentsWatcher } from './watcher.ts';
  * app without code agents starts empty (a warning). With one, `setup` registers `AGENT_ISSUES` and (start mode) the watcher's
  * lifecycle hook; `onReady` loads every folder into the engine before any
  * start step runs (a folder changed while the app was down cancels its old
- * runs once, logged `agent reloaded`/`agent removed` with the cancelled run
- * ids; in start mode a marker without a folder removes that agent), and the
+ * runs once, logged `agent reloaded`/`agent removed` with the ids of the
+ * runs whose cancel went through (a run on another replica may still
+ * complete); in start mode a marker without a folder removes that agent), and the
  * watcher polls every `CHAMVI_AGENTS_POLL_MS` from `started` until
  * `stopping` or `teardown`, awaiting a reload in flight. A job never cancels:
  * a revision conflict of the job's own agent fails the job
