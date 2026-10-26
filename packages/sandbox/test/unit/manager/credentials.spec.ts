@@ -321,7 +321,11 @@ describe('workspace manager credentials', () => {
 
         it('clears the credentials an earlier process wrote once no source answers', async () => {
             let file = '';
-            const { manager, provider, build } = setup(
+            const {
+                manager, 
+                provider, 
+                build, 
+            } = setup(
                 { credentials: { get: async () => undefined } },
                 (argv, options) => {
                     if (argv[0] === 'sh' && argv[2] === READ_CREDENTIALS_SCRIPT) return { stdout: file };
