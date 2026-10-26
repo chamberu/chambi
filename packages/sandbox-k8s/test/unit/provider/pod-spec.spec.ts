@@ -11,6 +11,7 @@ import {
     CACHE_ENV,
     ROOT_CAPABILITIES,
     SANDBOX_ENV,
+    SLEEP_UNTIL_SCRIPT,
     repoKey,
 } from '@chamvi/sandbox';
 import { buildPod } from '../../../src/provider/helpers.ts';
@@ -52,7 +53,8 @@ const hardened: PodInput = {
 describe('buildPod', () => {
     it('sleeps for the lifetime with a deadline, replacing the image entrypoint', () => {
         const pod = buildPod(input);
-        expect(pod.spec?.containers[0]?.command).toEqual(['sleep', '600']);
+        // an absolute deadline: a pod scheduled late still stops at expiresAt (2026-01-01T00:10:00Z)
+        expect(pod.spec?.containers[0]?.command).toEqual(['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', '1767226200']);
         expect(pod.spec?.containers[0]?.args).toBeUndefined();
         expect(pod.spec?.activeDeadlineSeconds).toBe(600);
     });
@@ -137,7 +139,7 @@ describe('buildPod', () => {
             name: 'sandbox',
             image: 'img',
             imagePullPolicy: 'IfNotPresent',
-            command: ['sleep', '600'],
+            command: ['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', '1767226200'],
             workingDir: '/workspace',
         });
         expect(container).not.toHaveProperty('args');

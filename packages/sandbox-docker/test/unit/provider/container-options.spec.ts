@@ -9,6 +9,7 @@ import {
     CACHE_ENV,
     ROOT_CAPABILITIES,
     SANDBOX_ENV,
+    SLEEP_UNTIL_SCRIPT,
     repoKey,
 } from '@chamvi/sandbox';
 import {
@@ -19,7 +20,6 @@ import {
 } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { SLEEP_UNTIL_SCRIPT } from '../../../src/provider/constants.ts';
 import { buildContainerOptions } from '../../../src/provider/helpers.ts';
 
 const run = promisify(execFile);

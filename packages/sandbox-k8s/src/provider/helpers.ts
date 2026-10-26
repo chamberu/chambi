@@ -18,6 +18,7 @@ import {
     RUN_LABEL,
     SANDBOX_ENV,
     SANDBOX_LABELS,
+    SLEEP_UNTIL_SCRIPT,
     WORKSPACE_HOME,
     WORKSPACE_LABEL,
     WORKSPACE_ROOT,
@@ -147,9 +148,10 @@ export function assertKubernetesOptions(options: KubernetesSandboxOptions): void
  * in-memory `/tmp`, a disk emptyDir `WORKSPACE_HOME`, the cache at `/cache` (the shared claim, or an emptyDir
  * of its own) and only `SANDBOX_ENV`, `CACHE_ENV` and the configured `env`
  * (never the host's). No host path, no privileged mode. The image's
- * entrypoint is replaced: it sleeps for its lifetime (`lifetimeSeconds`)
- * with that `activeDeadlineSeconds`, so it ends itself at `expiresAt` even
- * when no collection runs; the garbage collection (expiry, settled run)
+ * entrypoint is replaced: it sleeps until `expiresAt` (`SLEEP_UNTIL_SCRIPT`,
+ * an absolute deadline, so a pod scheduled late stops in time), with its
+ * lifetime (`lifetimeSeconds`) as `activeDeadlineSeconds` beside it, so it
+ * ends itself at `expiresAt` even when no collection runs; the garbage collection (expiry, settled run)
  * deletes it. Its
  * labels and annotations hold everything `find` rebuilds the info from.
  */
@@ -211,7 +213,8 @@ export function buildPod(input: PodInput): V1Pod {
                 image: input.info.image,
                 imagePullPolicy: input.imagePullPolicy,
                 // the image's entrypoint (sandbox-dev: tini) stays
-                command: ['sleep', String(lifetime)],
+                // until the absolute expiresAt: a pod scheduled or started late never outlives it
+                command: ['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', String(Math.ceil(input.info.expiresAt.getTime() / 1000))],
                 workingDir: WORKSPACE_ROOT,
                 env: Object.entries(env).map(([name, value]) => ({ name, value })),
                 securityContext: {

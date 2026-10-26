@@ -11,6 +11,7 @@ import {
     CACHE_ENV,
     ROOT_CAPABILITIES,
     SANDBOX_ENV,
+    SLEEP_UNTIL_SCRIPT,
     WORKSPACE_HOME,
     WORKSPACE_ROOT,
     abortedCreate,
@@ -27,7 +28,7 @@ import {
 } from '@chamvi/sandbox';
 import type Dockerode from 'dockerode';
 import { isObject } from 'smob';
-import { CONTAINER_NAME_PREFIX, SLEEP_UNTIL_SCRIPT } from './constants.ts';
+import { CONTAINER_NAME_PREFIX } from './constants.ts';
 import type { ContainerOptionsInput, DockerSandboxOptions } from './types.ts';
 
 const PULL_POLICIES = ['missing', 'always', 'never'];
