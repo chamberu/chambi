@@ -28,7 +28,7 @@ const DOCTOR_ARGS = {
  * settings, providers and agents a start would use, without starting
  * anything (no signal handlers, no store). Plain it checks the built entry
  * `start` runs; `--dev` the source entry with `.env` loaded first, like
- * `start --dev`. Exit 0 when a start would succeed, else 2.
+ * `start --dev`. Exit 0 when the model settings resolve and every agent passes its checks, else 2.
  */
 export function createDoctorCommand(context: CliContext): CommandDef<typeof DOCTOR_ARGS> {
     return defineCommand({

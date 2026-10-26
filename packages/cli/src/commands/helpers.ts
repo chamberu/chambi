@@ -121,6 +121,6 @@ export function renderReport(report: AppReport): string {
         }
     }
 
-    lines.push('', report.ok ? 'ok: a start would succeed' : 'not ok: a start would refuse or skip what is listed above');
+    lines.push('', report.ok ? 'ok: the model settings resolve and every agent passes its checks' : 'not ok: a start would refuse or skip what is listed above');
     return `${lines.join('\n')}\n`;
 }

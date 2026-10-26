@@ -46,10 +46,12 @@ describe('doctor', () => {
         await runCli(['doctor', ...args], { ...fake.context({ env, cwd: extra.cwd }), ...extra });
     }
 
-    it('reports an app that would start and exits 0', async () => {
+    it('reports an app whose models and agents resolve and exits 0', async () => {
         await doctor(['--entry', fixture('app')]);
         expect(fake.exitCodes).toEqual([0]);
         expect(fake.stdout.join('')).toContain('echo');
+        expect(fake.stdout.join('')).toContain('ok: the model settings resolve and every agent passes its checks');
+        expect(fake.stdout.join('')).not.toContain('a start would succeed');
         // no signal handlers: nothing to stop
         expect(fake.signals.listenerCount('SIGTERM')).toBe(0);
     });

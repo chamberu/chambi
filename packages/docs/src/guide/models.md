@@ -152,7 +152,7 @@ Sources, highest first: **env**, then **the config file**, then **`createApp()` 
 
 ## chamvi doctor
 
-`chamvi doctor` prints what a start would use and refuse, without starting anything: no store, no engine, no migration, no server. It reads the same settings (env, config file, code), builds the providers and checks every code and folder agent like `start` does (its model, its cron subscriptions, its MCP tool).
+`chamvi doctor` prints what a start would use and refuse, without starting anything: no store, no engine, no migration, no server. It reads the same settings (env, config file, code), builds the providers and checks every code and folder agent like `start` does: its model and the checks the app's modules declare (the built-in scheduler's cron subscriptions, the built-in http module's MCP tool unless `mcp: false`). It does not check the store (`DATABASE_URL`), authenticators, channels, or modules that declare no `agentChecks()`, so an `ok` line means the models and agents resolve, not that a start will succeed.
 
 ```bash
 npx chamvi doctor              # the built entry (dist/index.mjs), as chamvi start runs it
