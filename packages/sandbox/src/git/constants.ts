@@ -52,8 +52,11 @@ const CONFIG_CHECKS = [
  * helper is reset, hooks are off and the URL path goes to the helper. Before
  * git runs, the config is checked for the URL (`CONFIG_CHECKS`): exit
  * `GIT_AUTH_REFUSED_EXIT` with the keys on stderr when it sets a proxy, turns
- * TLS verification off, names another CA or rewrites URLs. Exit 125 when
- * stdin holds no credential.
+ * TLS verification off, names another CA or rewrites URLs. git hands fd 3 to
+ * every helper it spawns, so `GIT_ALLOW_PROTOCOL=https` (the environment beats
+ * any config, unlike `-c protocol.allow`) keeps a transport the config names
+ * (`remote.<url>.vcs`, run as `git-remote-<vcs>`) from starting and reading
+ * the credential. Exit 125 when stdin holds no credential.
  */
 export const GIT_AUTH_SCRIPT = [
     'IFS= read -r u || exit 125',
@@ -61,6 +64,8 @@ export const GIT_AUTH_SCRIPT = [
     'url=$1 CHAMVI_GIT_ORIGIN=$2 CHAMVI_GIT_PATH=$3',
     'export CHAMVI_GIT_ORIGIN CHAMVI_GIT_PATH',
     'shift 3',
+    'GIT_ALLOW_PROTOCOL=https',
+    'export GIT_ALLOW_PROTOCOL',
     ...CONFIG_CHECKS,
     `h='${ONE_SHOT_HELPER}'`,
     'printf \'username=%s\\npassword=%s\\n\' "$u" "$p" | { exec 3<&0 </dev/null; ' +

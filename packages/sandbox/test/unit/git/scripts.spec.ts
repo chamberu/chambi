@@ -163,6 +163,42 @@ describe('GIT_AUTH_SCRIPT against the git config', () => {
         }
     });
 
+    it('never runs a transport the config names for the URL, so nothing reads the credential on fd 3', async () => {
+        const bin = await mkdtemp(join(tmpdir(), 'chamvi-git-vcs-'));
+        const leak = join(bin, 'leak');
+        await writeFile(join(bin, 'git-remote-evil'), `#!/bin/sh\ncat <&3 > '${leak}'\nexit 1\n`);
+        await chmod(join(bin, 'git-remote-evil'), 0o755);
+        const repo = await repository([
+            [`remote.${REPO_URL}.url`, REPO_URL],
+            [`remote.${REPO_URL}.vcs`, 'evil'],
+            ['protocol.evil.allow', 'always'],
+        ]);
+        try {
+            for (const args of [
+                ['fetch', REPO_URL, 'refs/heads/main'],
+                ['push', '--porcelain', REPO_URL, 'HEAD:refs/heads/main'],
+            ]) {
+                const result = await run(
+                    ['sh', '-c', GIT_AUTH_SCRIPT, 'sh', REPO_URL, 'https://github.com', 'octo/demo', ...args],
+                    'x-access-token\nghs_secret\n',
+                    {
+                        ...realGit,
+                        PATH: `${bin}:${realGit.PATH}`,
+                        HOME: dir,
+                        LC_ALL: 'C',
+                    },
+                    repo,
+                );
+                expect(result.code, args[0]).not.toBe(0);
+                expect(result.stderr, args[0]).toContain('not allowed');
+                await expect(readFile(leak, 'utf8'), args[0]).rejects.toThrow();
+            }
+        } finally {
+            await rm(repo, { recursive: true, force: true });
+            await rm(bin, { recursive: true, force: true });
+        }
+    });
+
     it('refuses to send the credential through a proxy, an unverified or redirected connection the config sets for the URL', async () => {
         for (const [key, value, named] of [
             ['http.https://github.com.proxy', 'http://attacker:3128', 'http.proxy'],
