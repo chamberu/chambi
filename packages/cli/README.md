@@ -5,7 +5,7 @@
 <h1 align="center">@chamvi/cli</h1>
 
 <p align="center">
-    <b>The chamvi command line: dev, build, start, run-job, migrate and doctor for an app built with <a href="https://www.npmjs.com/package/@chamvi/app">@chamvi/app</a>.</b>
+    <b>The chamvi command line: dev, build, start (and start --check), run-job and migrate for an app built with <a href="https://www.npmjs.com/package/@chamvi/app">@chamvi/app</a>.</b>
 </p>
 
 <p align="center">
@@ -74,12 +74,11 @@ Relative imports carry `.ts` and there is no `enum`, so `chamvi dev` (Node's typ
 |---------|---------------------|------|
 | `dev` | `--entry` | Runs `node --watch [--env-file-if-exists=.env] <cli> start --dev --entry <source entry>`: restarts on a change of the entry, its imports or `.env` (Node watches the env file itself, so no `--watch-path` is needed). The env flag is passed only when `.env` exists at start (on Linux, `node --watch` fails on a missing env file), so a `.env` created later needs a restart of `chamvi dev` |
 | `build` | `--entry`, `--out-dir <dir>` (default `dist`) | Bundles the entry with tsdown into `<out-dir>/index.mjs` plus its source map: ESM, `node22`, every `dependencies` and `peerDependencies` package external, the app's own modules inlined. The out dir is emptied first, so one that is the project folder or above it, holds the entry, or holds anything but `.mjs` and `.mjs.map` files exits 2 |
-| `start` | `--entry` | Starts the app: store (and migrations), engine and its channels (cron among them), then HTTP |
+| `start` | `--entry`, `--check` | Starts the app: store (and migrations), engine and its channels (cron among them), then HTTP. `--check` runs the same start path up to the start (`app.check()`: config, store connection, model settings, every module, the agent folders' load and checks) and exits, writing nothing to the store (no migration, revision marker or cancel), serving nothing, running nothing: `chamvi: start check passed` on stdout and exit 0, each agent folder issue on its own stderr line and exit 2, a configuration error exit 2, a store failure (unreachable, pending migrations without `CHAMVI_MIGRATE`) exit 1. It needs what a start needs (`CHAMVI_TOKENS`, provider keys), so run it in CI with the production or staging env. See [Pick a Model](https://chamvi.dev/guide/models) |
 | `run-job` | `<agent>`, `[subscriptionId]`, `--entry` | Fires one cron subscription once and waits for its run (a Kubernetes CronJob; no channel is started); `subscriptionId` defaults to the agent's only cron subscription |
 | `migrate` | `--entry` | Migrates the Postgres store (`DATABASE_URL` required) |
-| `doctor` | `--entry`, `--dev` | Prints what a start would use and refuse, starting nothing (`app.inspect()`): the default model and its source, each provider (type, the source of each field, whether a key is set, base URL origin and path, header names; never a value) and each code and folder agent (its model, `ok` or its errors). Exits 0 when everything resolves, 2 otherwise, so it fits CI or a `kubectl exec`. `--dev` checks the source entry with `.env` loaded, as `dev` runs it. See [Pick a Model](https://chamvi.dev/guide/models) |
 
-The entry is `--entry`, else for the source commands (`dev`, `build`, `doctor --dev`) the `package.json` field `"chamvi": { "entry": "<path>" }`, else `src/index.ts`. The built commands (`start`, `run-job`, `migrate`, `doctor`) never read that field and default to `dist/index.mjs`, so an image built from a repository that sets it still starts; a `.ts` entry runs through type stripping too. With none of them (no `--entry`, no `chamvi.entry`, no default file), `dev`, `start`, `run-job`, `migrate` and `doctor` run the default app, `createApp({})` configured by env alone, with its agents from `./agents` (or `CHAMVI_AGENTS_DIR`), and say so on stderr; `build` exits 2 (nothing to build). A missing `dist/index.mjs` beside a `src/index.ts` still exits 2 with the build hint.
+The entry is `--entry`, else for the source commands (`dev`, `build`, `start --dev`) the `package.json` field `"chamvi": { "entry": "<path>" }`, else `src/index.ts`. The built commands (`start`, `run-job`, `migrate`) never read that field and default to `dist/index.mjs`, so an image built from a repository that sets it still starts; a `.ts` entry runs through type stripping too. With none of them (no `--entry`, no `chamvi.entry`, no default file), `dev`, `start`, `run-job` and `migrate` run the default app, `createApp({})` configured by env alone, with its agents from `./agents` (or `CHAMVI_AGENTS_DIR`), and say so on stderr; `build` exits 2 (nothing to build). A missing `dist/index.mjs` beside a `src/index.ts` still exits 2 with the build hint.
 
 `chamvi dev` runs `start --dev`: the source entry, `.env` from the working directory (never overriding a set variable), a `MemoryStore` unless `DATABASE_URL` is set and, without another authenticator, one random `*` token, logged with a warning, and shorter timeouts (`CHAMVI_DRAIN_TIMEOUT_MS` 5000, `CHAMVI_FORCE_EXIT_MS` 15000).
 
@@ -87,9 +86,9 @@ The entry is `--entry`, else for the source commands (`dev`, `build`, `doctor --
 
 | Code | When |
 |------|------|
-| `0` | Success: a clean stop, a built bundle, a migrated store, a `doctor` report without problems; `run-job` for a completed, waiting, skipped, queued-behind-an-approval or signal-interrupted run |
-| `1` | Runtime failure: a start, build or migrate error, a failed or cancelled job, a forced exit |
-| `2` | Usage or configuration: an unknown command or flag, an entry that is missing or no chamvi app, missing or invalid env (named, its value never echoed), model settings with an issue, an agent with no model and no default or a model string whose provider is not configured or whose package is missing, a `doctor` report with a problem |
+| `0` | Success: a clean stop, a built bundle, a migrated store, a `start --check` without issues; `run-job` for a completed, waiting, skipped, queued-behind-an-approval or signal-interrupted run |
+| `1` | Runtime failure: a start, check, build or migrate error (a store unreachable or with pending migrations), a failed or cancelled job, a forced exit |
+| `2` | Usage or configuration: an unknown command or flag, an entry that is missing or no chamvi app, missing or invalid env (named, its value never echoed), model settings with an issue, an agent with no model and no default or a model string whose provider is not configured or whose package is missing, a `start --check` that found an agent folder issue |
 
 The CLI sets `process.exitCode` and lets Node exit; it calls `process.exit()` only for a forced exit.
 

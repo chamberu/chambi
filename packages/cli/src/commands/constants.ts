@@ -19,6 +19,9 @@ export const DEV_LINK_VARIABLE = 'CHAMVI_DEV_LINK';
 /** The dotenv file `start --dev` reads from the working directory. */
 export const DOTENV_FILE = '.env';
 
+/** What `start --check` prints on stdout when the check found nothing. */
+export const CHECK_PASSED_MESSAGE = 'chamvi: start check passed';
+
 export const CLI_PACKAGE_NAME = '@chamvi/cli';
 
 export const ENTRY_ARG = {
