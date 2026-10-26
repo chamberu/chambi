@@ -16,11 +16,12 @@ import * as app from '@chamvi/app';
 import * as authup from '@chamvi/app/authup';
 import * as testing from '@chamvi/app/testing';
 import type {
-    AgentReport,
-    AppReport,
+    AppCheckOptions,
+    AppCheckResult,
+    AppStartOptions,
     IApp,
-    ProviderReport,
 } from '@chamvi/app';
+import type { AgentIssue } from '@chamvi/http';
 
 describe('public api', () => {
     it.each([
@@ -147,11 +148,12 @@ describe('public api', () => {
         ]);
     });
 
-    it('exports the inspect report types', () => {
-        expectTypeOf<IApp['inspect']>().returns.resolves.toEqualTypeOf<AppReport>();
-        expectTypeOf<AppReport['agents']>().toEqualTypeOf<AgentReport[]>();
-        expectTypeOf<AppReport['providers']>().toEqualTypeOf<ProviderReport[]>();
-        expect(app.createApp({}).inspect).toBeTypeOf('function');
+    it('exports the check types', () => {
+        expectTypeOf<IApp['check']>().returns.resolves.toEqualTypeOf<AppCheckResult>();
+        expectTypeOf<AppCheckResult>().toEqualTypeOf<{ issues: AgentIssue[] }>();
+        expectTypeOf<AppCheckOptions>().toEqualTypeOf<AppStartOptions>();
+        expect(app.createApp({}).check).toBeTypeOf('function');
+        expect(app.createApp({})).not.toHaveProperty('inspect');
     });
 
     it('exports the app brand', () => {

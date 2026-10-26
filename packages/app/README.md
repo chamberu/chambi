@@ -81,9 +81,9 @@ export default createApp({
 | `stop()` | first SIGTERM or SIGINT | memoized; aborts a start still setting up, tears every module down |
 | `runJob({ agent, subscription?, env? })` | `chamvi run-job <agent> [subscription]` | fires one cron subscription once and waits for its run (no channel started, no HTTP); `{ runId?, status, exitCode }` |
 | `migrate({ env? })` | `chamvi migrate` | migrates the store (`DATABASE_URL` required) and closes it |
-| `inspect({ env? })` | `chamvi doctor` | read-only: resolves the model settings and providers and checks every code and folder agent like a start would, without a store, an engine or any module; an `AppReport` (`ok`, sources per setting, never a secret) |
+| `check({ env?, dev? })` | `chamvi start --check` | the start path up to its start steps (config, store connection, model settings, every module, the agent folders' load and checks), then the teardown; writes nothing to the store, starts nothing, runs nothing; `{ issues }` (the agent folders' load issues) |
 
-`env` defaults to `process.env`. An app runs one lifecycle; a second one rejects with `app_in_use` (`inspect` is no lifecycle and may run any time). `isApp(value)` recognizes an app, also one of another installed copy of the package.
+`env` defaults to `process.env`. An app runs one lifecycle (`check` counts as one); a second one rejects with `app_in_use`. `isApp(value)` recognizes an app, also one of another installed copy of the package.
 
 ## Environment
 
@@ -266,7 +266,7 @@ CHAMVI_PROVIDER_ROUTER_BASE_URL=http://9router:20128/v1
 CHAMVI_PROVIDER_ROUTER_API_KEY=...
 ```
 
-The same settings come from `createApp({ model, providers })` and a `chamvi.json` file (`CHAMVI_CONFIG_FILE`); env wins over the file, the file over code, per provider and field, and `createApp({ models })` (AI SDK provider objects by id) wins over all for its ids. An agent with no model and no default, or a string naming a provider that is not configured, fails `start` and `runJob` with `InvalidAgentDefinitionError` naming the variable to set (the CLI exits 2); a folder agent becomes a load issue instead. `chamvi doctor` (`app.inspect()`) prints what a start would use and refuse, without starting anything.
+The same settings come from `createApp({ model, providers })` and a `chamvi.json` file (`CHAMVI_CONFIG_FILE`); env wins over the file, the file over code, per provider and field, and `createApp({ models })` (AI SDK provider objects by id) wins over all for its ids. An agent with no model and no default, or a string naming a provider that is not configured, fails `start` and `runJob` with `InvalidAgentDefinitionError` naming the variable to set (the CLI exits 2); a folder agent becomes a load issue instead. `chamvi start --check` (`app.check()`) runs the same checks against the real configuration and store, without starting anything or writing to the store.
 
 See [Pick a Model](https://chamvi.dev/guide/models) for providers, secrets, gateways, the config file and the precedence rules.
 

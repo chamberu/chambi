@@ -20,7 +20,7 @@ import { serve } from 'routup';
 import { AppToken, ModuleName } from '../../module/constants.ts';
 import { runHooks, throwIfStopped } from '../../module/helpers.ts';
 import { registerStartStep } from '../../module/start.ts';
-import type { AgentCheck, IAgentCheckSource, Server } from '../../module/types.ts';
+import type { Server } from '../../module/types.ts';
 import { createDeferredAuthenticator, resolveAuthenticators } from './helpers.ts';
 import type { HttpModuleOptions } from './types.ts';
 
@@ -39,7 +39,7 @@ import type { HttpModuleOptions } from './types.ts';
  * `stopping` hooks, the app's closers, server close, engine drain (which
  * stops the channels first).
  */
-export class HttpModule implements IModule, IAgentCheckSource {
+export class HttpModule implements IModule {
     readonly name: string = ModuleName.HTTP;
 
     readonly dependencies: (string | ModuleDependency)[] = [
@@ -58,10 +58,6 @@ export class HttpModule implements IModule, IAgentCheckSource {
         this.options = options;
     }
 
-    /** What this module contributes to AGENT_CHECKS (also read by IApp.inspect()). */
-    agentChecks(): AgentCheck[] {
-        return this.options.mcp === false ? [] : [assertMcpRunTool];
-    }
 
     async setup(container: IContainer): Promise<void> {
         if (container.resolve(AppToken.CONTEXT).mode === 'migrate') return;
@@ -76,8 +72,8 @@ export class HttpModule implements IModule, IAgentCheckSource {
         }
 
         // a folder agent whose run_<agent> MCP tool cannot be built is a load issue, in every mode, so the modes agree
-        for (const check of this.agentChecks()) {
-            container.registerMany(AppToken.AGENT_CHECKS, { useValue: check });
+        if (this.options.mcp !== false) {
+            container.registerMany(AppToken.AGENT_CHECKS, { useValue: assertMcpRunTool });
         }
     }
 
@@ -97,7 +93,8 @@ export class HttpModule implements IModule, IAgentCheckSource {
         const shutdown = createShutdown({
             engine,
             server: { close: (force) => (server ? server.close(force) : Promise.resolve()) },
-            readinessDelayMs: config.http.readinessDelayMs,
+            // a check never served: nothing to take out of rotation
+            readinessDelayMs: context.check ? 0 : config.http.readinessDelayMs,
             drainTimeoutMs: config.http.drainTimeoutMs,
             closeTimeoutMs: config.http.closeTimeoutMs,
             onError: (error) => context.report(error, { phase: 'shutdown' }),

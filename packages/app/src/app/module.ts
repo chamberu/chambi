@@ -14,13 +14,10 @@ import { Application } from 'orkos';
 import type { IModule } from 'orkos';
 import { isObject } from 'smob';
 import type { Env } from '../env/types.ts';
-import { inspectApp } from '../inspect/module.ts';
-import type { AppReport } from '../inspect/types.ts';
 import type { ModelProviders, ProviderConfig } from '../models/types.ts';
 import { AppToken } from '../module/constants.ts';
 import {
     createStoppedError,
-    isAgentCheckSource,
     reportingModule,
     runHooks,
 } from '../module/helpers.ts';
@@ -36,6 +33,8 @@ import {
     toSetupError,
 } from './helpers.ts';
 import type {
+    AppCheckOptions,
+    AppCheckResult,
     AppLifecycleOptions,
     AppOptions,
     AppRunJobOptions,
@@ -107,17 +106,11 @@ export class App implements IApp {
         await lifecycle.done;
     }
 
-    /** Read-only (no lifecycle, no container): never marks the app used. */
-    async inspect(options: AppLifecycleOptions = {}): Promise<AppReport> {
-        return inspectApp({
-            env: options.env ?? process.env,
-            cwd: process.cwd(),
-            agents: this.agents,
-            checks: this.modules.flatMap((module) => (isAgentCheckSource(module) ? module.agentChecks() : [])),
-            ...(this.model !== undefined && { model: this.model }),
-            ...(this.providers !== undefined && { providers: this.providers }),
-            ...(this.models !== undefined && { models: this.models }),
-        });
+    async check(options: AppCheckOptions = {}): Promise<AppCheckResult> {
+        const lifecycle = this.begin('start', options, options.dev ?? false, { check: true });
+        const checked = this.checkOnce(lifecycle);
+        lifecycle.done = checked;
+        return checked;
     }
 
     async runJob(options: AppRunJobOptions): Promise<AppRunJobResult> {
@@ -200,12 +193,16 @@ export class App implements IApp {
         } = lifecycle;
         try {
             await application.setup();
-            // every onReady checked its configuration: the engine with its channels, then the http module's serve
-            await runStartSteps(container);
-            if (container.resolve(AppToken.CONTEXT).mode === 'start' && !container.has(AppToken.SERVER)) {
-                // the http module's serve step runs these hooks; without it the app does
-                lifecycle.hooksStarted = true;
-                await runHooks(container, 'started');
+            const context = container.resolve(AppToken.CONTEXT);
+            // a check stops before the start steps: nothing starts, nothing runs
+            if (!context.check) {
+                // every onReady checked its configuration: the engine with its channels, then the http module's serve
+                await runStartSteps(container);
+                if (context.mode === 'start' && !container.has(AppToken.SERVER)) {
+                    // the http module's serve step runs these hooks; without it the app does
+                    lifecycle.hooksStarted = true;
+                    await runHooks(container, 'started');
+                }
             }
         } catch (error) {
             if (controller.signal.aborted && error !== controller.signal.reason) {
@@ -270,6 +267,15 @@ export class App implements IApp {
 
         await this.teardown(lifecycle);
         return result;
+    }
+
+    /** setup() without the start steps, the agent folders' issues, then the teardown. */
+    protected async checkOnce(lifecycle: Lifecycle): Promise<AppCheckResult> {
+        await this.setup(lifecycle);
+        const { container } = lifecycle;
+        const issues = container.has(AppToken.AGENT_ISSUES) ? [...container.resolve(AppToken.AGENT_ISSUES)()] : [];
+        await this.teardown(lifecycle);
+        return { issues };
     }
 
     protected async migrateOnce(lifecycle: Lifecycle): Promise<void> {

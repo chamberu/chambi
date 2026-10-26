@@ -6,9 +6,9 @@
  */
 
 import type { Agent, ModelRef } from '@chamvi/core';
+import type { AgentIssue } from '@chamvi/http';
 import type { IModule } from 'orkos';
 import type { Env } from '../env/types.ts';
-import type { AppReport } from '../inspect/types.ts';
 import type { ModelProviders, ProviderConfig } from '../models/types.ts';
 import type { APP_BRAND } from './constants.ts';
 
@@ -32,6 +32,13 @@ export type AppLifecycleOptions = {
 
 export type AppStartOptions = AppLifecycleOptions & {
     dev?: boolean;
+};
+
+export type AppCheckOptions = AppStartOptions;
+
+export type AppCheckResult = {
+    /** The agent folders' load issues (`AGENT_ISSUES`), one per folder; empty without an agents dir. */
+    issues: AgentIssue[];
 };
 
 export type AppRunJobOptions = AppLifecycleOptions & {
@@ -66,10 +73,14 @@ export interface IApp {
     /** Migrates the store (DATABASE_URL required) and closes it. */
     migrate(options?: AppLifecycleOptions): Promise<void>;
     /**
-     * Read-only: resolves the config, the model settings and the providers
-     * and checks every code and folder agent like a start would, without a
-     * store, an engine or any module lifecycle. Never throws for a setting;
-     * callable any number of times, before or after another lifecycle.
+     * The start path up to its start steps (`context.check`, mode `start`):
+     * config, store connection, model settings, every module's setup and
+     * onReady and the agent folders' load and checks, then the teardown; no
+     * engine or channel start, no server, no run, no store write (no
+     * migration, marker, cancel or lock). Resolves the agent folders' load
+     * issues; a configuration error rejects (`invalid_agent_definition`), a
+     * store failure with its own code (`store_not_migrated`, a connection
+     * error). The app's one lifecycle, like start().
      */
-    inspect(options?: AppLifecycleOptions): Promise<AppReport>;
+    check(options?: AppCheckOptions): Promise<AppCheckResult>;
 }
