@@ -39,7 +39,7 @@ The providers run the container as root with a writable root filesystem and only
 | `MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS` | `node,python,ruby,go,java` | mise reads `.nvmrc`, `.python-version` and friends. |
 | `PATH` | `...:/home/sandbox/.local/share/mise/shims` | Installed tools are plain commands; the system's `sh`, `git` and `timeout` come first. |
 
-The providers add `SANDBOX_ENV` and the cache variables of `@chamvi/sandbox` (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`, `MISE_DATA_DIR`, all under `/cache`). No secrets, tokens or credentials are baked in or passed to a workspace.
+The providers add `SANDBOX_ENV` and the cache variables of `@chamvi/sandbox` (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`, `MISE_DATA_DIR`, all under `/cache`). The image holds no secrets, tokens or credentials, and the providers never pass the host's environment. Code in a workspace can read every value the operator configures in `env`, so put a credential there only on purpose.
 
 ## Any image
 
