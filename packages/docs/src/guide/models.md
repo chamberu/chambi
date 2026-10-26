@@ -28,7 +28,7 @@ A `ModelRef` is a string or an AI SDK `LanguageModel` object:
 An agent's `model` is optional. Without it the agent takes the app default (`CHAMVI_MODEL`, the config file's `model` or `createApp({ model })`). The engine checks every agent when it is registered: an agent with no model and no default, or a string naming a provider that is not configured, fails `start` for a code agent (`chamvi start` exits 2) and becomes a load issue for a [folder agent](/guide/agent-folders), which is then not registered:
 
 ```
-Agent "triage" has no model and the app sets no default (CHAMVI_MODEL).
+Agent "triage" has no model and the engine sets no default (EngineOptions.model; CHAMVI_MODEL in @chamvi/app).
 Agent "triage" uses provider "team-a", which is not configured. Set CHAMVI_PROVIDER_TEAM_A_TYPE and CHAMVI_PROVIDER_TEAM_A_API_KEY, or declare it in chamvi.json.
 ```
 
