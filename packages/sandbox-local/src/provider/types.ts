@@ -13,8 +13,13 @@ export type LocalSandboxOptions = {
     root?: string;
     /** Added to every workspace's environment (after the defaults, so it wins). */
     env?: Record<string, string>;
-    /** The only limit local enforces: the workspace lifetime (expiry). */
-    limits?: Pick<SandboxLimits, 'timeoutMs'>;
+    /** The only limit local enforces: the workspace lifetime (expiry, `maxLifetimeMs`). */
+    limits?: Pick<SandboxLimits, 'maxLifetimeMs'>;
+    /**
+     * Point the package caches (`CACHE_ENV`'s variables) into `<root>/.cache`,
+     * shared by every workspace of the root. Default true.
+     */
+    cache?: boolean;
     clock?: IClock;
 };
 
@@ -28,4 +33,27 @@ export type LocalWorkspaceInput = {
     clock: IClock;
     /** Called once when the workspace starts disposing. */
     onDispose: () => void;
+};
+
+/**
+ * `workspace.json` of a workspace folder (internal): what `find` rebuilds
+ * the workspace from and the garbage collection reads. Times are ISO strings.
+ */
+export type WorkspaceRecord = {
+    runId: string;
+    deployment: string;
+    repo?: string;
+    ref?: string;
+    /** The create's `env` (the provider's own is added again on every exec). */
+    env?: Record<string, string>;
+    createdAt: string;
+    expiresAt: string;
+};
+
+/** A readable workspace record (internal). */
+export type ParsedRecord = {
+    runId: string;
+    deployment: string;
+    env?: Record<string, string>;
+    info: WorkspaceInfo;
 };

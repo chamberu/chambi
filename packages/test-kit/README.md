@@ -54,14 +54,16 @@ clock.advance(60_000); // fires every timer due within the next minute, in order
 
 ### Workspace contract
 
-Every sandbox provider proves its workspaces with the shared Vitest suite: argv exec and exit codes, stdin, `cwd` and path escapes, the 64 KiB output caps under a flood, process-group kills on timeout (a backgrounded grandchild included), abort, UTF-8 files and their size cap, and dispose during an exec. It runs real processes with short real timeouts, so the factory returns a fresh, repo-less workspace per test (the suite disposes it):
+Every sandbox provider proves its workspaces with the shared Vitest suite: argv exec and exit codes, stdin, `cwd` and path escapes, the 64 KiB output caps under a flood, process-group kills on timeout (a backgrounded grandchild included), abort, UTF-8 files and their size cap, and dispose during an exec. It runs real processes with short real timeouts, so the factory returns a fresh, repo-less workspace per test (the suite disposes it). With `find` (a second provider instance's, like a restarted process) it also drops a workspace's handle and expects `find` to return it with its files:
 
 ```ts
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import { describeWorkspaceContract } from '@chamvi/test-kit';
 
 const provider = createLocalSandbox();
-describeWorkspaceContract('local', () => provider.create({ runId: 'contract' }));
+describeWorkspaceContract('local', (input) => provider.create({ runId: input?.runId ?? 'contract' }), {
+    find: (runId) => createLocalSandbox().find(runId),
+});
 ```
 
 `createGitFixture(files)` creates a temporary git repository with one commit of `files` on branch `main`, tagged `v1`, and returns `{ path, url, commit, cleanup }`; `url` is a `file://` URL for a manager with `allowFileRepos: true`.

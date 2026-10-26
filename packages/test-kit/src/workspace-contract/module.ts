@@ -6,6 +6,7 @@
  */
 
 import { Buffer } from 'node:buffer';
+import { randomUUID } from 'node:crypto';
 import {
     afterAll,
     beforeAll,
@@ -14,9 +15,12 @@ import {
     it,
 } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
-import type { ContractWorkspace, WorkspaceContractFactory } from './types.ts';
+import type { ContractWorkspace, WorkspaceContractFactory, WorkspaceContractOptions } from './types.ts';
 
 const TEST_TIMEOUT_MS = 30_000;
+
+/** `@chamvi/sandbox`'s `FILE_MAX_BYTES`, written out (an import would close a package cycle, see `types.ts`). */
+const FILE_MAX_BYTES = 16_777_216;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -29,12 +33,17 @@ const sleep = (ms: number) => new Promise<void>((resolve) => {
  * Shared behavioural contract for every `IWorkspace` a sandbox provider
  * creates: argv exec, exit codes, stdin, cwd and path escapes, a missing
  * cwd, a background job holding the output, output caps, process-group
- * kills on timeout, abort, UTF-8 files, size caps and dispose. It runs real processes with short real timeouts.
+ * kills on timeout, abort, UTF-8 and binary files, size caps and dispose,
+ * and with `options.find` a workspace found again after its handle was
+ * dropped and never one whose checkout record (`git config chamvi.checkout`,
+ * written last by `prepareWorkspace`) is missing. It runs real processes
+ * with short real timeouts.
  *
  * @param name     Suite name, e.g. the provider name.
  * @param factory  A fresh, repo-less workspace per call; the suite disposes it.
+ * @param options  `find` of a second provider instance (the find section).
  */
-export function describeWorkspaceContract(name: string, factory: WorkspaceContractFactory): void {
+export function describeWorkspaceContract(name: string, factory: WorkspaceContractFactory, options: WorkspaceContractOptions = {}): void {
     describe(`workspace contract: ${name}`, () => {
         let workspace: ContractWorkspace;
 
@@ -170,15 +179,32 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
             expect(listing.stdout).not.toContain('.chamvi-write-');
         }, TEST_TIMEOUT_MS);
 
+        it('round-trips binary files, also past the former 1 MiB cap', async () => {
+            const bytes = new Uint8Array(256).map((_, index) => index);
+            await workspace.writeFile('bin/all.bin', bytes);
+            expect(await workspace.readBytes('bin/all.bin')).toEqual(bytes);
+            await expect(workspace.readFile('bin/all.bin')).rejects.toBeInstanceOf(SandboxError);
+
+            const large = new Uint8Array(2 * 1_048_576).map((_, index) => index % 251);
+            await workspace.writeFile('bin/large.bin', large);
+            const read = await workspace.readBytes('bin/large.bin');
+            expect(read.length).toBe(large.length);
+            expect(Buffer.from(read).equals(Buffer.from(large))).toBe(true);
+            const size = await workspace.exec(['sh', '-c', 'wc -c < bin/large.bin']);
+            expect(size.stdout.trim()).toBe(String(large.length));
+        }, TEST_TIMEOUT_MS);
+
         it('refuses escaping, missing and oversized files', async () => {
             await expect(workspace.readFile('../x')).rejects.toBeInstanceOf(ValidationError);
             await expect(workspace.readFile('')).rejects.toBeInstanceOf(ValidationError);
+            await expect(workspace.readBytes('../x')).rejects.toBeInstanceOf(ValidationError);
             await expect(workspace.readFile('missing.txt')).rejects.toBeInstanceOf(SandboxError);
-            await expect(workspace.writeFile('big', 'a'.repeat(1_048_577))).rejects.toBeInstanceOf(ValidationError);
+            await expect(workspace.readBytes('missing.txt')).rejects.toBeInstanceOf(SandboxError);
+            await expect(workspace.writeFile('big', new Uint8Array(FILE_MAX_BYTES + 1))).rejects.toBeInstanceOf(ValidationError);
 
-            const created = await workspace.exec(['sh', '-c', 'head -c 1048577 /dev/zero > big2']);
+            const created = await workspace.exec(['sh', '-c', `head -c ${FILE_MAX_BYTES + 1} /dev/zero > big2`]);
             expect(created.exitCode).toBe(0);
-            await expect(workspace.readFile('big2')).rejects.toBeInstanceOf(SandboxError);
+            await expect(workspace.readBytes('big2')).rejects.toBeInstanceOf(SandboxError);
         }, TEST_TIMEOUT_MS);
 
         it('has a writable HOME', async () => {
@@ -206,6 +232,53 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
             await settled;
             await expect(pending).rejects.toBeInstanceOf(SandboxError);
             expect(Date.now() - started).toBeLessThan(10_000);
+        }, TEST_TIMEOUT_MS);
+
+        const { find } = options;
+        it.runIf(find !== undefined)('finds a workspace again after its handle was dropped', async () => {
+            const runId = `contract-${randomUUID()}`;
+            const created = await factory({ runId });
+            let found: ContractWorkspace[] = [];
+            try {
+                await created.writeFile('kept/note.txt', 'still here ✓');
+                const { id } = created;
+                // the handle is dropped: only a second provider instance looks
+
+                found = await find!(runId);
+                expect(found).toHaveLength(1);
+                const [again] = found;
+                expect(again!.id).toBe(id);
+                expect(again!.disposed).toBe(false);
+                expect(again!.info?.runId).toBe(runId);
+                expect(await again!.readFile('kept/note.txt')).toBe('still here ✓');
+                expect((await again!.exec(['cat', 'kept/note.txt'])).stdout).toBe('still here ✓');
+
+                expect(await find!(`contract-${randomUUID()}`)).toEqual([]);
+
+                await again!.dispose();
+                expect(await find!(runId)).toEqual([]);
+            } finally {
+                await Promise.all(found.map((workspace) => workspace.dispose().catch(() => undefined)));
+                await created.dispose().catch(() => undefined);
+            }
+        }, TEST_TIMEOUT_MS);
+
+        it.runIf(find !== undefined)('never finds a workspace whose checkout did not finish', async () => {
+            const runId = `contract-${randomUUID()}`;
+            const created = await factory({ runId });
+            let found: ContractWorkspace[] = [];
+            try {
+                // the state a create killed before the end of prepareWorkspace leaves:
+                // its record (labels, metadata) is there, the end of the checkout is not
+                const unset = await created.exec(['git', 'config', '--unset', 'chamvi.checkout']);
+                expect(unset.exitCode).toBe(0);
+
+                found = await find!(runId);
+                expect(found).toEqual([]);
+            } finally {
+                await Promise.all(found.map((workspace) => workspace.dispose().catch(() => undefined)));
+                await created.dispose().catch(() => undefined);
+            }
         }, TEST_TIMEOUT_MS);
     });
 }

@@ -24,3 +24,6 @@ export const SANDBOX_PROVIDER_IDS: Readonly<Record<SandboxProviderName, string>>
     docker: 'docker',
     kubernetes: 'k8s',
 };
+
+/** The values of `CHAMVI_GIT_CREDENTIAL_MODE`. */
+export const CREDENTIAL_MODES = ['workspace', 'tools'] as const;

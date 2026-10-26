@@ -7,4 +7,11 @@
 
 export * from './constants.ts';
 export { createGithubApp } from './module.ts';
-export type { GithubAppOptions, GithubOctokit, IGithubApp } from './types.ts';
+export type {
+    GithubAppOptions,
+    GithubBotIdentity,
+    GithubOctokit,
+    GithubPermissions,
+    GithubRepositoryToken,
+    IGithubApp,
+} from './types.ts';

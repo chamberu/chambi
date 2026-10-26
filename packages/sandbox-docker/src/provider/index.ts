@@ -5,6 +5,11 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export * from './constants.ts';
+export {
+    CONTAINER_NAME_PREFIX,
+    DEFAULT_CACHE_VOLUME,
+    DEFAULT_NETWORK,
+    DEFAULT_USER,
+} from './constants.ts';
 export * from './module.ts';
 export type { DockerSandboxOptions } from './types.ts';

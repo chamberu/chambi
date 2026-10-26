@@ -57,6 +57,26 @@ export type AppContext = {
  */
 export type AgentCheck = (agent: Agent) => void;
 
+/**
+ * A git credential source (structurally `@chamvi/sandbox`'s
+ * `IGitCredentials`): modules contribute one to `AppToken.GIT_CREDENTIALS`
+ * (`githubModule()` its App's), and `sandboxModule()` asks them after its own.
+ */
+export type GitCredentialSource = {
+    get(input: {
+        url: string;
+        host: string;
+        path: string;
+        access: 'read' | 'write';
+        runId: string;
+        signal?: AbortSignal;
+    }): Promise<{
+        username: string; 
+        password: string; 
+        expiresAt?: Date 
+    } | undefined>;
+};
+
 export interface ILifecycleHook {
     readonly name: string;
     /** After `new Engine(...)`, before `engine.start()` (start and job). */
@@ -106,4 +126,6 @@ export type AppTokens = {
     AGENT_ISSUES: () => readonly AgentIssue[];
     /** A collection: every module's check of a folder agent before it is registered. */
     AGENT_CHECKS: AgentCheck;
+    /** A collection: git credential sources modules contribute for the workspaces (`sandboxModule()` reads them). */
+    GIT_CREDENTIALS: GitCredentialSource;
 };

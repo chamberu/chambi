@@ -125,3 +125,47 @@ describe('edit_file', () => {
         })).rejects.toThrow(ValidationError);
     });
 });
+
+describe('multi_edit', () => {
+    it('applies the edits in order and writes once', async () => {
+        await expect(s.call('multi_edit', {
+            path: 'src/a.ts',
+            edits: [
+                { oldString: 'a = 1', newString: 'a = 10' },
+                { oldString: 'a = 10', newString: 'a = 100' },
+                {
+                    oldString: 'export', 
+                    newString: 'export /* x */', 
+                    replaceAll: true, 
+                },
+            ],
+        })).resolves.toEqual({
+            path: 'src/a.ts', 
+            edits: 3, 
+            replacements: 4, 
+        });
+        await expect(s.workspace.readFile('src/a.ts')).resolves.toBe('export /* x */ const a = 100;\nexport /* x */ const b = 2;\n');
+    });
+
+    it('writes nothing when one edit does not match', async () => {
+        const error = await s.call('multi_edit', {
+            path: 'src/a.ts',
+            edits: [
+                { oldString: 'a = 1', newString: 'a = 10' },
+                { oldString: 'missing', newString: 'x' },
+            ],
+        }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(ValidationError);
+        expect((error as Error).message).toContain('edit 2');
+        await expect(s.workspace.readFile('src/a.ts')).resolves.toBe('export const a = 1;\nexport const b = 2;\n');
+    });
+
+    it('refuses ambiguous edits and bad input', async () => {
+        await expect(s.call('multi_edit', { path: 'src/a.ts', edits: [{ oldString: 'export', newString: 'x' }] }))
+            .rejects.toThrow(/edit 1.*2 matches/);
+        await expect(s.call('multi_edit', { path: 'src/a.ts', edits: [] })).rejects.toThrow(ValidationError);
+        await expect(s.call('multi_edit', { path: 'src/a.ts', edits: [{ oldString: 'a', newString: 'a' }] })).rejects.toThrow(ValidationError);
+        await expect(s.call('multi_edit', { path: 'src/a.ts', edits: 'x' })).rejects.toThrow(ValidationError);
+        await expect(s.call('multi_edit', { path: '../a.ts', edits: [{ oldString: 'a', newString: 'b' }] })).rejects.toThrow(ValidationError);
+    });
+});

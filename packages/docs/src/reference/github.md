@@ -59,6 +59,19 @@ const github: GithubSubscriber; // github.on(events, options?), github.to({ repo
 
 <<< ../../../github/src/tools/types.ts{ts}
 
+## Git credentials
+
+```ts
+function githubAppCredentials(app: IGithubApp, options?: GithubAppCredentialsOptions): IGithubGitCredentials;
+
+const DEFAULT_GITHUB_GIT_HOST: 'github.com';
+const GITHUB_TOKEN_USERNAME: 'x-access-token';
+```
+
+The workspace manager's `credentials` source for the App (typed structurally against `@chamvi/sandbox`'s `IGitCredentials`, which this package does not depend on): for a request of its `host` (default `github.com`) and an `owner/name` path it answers `app.repositoryToken()` as `x-access-token`, with `contents: read` for read and `contents: write` plus `options.permissions` for write; nothing for another host, the host itself or a repository the App is not installed on, so the next source (or an anonymous call) follows. Throws `InvalidAgentDefinitionError` for an app without `repositoryToken`, permissions that are not `read` or `write` and a host that is no host name. `app.repositoryToken({ owner, repo }, { permissions })` finds the installation (`GET /repos/{owner}/{repo}/installation`, a 404 answers `undefined`) and exchanges a token with `repositories: [repo]`, cached per installation, repository and permissions until 5 minutes before it expires (one exchange for concurrent callers, failures not cached); `app.botIdentity()` is `{ name: '<slug>[bot]', email: '<user id>+<slug>[bot]@users.noreply.github.com' }` (one public `GET /users/<login>`), for the manager's `author`.
+
+<<< ../../../github/src/credentials/types.ts{ts}
+
 ## Context
 
 ```ts
@@ -75,6 +88,6 @@ function injectGithubContext(ctx: ToolContext): IGithubApp;                    /
 function githubModule(options?: GithubModuleOptions): GithubModule; // name GITHUB_MODULE_NAME 'chamvi:github', .app: IGithubApp
 ```
 
-Reads `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` (comma-separated), `GITHUB_INSTALLATION_ID`, `GITHUB_APP_SLUG` and `GITHUB_API_URL` from `options.env ?? process.env` when it is called, unless `options.app` is given; explicit options win. `setup` contributes `githubChannel()` (`options.channel`, the approval link from `CHAMVI_PUBLIC_URL` unless `channel.approvalUrl` is given, the app's clock) to the app's channels, which the http module serves at `/channels/<name>`, and the `engineCreated` hook provides `.app`. `@chamvi/app` is an optional peer: the main entry never imports it. See [Apps & Modules](/guide/app#modules).
+Reads `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET` (comma-separated), `GITHUB_INSTALLATION_ID`, `GITHUB_APP_SLUG` and `GITHUB_API_URL` from `options.env ?? process.env` when it is called, unless `options.app` is given; explicit options win. `setup` contributes `githubChannel()` (`options.channel`, the approval link from `CHAMVI_PUBLIC_URL` unless `channel.approvalUrl` is given, the app's clock) to the app's channels, which the http module serves at `/channels/<name>`, and `githubAppCredentials(app, options.credentials)` to `AppToken.GIT_CREDENTIALS`, which `sandboxModule()` asks after its own sources (`credentials: false` contributes none), and the `engineCreated` hook provides `.app`. `@chamvi/app` is an optional peer: the main entry never imports it. See [Apps & Modules](/guide/app#modules).
 
 <<< ../../../github/src/module/types.ts{ts}

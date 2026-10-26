@@ -16,10 +16,16 @@ import {
 } from '@chamvi/core';
 import { isObject } from 'smob';
 import { assertSandboxEnv, resolveLimits } from '../limits/module.ts';
-import { assertImageOption } from '../provider/module.ts';
+import { assertDeployment, assertImageOption } from '../provider/module.ts';
 import { WORKSPACE_ROOT } from '../workspace/constants.ts';
+import type { IGitCredentials } from '../credentials/types.ts';
 import type { IWorkspace } from '../workspace/types.ts';
-import type { WorkspaceManagerOptions, WorkspaceToolResult } from './types.ts';
+import type {
+    GitAuthor,
+    PushPolicy,
+    WorkspaceManagerOptions,
+    WorkspaceToolResult,
+} from './types.ts';
 
 /** Checks the manager options; InvalidAgentDefinitionError for a misconfiguration. */
 export function assertManagerOptions(options: WorkspaceManagerOptions): void {
@@ -30,15 +36,29 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
     if (
         !isObject(provider) ||
         typeof provider.create !== 'function' ||
+        typeof provider.find !== 'function' ||
         typeof provider.collectGarbage !== 'function'
     ) {
-        throw new InvalidAgentDefinitionError('provider must be an ISandboxProvider (create, collectGarbage).');
+        throw new InvalidAgentDefinitionError('provider must be an ISandboxProvider (create, find, collectGarbage).');
+    }
+    if (options.deployment !== undefined) {
+        try {
+            assertDeployment(options.deployment);
+        } catch (error) {
+            throw new InvalidAgentDefinitionError((error as Error).message);
+        }
+    }
+    if (options.isSettled !== undefined && typeof options.isSettled !== 'function') {
+        throw new InvalidAgentDefinitionError('isSettled must be a function.');
     }
     assertImageOption(options.image);
     assertSandboxEnv(options.env);
     resolveLimits(options.limits);
     if (options.allowRepo !== undefined && typeof options.allowRepo !== 'function') {
         throw new InvalidAgentDefinitionError('allowRepo must be a function.');
+    }
+    if (options.allowImage !== undefined && typeof options.allowImage !== 'function') {
+        throw new InvalidAgentDefinitionError('allowImage must be a function.');
     }
     if (options.maxWorkspacesPerRun !== undefined && (!Number.isSafeInteger(options.maxWorkspacesPerRun) || options.maxWorkspacesPerRun < 1)) {
         throw new InvalidAgentDefinitionError(`maxWorkspacesPerRun must be an integer of at least 1, got ${JSON.stringify(options.maxWorkspacesPerRun)}.`);
@@ -48,6 +68,52 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
     }
     if (options.onError !== undefined && typeof options.onError !== 'function') {
         throw new InvalidAgentDefinitionError('onError must be a function.');
+    }
+    credentialSources(options.credentials);
+    if (options.credentialMode !== undefined && options.credentialMode !== 'workspace' && options.credentialMode !== 'tools') {
+        throw new InvalidAgentDefinitionError('credentialMode must be "workspace" or "tools".');
+    }
+    if (options.depth !== undefined && (!Number.isSafeInteger(options.depth) || options.depth < 1)) {
+        throw new InvalidAgentDefinitionError('depth must be an integer of at least 1.');
+    }
+    authorEnv(options.author);
+    assertPushPolicy(options.push);
+}
+
+/** The credential sources as a list, else InvalidAgentDefinitionError. */
+export function credentialSources(credentials: WorkspaceManagerOptions['credentials']): IGitCredentials[] {
+    if (credentials === undefined) return [];
+    const sources = Array.isArray(credentials) ? credentials : [credentials];
+    if (sources.some((source) => !isObject(source) || typeof (source as Partial<IGitCredentials>).get !== 'function')) {
+        throw new InvalidAgentDefinitionError('credentials must be git credential sources (an object with get()), or a list of them.');
+    }
+    return sources;
+}
+
+/** The `GIT_AUTHOR_*`/`GIT_COMMITTER_*` variables of `author`, else InvalidAgentDefinitionError. */
+export function authorEnv(author: GitAuthor | undefined): Record<string, string> {
+    if (author === undefined) return {};
+    const valid = (value: unknown) => typeof value === 'string' && value.trim().length > 0 && !/[\0\r\n<>]/.test(value);
+    if (!isObject(author) || !valid(author.name) || !valid(author.email)) {
+        throw new InvalidAgentDefinitionError('author must be { name, email }: non-empty strings without NUL, line breaks, < or >.');
+    }
+    return {
+        GIT_AUTHOR_NAME: author.name,
+        GIT_AUTHOR_EMAIL: author.email,
+        GIT_COMMITTER_NAME: author.name,
+        GIT_COMMITTER_EMAIL: author.email,
+    };
+}
+
+function assertPushPolicy(push: PushPolicy | undefined): void {
+    if (push === undefined) return;
+    const fail = (rule: string) => new InvalidAgentDefinitionError(`push ${rule}`);
+    if (!isObject(push)) throw fail('must be an object { mode?, allowForce?, allowBranch?, channel? }.');
+    if (push.mode !== undefined && push.mode !== 'auto' && push.mode !== 'approve') throw fail('mode must be "auto" or "approve".');
+    if (push.allowForce !== undefined && typeof push.allowForce !== 'boolean') throw fail('allowForce must be a boolean.');
+    if (push.allowBranch !== undefined && typeof push.allowBranch !== 'function') throw fail('allowBranch must be a function.');
+    if (push.channel !== undefined && (typeof push.channel !== 'string' || push.channel.length === 0)) {
+        throw fail('channel must be a non-empty channel name.');
     }
 }
 
@@ -72,6 +138,15 @@ export function optionalString(value: unknown, name: string): string | undefined
     if (value === undefined) return undefined;
     if (typeof value !== 'string') {
         throw new ValidationError(`${name} must be a string.`);
+    }
+    return value;
+}
+
+/** A boolean or undefined, else a ValidationError. */
+export function optionalBoolean(value: unknown, name: string): boolean | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value !== 'boolean') {
+        throw new ValidationError(`${name} must be a boolean.`);
     }
     return value;
 }
@@ -101,6 +176,8 @@ export function toToolResult(workspace: IWorkspace, reused: boolean): WorkspaceT
         repo: info.repo ?? null,
         ref: info.ref ?? null,
         commit: info.commit ?? null,
+        defaultBranch: info.defaultBranch ?? null,
+        image: info.image ?? null,
         expiresAt: info.expiresAt.toISOString(),
         reused,
     };

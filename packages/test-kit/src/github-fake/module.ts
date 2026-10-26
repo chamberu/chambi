@@ -31,8 +31,9 @@ type IssuedToken = { installationId: number; expiresAt: number };
 
 /**
  * An in-process GitHub: verifies App JWTs (RS256 under the fake's public key,
- * `iss`, at most 600 s) on `/app*` and installation tokens on every other
- * route, issues tokens valid for one hour on the fake's clock, answers 404
+ * `iss`, at most 600 s) on `/app*` and `/repos/:owner/:repo/installation`,
+ * answers `/users/:login` without credentials, and installation tokens on
+ * every other route, issues tokens valid for one hour on the fake's clock, answers 404
  * for unknown routes. A request whose signal aborts (also while a route
  * handler is pending) rejects with the signal's reason, as Node's `fetch`
  * does. Never touches the network.
@@ -65,6 +66,8 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
         releases: new Map(),
         files: new Map(),
         pulls: new Map(),
+        installations: new Map(),
+        users: new Map(),
         route(method, path, handler) {
             routes.unshift({
                 method, 
@@ -146,6 +149,23 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
                 return json(201, { token, expires_at: new Date(expiresAt).toISOString() });
             }
             return json(404, { message: 'Not Found' });
+        }
+
+        const repoInstallation = /^\/repos\/([^/]+)\/([^/]+)\/installation$/.exec(path);
+        if (method === 'GET' && repoInstallation) {
+            if (!verifyJwt(authorization)) return json(401, { message: 'Bad credentials' });
+            const id = fake.installations.get(`${decodeURIComponent(repoInstallation[1]!)}/${decodeURIComponent(repoInstallation[2]!)}`.toLowerCase());
+            return id === undefined ? json(404, { message: 'Not Found' }) : json(200, { id });
+        }
+        const user = /^\/users\/([^/]+)$/.exec(path);
+        if (method === 'GET' && user) {
+            const login = decodeURIComponent(user[1]!);
+            const id = fake.users.get(login);
+            return id === undefined ? json(404, { message: 'Not Found' }) : json(200, {
+                login, 
+                id, 
+                type: login.endsWith('[bot]') ? 'Bot' : 'User', 
+            });
         }
 
         const installationId = installationOf(authorization);

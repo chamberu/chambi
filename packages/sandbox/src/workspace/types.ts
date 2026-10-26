@@ -15,6 +15,10 @@ export type WorkspaceInfo = {
     ref?: string;
     /** HEAD after the checkout. */
     commit?: string;
+    /** The remote's default branch (its HEAD), fetched next to `ref`: the base of a merge or rebase. */
+    defaultBranch?: string;
+    /** The image of a container or pod workspace. */
+    image?: string;
     createdAt: Date;
     expiresAt: Date;
 };
@@ -54,9 +58,19 @@ export interface IWorkspace {
      */
     readonly disposed: boolean;
     exec(argv: readonly string[], options?: ExecOptions): Promise<ExecResult>;
-    /** UTF-8 text of at most `FILE_MAX_BYTES`. */
+    /** UTF-8 text of at most `FILE_MAX_BYTES`; SandboxError for a file that is not UTF-8. */
     readFile(path: string): Promise<string>;
-    writeFile(path: string, content: string): Promise<void>;
+    /** The raw bytes of a file of at most `FILE_MAX_BYTES`. */
+    readBytes(path: string): Promise<Uint8Array>;
+    /** A string is written as UTF-8, bytes as they are; at most `FILE_MAX_BYTES`. */
+    writeFile(path: string, content: string | Uint8Array): Promise<void>;
     /** Idempotent. Every call after it rejects with SandboxError. */
     dispose(): Promise<void>;
+    /**
+     * Replaces the git credentials issued for the workspace with
+     * `[redacted]`: set on the workspaces a manager with credentials hands
+     * out, whose results and errors are already redacted. A tool that decodes
+     * output itself (base64 from an exec) passes the decoded text through it.
+     */
+    redact?(text: string): string;
 }

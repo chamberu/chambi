@@ -9,27 +9,48 @@ import { randomUUID } from 'node:crypto';
 import { ChamviError, SandboxError, systemClock } from '@chamvi/core';
 import {
     DEFAULT_SANDBOX_IMAGE,
+    DEPLOYMENT_LABEL,
     EXPIRES_AT_KEY,
+    RUN_LABEL,
     SANDBOX_LABEL_SELECTORS,
+    TMP_SIZE,
     WORKSPACE_LABEL,
     abortedCreate,
     assertCreateInput,
+    assertDeployment,
     buildWorkspaceInfo,
     collectionError,
     createRemoteWorkspace,
+    createSettledCheck,
     isExpiredAt,
+    isRootUser,
     prepareWorkspace,
+    probeImage,
+    readCheckout,
+    readWorkspaceInfo,
     resolveLimits,
 } from '@chamvi/sandbox';
-import type { ISandboxProvider, IWorkspace } from '@chamvi/sandbox';
+import type {
+    IExecTransport,
+    ISandboxProvider,
+    IWorkspace,
+    WorkspaceInfo,
+} from '@chamvi/sandbox';
 import Docker from 'dockerode';
 import { createDockerTransport } from '../transport/module.ts';
-import { DEFAULT_NETWORK } from './constants.ts';
+import { openCache } from './cache.ts';
+import {
+    CACHE_OPEN_USER,
+    DEFAULT_NETWORK,
+    DEFAULT_USER,
+} from './constants.ts';
 import {
     assertDockerOptions,
     buildContainerOptions,
+    defaultCacheVolume,
     dockerMessage,
     isMissingImage,
+    isStatus,
     pullImage,
     removeContainer,
 } from './helpers.ts';
@@ -38,9 +59,16 @@ import type { DockerSandboxOptions } from './types.ts';
 const PROVIDER_NAME = 'docker';
 
 /**
- * One hardened container per workspace (see `buildContainerOptions`), commands
- * run through the Docker exec API inside GNU `timeout`. The client connects
- * lazily, so creating the provider never contacts the daemon.
+ * One container per workspace (see `buildContainerOptions`: root with a
+ * writable root and a few capabilities by default, the hardened mode through
+ * `user` and `readOnlyRoot`), commands run through the Docker exec API inside
+ * GNU `timeout`. `create` probes the image (`probeImage`) before the
+ * checkout and, for a non-root `user`, opens the cache to it (`openCache`); an image a run asked for (`imageRequested`) is pulled when
+ * missing, whatever `pull` says, while the provider's and the operator's
+ * follow `pull`. `find` lists a run's
+ * containers by label, starts a stopped one again (its volume holds the
+ * work) and rebuilds the info from the labels. The client connects lazily,
+ * so creating the provider never contacts the daemon.
  */
 export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandboxProvider {
     assertDockerOptions(options);
@@ -49,15 +77,26 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
     const image = options.image ?? DEFAULT_SANDBOX_IMAGE;
     const network = options.network ?? DEFAULT_NETWORK;
     const pull = options.pull ?? 'missing';
+    const user = options.user ?? DEFAULT_USER;
+    const readOnlyRoot = options.readOnlyRoot ?? false;
+    const cacheVolume = options.cache === false ? undefined : (options.cache?.volume ?? defaultCacheVolume(user));
+    const tmpSize = options.tmpSize ?? TMP_SIZE;
     const clock = options.clock ?? systemClock;
     const live = new Map<string, IWorkspace>();
+    /** The workspaces whose dispose was called: never found again, also while or after a removal fails. */
+    const disposing = new WeakSet<IWorkspace>();
 
-    /** Creates the container, pulling its image first as `pull` says; `signal` drops every request. */
+    /**
+     * Creates the container, pulling its image first as `pull` says (as
+     * `'missing'` for an image a run asked for); `signal` drops every request.
+     */
     async function createContainer(
         createOptions: Docker.ContainerCreateOptions,
         imageName: string,
+        requested: boolean,
         signal: AbortSignal | undefined,
     ): Promise<Docker.Container> {
+        const policy = requested && imageName !== image ? 'missing' : pull;
         const attempt = async (): Promise<Docker.Container> => {
             try {
                 return await docker.createContainer(signal ? { ...createOptions, abortSignal: signal } : createOptions);
@@ -69,12 +108,12 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             }
         };
 
-        if (pull === 'always') await pullImage(docker, imageName, signal);
+        if (policy === 'always') await pullImage(docker, imageName, signal);
         try {
             return await attempt();
         } catch (error) {
             if (error instanceof SandboxError) throw error;
-            if (pull !== 'missing' || !isMissingImage(error)) {
+            if (policy !== 'missing' || !isMissingImage(error)) {
                 throw new SandboxError(`cannot create a workspace container from ${imageName}: ${dockerMessage(error)}`, { cause: error });
             }
         }
@@ -89,6 +128,45 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
         }
     }
 
+    /** The workspace of a container (reached through `transport`), registered as live until disposed. */
+    function open(id: string, info: WorkspaceInfo, transport: IExecTransport): IWorkspace {
+        const remote = createRemoteWorkspace({
+            id,
+            info,
+            transport,
+            clock,
+        });
+        const workspace: IWorkspace = {
+            id,
+            info,
+            get disposed() {
+                return remote.disposed;
+            },
+            exec: remote.exec,
+            readFile: remote.readFile,
+            readBytes: remote.readBytes,
+            writeFile: remote.writeFile,
+            async dispose() {
+                disposing.add(workspace);
+                await remote.dispose();
+                live.delete(id);
+            },
+        };
+        live.set(id, workspace);
+        return workspace;
+    }
+
+    /** The managed containers of `deployment` (and of `runId` when given), stopped ones too. */
+    async function listWorkspaceContainers(deployment: string, runId?: string): Promise<Docker.ContainerInfo[]> {
+        const label = [...SANDBOX_LABEL_SELECTORS, `${DEPLOYMENT_LABEL}=${deployment}`];
+        if (runId !== undefined) label.push(`${RUN_LABEL}=${runId}`);
+        try {
+            return await docker.listContainers({ all: true, filters: { label } });
+        } catch (error) {
+            throw new SandboxError(`cannot list the workspace containers: ${dockerMessage(error)}`, { cause: error });
+        }
+    }
+
     return {
         name: PROVIDER_NAME,
 
@@ -97,54 +175,55 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             if (input.signal?.aborted) {
                 throw abortedCreate();
             }
+            const deployment = assertDeployment(input.deployment);
             const limits = resolveLimits(options.limits, input.limits);
             const imageName = input.image ?? image;
 
             const id = randomUUID();
-            const info = buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.timeoutMs);
+            const info = { ...buildWorkspaceInfo(input, PROVIDER_NAME, clock.now(), limits.maxLifetimeMs), image: imageName };
             const container = await createContainer(buildContainerOptions({
                 id,
-                runId: input.runId,
-                image: imageName,
+                deployment,
+                info,
                 network,
+                user,
+                readOnlyRoot,
+                cacheVolume,
+                tmpSize,
                 env: { ...options.env, ...input.env },
                 limits,
-                expiresAt: info.expiresAt,
-            }), imageName, input.signal);
+            }), imageName, input.imageRequested === true, input.signal);
 
-            const remote = createRemoteWorkspace({
-                id,
-                info,
-                transport: createDockerTransport(docker, container, clock),
-                clock,
-            });
-            const workspace: IWorkspace = {
-                id,
-                info,
-                get disposed() {
-                    return remote.disposed;
-                },
-                exec: remote.exec,
-                readFile: remote.readFile,
-                writeFile: remote.writeFile,
-                async dispose() {
-                    await remote.dispose();
-                    live.delete(id);
-                },
-            };
-            live.set(id, workspace);
+            const transport = createDockerTransport(docker, container, clock, user);
+            const workspace = open(id, info, transport);
 
             try {
                 await container.start(input.signal ? { abortSignal: input.signal } : {});
                 if (input.signal?.aborted) {
                     throw abortedCreate();
                 }
-                const { commit } = await prepareWorkspace(workspace, {
+                await probeImage(transport, {
+                    image: imageName, 
+                    clock, 
+                    signal: input.signal, 
+                });
+                if (!isRootUser(user)) {
+                    // never disposed: it removes the container, which the workspace owns
+                    const root = createRemoteWorkspace({
+                        id,
+                        info,
+                        transport: createDockerTransport(docker, container, clock, CACHE_OPEN_USER),
+                        clock,
+                    });
+                    await openCache(root, user, input.signal);
+                }
+                // the commit and the default branch, each only when known
+                Object.assign(info, await prepareWorkspace(workspace, {
+                    ...input.checkout,
                     repo: input.repo,
                     ref: input.ref,
                     signal: input.signal,
-                });
-                if (commit !== undefined) info.commit = commit;
+                }));
             } catch (error) {
                 await workspace.dispose().catch(() => undefined);
                 if (error instanceof ChamviError) throw error;
@@ -154,24 +233,96 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             return workspace;
         },
 
-        async collectGarbage() {
-            let containers: Docker.ContainerInfo[];
-            try {
-                containers = await docker.listContainers({
-                    all: true,
-                    filters: { label: [...SANDBOX_LABEL_SELECTORS] },
-                });
-            } catch (error) {
-                throw new SandboxError(`cannot list the workspace containers: ${dockerMessage(error)}`, { cause: error });
+        async find(runId, findOptions = {}) {
+            const deployment = assertDeployment(findOptions.deployment);
+            const containers = await listWorkspaceContainers(deployment, runId);
+            const now = clock.now().getTime();
+            const found: IWorkspace[] = [];
+            /**
+             * Starts a stopped container and unpauses a paused one; false when
+             * it cannot run, a SandboxError when Docker cannot tell its state.
+             * The state comes from inspect, since the list is a view that may
+             * lag behind a stop or a start.
+             */
+            const restart = async (container: Docker.Container): Promise<boolean> => {
+                let state: Docker.ContainerInspectInfo['State'];
+                try {
+                    ({ State: state } = await container.inspect(findOptions.signal ? { abortSignal: findOptions.signal } : {}));
+                } catch (error) {
+                    // removed meanwhile; any other failure is no answer, so find fails
+                    if (isStatus(error, 404)) return false;
+                    throw new SandboxError(`cannot inspect workspace container ${container.id}: ${dockerMessage(error)}`, { cause: error });
+                }
+                if (state.Paused) {
+                    // Running reads true for a paused container, which takes no exec
+                    try {
+                        await container.unpause(findOptions.signal ? { abortSignal: findOptions.signal } : {});
+                    } catch (error) {
+                        // unpaused meanwhile
+                        if (!isStatus(error, 409)) return false;
+                    }
+                    return true;
+                }
+                if (state.Running) return true;
+                // stopped (a host or daemon restart): the volume still holds the work.
+                // A container never started is a create that crashed: left to the collection
+                if (state.Status !== 'exited') return false;
+                try {
+                    await container.start(findOptions.signal ? { abortSignal: findOptions.signal } : {});
+                    return true;
+                } catch (error) {
+                    // started meanwhile (an operator, live-restore, another replica's find)
+                    return isStatus(error, 304);
+                }
+            };
+            for (const item of containers) {
+                const labels = item.Labels ?? {};
+                const id = labels[WORKSPACE_LABEL] ?? '';
+                const held = live.get(id);
+                if (held && (!held.disposed || disposing.has(held))) {
+                    // a disposed one (also after a failed removal) is never found again
+                    if (disposing.has(held)) continue;
+                    // not probed yet: its container may have stopped all the same,
+                    // and the same container started again serves the held handle
+                    if (held.info.expiresAt.getTime() > now && await restart(docker.getContainer(item.Id))) found.push(held);
+                    continue;
+                }
+                // gone (its container stopped): a fresh handle, restarted below
+                if (held) live.delete(id);
+                const info = readWorkspaceInfo(labels, PROVIDER_NAME);
+                if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
+                const container = docker.getContainer(item.Id);
+                if (!await restart(container)) continue;
+                const workspace = open(id, info, createDockerTransport(docker, container, clock, user));
+                const checkout = await readCheckout(workspace, findOptions.signal, clock);
+                if (!checkout) {
+                    // a create that died before its checkout finished (restarted above
+                    // only to read that): left to the collection
+                    live.delete(id);
+                    continue;
+                }
+                Object.assign(info, checkout);
+                found.push(workspace);
             }
+            return found;
+        },
+
+        async collectGarbage(gcOptions = {}) {
+            const deployment = assertDeployment(gcOptions.deployment);
+            const containers = await listWorkspaceContainers(deployment);
 
             const now = clock.now().getTime();
             let count = 0;
             // one container that cannot go never keeps the others
             const failures: SandboxError[] = [];
+            const isSettled = createSettledCheck(gcOptions.isSettled);
             for (const container of containers) {
                 const labels = container.Labels ?? {};
-                if (!isExpiredAt(labels[EXPIRES_AT_KEY], now)) continue;
+                if (!isExpiredAt(labels[EXPIRES_AT_KEY], now)) {
+                    const answer = await isSettled(labels[RUN_LABEL] ?? '');
+                    if (answer instanceof SandboxError) failures.push(answer);
+                    if (answer !== true) continue;
+                }
 
                 // one open here is disposed, so its in-flight commands settle too
                 const workspace = live.get(labels[WORKSPACE_LABEL] ?? '');

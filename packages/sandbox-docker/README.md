@@ -5,9 +5,9 @@
 <h1 align="center">@chamvi/sandbox-docker</h1>
 
 <p align="center">
-    <b>One hardened container per workspace, for chamvi agents on a Docker host.</b><br>
-    uid 1000, a read-only root, no capabilities, <code>no-new-privileges</code>, cpu, memory and pid limits,<br>
-    and every command inside GNU <code>timeout</code>: real isolation without a cluster.
+    <b>One container per workspace, for chamvi agents on a Docker host.</b><br>
+    Root inside, so <code>apt</code> and every package manager work; strict at the edge: a few capabilities, <code>no-new-privileges</code>,<br>
+    cpu, memory and pid limits, no host mount but the package cache, every command inside GNU <code>timeout</code>.
 </p>
 
 <p align="center">
@@ -23,6 +23,7 @@
 - [Usage](#usage)
 - [The container](#the-container)
 - [Image](#image)
+- [Cache](#cache)
 - [Security](#security)
 - [Timeouts and abort](#timeouts-and-abort)
 - [Garbage collection](#garbage-collection)
@@ -61,26 +62,38 @@ Each workspace is a container `chamvi-ws-<id>`:
 
 | Setting | Value |
 |---|---|
-| User | `1000:1000` (`SANDBOX_USER`) |
-| Command | `sleep <lifetime in seconds>`: the container stops itself at expiry |
-| Root filesystem | read-only (`ReadonlyRootfs`) |
-| Capabilities | all dropped, `no-new-privileges:true`, not privileged |
+| User | `user`, default `0:0` (`DEFAULT_USER`), also of every command |
+| Command | `sleep infinity` under the image's entrypoint: the lifetime follows the run; the garbage collection removes it |
+| Init | `Init: true`: docker-init is pid 1 and reaps orphaned processes (background jobs, the trees an exec timeout kills) for any image, also one without an init, whose zombies would otherwise fill `PidsLimit` |
+| Root filesystem | writable; read-only with `readOnlyRoot` |
+| Capabilities | all dropped; a root user gets back `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `KILL` (`ROOT_CAPABILITIES`); `no-new-privileges:true`, not privileged |
 | Limits | `NanoCpus` from `cpu`, `Memory` and `MemorySwap` (no swap) from `memory`, `PidsLimit` from `pids` |
 | `/workspace` | an anonymous volume, removed with the container (`remove({ force: true, v: true })`) |
-| `/tmp` | a 512 MiB tmpfs (`exec`, `nosuid`, `nodev`): npm's global prefix and cache and corepack live there, as in a Kubernetes pod's memory `emptyDir` |
+| `/home/sandbox` | HOME (`WORKSPACE_HOME`): an anonymous volume on disk, kept across a restart, removed with the container |
+| `/cache` | the named volume `chamvi-sandbox-cache` (`DEFAULT_CACHE_VOLUME`; a non-root `user` `chamvi-sandbox-cache-<user>`; `cache.volume`) shared by every workspace, or with `cache: false` an anonymous volume of its own |
+| `/tmp` | a tmpfs of `tmpSize` (default 1 GiB, `TMP_SIZE`; `exec`, `nosuid`, `nodev`) |
 | Network | `network` (default `bridge`) |
-| Environment | `SANDBOX_ENV` plus `env`, nothing from the host |
-| Labels | `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>`, `chamvi.dev/expires-at=<epoch ms>` |
+| Environment | `SANDBOX_ENV`, the cache variables (`CACHE_ENV`) and `env`, nothing from the host |
+| Labels | `app.kubernetes.io/managed-by=chamvi`, `app.kubernetes.io/component=sandbox`, `chamvi.dev/run=<runId>`, `chamvi.dev/workspace=<id>`, `chamvi.dev/deployment=<deployment>`, `chamvi.dev/repo-key=<hash>` (with a repository), `chamvi.dev/created-at` and `chamvi.dev/expires-at` (epoch ms), `chamvi.dev/repo`, `chamvi.dev/ref`, `chamvi.dev/image` |
 
 `limits.storage` is not enforced: a default volume has no size (use a storage driver with quotas, or the Kubernetes provider). Commands run through the Docker exec API in `/workspace`; a file is read with `cat` and written with `head -c` from stdin.
 
+**Hardened mode**: `createDockerSandbox({ user: '1000:1000', readOnlyRoot: true })` gives the container of earlier versions: uid 1000, a read-only root, no capability at all. `apt` and root-only installs then fail; toolchains still install into `/cache` with mise. The cache is then a volume of that user's own, `chamvi-sandbox-cache-<user>` (the name before any `:group`, e.g. `chamvi-sandbox-cache-1000`), since a root workspace leaves root-owned folders deep in the cache (npm's `_cacache`, mise's installs) that the hardened user cannot write. Before the checkout the provider opens the cache to that user (one exec as root, which owns the mount point Docker makes for an image without `/cache`, so it makes `/cache` and the empty top-level `CACHE_ENV` folders writable without any capability), so any image works there. Only those folders: never point a non-root `user` at a `cache.volume` a root workspace or another user wrote to.
+
 ## Image
 
-The default image is `ghcr.io/chamvi/sandbox-node:24` (`DEFAULT_SANDBOX_IMAGE`): Node.js 24, npm, corepack, git, `tini` and GNU coreutils, built for `linux/amd64` and `linux/arm64` from [`images/sandbox-node`](../../images/sandbox-node). Tags: `24` (rebuilt on changes and weekly for base image updates) and `24-<short sha>` (pushed once per commit that changes the image).
+The default image is `ghcr.io/chamvi/sandbox-dev:trixie` (`DEFAULT_SANDBOX_IMAGE`): Debian, git, curl, ripgrep, jq, build-essential, `tini` and [mise](https://mise.jdx.dev), which installs any toolchain at runtime (`mise use -g node@22`, `mise install`), built for `linux/amd64` and `linux/arm64` from [`images/sandbox-dev`](../../images/sandbox-dev). Tags: `trixie` (rebuilt on changes and weekly) and `trixie-<short sha>` (pushed once per commit that changes the image).
 
-- `pull: 'missing'` (default) pulls the image once when the daemon lacks it, `'always'` before every create (a mutable tag such as `:24` then follows its rebuilds), `'never'` never.
-- Pin a digest in production (`image: 'ghcr.io/chamvi/sandbox-node@sha256:...'`), or use `pull: 'always'`.
-- Your own image works when it keeps uid 1000, `/workspace`, and has `sh`, `cat`, `head`, `mkdir`, `dirname`, `cp`, `mv`, `rm`, GNU `timeout` and `git`.
+- A run may pick any image (`create_workspace({ image })`), which the manager's `allowImage` narrows.
+- `pull: 'missing'` (default) pulls the provider's image once when the daemon lacks it, `'always'` before every create (a mutable tag then follows its rebuilds), `'never'` never. It covers the manager's `image` too; an image a run asked for (`create_workspace({ image })`) is pulled when missing.
+- Pin a digest in production (`image: 'ghcr.io/chamvi/sandbox-dev@sha256:...'`), or use `pull: 'always'`.
+- An image needs `sh`, `git` and a GNU `timeout` that takes `-k`, plus `cat`, `head`, `mkdir`, `dirname`, `cp`, `mv` and `rm`. `create` probes the first three once the container runs and fails with a `SandboxError` naming what is missing, before any checkout (and removes the container).
+
+## Cache
+
+Every workspace mounts `/cache` and gets `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR` and `MISE_DATA_DIR` pointing into it (`CACHE_ENV`), so a second install of the same packages or toolchain is fast. By default it is one named volume for the whole host, `chamvi-sandbox-cache` (one per non-root `user`, `chamvi-sandbox-cache-<user>`), which outlives every workspace (remove it with `docker volume rm` to reset it).
+
+**Risk**: workspaces of different runs and agents share that volume. A malicious package one run fetched can sit in the cache of another run; npm verifies integrity hashes, pip, Go's build cache and others less. Use `cache: false` (an anonymous volume per workspace, removed with it) where runs must not influence each other, or a volume per trust level (`cache: { volume: 'chamvi-cache-public' }`).
 
 ## Security
 
@@ -93,19 +106,20 @@ The default image is `ghcr.io/chamvi/sandbox-node:24` (`DEFAULT_SANDBOX_IMAGE`):
   ```
 
   and pass `network: 'chamvi-sandbox'`. `network: 'none'` cuts the network entirely; then only repo-less workspaces work, since the clone runs inside the container.
+- **Root inside, not on the host.** A workspace runs as root with a writable root filesystem by default, so it can install anything; it is still no privileged container, holds only the capabilities package managers need, keeps `no-new-privileges` and mounts nothing of the host but the cache volume. Use the hardened mode (`user`, `readOnlyRoot`) where root in the container is too much.
 - **Prompt injection**: what the model runs follows what it reads. Narrow `allowRepo` on the manager and put `bash` behind an approval where needed.
 
 ## Timeouts and abort
 
 Every command runs as `timeout -k 5 <seconds> <argv>`; GNU `timeout` signals its whole process group, so backgrounded grandchildren go too. A client-side guard stops waiting 15 s (`EXEC_GRACE_MS`) after the timeout and reports exit 137 with the output so far. A command that exits while a background job it started holds its output returns about 2 s after its exit with its own exit code.
 
-An abort (`signal`) **detaches**: dockerode tears down the exec stream, and the command runs on until its `timeout` fires or the workspace is disposed. Every settled run disposes its workspaces (`manager.attach(engine)`), and a drain is followed by `manager.close()`, so nothing outlives the run for long. A dispose removes the container, which kills whatever still runs.
+An abort (`signal`) **detaches**: dockerode tears down the exec stream, and the command runs on until its `timeout` fires or the workspace is disposed. Every settled run disposes its workspaces (`manager.attach(engine)`), so nothing outlives the run for long. A dispose removes the container, which kills whatever still runs.
 
 A create's `signal` (aborted by `release(runId)` and `manager.close()`) drops its requests: the image pull (the daemon may finish it on its own), the container create (a container the daemon made anyway is removed) and the start. dockerode sets no request timeout by default, so a hanging daemon stalls a create or a removal. `manager.close()` gives up after its `timeoutMs` (30 s) and reports what is left; to bound every request, pass a client with a timeout: `createDockerSandbox({ docker: new Docker({ timeout: 60_000 }) })` (in ms, longer than your slowest image pull).
 
 ## Garbage collection
 
-`collectGarbage()` lists the daemon's containers with the managed labels and removes every one past its `chamvi.dev/expires-at` (open workspaces of this process are disposed first), including those of crashed processes and other replicas sharing the daemon. The manager calls it from `acquire` at most every 10 minutes. A container that cannot be removed does not stop the pass: the others go, and one `SandboxError` with the count and the first failure is thrown at the end.
+`find(runId, { deployment })` lists the run's containers by label, starts a stopped one again (a host or daemon restart; its volume still holds the work), also one whose handle this process holds and found gone (the manager forgets a gone workspace instead of disposing it), and rebuilds the workspace from the labels, so a run finds its workspace after a restart or on another replica sharing the daemon. `collectGarbage({ deployment, isSettled })` lists the deployment's containers with the managed labels and removes every one past its `chamvi.dev/expires-at` and, with `isSettled`, those of settled runs (open workspaces of this process are disposed first), including those of crashed processes and other replicas sharing the daemon. The manager calls it from `acquire` at most every 10 minutes. A container that cannot be removed does not stop the pass: the others go, and one `SandboxError` with the count and the first failure is thrown at the end.
 
 ## Options
 
@@ -117,8 +131,12 @@ A create's `signal` (aborted by `release(runId)` and `manager.close()`) drops it
 | `image` | `string` | `DEFAULT_SANDBOX_IMAGE` | The workspace image; pin a digest in production |
 | `network` | `string` | `'bridge'` | `'bridge'`, `'none'` or a user-created network |
 | `pull` | `'missing' \| 'always' \| 'never'` | `'missing'` | When to pull the image |
-| `env` | `Record<string, string>` | none | Added after `SANDBOX_ENV` |
-| `limits` | `SandboxLimits` | `DEFAULT_LIMITS` | `cpu`, `memory`, `pids`, `timeoutMs` (`storage` is not enforced) |
+| `env` | `Record<string, string>` | none | Added after `SANDBOX_ENV` and `CACHE_ENV` |
+| `limits` | `SandboxLimits` | `DEFAULT_LIMITS` | `cpu`, `memory`, `pids`, `maxLifetimeMs` (`storage` is not enforced) |
+| `user` | `string` | `'0:0'` | The container user (`uid:gid` or a name); a non-root user gets no capability |
+| `readOnlyRoot` | `boolean` | `false` | A read-only root filesystem |
+| `cache` | `false \| { volume? }` | `{ volume: 'chamvi-sandbox-cache' }` (a non-root `user`: `'chamvi-sandbox-cache-<user>'`) | The shared `/cache` volume, or `false` for one per workspace |
+| `tmpSize` | `string` | `'1Gi'` | Size of the `/tmp` tmpfs |
 | `clock` | `IClock` | `systemClock` | Expiry and the exec guard |
 
 Misconfiguration throws core `InvalidAgentDefinitionError`; daemon and container failures are `SandboxError`s.
@@ -130,7 +148,8 @@ Misconfiguration throws core `InvalidAgentDefinitionError`; daemon and container
 | `createDockerSandbox` | function | The `ISandboxProvider` (`name: 'docker'`) |
 | `DEFAULT_NETWORK` | constant | `'bridge'` |
 | `CONTAINER_NAME_PREFIX` | constant | `'chamvi-ws-'` |
-| `SANDBOX_USER` | constant | `'1000:1000'` |
+| `DEFAULT_USER` | constant | `'0:0'` |
+| `DEFAULT_CACHE_VOLUME` | constant | `'chamvi-sandbox-cache'` (root; a non-root `user` appends `-<user>`) |
 
 Types: `DockerSandboxOptions`.
 

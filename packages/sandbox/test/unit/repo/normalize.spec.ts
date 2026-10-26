@@ -36,6 +36,9 @@ describe('normalizeRepo', () => {
         'not a url',
         'https://git\nhub.com/o/r',
         'https://github.com/o/r\t',
+        'https://gitlab.com/o/%zz.git',
+        'https://gitlab.com/o/r%',
+        'https://gitlab.com/o/%E0%A4%A.git',
     ])('rejects %j', (input) => {
         expect(() => normalizeRepo(input)).toThrow(ValidationError);
     });

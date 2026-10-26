@@ -8,6 +8,7 @@
 import type { Env } from '@chamvi/app';
 import type { GithubAppOptions, IGithubApp } from '../app/types.ts';
 import type { GithubChannelOptions } from '../channel/types.ts';
+import type { GithubAppCredentialsOptions } from '../credentials/types.ts';
 
 /** `githubChannel()` options; `approvalUrl` defaults to the UI link from `CHAMVI_PUBLIC_URL`, `clock` is the app's. */
 export type GithubModuleChannelOptions = Omit<GithubChannelOptions, 'app' | 'clock'>;
@@ -19,4 +20,10 @@ export type GithubModuleOptions = Partial<GithubAppOptions> & {
     env?: Env;
     /** The channel's options (name, mentions, approval link, timeout, body limit). */
     channel?: GithubModuleChannelOptions;
+    /**
+     * The App's git credentials (`githubAppCredentials()`), contributed to
+     * `AppToken.GIT_CREDENTIALS` for `sandboxModule()`'s workspaces; `false`
+     * contributes none. Default on, with no permission beyond `contents`.
+     */
+    credentials?: false | GithubAppCredentialsOptions;
 };
