@@ -19,7 +19,6 @@ import {
     assertSandboxEnv,
     assertTmpSizeOption,
     isRootUser,
-    lifetimeSeconds,
     parseCpu,
     parseMemory,
     resolveLimits,
@@ -28,7 +27,7 @@ import {
 } from '@chamvi/sandbox';
 import type Dockerode from 'dockerode';
 import { isObject } from 'smob';
-import { CONTAINER_NAME_PREFIX } from './constants.ts';
+import { CONTAINER_NAME_PREFIX, SLEEP_UNTIL_SCRIPT } from './constants.ts';
 import type { ContainerOptionsInput, DockerSandboxOptions } from './types.ts';
 
 const PULL_POLICIES = ['missing', 'always', 'never'];
@@ -164,10 +163,11 @@ export async function pullImage(docker: Dockerode, image: string, signal?: Abort
  * anonymous `/workspace` and `WORKSPACE_HOME` volumes, the cache at `/cache`
  * (an anonymous volume, or the named `cache.volume`) and only `SANDBOX_ENV`,
  * `CACHE_ENV` and the configured `env` (never the host's). No host mount, no
- * privileged mode. The image's entrypoint is replaced: it sleeps for its
- * lifetime (`lifetimeSeconds`), so it stops itself at `expiresAt` even when
- * no collection runs; the garbage collection (expiry, settled run) removes
- * it.
+ * privileged mode. The image's entrypoint is replaced: it sleeps until
+ * `expiresAt` (`SLEEP_UNTIL_SCRIPT`, an absolute deadline, so a container
+ * `find` starts again after a restart stops at the same time), so it stops
+ * itself even when no collection runs; the garbage collection (expiry,
+ * settled run) removes it.
  * Its labels hold everything `find` rebuilds the info from.
  */
 export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.ContainerCreateOptions {
@@ -185,7 +185,7 @@ export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.C
         // the image's entrypoint is skipped (an image whose entrypoint is a
         // command, not an init, would never sleep); Init adds docker-init
         Entrypoint: [],
-        Cmd: ['sleep', String(lifetimeSeconds(input.info))],
+        Cmd: ['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', String(Math.ceil(input.info.expiresAt.getTime() / 1000))],
         User: input.user,
         WorkingDir: WORKSPACE_ROOT,
         Env: Object.entries(env).map(([key, value]) => `${key}=${value}`),

@@ -109,7 +109,7 @@ await workspaces.close();
 
 ## Lifecycle
 
-A workspace is keyed by `(run, repository)`. Its lifetime follows the run up to a hard cap: a container or pod sleeps for `lifetimeSeconds(info)` (pods also get that `activeDeadlineSeconds`), so it stops itself at `expiresAt` even when nothing collects it, and it lives until the first of:
+A workspace is keyed by `(run, repository)`. Its lifetime follows the run up to a hard cap: a container sleeps until `expiresAt` (an absolute deadline, also after `find` starts it again) and a pod for `lifetimeSeconds(info)` (also its `activeDeadlineSeconds`), so it stops itself at `expiresAt` even when nothing collects it, and it lives until the first of:
 
 - the run settles (`completed`, `failed`, `cancelled`; through `attach(engine)`, which also disposes the run's workspaces another process created: through `provider.find` for a run this process holds or looks up, else, with `isSettled`, through a garbage collection it starts (at most one per `gcIntervalMs`), so a settled run that never used a workspace costs no container or pod list); it is kept while the run is `waiting` for an approval or `interrupted`,
 - `dispose_workspace` or `manager.release(runId, id?)`,

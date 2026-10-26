@@ -63,7 +63,7 @@ Each workspace is a container `chamvi-ws-<id>`:
 | Setting | Value |
 |---|---|
 | User | `user`, default `0:0` (`DEFAULT_USER`), also of every command |
-| Command | `sleep <lifetime in seconds>` (`lifetimeSeconds`), with the image's entrypoint replaced (`Entrypoint: []`): the container stops itself at `expiresAt` even when no collection runs; the garbage collection removes it |
+| Command | `sh -c` sleeping until `expiresAt` (an absolute deadline, so a container `find` starts again after a host or daemon restart still stops at the same time, or at once past it), with the image's entrypoint replaced (`Entrypoint: []`): the container stops itself at `expiresAt` even when no collection runs; the garbage collection removes it |
 | Init | `Init: true`: docker-init is pid 1 and reaps orphaned processes (background jobs, the trees an exec timeout kills) for any image, also one without an init, whose zombies would otherwise fill `PidsLimit` |
 | Root filesystem | writable; read-only with `readOnlyRoot` |
 | Capabilities | all dropped; a root user gets back `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID`, `KILL` (`ROOT_CAPABILITIES`); `no-new-privileges:true`, not privileged |

@@ -198,7 +198,7 @@ Folders without an `index.ts` export nothing public; other modules import the fi
 
 | Path | Purpose |
 |------|---------|
-| `provider/` | `createDockerSandbox()` (`module.ts`), `buildContainerOptions()`, `assertDockerOptions()`, `pullImage()`, `removeContainer()` (`asserts.ts`, internal), `openCache()`, `CACHE_OPEN_SCRIPT` (`cache.ts`, internal), `DEFAULT_NETWORK`, `CONTAINER_NAME_PREFIX`, `DEFAULT_USER` (public), `CACHE_OPEN_USER`, `CACHE_OPEN_TIMEOUT_MS` (internal) (`constants.ts`), `DockerSandboxOptions` (`types.ts`) |
+| `provider/` | `createDockerSandbox()` (`module.ts`), `buildContainerOptions()`, `assertDockerOptions()`, `pullImage()`, `removeContainer()` (`asserts.ts`, internal), `openCache()`, `CACHE_OPEN_SCRIPT` (`cache.ts`, internal), `DEFAULT_NETWORK`, `CONTAINER_NAME_PREFIX`, `DEFAULT_USER` (public), `CACHE_OPEN_USER`, `CACHE_OPEN_TIMEOUT_MS`, `SLEEP_UNTIL_SCRIPT` (internal) (`constants.ts`), `DockerSandboxOptions` (`types.ts`) |
 | `transport/` | No barrel: `createDockerTransport()`, the `IExecTransport` over the Docker exec API (demuxed streams into the workspace's sinks, exit code by inspect poll, `alive` by container inspect) |
 
 ## Kubernetes Sandbox Module Map (`packages/sandbox-k8s/src`)

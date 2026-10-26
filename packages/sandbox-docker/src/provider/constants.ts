@@ -28,3 +28,12 @@ export const CACHE_OPEN_USER = '0:0';
 
 /** How long opening the cache of a create may take. */
 export const CACHE_OPEN_TIMEOUT_MS = 30_000;
+
+/**
+ * The command of a workspace container (`sh -c` with the deadline, epoch
+ * seconds, as `$1`): it sleeps until the workspace's `expiresAt`, also when
+ * `find` starts the container again after a host or daemon restart, and
+ * exits at once past it. An absolute deadline, since a fixed `sleep
+ * <lifetime>` would start over on every restart.
+ */
+export const SLEEP_UNTIL_SCRIPT = 'd=$(( $1 - $(date +%s) )); if [ "$d" -gt 0 ]; then exec sleep "$d"; fi';

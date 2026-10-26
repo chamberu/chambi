@@ -166,7 +166,7 @@ const CONTAINER_NAME_PREFIX: 'chamvi-ws-';
 const DEFAULT_USER: '0:0';
 ```
 
-One container per workspace (`sleep <lifetimeSeconds>` under docker-init, `Init: true`, which reaps orphans for any image, with the image's entrypoint replaced: it stops itself at `expiresAt`), removed with its volume on dispose or by the garbage collection. Root with a writable root and `ROOT_CAPABILITIES` by default; `{ user: '1000:1000', readOnlyRoot: true }` is the hardened mode. `/cache` is an anonymous volume per workspace, or with `cache: { volume }` that named volume, shared by every workspace using it (a trust boundary). `pull` applies to every image, also one a run asked for. `find` lists a run's containers by label and starts a stopped one again. Creating the provider contacts nothing.
+One container per workspace (`sh -c` sleeping until `expiresAt`, also after a restart, under docker-init, `Init: true`, which reaps orphans for any image, with the image's entrypoint replaced: it stops itself at `expiresAt`), removed with its volume on dispose or by the garbage collection. Root with a writable root and `ROOT_CAPABILITIES` by default; `{ user: '1000:1000', readOnlyRoot: true }` is the hardened mode. `/cache` is an anonymous volume per workspace, or with `cache: { volume }` that named volume, shared by every workspace using it (a trust boundary). `pull` applies to every image, also one a run asked for. `find` lists a run's containers by label and starts a stopped one again. Creating the provider contacts nothing.
 
 <<< ../../../sandbox-docker/src/provider/types.ts{ts}
 
