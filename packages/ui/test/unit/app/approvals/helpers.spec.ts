@@ -8,6 +8,9 @@
 import { describe, expect, it } from 'vitest';
 import type { RunWire } from '../../../../app/api/types.ts';
 import {
+    canApprove,
+    detailLines,
+    isDiffDetail,
     notifiedLine,
     pendingApprovals,
 } from '../../../../app/approvals/helpers.ts';
@@ -83,5 +86,37 @@ describe('notifiedLine', () => {
     it('says inbox only without a channel, else that it retries', () => {
         expect(notifiedLine(wireRun({ waiting }))).toEqual({ text: 'inbox only', warn: false });
         expect(notifiedLine(wireRun({ waiting: { ...waiting, channel: 'capture' } }))).toEqual({ text: 'not sent (retrying)', warn: true });
+    });
+});
+
+describe('choice approvals', () => {
+    const options = [{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }];
+
+    it('allows an approval once the selection fits', () => {
+        expect(canApprove({}, [])).toBe(true);
+        expect(canApprove({ options }, [])).toBe(false);
+        expect(canApprove({ options }, ['a'])).toBe(true);
+        expect(canApprove({ options }, ['a', 'b'])).toBe(false);
+        expect(canApprove({ options, multiple: true }, [])).toBe(false);
+        expect(canApprove({ options, multiple: true }, ['a', 'b'])).toBe(true);
+    });
+
+    it('recognizes a diff', () => {
+        expect(isDiffDetail('@@ -1 +1 @@\n-a\n+b')).toBe(true);
+        expect(isDiffDetail('--- a\n+++ b')).toBe(true);
+        expect(isDiffDetail('- item\n- item')).toBe(false);
+        expect(isDiffDetail('+1 vote')).toBe(false);
+    });
+
+    it('marks the lines of a diff', () => {
+        expect(detailLines('--- a\n+++ b\n@@ -1 +1 @@\n-y\n+x\n same')).toEqual([
+            { text: '--- a' },
+            { text: '+++ b' },
+            { text: '@@ -1 +1 @@', kind: 'hunk' },
+            { text: '-y', kind: 'del' },
+            { text: '+x', kind: 'add' },
+            { text: ' same' },
+        ]);
+        expect(detailLines('- item\n+1 vote')).toEqual([{ text: '- item' }, { text: '+1 vote' }]);
     });
 });

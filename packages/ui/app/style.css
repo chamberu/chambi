@@ -521,6 +521,21 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 
 .callout-meta dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; }
 .callout-meta dd.warn { color: var(--ch-wait); }
 .callout-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.55; }
+.callout-options { display: grid; gap: 8px; margin: 6px 0 0; padding: 0; border: 0; min-width: 0; }
+.callout-options legend { padding: 0; margin-bottom: 6px; }
+.callout-option { display: grid; gap: 6px; min-width: 0; padding: 8px 10px; border: 1px solid var(--ch-line); border-radius: var(--ch-radius-sm); background: var(--ch-surface); }
+.callout-option label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 14px; cursor: pointer; overflow-wrap: anywhere; }
+.callout-option label input { accent-color: var(--ch-accent); margin: 0; }
+.callout-option label .mono { font-size: 11.5px; }
+.callout-option summary { font-size: 12.5px; color: var(--ch-muted); cursor: pointer; }
+.option-detail {
+    margin: 6px 0 0; padding: 8px 10px; max-width: 100%; max-height: 24rem; overflow: auto;
+    font: 400 12.5px/1.5 var(--ch-font-mono); white-space: pre; color: var(--ch-ink);
+    background: var(--ch-sunken); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-sm);
+}
+.option-detail .diff-add { color: var(--ch-ok); background: var(--ch-ok-tint); }
+.option-detail .diff-del { color: var(--ch-accent-text); background: var(--ch-accent-tint); }
+.option-detail .diff-hunk { color: var(--ch-run); background: var(--ch-run-tint); }
 .callout-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: space-between; padding: 12px 20px; background: var(--ch-sunken); border-top: 1px solid var(--ch-line); }
 .callout-foot p { font-size: 12.5px; color: var(--ch-muted); }
 .callout-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }

@@ -65,7 +65,8 @@ export type PageQuery = { limit?: number; offset?: number };
 export type ApproveBody = {
     approvalId: string;
     approved: boolean;
-    reason?: string
+    reason?: string;
+    selected?: string[]
 };
 
 export type StartRunBody = {

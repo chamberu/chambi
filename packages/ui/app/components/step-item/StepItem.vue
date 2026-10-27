@@ -13,6 +13,7 @@ import {
     approverName,
     errorText,
     llmOutput,
+    selectedLabels,
     stepMeta,
     stepTitle,
     waitOutput,
@@ -22,6 +23,7 @@ const props = defineProps<{ step: StepWire }>();
 
 const llm = computed(() => llmOutput(props.step));
 const wait = computed(() => waitOutput(props.step));
+const selected = computed(() => (props.step.kind === 'wait' ? selectedLabels(props.step) : []));
 const classes = computed(() => ['step', `step-${props.step.kind}`, { 'step-err': props.step.error !== undefined }]);
 </script>
 
@@ -76,6 +78,13 @@ const classes = computed(() => ['step', `step-${props.step.kind}`, { 'step-err':
                             </template><template v-if="wait.reason">
                                 : “{{ wait.reason }}”
                             </template>
+                        </div>
+                        <div
+                            v-if="selected.length > 0"
+                            class="step-text"
+                            data-testid="selected"
+                        >
+                            Selected: {{ selected.join(', ') }}
                         </div>
                     </template>
                     <template v-else-if="step.error === undefined">

@@ -52,13 +52,15 @@ export function useApprovals(client: IApiClient) {
     poller.start();
     onScopeDispose(() => poller.stop());
 
-    async function answer(run: RunWire, approved: boolean, reason?: string): Promise<AnswerResult> {
+    async function answer(run: RunWire, approved: boolean, reason?: string, selected?: string[]): Promise<AnswerResult> {
         if (!run.waiting) return 'already-answered';
         try {
             await client.approve(run.id, {
                 approvalId: run.waiting.approvalId,
                 approved,
                 ...reasonOf(reason),
+                // a denial selects nothing
+                ...(approved && selected && selected.length > 0 ? { selected: [...selected] } : {}),
             });
             return 'answered';
         } catch (e) {

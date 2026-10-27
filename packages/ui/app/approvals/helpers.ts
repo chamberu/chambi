@@ -12,6 +12,7 @@ import { shortId } from '../runs/helpers.ts';
 import type {
     ApprovalLink,
     DecidedApproval,
+    DetailLine,
     LinkNotice,
     LinkedApprovalState,
     NotifiedLine,
@@ -151,4 +152,32 @@ export function linkNotice(state: LinkedApprovalState, link: ApprovalLink): Link
         default:
             return undefined;
     }
+}
+
+/**
+ * Whether the selection fits the wait point (core's rule): always without
+ * options, exactly one for a single choice, at least one for a multiple one.
+ */
+export function canApprove(waiting: { options?: unknown[]; multiple?: boolean }, selected: readonly string[]): boolean {
+    if (!waiting.options || waiting.options.length === 0) return true;
+    return waiting.multiple ? selected.length > 0 : selected.length === 1;
+}
+
+/** A detail reads as a diff when a line starts with `@@ ` or a `--- ` line is followed by a `+++ ` line. */
+export function isDiffDetail(detail: string): boolean {
+    const lines = detail.split('\n');
+    return lines.some((line, index) => line.startsWith('@@ ') ||
+        (line.startsWith('--- ') && (lines[index + 1] ?? '').startsWith('+++ ')));
+}
+
+/** The lines of an option's detail, each marked add, del or hunk when the detail is a diff. */
+export function detailLines(detail: string): DetailLine[] {
+    const lines = detail.split('\n');
+    if (!isDiffDetail(detail)) return lines.map((text) => ({ text }));
+    return lines.map((text) => {
+        if (text.startsWith('@@')) return { text, kind: 'hunk' as const };
+        if (text.startsWith('+') && !text.startsWith('+++')) return { text, kind: 'add' as const };
+        if (text.startsWith('-') && !text.startsWith('---')) return { text, kind: 'del' as const };
+        return { text };
+    });
 }
