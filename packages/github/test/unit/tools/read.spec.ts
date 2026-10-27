@@ -58,6 +58,7 @@ describe('read tools', () => {
             'github_get_issue',
             'github_get_latest_release',
             'github_get_pull_request',
+            'github_get_pull_request_checks',
             'github_get_push_target',
             'github_list_issues',
             'github_list_labels',

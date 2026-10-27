@@ -7,6 +7,9 @@
 
 export { GITHUB_REQUEST_ERROR_CODE, REPO_PATTERN } from './constants.ts';
 export type {
+    GithubCheck,
+    GithubCheckOutcome,
+    GithubChecksState,
     GithubClosedIssue,
     GithubComment,
     GithubDirectory,
@@ -18,6 +21,7 @@ export type {
     GithubIssueSummary,
     GithubLabel,
     GithubPullRequest,
+    GithubPullRequestChecks,
     GithubPullRequestList,
     GithubPullRequestSummary,
     GithubPushTarget,

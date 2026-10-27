@@ -9,6 +9,7 @@ import type { ToolSet } from 'ai';
 import { defineTool } from '@chamvi/core';
 import { isObject } from 'smob';
 import type { IGithubApp } from '../app/types.ts';
+import { readChecks } from './checks.ts';
 import { PULL_REQUESTS_MAX, REF_PATTERN } from './constants.ts';
 import {
     REPO_PROPERTY,
@@ -23,6 +24,7 @@ import {
 } from './helpers.ts';
 import type {
     GithubPullRequest,
+    GithubPullRequestChecks,
     GithubPullRequestList,
     GithubPullRequestSummary,
     GithubPushTarget,
@@ -117,7 +119,7 @@ function permissionOf(value: unknown): 'read' | 'write' | null {
     return value === 'read' || value === 'write' ? value : null;
 }
 
-/** `github_list_pull_requests`, `github_get_push_target`. */
+/** `github_list_pull_requests`, `github_get_pull_request_checks`, `github_get_push_target`. */
 export function createPullRequestTools(app: IGithubApp): ToolSet {
     return {
         github_list_pull_requests: defineTool<ListPullRequestsInput, GithubPullRequestList>({
@@ -161,6 +163,29 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
                         if (truncated) break;
                     }
                     return { pullRequests, truncated };
+                });
+            },
+        }),
+
+        github_get_pull_request_checks: defineTool<NumberInput, GithubPullRequestChecks>({
+            description: 'Read the checks of a pull request\'s head commit (check runs and commit statuses) with the required ones of the base branch. ' +
+                'state is none while nothing reported yet and pending while a check runs or a required check has not reported; only success means green.',
+            inputSchema: numberSchema('pull request'),
+            execute: async (input, { context }) => {
+                const { owner, repo } = parseRepo(input.repo);
+                const pullNumber = requireInteger(input.number, 'number', 1);
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
+                    const { data } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
+                        owner,
+                        repo,
+                        pull_number: pullNumber,
+                    });
+                    const pull = toPullRequest(data as unknown as Record<string, unknown>);
+                    return readChecks(octokit, { owner, repo }, {
+                        number: pull.number, 
+                        headSha: pull.headSha, 
+                        base: pull.base, 
+                    });
                 });
             },
         }),

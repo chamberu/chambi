@@ -239,3 +239,40 @@ export type GithubPushTarget = {
     /** Why `canPush` is false, else null. */
     reason: string | null;
 };
+
+/** How a check reads: green, red, or not finished. */
+export type GithubCheckOutcome = 'success' | 'failure' | 'pending';
+
+/** One check run or commit status of a pull request's head. */
+export type GithubCheck = {
+    name: string;
+    kind: 'check_run' | 'status';
+    /** check run: queued | in_progress | completed | waiting | requested | pending; status: its state. */
+    status: string;
+    conclusion: string | null;
+    outcome: GithubCheckOutcome;
+    required: boolean;
+    url: string | null;
+};
+
+/** `none` while no check reported at all (a push seconds ago): never read as green. */
+export type GithubChecksState = 'success' | 'failure' | 'pending' | 'none';
+
+/** `github_get_pull_request_checks`. */
+export type GithubPullRequestChecks = {
+    number: number;
+    headSha: string;
+    base: string;
+    state: GithubChecksState;
+    pending: number;
+    failing: number;
+    checks: GithubCheck[];
+    required: {
+        /** false when branch protection or the rulesets could not be read (403, 404): required checks may exist that are not listed. */
+        known: boolean;
+        contexts: string[];
+        /** Required contexts with no report yet; counted as pending. */
+        missing: string[];
+    };
+    truncated: boolean;
+};

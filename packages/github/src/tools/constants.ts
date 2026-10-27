@@ -56,3 +56,6 @@ export const ISSUES_MAX = 100;
 
 /** Open pull requests `github_list_pull_requests` returns at most (and without a `limit`). */
 export const PULL_REQUESTS_MAX = 100;
+
+/** Check runs `github_get_pull_request_checks` reads at most (then `truncated`). */
+export const CHECKS_MAX = 300;
