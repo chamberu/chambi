@@ -47,6 +47,7 @@ describe('public api', () => {
         'checkAgentModel',
         'resolveModel',
         'agentChannel',
+        'startHandoff',
     ])('exports %s', (name) => {
         expect(core).toHaveProperty(name);
         expect(core[name as keyof typeof core]).toBeTypeOf('function');
@@ -66,6 +67,8 @@ describe('public api', () => {
         expect(core.DEFAULT_MAX_HANDOFFS_PER_RUN).toBe(100);
         expect(core.MAX_HANDOFF_DEPTH).toBe(1);
         expect(core.handoff.on).toBeTypeOf('function');
+        expect(core).not.toHaveProperty('HANDOFF_CONTEXT');
+        expect(core).not.toHaveProperty('claimKey');
         expectTypeOf<core.TriggerEnvelope>().toHaveProperty('parent').toEqualTypeOf<core.TriggerParent | undefined>();
         expectTypeOf<core.HandoffResult>().toEqualTypeOf<{ runId: string; deduplicated: boolean }>();
     });

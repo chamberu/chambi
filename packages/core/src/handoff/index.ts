@@ -6,6 +6,7 @@
  */
 
 export { DEFAULT_MAX_HANDOFFS_PER_RUN, HANDOFF_SUBSCRIPTION_ID, MAX_HANDOFF_DEPTH } from './constants.ts';
+export * from './module.ts';
 export * from './subscription.ts';
 export type {
     HandoffInput,
