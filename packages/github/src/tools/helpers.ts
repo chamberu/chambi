@@ -194,11 +194,6 @@ export function bindSignal(octokit: GithubOctokit, signal: AbortSignal): GithubO
 }
 
 /**
- * Runs `fn` with the Octokit of the installation `installationOf()`
- * resolves for `target`, every request bound to the run's signal; every
- * failure through `toolError`.
- */
-/**
  * `promise`, or a rejection with the signal's reason once it aborts. For a
  * shared request (the single-flight installation lookup) one caller's
  * signal must not abort, so the caller only stops waiting.
@@ -212,6 +207,11 @@ export function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promi
     });
 }
 
+/**
+ * Runs `fn` with the Octokit of the installation `installationOf()`
+ * resolves for `target`, every request bound to the run's signal; every
+ * failure through `toolError`.
+ */
 export async function withOctokit<T>(
     app: IGithubApp,
     ctx: ToolContext,
