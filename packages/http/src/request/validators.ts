@@ -83,6 +83,31 @@ export function isArrayOf<T extends Record<string, any>>(item: Container<T>, { m
     });
 }
 
+/** An array of at most `max` strings, each through `isString(item)`; item issues prefixed with their index. */
+export function isStringArray({ max, item }: { max: number; item: { min?: number; max: number } }): ValidatorDescriptor {
+    const entry = isString(item);
+    return defineValidator({
+        run: async (ctx) => {
+            const { value } = ctx;
+            if (!Array.isArray(value) || value.length > max) {
+                throw createValidupError(boundReceived(value), IssueCode.VALUE_INVALID, `must be an array of at most ${max} strings`);
+            }
+            const items: string[] = [];
+            const issues: Issue[] = [];
+            for (const [index, element] of value.entries()) {
+                try {
+                    items.push(await entry.run({ ...ctx, value: element }) as string);
+                } catch (error) {
+                    if (!isValidupError(error)) throw error;
+                    issues.push(...error.issues.map((issue) => prefixIssuePath(issue, [index])));
+                }
+            }
+            if (issues.length > 0) throw new ValidupError(issues);
+            return items;
+        },
+    });
+}
+
 /** A media type `type/subtype` without parameters (core's `isArtifactMediaType`). */
 export function isMediaType(): ValidatorDescriptor {
     return defineValidator({

@@ -5,6 +5,14 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export { APPROVAL_TIMEOUT_MAX_MS, DEFAULT_APPROVAL_TIMEOUT_MS } from './constants.ts';
+export {
+    APPROVAL_OPTIONS_DETAIL_MAX_LENGTH,
+    APPROVAL_OPTIONS_MAX,
+    APPROVAL_OPTION_DETAIL_MAX_LENGTH,
+    APPROVAL_OPTION_ID_PATTERN,
+    APPROVAL_OPTION_LABEL_MAX_LENGTH,
+    APPROVAL_TIMEOUT_MAX_MS,
+    DEFAULT_APPROVAL_TIMEOUT_MS,
+} from './constants.ts';
 export { approve } from './request.ts';
-export type { ApprovalDecision, ApprovalRequestInput } from './types.ts';
+export type { ApprovalDecision, ApprovalOption, ApprovalRequestInput } from './types.ts';

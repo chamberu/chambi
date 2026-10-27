@@ -140,6 +140,7 @@ export function registerRunRoutes(app: App, ctx: HttpContext): void {
             approvalId: body.approvalId,
             approved: body.approved,
             ...(body.reason !== undefined ? { reason: body.reason } : {}),
+            ...(body.selected !== undefined ? { selected: body.selected } : {}),
             approver: toInvoker(principal),
         });
         event.response.status = 202;

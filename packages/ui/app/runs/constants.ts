@@ -22,3 +22,6 @@ export const CANCELABLE_STATUSES: readonly RunStatusLiteral[] = ['queued', 'runn
 
 /** The agent filter's "all agents" option (a select option may not be empty). */
 export const ALL_AGENTS = '*';
+
+/** How the run page names a run's parent, by `trigger.parent.kind`. */
+export const PARENT_LABELS: Readonly<Record<string, string>> = { handoff: 'handed off from' };

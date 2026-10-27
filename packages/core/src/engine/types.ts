@@ -88,7 +88,8 @@ export type EngineOptions = {
     onError?: (error: unknown, run?: Run) => void;
 };
 
-export type DispatchEnvelope = Omit<TriggerEnvelope, 'id' | 'receivedAt' | 'attachments'> &
+/** A run to create; `parent` is no field: only startHandoff() sets the lineage. */
+export type DispatchEnvelope = Omit<TriggerEnvelope, 'id' | 'receivedAt' | 'attachments' | 'parent'> &
     Partial<Pick<TriggerEnvelope, 'id' | 'receivedAt'>> & {
         /** Files to start the run with; stored as artifacts of the run before it is created. */
         attachments?: ArtifactInput[];
@@ -102,6 +103,11 @@ export type ApprovalAnswer = {
     reason?: string;
     /** Who answered; recorded on the wait step (\`output.approver\`). */
     approver?: Invoker;
+    /**
+     * The chosen option ids of a wait point with options: exactly one for a
+     * single choice, at least one for a multiple choice; none on a denial.
+     */
+    selected?: string[];
 };
 
 export type EngineStartOptions = {

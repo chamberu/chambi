@@ -86,6 +86,22 @@ describe('mcp run_<agent> with waitSeconds', () => {
         await setup.engine.drain();
     });
 
+    it('shows the options of a waiting run', async () => {
+        const setup = createRunTestApp();
+        await setup.engine.start();
+        const client = await connectMcp(setup.app, ADMIN_TOKEN);
+        const result = await callTool(client, 'run_choose', { waitSeconds: 5 });
+        const { waiting } = (result.structuredContent as { waiting: Record<string, unknown> });
+        expect(waiting.options).toEqual([{ id: 'a', label: 'A' }, {
+            id: 'b', 
+            label: 'B', 
+            detail: 'diff', 
+        }]);
+        expect(Object.keys(waiting)).not.toContain('multiple');
+        await client.close();
+        await setup.engine.drain();
+    });
+
     it('clamps waitSeconds to maxWaitSeconds', async () => {
         const setup = createRunTestApp();
         const subscriptions = spyOnSubscriptions(setup.engine);

@@ -25,6 +25,17 @@ export type Invoker = {
     permissions: readonly string[];
 };
 
+/**
+ * The run that started this one. Only startHandoff() sets it (kind
+ * `handoff`); a dispatch never carries one, so no caller forges lineage.
+ */
+export type TriggerParent = {
+    kind: 'handoff';
+    runId: string;
+    agent: string;
+    depth: number;
+};
+
 export type TriggerEnvelope<P = unknown> = {
     id: string;
     agent: string;
@@ -46,5 +57,7 @@ export type TriggerEnvelope<P = unknown> = {
      * is deduplicated (and gets its own first run).
      */
     invoker?: Invoker;
+    /** The run that handed this one off; set only by startHandoff(), never from a dispatch. */
+    parent?: TriggerParent;
     receivedAt: Date;
 };

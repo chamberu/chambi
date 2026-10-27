@@ -10,6 +10,7 @@ import { ChamviError, InvalidAgentDefinitionError, systemClock } from '@chamvi/c
 import type { ChannelMessage } from '@chamvi/core';
 import {
     APPROVAL_HINT,
+    CHOICE_HINT,
     DEFAULT_HOOKS_PATH,
     ERROR_TEXT_MAX_LENGTH,
     IDEMPOTENCY_KEY_MAX_LENGTH,
@@ -123,8 +124,9 @@ export function cutText(text: string, max: number): string {
  * The text OpenClaw's agent turn relays: deterministic for one message (no
  * clock value, no random id), so a resend replays instead of starting a
  * second run. An approval links to the UI with `approvalUrl` (run and
- * approval id), else names where to answer; it never carries the resume
- * token, which no channel message holds.
+ * approval id), else names where to answer; a choice approval lists its
+ * options (`- <id>: <label>`, the details stay in the UI). It never carries
+ * the resume token, which no channel message holds.
  */
 export function renderMessage(
     message: ChannelMessage,
@@ -135,6 +137,11 @@ export function renderMessage(
     if (message.title) sections.push(message.title);
     // an approval asked without a body has none
     if (message.body) sections.push(cutText(message.body, MESSAGE_BODY_MAX_LENGTH));
+    const choice = message.kind === 'approval' && message.options !== undefined && message.options.length > 0;
+    if (choice) {
+        const heading = message.multiple === true ? 'Options (choose one or more):' : 'Options (choose one):';
+        sections.push([heading, ...(message.options ?? []).map((option) => `- ${option.id}: ${option.label}`)].join('\n'));
+    }
     sections.push(`Agent: ${message.agent}\nRun: ${message.runId}`);
     if (message.kind === 'approval') {
         const lines: string[] = [];
@@ -146,7 +153,8 @@ export function renderMessage(
                 agent: message.agent,
             }) :
             undefined;
-        lines.push(link ? `Approve or deny: ${link}` : APPROVAL_HINT);
+        if (choice) lines.push(link ? `Choose and approve or deny: ${link}` : CHOICE_HINT);
+        else lines.push(link ? `Approve or deny: ${link}` : APPROVAL_HINT);
         sections.push(lines.join('\n'));
     }
     return sections.join('\n\n');

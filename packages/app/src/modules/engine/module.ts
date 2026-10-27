@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { Engine, InvalidAgentDefinitionError } from '@chamvi/core';
+import { Engine, InvalidAgentDefinitionError, agentChannel } from '@chamvi/core';
 import type { IModelResolver, ModelRef } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
@@ -20,7 +20,8 @@ import type { EngineModuleOptions } from './types.ts';
  * Builds the `Engine` (start and job mode; nothing in migrate mode). `setup`
  * reads the model settings (env over the config file over createApp's
  * `model`/`providers`; every issue in one InvalidAgentDefinitionError) and
- * builds the model resolver; `onReady` builds the engine with the default
+ * builds the model resolver, and contributes `agentChannel()` (channel
+ * `agent`, the one hand-offs come in on) to `CHANNELS`; `onReady` builds the engine with the default
  * model, the resolver (which refuses an agent whose model cannot resolve) and
  * every `CHANNELS` contribution (two of one name, or a subscription of a
  * channel nobody contributed, is InvalidAgentDefinitionError),
@@ -52,6 +53,9 @@ export class EngineModule implements IModule {
         if (context.mode === 'migrate') {
             return;
         }
+
+        // the channel hand-offs come in on (startHandoff(), handoff.on())
+        container.registerMany(AppToken.CHANNELS, { useValue: agentChannel() });
 
         const { settings, issues } = await readModelSettings({
             env: context.env,

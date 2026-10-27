@@ -7,10 +7,21 @@
 
 import type { Invoker } from '../trigger/types.ts';
 
+/** One choice of an approval request; `detail` is shown in the UI only (e.g. a diff). */
+export type ApprovalOption = {
+    id: string;
+    label: string;
+    detail?: string;
+};
+
 /** What a tool asks the owner to approve (`approve()`, `ChannelHandle.approve()`). */
 export type ApprovalRequestInput = {
     title: string;
     body?: string;
+    /** Choices to pick from; without them the approval is a plain yes or no. */
+    options?: ApprovalOption[];
+    /** Several options may be selected; default one. Needs `options`. */
+    multiple?: boolean;
     /** How long the approval waits before it is denied; default 24 h. */
     timeoutMs?: number;
 };
@@ -21,4 +32,6 @@ export type ApprovalDecision = {
     reason?: string;
     /** Who answered, when known. */
     approver?: Invoker;
+    /** The selected option ids in the request's option order; only on an approval of a request with options. */
+    selected?: string[];
 };

@@ -56,7 +56,7 @@ Expires: <expiresAt ISO>
 Approve or deny: <approvalUrl({ runId, approvalId, agent })>
 ```
 
-The title and body appear when the message has them. The last block is sent for approvals only; without `approvalUrl` its last line reads `Answer it in the chamvi UI or through POST /runs/:id/approve.` instead. `approvalUrl` gets the run id, the approval id and the agent. A cut body ends with `… (cut, <n> more characters)` and never splits a surrogate pair.
+The title and body appear when the message has them. An approval with options adds a block after the body, `Options (choose one):` (or `Options (choose one or more):`) and a `- <id>: <label>` line per option (never the detail), and its link line reads `Choose and approve or deny: <link>`, without `approvalUrl` `Choose in the chamvi UI or through POST /runs/:id/approve with selected.` The last block is sent for approvals only; for an approval without options and without `approvalUrl` its last line reads `Answer it in the chamvi UI or through POST /runs/:id/approve.` instead. `approvalUrl` gets the run id, the approval id and the agent. A cut body ends with `… (cut, <n> more characters)` and never splits a surrogate pair.
 
 ### Failures
 

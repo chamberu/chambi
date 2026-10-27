@@ -404,6 +404,26 @@ export function describeStoreContract(
             expect(listed.data[0]?.trigger.channel).toBe('github');
         });
 
+        it('trigger.parent round-trips', async () => {
+            const { store } = await setup();
+            const run = makeRun('r1');
+            const parent = {
+                kind: 'handoff' as const,
+                runId: 'p1',
+                agent: 'a',
+                depth: 1,
+            };
+            run.trigger = {
+                ...run.trigger, 
+                channel: 'agent', 
+                parent, 
+            };
+            await store.createRun(run);
+            expect((await store.getRun('r1'))?.trigger.parent).toEqual(parent);
+            const listed = await store.listRuns({});
+            expect(listed.data[0]?.trigger.parent).toEqual(parent);
+        });
+
         it('an envelope stored before channels (source, thread) reads back as channel and address', async () => {
             const { store } = await setup();
             const run = makeRun('r1');

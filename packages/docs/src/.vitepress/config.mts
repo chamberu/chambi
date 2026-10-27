@@ -127,6 +127,7 @@ export default defineConfig({
                         { text: 'Tools & Tool Errors', link: '/guide/tools' },
                         { text: 'Effect Tools & Reconciliation', link: '/guide/effect-tools' },
                         { text: 'Approvals & Hooks', link: '/guide/approvals' },
+                        { text: 'Hand-offs', link: '/guide/handoffs' },
                         { text: 'Agent State', link: '/guide/state' },
                         { text: 'Workspaces & Coding', link: '/guide/workspaces' },
                     ],

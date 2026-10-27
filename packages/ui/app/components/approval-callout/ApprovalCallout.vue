@@ -15,7 +15,7 @@ import {
 } from 'vue';
 import { RouterLink } from 'vue-router';
 import type { RunWire } from '../../api/types.ts';
-import { notifiedLine } from '../../approvals/helpers.ts';
+import { canApprove, detailLines, notifiedLine } from '../../approvals/helpers.ts';
 import { RouteName } from '../../router/constants.ts';
 import { shortId } from '../../runs/helpers.ts';
 import ExpiryCountdown from '../expiry-countdown/ExpiryCountdown.vue';
@@ -31,11 +31,29 @@ const props = defineProps<{
     highlight?: boolean;
 }>();
 
-const emit = defineEmits<{ answer: [approved: boolean, reason: string] }>();
+const emit = defineEmits<{ answer: [approved: boolean, reason: string, selected: string[]] }>();
 const reason = ref('');
+/** The chosen option ids of a choice approval (one for radios). */
+const selected = ref<string[]>([]);
+const single = ref<string>();
+
+const options = computed(() => props.run.waiting?.options ?? []);
+const multiple = computed(() => props.run.waiting?.multiple === true);
+const chosen = computed<string[]>(() => {
+    if (multiple.value) return selected.value;
+    return single.value !== undefined ? [single.value] : [];
+});
+const approvable = computed(() => !props.run.waiting || canApprove(props.run.waiting, chosen.value));
+
+// another wait point of the run: its options are others
+watch(() => props.run.waiting?.approvalId, () => {
+    selected.value = [];
+    single.value = undefined;
+});
 
 function send(approved: boolean): void {
-    emit('answer', approved, reason.value);
+    // a denial selects nothing
+    emit('answer', approved, reason.value, approved ? [...chosen.value] : []);
 }
 
 const id = `reason-${props.run.id}`;
@@ -106,6 +124,50 @@ watch(() => props.highlight, reveal);
                 >
                     No details given.
                 </p>
+                <fieldset
+                    v-if="options.length > 0"
+                    class="callout-options"
+                    data-testid="approval-options"
+                >
+                    <legend class="field-label">
+                        {{ multiple ? 'Choose one or more' : 'Choose one' }}
+                    </legend>
+                    <div
+                        v-for="option in options"
+                        :key="option.id"
+                        class="callout-option"
+                    >
+                        <label
+                            data-testid="approval-option"
+                            :data-option="option.id"
+                        >
+                            <input
+                                v-if="multiple"
+                                v-model="selected"
+                                type="checkbox"
+                                :value="option.id"
+                                :disabled="!canAnswer"
+                            >
+                            <input
+                                v-else
+                                v-model="single"
+                                type="radio"
+                                :name="`option-${run.id}`"
+                                :value="option.id"
+                                :disabled="!canAnswer"
+                            >
+                            <span>{{ option.label }}</span>
+                            <span class="mono muted">{{ option.id }}</span>
+                        </label>
+                        <details v-if="option.detail">
+                            <summary>Details</summary>
+                            <pre class="option-detail"><template
+                                v-for="(line, index) in detailLines(option.detail)"
+                                :key="index"
+                            ><span :class="line.kind ? `diff-${line.kind}` : undefined">{{ line.text }}</span>{{ '\n' }}</template></pre>
+                        </details>
+                    </div>
+                </fieldset>
             </div>
             <div>
                 <dl class="callout-meta">
@@ -163,6 +225,8 @@ watch(() => props.highlight, reveal);
                 <VCButton
                     class="btn btn-primary"
                     :loading="busy"
+                    :disabled="busy || !approvable"
+                    data-testid="approve"
                     @click="send(true)"
                 >
                     <NavIcon name="check" />Approve

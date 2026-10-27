@@ -20,6 +20,7 @@ import {
     IncompleteResponseError,
     InvalidAgentDefinitionError,
 } from '../../errors/index.ts';
+import { bindRunSnapshot } from '../../handoff/helpers.ts';
 import { toLanguageModel } from '../../model/asserts.ts';
 import { RunStatus } from '../../run/constants.ts';
 import type { RunContext, Step, Usage } from '../../run/types.ts';
@@ -125,6 +126,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         trigger: run.trigger,
         signal,
     };
+    bindRunSnapshot(runContext);
 
     // the calls approve() suspended in this execution, in the order they suspended
     const suspended: ApprovalRequest[] = [];

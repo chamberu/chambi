@@ -6,6 +6,7 @@
  */
 
 import {
+    APPROVAL_OPTIONS_MAX,
     ArtifactNotFoundError,
     RunNotFoundError,
     RunStatus,
@@ -41,10 +42,12 @@ import {
     isDefined,
     isMediaType,
     isString,
+    isStringArray,
 } from '../request/validators.ts';
 import { KEY_MAX_LENGTH } from '../request/constants.ts';
 import {
     APPROVAL_ID_MAX_LENGTH,
+    APPROVAL_OPTION_ID_MAX_LENGTH,
     APPROVAL_REASON_MAX_LENGTH,
     ATTACHMENT_FILENAME_MAX_LENGTH,
     MAX_ATTACHMENTS,
@@ -242,6 +245,11 @@ export function createApproveContainer(): Container<ApproveBody> {
     container.mount('approvalId', isString({ min: 1, max: APPROVAL_ID_MAX_LENGTH }));
     container.mount('approved', isBoolean());
     container.mount('reason', { optional: true }, isString({ max: APPROVAL_REASON_MAX_LENGTH }));
+    container.mount(
+        'selected',
+        { optional: true },
+        isStringArray({ max: APPROVAL_OPTIONS_MAX, item: { min: 1, max: APPROVAL_OPTION_ID_MAX_LENGTH } }),
+    );
     return container;
 }
 

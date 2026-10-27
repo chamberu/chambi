@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto';
 import { isObject } from 'smob';
 import { InvalidAgentDefinitionError, systemClock } from '@chamvi/core';
-import type { ChannelMessage } from '@chamvi/core';
+import type { ApprovalOption, ChannelMessage } from '@chamvi/core';
 import { isPositiveInteger } from '../subscription/helpers.ts';
 import { REPO_PATTERN } from '../tools/constants.ts';
 import {
@@ -144,9 +144,22 @@ export function neutralizeTitle(title: string): string {
 }
 
 /**
+ * The options of a choice approval: the heading line, then `- <id>: <label>`
+ * per option in a fence (so no mention or reference in a label fires). The
+ * details live in the UI only.
+ */
+export function renderOptions(options: readonly ApprovalOption[], multiple: boolean): string {
+    const list = breakBacktickRuns(options.map((option) => `- ${option.id}: ${option.label}`).join('\n'));
+    const fence = fenceFor(list);
+    return `${multiple ? 'Options (choose one or more):' : 'Options (choose one):'}\n${fence}\n${list}\n${fence}`;
+}
+
+/**
  * The comment: mentions, the title (when given, neutralized), the body
  * (when not empty) in a fence no backtick run in it can close (so a
- * `@login` or `#123` inside notifies nobody), the approval line (a link with run and approval id,
+ * `@login` or `#123` inside notifies nobody), for a choice approval the
+ * options (the body cut by their length, so the comment stays under
+ * GitHub's limit), the approval line (a link with run and approval id,
  * never a token), the run and the marker.
  */
 export function renderComment(
@@ -160,11 +173,14 @@ export function renderComment(
     const sections: string[] = [];
     if (input.mentions.length > 0) sections.push(input.mentions.map((login) => `@${login}`).join(' '));
     if (message.title !== undefined) sections.push(`### ${neutralizeTitle(message.title)}`);
+    const choice = message.kind === 'approval' && message.options !== undefined && message.options.length > 0;
+    const options = choice ? renderOptions(message.options!, message.multiple === true) : undefined;
     if (message.body.length > 0) {
-        const body = breakBacktickRuns(cutText(message.body, COMMENT_BODY_MAX_LENGTH));
+        const body = breakBacktickRuns(cutText(message.body, COMMENT_BODY_MAX_LENGTH - (options?.length ?? 0)));
         const fence = fenceFor(body);
         sections.push(`${fence}\n${body}\n${fence}`);
     }
+    if (options !== undefined) sections.push(options);
     const footer: string[] = [];
     if (message.kind === 'approval') {
         const until = message.expiresAt ? `Waiting for approval until ${message.expiresAt.toISOString()}.` : 'Waiting for approval.';
@@ -175,9 +191,15 @@ export function renderComment(
                 agent: message.agent,
             }) :
             undefined;
-        footer.push(link ?
-            `${until} Approve or deny: ${link}` :
-            `${until} Answer it in the chamvi UI or through POST /runs/:id/approve.`);
+        if (choice) {
+            footer.push(link ?
+                `${until} Choose and approve or deny: ${link}` :
+                `${until} Choose in the chamvi UI or through POST /runs/:id/approve with selected.`);
+        } else {
+            footer.push(link ?
+                `${until} Approve or deny: ${link}` :
+                `${until} Answer it in the chamvi UI or through POST /runs/:id/approve.`);
+        }
     }
     footer.push(`Run \`${message.runId}\` of agent \`${message.agent}\`.`);
     sections.push(footer.join('\n'), input.marker);

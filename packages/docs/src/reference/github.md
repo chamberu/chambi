@@ -42,7 +42,7 @@ const COMMENT_BODY_MAX_LENGTH: 60_000;
 
 <<< ../../../github/src/channel/types.ts#public{ts}
 
-Every option is checked when `githubChannel()` is called (`InvalidAgentDefinitionError`). Register the channel on the engine and list it in `createHttpApp({ channels })`, which serves its `in` at `POST /channels/<name>` (the deliveries: signature, self guard, one run per matching agent, `202` with a `GithubWebhookResult`). Its `out(message, address)` comments on the issue or pull request `address` names (`owner/repo#n`, else a `ValidationError`), deduplicated by the marker `effectMarker(message.key)`. See [GitHub App](/deployment/github-app) for both directions.
+Every option is checked when `githubChannel()` is called (`InvalidAgentDefinitionError`). Register the channel on the engine and list it in `createHttpApp({ channels })`, which serves its `in` at `POST /channels/<name>` (the deliveries: signature, self guard, one run per matching agent, `202` with a `GithubWebhookResult`). Its `out(message, address)` comments on the issue or pull request `address` names (`owner/repo#n`, else a `ValidationError`), deduplicated by the marker `effectMarker(message.key)`. An approval with options lists them fenced as `- <id>: <label>` under `Options (choose one):` (or `Options (choose one or more):`), the body is cut by that block's length, and the link line reads `Choose and approve or deny: <link>`. See [GitHub App](/deployment/github-app) for both directions.
 
 <<< ../../../github/src/webhook/types.ts{ts}
 

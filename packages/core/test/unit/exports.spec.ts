@@ -46,6 +46,8 @@ describe('public api', () => {
         'AgentNotFoundError',
         'checkAgentModel',
         'resolveModel',
+        'agentChannel',
+        'startHandoff',
     ])('exports %s', (name) => {
         expect(core).toHaveProperty(name);
         expect(core[name as keyof typeof core]).toBeTypeOf('function');
@@ -57,6 +59,18 @@ describe('public api', () => {
 
     it('exports the tool context schema', () => {
         expect(core.toolContextSchema['~standard'].vendor).toBe('chamvi');
+    });
+
+    it('exports the hand-off api', () => {
+        expect(core.AGENT_CHANNEL_NAME).toBe('agent');
+        expect(core.HANDOFF_SUBSCRIPTION_ID).toBe('handoff');
+        expect(core.DEFAULT_MAX_HANDOFFS_PER_RUN).toBe(100);
+        expect(core.MAX_HANDOFF_DEPTH).toBe(1);
+        expect(core.handoff.on).toBeTypeOf('function');
+        expect(core).not.toHaveProperty('HANDOFF_CONTEXT');
+        expect(core).not.toHaveProperty('claimKey');
+        expectTypeOf<core.TriggerEnvelope>().toHaveProperty('parent').toEqualTypeOf<core.TriggerParent | undefined>();
+        expectTypeOf<core.HandoffResult>().toEqualTypeOf<{ runId: string; deduplicated: boolean }>();
     });
 
     it('exports the trigger key bound', () => {
@@ -80,6 +94,25 @@ describe('public api', () => {
     it('exports the approval timeout bounds', () => {
         expect(core.DEFAULT_APPROVAL_TIMEOUT_MS).toBe(24 * 60 * 60 * 1000);
         expect(core.APPROVAL_TIMEOUT_MAX_MS).toBe(2 ** 31 - 1);
+    });
+
+    it('exports the approval option limits', () => {
+        expect(core.APPROVAL_OPTIONS_MAX).toBe(20);
+        expect(core.APPROVAL_OPTION_ID_PATTERN).toBeInstanceOf(RegExp);
+        expect(core.APPROVAL_OPTION_LABEL_MAX_LENGTH).toBe(200);
+        expect(core.APPROVAL_OPTION_DETAIL_MAX_LENGTH).toBe(20_000);
+        expect(core.APPROVAL_OPTIONS_DETAIL_MAX_LENGTH).toBe(100_000);
+        expect(core).not.toHaveProperty('toApprovalOptions');
+    });
+
+    it('exports the approval option types', () => {
+        expectTypeOf<core.ApprovalOption>().toEqualTypeOf<{
+            id: string; 
+            label: string; 
+            detail?: string 
+        }>();
+        expectTypeOf<core.ApprovalRequestInput['options']>().toEqualTypeOf<core.ApprovalOption[] | undefined>();
+        expectTypeOf<core.ApprovalRequestInput['multiple']>().toEqualTypeOf<boolean | undefined>();
     });
 
     it('keeps the approval internals internal', () => {
@@ -180,6 +213,16 @@ describe('public api', () => {
             approved: boolean;
             reason?: string;
             approver?: core.Invoker;
+            selected?: string[];
+        }>();
+    });
+
+    it('exports the ApprovalDecision type', () => {
+        expectTypeOf<core.ApprovalDecision>().toEqualTypeOf<{
+            approved: boolean;
+            reason?: string;
+            approver?: core.Invoker;
+            selected?: string[];
         }>();
     });
 });

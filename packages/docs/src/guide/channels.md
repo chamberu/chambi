@@ -24,6 +24,8 @@ type ChannelMessage = {
     body: string;
     approvalId?: string;  // kind 'approval'
     expiresAt?: Date;     // kind 'approval'
+    options?: ApprovalOption[]; // kind 'approval' with options: { id, label, detail? }
+    multiple?: boolean;   // kind 'approval', true when several options may be selected
 };
 
 type ChannelSendOptions = { signal: AbortSignal; trigger: TriggerEnvelope };
@@ -41,6 +43,7 @@ The engine holds the channel instances:
 - `engine.start()` recovers runs, then calls every channel's `start(ctx)` in registration order; a throwing `start` stops the channels already started and rejects `engine.start()`. `engine.start({ channels: false })` starts none (a one-shot [cron job](/guide/scheduler#one-shot-jobs) uses it).
 - `engine.stop()` stops the poll and calls every `stop()`, resolving once all of them settled (await it before closing the store); `engine.drain()` does the same **first** (no new intake), then drains. A throwing `stop` goes to `onError` and the drain goes on.
 - `ctx.dispatch(envelope)` is `engine.dispatch()` with `channel` set to the channel's own name: a channel cannot dispatch as another.
+- The name `agent` belongs to `agentChannel()` from `@chamvi/core` (no `in`, no `out`), the channel [hand-offs](/guide/handoffs) come in on. `@chamvi/app` contributes it, so a user channel named `agent` clashes at setup (`The channel "agent" is registered more than once.`).
 
 ## Subscriptions
 
@@ -52,8 +55,9 @@ An agent subscribes to channels with `channels: ChannelSubscription[]`. Each cha
 | `webhook.on(path, opts?)` | `@chamvi/http` | `webhook` | `webhook:<path>` | `path` (starts with `/`), `schema?`, `idempotencyKey?`, `concurrencyKey?`. Many per agent |
 | `cron.on(expression, opts?)` | `@chamvi/channel-cron` | `cron` | `cron:<expression>` | `timezone?`, `overlap?` (`skip` by default, `queue-one`, `allow`), `payload?`, `id?` |
 | `github.on(events, opts?)` | `@chamvi/github` | `github` | `github:<events>` | `events` (`'issues'` or `'issues.opened'`, one or an array), `id?`, `filter?`, `idempotencyKey?` (default the delivery id), `concurrencyKey?` (default `<owner>/<repo>#<number>`). See [GitHub App](/deployment/github-app) |
+| `handoff.on(opts?)` | `@chamvi/core` | `agent` | `handoff` | `schema?`, `maxPerRun?` (default 100), `idempotencyKey?`, `concurrencyKey?`. At most one per agent; the opt-in for [`startHandoff()`](/guide/handoffs) |
 
-A second instance of a channel (`cronChannel({ name: 'cron-eu' })`) has its own `on()` bound to its name, so its subscriptions reach only it. Subscription ids must be unique per agent. The engine (constructor and `putAgent`) refuses a subscription naming a channel it does not hold, so register `httpChannel()` for `http.on()`, `cronChannel()` for `cron.on()`, and so on. With [`@chamvi/app`](/guide/app) the built-in modules register `http`, `mcp`, `webhook` and `cron` for you.
+A second instance of a channel (`cronChannel({ name: 'cron-eu' })`) has its own `on()` bound to its name, so its subscriptions reach only it. Subscription ids must be unique per agent. The engine (constructor and `putAgent`) refuses a subscription naming a channel it does not hold, so register `httpChannel()` for `http.on()`, `cronChannel()` for `cron.on()`, and so on. With [`@chamvi/app`](/guide/app) the built-in modules register `agent`, `http`, `mcp`, `webhook` and `cron` for you.
 
 A subscription may carry `concurrencyKey(payload)` and `idempotencyKey(payload)` functions; the channel that dispatches computes the envelope keys from them.
 
@@ -81,7 +85,7 @@ The engine never sends a message of its own. A tool sends through a channel:
 - `handle.emit({ title?, body, key? }, address?)` sends through `out`. The address defaults to the source address on the source channel, else to the channel's `defaultAddress`; without either a missing address is a `validation_error` tool error.
 - An emit is an [effect](/guide/effect-tools): its key is `<runId>:emit:<channel>:<sha256 of address and message>` (or your `key`), recorded in the effect store, so identical emits of one step and a step redone after a crash send once. `out` gets the key as `message.key`, to dedupe on in the transport. A throwing `out` records nothing and is a tool error, so the next identical emit sends again.
 - `emit` outside a tool call (in the tools factory) throws `InvalidRunStateError`: the tool call is the unit of retry.
-- `handle.approve({ title, body?, timeoutMs?, address? })` asks the owner through the channel; see [Approvals](/guide/approvals).
+- `handle.approve({ title, body?, options?, multiple?, timeoutMs?, address? })` asks the owner through the channel; see [Approvals](/guide/approvals).
 
 ## Writing a channel
 

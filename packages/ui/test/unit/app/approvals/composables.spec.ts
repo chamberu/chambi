@@ -66,6 +66,31 @@ describe('useApprovals', () => {
         scope.stop();
     });
 
+    it('sends the selection with an approval', async () => {
+        const answered: Array<[string, ApproveBody]> = [];
+        const { client } = inboxClient(async (id, body) => { answered.push([id, body]); });
+        const scope = effectScope();
+        const inbox = scope.run(() => useApprovals(client))!;
+        await flush();
+        await inbox.answer(waitingRun(), true, '', ['b']);
+        await inbox.answer(waitingRun(), false, 'no', ['b']);
+        await inbox.answer(waitingRun(), true, '', []);
+        expect(answered).toEqual([
+            ['r1', {
+                approvalId: 'a1', 
+                approved: true, 
+                selected: ['b'], 
+            }],
+            ['r1', {
+                approvalId: 'a1', 
+                approved: false, 
+                reason: 'no', 
+            }],
+            ['r1', { approvalId: 'a1', approved: true }],
+        ]);
+        scope.stop();
+    });
+
     it('answer approves the current approval id', async () => {
         const answered: Array<[string, ApproveBody]> = [];
         const { client } = inboxClient(async (id, body) => { answered.push([id, body]); });

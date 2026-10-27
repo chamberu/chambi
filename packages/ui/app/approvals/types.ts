@@ -51,3 +51,9 @@ export type LinkNotice = {
     /** The run to link to, when the principal can open it. */
     runId?: string;
 };
+
+/** One line of an option's detail; `kind` only for the lines of a diff. */
+export type DetailLine = {
+    text: string;
+    kind?: 'add' | 'del' | 'hunk'
+};

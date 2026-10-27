@@ -6,6 +6,7 @@
  */
 
 import type { Agent } from '../../agent/types.ts';
+import type { ApprovalOption } from '../../approval/types.ts';
 import type { IClock } from '../../clock/index.ts';
 import type { ContextKey } from '../../context/types.ts';
 import type { IModelResolver, ModelRef } from '../../model/types.ts';
@@ -66,6 +67,9 @@ export type ApprovalRequest = {
     toolCallId: string;
     title: string;
     body?: string;
+    options?: ApprovalOption[];
+    /** Set (true) only for a request with options of which several may be selected. */
+    multiple?: boolean;
     /** The channel to deliver the request through; none for the inbox and API only. */
     channel?: string;
     address?: string;

@@ -16,3 +16,6 @@ export const MAX_ATTACHMENTS = 16;
 
 /** Longest attachment `filename`. */
 export const ATTACHMENT_FILENAME_MAX_LENGTH = 255;
+
+/** The longest option id a body may select (core's `APPROVAL_OPTION_ID_PATTERN` allows 128). */
+export const APPROVAL_OPTION_ID_MAX_LENGTH = 128;

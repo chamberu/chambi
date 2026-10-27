@@ -70,10 +70,10 @@ const MESSAGES: Record<AnswerResult, (approved: boolean) => string> = {
     forbidden: () => 'Not allowed to answer',
 };
 
-async function answer(run: RunWire, approved: boolean, reason: string): Promise<void> {
+async function answer(run: RunWire, approved: boolean, reason: string, selected: string[] = []): Promise<void> {
     busy.value = run.id;
     try {
-        const result = await inbox.answer(run, approved, reason);
+        const result = await inbox.answer(run, approved, reason, selected);
         decided.value = [{
             run,
             result,
@@ -135,7 +135,7 @@ async function answer(run: RunWire, approved: boolean, reason: string): Promise<
             :can-answer="linkedState?.kind === 'pending'"
             :busy="busy === linkedRun.id"
             :highlight="linkedState?.kind === 'pending'"
-            @answer="(approved, reason) => answer(linkedRun!, approved, reason)"
+            @answer="(approved, reason, selected) => answer(linkedRun!, approved, reason, selected)"
         />
 
         <div
@@ -195,7 +195,7 @@ async function answer(run: RunWire, approved: boolean, reason: string): Promise<
             :run="run"
             :can-answer="canAnswer(run.agent)"
             :busy="busy === run.id"
-            @answer="(approved, reason) => answer(run, approved, reason)"
+            @answer="(approved, reason, selected) => answer(run, approved, reason, selected)"
         />
 
         <div

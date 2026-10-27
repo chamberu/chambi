@@ -102,9 +102,24 @@ type RunToolResult = {
     deduplicated: boolean;
     output?: unknown;
     error?: { code: string; message: string };
-    waiting?: { toolName: string; input: unknown; expiresAt: string };
+    waiting?: {
+        toolName: string;
+        title: string;
+        body?: string;
+        options?: ApprovalOption[]; // the choices to answer with approve_run's selected
+        multiple?: boolean; // true when several options may be selected
+        expiresAt: string;
+    };
+};
+type ApproveBody = { // POST /runs/:id/approve; approve_run takes the same fields plus runId
+    approvalId: string;
+    approved: boolean;
+    reason?: string;
+    selected?: string[]; // the chosen option ids of a wait point with options, none on a denial
 };
 ```
+
+`selected` follows `engine.approve()`'s rules (see [Approvals](/guide/approvals) and [HTTP](/guide/http)): a selection that does not fit the wait point is `400 validation_error`.
 
 `GET /agents` answers `{ data: AgentSummary[], issues: AgentIssue[] }`, `GET /schedules` `{ data: ScheduleSummary[] }`:
 

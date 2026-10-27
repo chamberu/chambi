@@ -5,7 +5,12 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { InvalidAgentDefinitionError, RunStatus, hasPermission } from '@chamvi/core';
+import {
+    APPROVAL_OPTIONS_MAX,
+    InvalidAgentDefinitionError,
+    RunStatus,
+    hasPermission,
+} from '@chamvi/core';
 import type { Agent, RunStatusLiteral } from '@chamvi/core';
 import { fromJsonSchema } from '@modelcontextprotocol/server';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -18,7 +23,11 @@ import { agentPermission } from '../auth/module.ts';
 import type { Principal } from '../auth/types.ts';
 import { KEY_MAX_LENGTH } from '../request/constants.ts';
 import { validatePayload } from '../request/helpers.ts';
-import { APPROVAL_ID_MAX_LENGTH, APPROVAL_REASON_MAX_LENGTH } from '../runs/constants.ts';
+import {
+    APPROVAL_ID_MAX_LENGTH,
+    APPROVAL_OPTION_ID_MAX_LENGTH,
+    APPROVAL_REASON_MAX_LENGTH,
+} from '../runs/constants.ts';
 import { MCP_CHANNEL_NAME } from '../channels/constants.ts';
 import {
     assertCanListRuns,
@@ -59,6 +68,7 @@ type ApproveRunArgs = {
     approvalId: string;
     approved: boolean;
     reason?: string;
+    selected?: string[];
 };
 
 const DESCRIPTION_MAX_LENGTH = 200;
@@ -119,6 +129,16 @@ const APPROVE_RUN_INPUT = fromJsonSchema<ApproveRunArgs>({
         },
         approved: { type: 'boolean' },
         reason: { type: 'string', maxLength: APPROVAL_REASON_MAX_LENGTH },
+        selected: {
+            type: 'array',
+            maxItems: APPROVAL_OPTIONS_MAX,
+            items: {
+                type: 'string',
+                minLength: 1,
+                maxLength: APPROVAL_OPTION_ID_MAX_LENGTH,
+                pattern: NO_NUL,
+            },
+        },
     },
     required: ['runId', 'approvalId', 'approved'],
     additionalProperties: false,
@@ -330,7 +350,7 @@ function registerRunTool(
 function registerApproveTool(server: McpServer, ctx: HttpContext, principal: Principal): void {
     server.registerTool('approve_run', {
         title: 'Approve run',
-        description: 'Answers the approval a waiting run waits on (its waiting.approvalId, from get_run). Needs agent:<agent>:approve for the run\'s agent.',
+        description: 'Answers the approval a waiting run waits on (its waiting.approvalId, from get_run). With options, pass the chosen option ids as selected (from get_run\'s waiting.options). Needs agent:<agent>:approve for the run\'s agent.',
         inputSchema: APPROVE_RUN_INPUT,
     }, (args) => runTool(ctx, async () => {
         const run = await loadApprovableRun(ctx, principal, args.runId);
@@ -338,6 +358,7 @@ function registerApproveTool(server: McpServer, ctx: HttpContext, principal: Pri
             approvalId: args.approvalId,
             approved: args.approved,
             ...(args.reason !== undefined ? { reason: args.reason } : {}),
+            ...(args.selected !== undefined ? { selected: args.selected } : {}),
             approver: toInvoker(principal),
         });
         return toolResult({ runId: run.id, status: RunStatus.QUEUED });

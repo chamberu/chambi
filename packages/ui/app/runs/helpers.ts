@@ -8,7 +8,7 @@
 import type { RunWire, StepWire } from '../api/types.ts';
 import { hasPermission } from '../auth/helpers.ts';
 import type { RunStreamEvent } from '../sse/types.ts';
-import { CANCELABLE_STATUSES, SETTLED_STATUSES } from './constants.ts';
+import { CANCELABLE_STATUSES, PARENT_LABELS, SETTLED_STATUSES } from './constants.ts';
 
 /** Live model output per model step (the checkpoint index a delta names). */
 export type LiveText = { text: string; reasoning: string };
@@ -77,6 +77,14 @@ export function lastStepIndex(steps: readonly StepWire[]): number | undefined {
 
 export function canCancel(run: RunWire, permissions: readonly string[]): boolean {
     return CANCELABLE_STATUSES.includes(run.status) && hasPermission(permissions, 'run:cancel');
+}
+
+/** The run this one was started from (a hand-off), with the run page's label; undefined for none or an unknown kind. */
+export function parentOf(run: RunWire): { runId: string; label: string } | undefined {
+    const { parent } = run.trigger;
+    if (!parent || typeof parent.runId !== 'string') return undefined;
+    const label = Object.hasOwn(PARENT_LABELS, parent.kind) ? PARENT_LABELS[parent.kind] : undefined;
+    return label ? { runId: parent.runId, label } : undefined;
 }
 
 export function isSettled(run: RunWire): boolean {
