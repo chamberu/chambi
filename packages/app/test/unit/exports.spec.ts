@@ -65,6 +65,8 @@ describe('public api', () => {
         'agentPermission',
         'resolveModel',
         'checkAgentModel',
+        'agentChannel',
+        'startHandoff',
     ])('exports %s', (name) => {
         expect(app).toHaveProperty(name);
         expect(app[name as keyof typeof app]).toBeTypeOf('function');

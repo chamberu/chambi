@@ -6,10 +6,12 @@
  */
 
 import {
+    AGENT_CHANNEL_NAME,
     InvalidAgentDefinitionError,
     MemoryStore,
     defineAgent,
     defineTool,
+    handoff,
     resolveModel,
 } from '@chamvi/core';
 import { http, httpChannel } from '@chamvi/http';
@@ -179,6 +181,27 @@ describe('engineModule', () => {
         const error = await rejectionOf(without.harness.setup());
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toBe('Agent "triage" subscribes to unknown channel "http".');
+    });
+
+    it.each(['start', 'job'] as const)('contributes the agent channel in %s mode', async (mode) => {
+        const agent = agentWith(textModel(), { channels: [handoff.on()] });
+        const { harness } = build({ mode, agents: [agent] });
+        await harness.setup();
+        const names = harness.container.resolveAll(AppToken.CHANNELS).map((channel) => channel.name);
+        expect(names).toContain(AGENT_CHANNEL_NAME);
+        expect(harness.container.resolve(AppToken.ENGINE).getChannel('agent')?.name).toBe('agent');
+    });
+
+    it('a user channel named agent clashes', async () => {
+        const { harness } = build({
+            agents: [],
+            modules: [contributing('mine', (container) => {
+                container.registerMany(AppToken.CHANNELS, { useValue: { name: 'agent', out: async () => undefined } });
+            })],
+        });
+        const error = await rejectionOf(harness.setup());
+        expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
+        expect(error.message).toBe('The channel "agent" is registered more than once.');
     });
 
     it('duplicate channel names throw', async () => {
