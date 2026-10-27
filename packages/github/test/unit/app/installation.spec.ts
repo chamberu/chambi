@@ -18,7 +18,11 @@ function setup() {
 
 describe('IGithubApp.repositoryInstallation', () => {
     it('answers the installation with its permissions, sharing the installationFor cache', async () => {
-        const { fake, gh, lookups } = setup();
+        const {
+            fake, 
+            gh, 
+            lookups, 
+        } = setup();
         fake.installations.set('acme/api', 9);
         fake.appInstallations.set(9, {
             id: 9,

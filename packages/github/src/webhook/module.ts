@@ -85,7 +85,11 @@ export async function receiveDelivery(
     };
     // per agent its first matching subscription, and the first one that
     // also takes the bot's own delivery (a later subscription may opt in)
-    const matches: Array<{ agent: string; first: ChannelSubscription; self?: ChannelSubscription }> = [];
+    const matches: Array<{
+        agent: string; 
+        first: ChannelSubscription; 
+        self?: ChannelSubscription 
+    }> = [];
     for (const agent of ctx.engine.listAgents()) {
         try {
             const subscriptions = agent.definition.channels ?? [];
