@@ -5,6 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { GithubMergeMethod } from '../app/types.ts';
+
 /** The input of a tool on a repository. */
 export type RepoInput = { repo: string };
 
@@ -289,4 +291,13 @@ export type GithubCreatedPullRequest = {
     url: string;
     base: string;
     head: string;
+};
+
+/** `github_merge_pull_request`: `sha` is the merge commit. */
+export type GithubMergeResult = {
+    number: number;
+    sha: string;
+    method: GithubMergeMethod;
+    /** It was merged at the given head before this call (a redone step). */
+    alreadyMerged: boolean;
 };

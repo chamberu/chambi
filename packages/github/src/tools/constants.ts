@@ -71,3 +71,12 @@ export const DEFAULT_MERGE_METHOD = 'squash';
 
 /** GitHub's limit on an issue or pull request title. */
 export const ISSUE_TITLE_MAX_CHARS = 256;
+
+/** The `mergeable_state`s `github_merge_pull_request` merges in (`unstable`: a check that is not required failed). */
+export const MERGE_STATES = ['clean', 'unstable', 'has_hooks'] as const;
+
+/** A head sha `github_merge_pull_request` takes (loose: GitHub's 409 answers a wrong one). */
+export const SHA_PATTERN = '^[\\w-]{1,64}$';
+
+/** GitHub's limit on a commit title, also for a merge. */
+export const COMMIT_TITLE_MAX_CHARS = 256;

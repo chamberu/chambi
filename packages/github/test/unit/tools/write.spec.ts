@@ -54,6 +54,7 @@ describe('write tools', () => {
             'github_create_comment',
             'github_create_issue',
             'github_create_pull_request',
+            'github_merge_pull_request',
         ]);
     });
 

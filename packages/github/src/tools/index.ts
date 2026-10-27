@@ -22,6 +22,7 @@ export type {
     GithubIssueSearch,
     GithubIssueSummary,
     GithubLabel,
+    GithubMergeResult,
     GithubPullRequest,
     GithubPullRequestChecks,
     GithubPullRequestList,

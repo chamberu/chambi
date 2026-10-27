@@ -176,8 +176,8 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
             };
         },
         writeTools(toolsOptions?: GithubWriteToolsOptions): ToolSet {
-            resolveMergeMethod(toolsOptions?.mergeMethod);
-            return { ...createWriteTools(app), ...createPullRequestWriteTools(app) };
+            const mergeMethod = resolveMergeMethod(toolsOptions?.mergeMethod);
+            return { ...createWriteTools(app), ...createPullRequestWriteTools(app, { mergeMethod }) };
         },
     };
     return app;
