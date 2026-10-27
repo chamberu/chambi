@@ -12,6 +12,7 @@ import {
     base64UrlJson,
     compile,
     json,
+    page,
 } from './helpers.ts';
 import type {
     FakeGithub,
@@ -31,7 +32,7 @@ type IssuedToken = { installationId: number; expiresAt: number };
 
 /**
  * An in-process GitHub: verifies App JWTs (RS256 under the fake's public key,
- * `iss`, at most 600 s) on `/app*` and `/repos/:owner/:repo/installation`,
+ * `iss`, at most 600 s) on `/app*` (incl. `GET /app/installations`) and `/repos/:owner/:repo/installation`,
  * answers `/users/:login` without credentials, and installation tokens on
  * every other route, issues tokens valid for one hour on the fake's clock, answers 404
  * for unknown routes. A request whose signal aborts (also while a route
@@ -68,6 +69,12 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
         pulls: new Map(),
         installations: new Map(),
         users: new Map(),
+        repositories: new Map(),
+        appInstallations: new Map(),
+        checkRuns: new Map(),
+        statuses: new Map(),
+        branches: new Map(),
+        rules: new Map(),
         route(method, path, handler) {
             routes.unshift({
                 method, 
@@ -137,6 +144,10 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
             if (!verifyJwt(authorization)) return json(401, { message: 'Bad credentials' });
             if (method === 'GET' && path === '/app') {
                 return json(200, { id: Number(input.appId), slug: input.slug ?? 'chamvi-test' });
+            }
+            if (method === 'GET' && path === '/app/installations') {
+                const result = page(path, Object.fromEntries(url.searchParams), Array.from(fake.appInstallations.values()));
+                return json(result.status, result.body, result.headers);
             }
             const exchange = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(path);
             if (method === 'POST' && exchange?.[1]) {

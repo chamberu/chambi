@@ -58,6 +58,18 @@ export type FakeGithub = {
     pulls: Map<string, Record<string, unknown>>;
     /** The installation of a repository (`owner/repo`, lower case) for `GET /repos/:owner/:repo/installation` (App JWT); 404 when missing. */
     installations: Map<string, number>;
+    /** The `GET /repos/:owner/:repo` body per `owner/repo`; a missing one answers a synthesized public repository (default branch `main`). */
+    repositories: Map<string, Record<string, unknown>>;
+    /** The `GET /app/installations` items by installation id (App JWT). */
+    appInstallations: Map<number, Record<string, unknown>>;
+    /** Check runs per `owner/repo@<sha>` (`GET /repos/:owner/:repo/commits/:ref/check-runs`). */
+    checkRuns: Map<string, Array<Record<string, unknown>>>;
+    /** Commit statuses per `owner/repo@<sha>`, latest per context (`GET /repos/:owner/:repo/commits/:ref/status`, the combined state derived). */
+    statuses: Map<string, Array<Record<string, unknown>>>;
+    /** The `GET /repos/:owner/:repo/branches/:branch` body per `owner/repo:<branch>`; a missing one is unprotected. */
+    branches: Map<string, Record<string, unknown>>;
+    /** The rules of a branch per `owner/repo:<branch>` (`GET /repos/:owner/:repo/rules/branches/:branch`); missing reads `[]`. */
+    rules: Map<string, Array<Record<string, unknown>>>;
     /** The user id of a login for `GET /users/:login` (public, no credentials needed); 404 when missing. */
     users: Map<string, number>;
     /** Adds a route (it wins over the built-in ones) for an installation token, e.g. `route('GET', '/repos/:owner/:repo/issues/:number', ...)`. */
