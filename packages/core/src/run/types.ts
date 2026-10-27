@@ -6,6 +6,7 @@
  */
 
 import type { ModelMessage } from 'ai';
+import type { ApprovalOption } from '../approval/types.ts';
 import type { TriggerEnvelope } from '../trigger/types.ts';
 import type { RunStatus } from './constants.ts';
 
@@ -43,6 +44,10 @@ export type WaitPoint = {
     toolCallId: string;
     title: string;
     body?: string;
+    /** The choices of the request; absent for a plain yes or no. */
+    options?: ApprovalOption[];
+    /** Set (true) only when several options may be selected. */
+    multiple?: boolean;
     /** The channel the request is delivered through; none for the inbox and API only. */
     channel?: string;
     address?: string;
