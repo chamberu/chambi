@@ -261,7 +261,10 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const title = requireString(input.title, 'title');
                 const body = requireString(input.body, 'body');
-                const labels = input.labels === undefined ? undefined : requireLabels(input.labels);
+                // an empty list is no labels, as the input schema allows it
+                const labels = input.labels === undefined || (Array.isArray(input.labels) && input.labels.length === 0) ?
+                    undefined :
+                    requireLabels(input.labels);
                 const marker = effectMarker(issueKey(input, options.context));
                 return withOctokit(app, options.context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('POST /repos/{owner}/{repo}/issues', {

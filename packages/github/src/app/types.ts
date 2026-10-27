@@ -54,6 +54,8 @@ export type GithubInstallation = {
     accountType: string;
     repositorySelection: 'all' | 'selected';
     permissions: GithubPermissions;
+    /** Whether the account suspended the App (`suspended_at` set): its token exchange answers 403. */
+    suspended: boolean;
 };
 
 /** A merge method of `github_merge_pull_request`. */

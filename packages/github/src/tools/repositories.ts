@@ -94,6 +94,8 @@ export function createRepositoryTools(app: IGithubApp): ToolSet {
                     const repositories: GithubRepository[] = [];
                     for (const installation of installations) {
                         signal.throwIfAborted();
+                        // a suspended installation's token exchange answers 403
+                        if (installation.suspended) continue;
                         const octokit = bindSignal(await app.octokit(installation.id), signal);
                         const items = await octokit.paginate('GET /installation/repositories', { per_page: 100 });
                         for (const item of items) {

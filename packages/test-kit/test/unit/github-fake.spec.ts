@@ -274,7 +274,7 @@ describe('createFakeGithub repository routes', () => {
             html_url: 'https://github.com/octo/demo/issues/8',
             created_at: '2026-10-21T09:00:00.000Z',
         });
-        expect(fake.issues.get('octo/demo#8')).toBe(fake.issues.get('octo/demo#8'));
+        expect(fake.issues.get('octo/demo#8')).toMatchObject(body as Record<string, unknown>);
     });
 
     it('lists pull requests by state, head and base', async () => {

@@ -104,6 +104,17 @@ describe('github_list_repositories', () => {
         expect(result.truncated).toBe(true);
     });
 
+    it('skips a suspended installation', async () => {
+        const { fake, call } = setup();
+        fake.appInstallations.set(42, installation(42, 'tada5hi'));
+        fake.appInstallations.set(43, { ...installation(43, 'chamvi'), suspended_at: '2026-10-20T09:00:00Z' });
+        fake.installations.set('tada5hi/alpha', 42);
+        fake.installations.set('chamvi/chamvi', 43);
+        fake.failNext('POST', '/app/installations/43/access_tokens', 403);
+        const result = await call<GithubRepositoryList>('github_list_repositories', {});
+        expect(result.repositories.map((r) => r.repo)).toEqual(['tada5hi/alpha']);
+    });
+
     it('fails as a tool error when one installation fails', async () => {
         const { fake, call } = setup();
         fake.appInstallations.set(42, installation(42, 'tada5hi'));

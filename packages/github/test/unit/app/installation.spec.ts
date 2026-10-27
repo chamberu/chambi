@@ -36,6 +36,7 @@ describe('IGithubApp.repositoryInstallation', () => {
             accountType: 'Organization',
             repositorySelection: 'selected',
             permissions: { contents: 'write', metadata: 'read' },
+            suspended: false,
         });
         expect(await gh.installationFor({ owner: 'Acme', repo: 'Api' })).toBe(9);
         expect(lookups()).toBe(1);
@@ -127,6 +128,7 @@ describe('IGithubApp.installations', () => {
             account: { login: 'chamvi', type: 'Organization' }, 
             repository_selection: 'selected', 
             permissions: { issues: 'read' }, 
+            suspended_at: '2026-10-20T09:00:00Z', 
         });
         expect(await gh.installations()).toEqual([
             {
@@ -135,6 +137,7 @@ describe('IGithubApp.installations', () => {
                 accountType: 'User', 
                 repositorySelection: 'all', 
                 permissions: { contents: 'write' }, 
+                suspended: false, 
             },
             {
                 id: 43, 
@@ -142,6 +145,7 @@ describe('IGithubApp.installations', () => {
                 accountType: 'Organization', 
                 repositorySelection: 'selected', 
                 permissions: { issues: 'read' }, 
+                suspended: true, 
             },
         ]);
     });
@@ -157,6 +161,7 @@ describe('IGithubApp.installations', () => {
             accountType: 'User', 
             repositorySelection: 'selected', 
             permissions: {}, 
+            suspended: false, 
         });
     });
 

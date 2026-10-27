@@ -307,6 +307,22 @@ describe('write tools', () => {
             });
         });
 
+        it('treats an empty labels list as no labels', async () => {
+            const {
+                fake, 
+                wrap, 
+                ctx, 
+            } = cron();
+            const result = await callTool<{ number: number }>(wrap(), 'github_create_issue', {
+                repo: 'tada5hi/agents-dev',
+                title: 'Daily digest',
+                body: 'Open issues: 3',
+                labels: [],
+            }, ctx);
+            expect(result.number).toBe(1);
+            expect(issuePosts(fake)[0]!.body).not.toHaveProperty('labels');
+        });
+
         it('refuses a missing title', async () => {
             const { wrap, ctx } = cron();
             await expect(callTool(wrap(), 'github_create_issue', {

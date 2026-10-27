@@ -118,5 +118,6 @@ export function toInstallation(item: unknown): GithubInstallation {
         accountType: stringOf(account.type) ?? (stringOf(account.slug) ? 'Enterprise' : 'User'),
         repositorySelection: data.repository_selection === 'all' ? 'all' : 'selected',
         permissions,
+        suspended: typeof data.suspended_at === 'string',
     };
 }

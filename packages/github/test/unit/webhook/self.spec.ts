@@ -126,6 +126,39 @@ describe('the bot\'s own deliveries', () => {
         expect((await engine.getRun(humanRun!.runId))?.trigger.trigger).toBe('humans');
     });
 
+    it('never run a self subscription filter for a human delivery', async () => {
+        const {
+            app, 
+            engine, 
+            errors, 
+        } = createGithubTestApp({
+            agents: [defineAgent({
+                name: 'maintainer',
+                model: textModel(),
+                instructions: 'maintainer',
+                channels: [
+                    github.on(['pull_request'], { id: 'humans' }),
+                    github.on(['pull_request'], {
+                        id: 'self',
+                        selfEvents: ['pull_request.opened'],
+                        filter: () => {
+                            throw new Error('self filter');
+                        },
+                    }),
+                ],
+            })],
+        });
+        const human = await deliver(app, {
+            event: 'pull_request',
+            delivery: 'd-1',
+            body: body('opened', { login: 'alice', type: 'User' }, { pull_request: { number: 4 } }),
+        });
+        expect(human.status).toBe(202);
+        const { runs: [humanRun] } = await human.json() as { runs: Array<{ runId: string }> };
+        expect((await engine.getRun(humanRun!.runId))?.trigger.trigger).toBe('humans');
+        expect(errors).toEqual([]);
+    });
+
     it('never dispatch a bot-sent action the selfEvents do not name', async () => {
         const { app } = createGithubTestApp({ agents: [agent('maintainer', ['pull_request'], { selfEvents: ['pull_request.opened', 'pull_request.synchronize'] })] });
         const labeled = await deliver(app, {

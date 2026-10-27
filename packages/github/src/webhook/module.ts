@@ -83,23 +83,23 @@ export async function receiveDelivery(
         failed = true;
         options.onError(error);
     };
-    // per agent its first matching subscription, and the first one that
-    // also takes the bot's own delivery (a later subscription may opt in)
+    // per agent its first matching subscription; for a delivery the App sent
+    // itself, the first one that opts in instead (searched only then, so a
+    // self subscription's filter never runs for a human delivery)
     const matches: Array<{
-        agent: string; 
-        first: ChannelSubscription; 
-        self?: ChannelSubscription 
+        agent: string;
+        subscriptions: readonly ChannelSubscription[];
+        first: ChannelSubscription;
     }> = [];
     for (const agent of ctx.engine.listAgents()) {
         try {
             const subscriptions = agent.definition.channels ?? [];
             const first = subscriptions.find((s) => matchesGithubSubscription(s, options.name, event));
             if (!first) continue;
-            const self = subscriptions.find((s) => acceptsSelfSent(s, event) && matchesGithubSubscription(s, options.name, event));
             matches.push({
-                agent: agent.name, 
-                first, 
-                ...(self ? { self } : {}), 
+                agent: agent.name,
+                subscriptions,
+                first,
             });
         } catch (error) {
             fail(error);
@@ -110,9 +110,11 @@ export async function receiveDelivery(
     const selfSent = matches.length > 0 && await isSelfSent(options.app, event);
     const envelopes: ChannelDispatchEnvelope[] = [];
     for (const match of matches) {
-        const subscription = selfSent ? match.self : match.first;
-        if (!subscription) continue;
         try {
+            const subscription = selfSent ?
+                match.subscriptions.find((s) => acceptsSelfSent(s, event) && matchesGithubSubscription(s, options.name, event)) :
+                match.first;
+            if (!subscription) continue;
             const concurrencyKey = subscription.concurrencyKey?.(event);
             envelopes.push({
                 agent: match.agent,
