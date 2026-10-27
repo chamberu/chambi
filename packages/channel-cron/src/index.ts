@@ -5,6 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+// The package entry: one barrel per folder.
+
 export * from './channel/index.ts';
 export * from './lock/index.ts';
 export * from './run-job/index.ts';
