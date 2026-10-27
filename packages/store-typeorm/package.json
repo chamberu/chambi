@@ -1,6 +1,6 @@
 {
     "name": "@chamvi/store-typeorm",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "type": "module",
     "description": "TypeORM store for chamvi (PostgreSQL): durable runs, leases and agent state.",
     "author": {
@@ -52,8 +52,8 @@
         "typeorm-extension": "^4.3.0"
     },
     "devDependencies": {
-        "@chamvi/core": "^0.3.0",
-        "@chamvi/test-kit": "^0.3.0",
+        "@chamvi/core": "^0.3.1",
+        "@chamvi/test-kit": "^0.3.1",
         "@swc/core": "^1.16.20",
         "@testcontainers/postgresql": "^12.2.1",
         "ai": "^7.0.150",
@@ -63,7 +63,7 @@
         "zod": "^4.6.7"
     },
     "peerDependencies": {
-        "@chamvi/core": "^0.3.0",
+        "@chamvi/core": "^0.3.1",
         "pg": "^8",
         "typeorm": "^1.1.2"
     }
