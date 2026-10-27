@@ -50,6 +50,27 @@ describe('createFakeGithub', () => {
         expect(response.headers.get('link')).toContain('page=2');
     });
 
+    it('answers 404 to a token of another installation than the repository\'s', async () => {
+        const clock = new ControllableClock(new Date('2026-10-21T09:00:00Z'));
+        const fake = createFakeGithub({ appId: '123', clock });
+        const exchange = await fake.fetch('https://api.github.com/app/installations/42/access_tokens', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${appJwt(fake.privateKey, '123', clock.now())}` },
+        });
+        const { token } = await exchange.json() as { token: string };
+        fake.installations.set('acme/api', 7);
+        fake.installations.set('octo/demo', 42);
+        const other = await fake.fetch('https://api.github.com/repos/Acme/API/releases', { headers: { authorization: `token ${token}` } });
+        expect(other.status).toBe(404);
+        expect(await other.json()).toEqual({ message: 'Not Found' });
+        fake.issues.set('octo/demo#1', { number: 1 });
+        const own = await fake.fetch('https://api.github.com/repos/octo/demo/issues/1', { headers: { authorization: `token ${token}` } });
+        expect(own.status).toBe(200);
+        // a repository without a recorded installation stays readable (a public repository)
+        const unknown = await fake.fetch('https://api.github.com/repos/someone/else/releases', { headers: { authorization: `token ${token}` } });
+        expect(unknown.status).toBe(200);
+    });
+
     it('refuses a JWT of another app', async () => {
         const clock = new ControllableClock(new Date('2026-10-21T09:00:00Z'));
         const fake = createFakeGithub({ appId: '123', clock });

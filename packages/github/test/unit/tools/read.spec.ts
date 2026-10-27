@@ -705,7 +705,7 @@ describe('read tools', () => {
                 payload: { repository: { full_name: 'Octo/Demo' } },
             },
         });
-        fake.installations.set('octo/demo', 9);
+        fake.installations.set('octo/demo', 42);
         fake.issues.set('octo/demo#5', { ...ISSUE });
         await call('github_get_issue', { repo: 'octo/demo', number: 5 });
         expect(fake.tokenInstallations).toEqual([42]);

@@ -268,7 +268,7 @@ describe('github channel out', () => {
 
     it('seeds from the event of the same repository without a lookup', async () => {
         const { send, fake } = setup({}, { installationId: 7 });
-        fake.installations.set('octo/demo', 9);
+        fake.installations.set('octo/demo', 42);
         const event = githubEvent({ payload: { repository: { full_name: 'Octo/Demo' }, issue: { number: 7 } } });
         await send(APPROVAL, ADDRESS, githubTrigger(event));
         expect(fake.tokenInstallations).toEqual([42]);

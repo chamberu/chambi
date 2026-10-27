@@ -189,6 +189,12 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
 
         const installationId = installationOf(authorization);
         if (installationId === undefined) return json(401, { message: 'Bad credentials' });
+        // as GitHub: a token of one installation does not see a repository of another
+        const repository = /^\/repos\/([^/]+)\/([^/]+)(?:\/|$)/.exec(path);
+        if (repository) {
+            const owning = fake.installations.get(`${decodeURIComponent(repository[1]!)}/${decodeURIComponent(repository[2]!)}`.toLowerCase());
+            if (owning !== undefined && owning !== installationId) return json(404, { message: 'Not Found' });
+        }
 
         for (const route of routes) {
             if (route.method !== method) continue;

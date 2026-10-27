@@ -56,7 +56,7 @@ export type FakeGithub = {
     releases: Map<string, Array<Record<string, unknown>>>;
     files: Map<string, Record<string, unknown>>;
     pulls: Map<string, Record<string, unknown>>;
-    /** The installation of a repository (`owner/repo`, lower case) for `GET /repos/:owner/:repo/installation` (App JWT); 404 when missing. */
+    /** The installation of a repository (`owner/repo`, lower case) for `GET /repos/:owner/:repo/installation` (App JWT); 404 when missing. A token of another installation gets 404 on every `/repos/:owner/:repo` route of a repository listed here, as on GitHub. */
     installations: Map<string, number>;
     /** The `GET /repos/:owner/:repo` body per `owner/repo`; a missing one answers a synthesized public repository (default branch `main`). */
     repositories: Map<string, Record<string, unknown>>;
