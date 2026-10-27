@@ -59,3 +59,15 @@ export const PULL_REQUESTS_MAX = 100;
 
 /** Check runs `github_get_pull_request_checks` reads at most (then `truncated`). */
 export const CHECKS_MAX = 300;
+
+/** A pull request head `github_create_pull_request` takes: `branch`, or `owner:branch` for a fork. */
+export const HEAD_PATTERN = '^(?:[\\w.-]+:)?[\\w./+-]{1,255}$';
+
+/** The merge methods GitHub offers. */
+export const MERGE_METHODS = ['merge', 'squash', 'rebase'] as const;
+
+/** The merge method of `github_merge_pull_request` unless `writeTools({ mergeMethod })` or the call names one. */
+export const DEFAULT_MERGE_METHOD = 'squash';
+
+/** GitHub's limit on an issue or pull request title. */
+export const ISSUE_TITLE_MAX_CHARS = 256;

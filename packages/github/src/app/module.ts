@@ -19,7 +19,8 @@ import {
     normalizeSlug,
     toInstallation,
 } from './helpers.ts';
-import { toolError } from '../tools/helpers.ts';
+import { resolveMergeMethod, toolError } from '../tools/helpers.ts';
+import { createPullRequestWriteTools } from '../tools/merge.ts';
 import { createPullRequestTools } from '../tools/pulls.ts';
 import { createReadTools } from '../tools/read.ts';
 import { createRepositoryTools } from '../tools/repositories.ts';
@@ -33,6 +34,7 @@ import type {
     GithubInstallation,
     GithubOctokit,
     GithubRepositoryToken,
+    GithubWriteToolsOptions,
     IGithubApp,
 } from './types.ts';
 
@@ -173,8 +175,9 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
                 ...createPullRequestTools(app),
             };
         },
-        writeTools(): ToolSet {
-            return createWriteTools(app);
+        writeTools(toolsOptions?: GithubWriteToolsOptions): ToolSet {
+            resolveMergeMethod(toolsOptions?.mergeMethod);
+            return { ...createWriteTools(app), ...createPullRequestWriteTools(app) };
         },
     };
     return app;

@@ -276,3 +276,17 @@ export type GithubPullRequestChecks = {
     };
     truncated: boolean;
 };
+
+/** `github_create_issue`. */
+export type GithubCreatedIssue = {
+    number: number;
+    url: string;
+};
+
+/** `github_create_pull_request`; `head` as `owner:branch`. */
+export type GithubCreatedPullRequest = {
+    number: number;
+    url: string;
+    base: string;
+    head: string;
+};

@@ -11,10 +11,14 @@ import type { ToolContext } from '@chamvi/core';
 import { isObject } from 'smob';
 import { isSameLogin } from '../app/helpers.ts';
 import type { IGithubApp } from '../app/types.ts';
-import { LABELS_MAX } from './constants.ts';
+import { ISSUE_TITLE_MAX_CHARS, LABELS_MAX } from './constants.ts';
 import {
+    REPO_PROPERTY,
+    inputEffectKey,
     numberSchema,
+    objectSchema,
     parseRepo,
+    reconcileSince,
     requireInteger,
     requireString,
     stepOf,
@@ -23,16 +27,21 @@ import {
 import type {
     GithubClosedIssue,
     GithubComment,
+    GithubCreatedIssue,
     GithubIssueLabels,
     NumberInput,
+    RepoInput,
 } from './types.ts';
 
 type CommentInput = NumberInput & { body: string };
 type LabelsInput = NumberInput & { labels: string[] };
 type CloseInput = NumberInput & { reason?: 'completed' | 'not_planned' };
+type IssueInput = RepoInput & {
+    title: string; 
+    body: string; 
+    labels?: string[] 
+};
 
-/** A marker of this run can only be in a comment updated after the run was received; the hour absorbs clock skew. */
-const RECONCILE_SKEW_MS = 3_600_000;
 
 const CLOSE_REASONS = ['completed', 'not_planned'];
 
@@ -45,6 +54,12 @@ function commentKey(input: CommentInput, ctx: ToolContext, options: Pick<ToolExe
     const { owner, repo } = parseRepo(input.repo);
     const issueNumber = requireInteger(input.number, 'number', 1);
     return `${ctx.run.runId}:github_create_comment:${owner.toLowerCase()}/${repo.toLowerCase()}#${issueNumber}:${stepOf(options)}`;
+}
+
+/** `<runId>:github_create_issue:<sha256 of repo, title, body, labels>`: one issue per run and input. */
+function issueKey(input: IssueInput, ctx: ToolContext): string {
+    const { owner, repo } = parseRepo(input.repo);
+    return inputEffectKey(ctx.run.runId, 'github_create_issue', [`${owner}/${repo}`.toLowerCase(), input.title, input.body, input.labels ?? []]);
 }
 
 function requireLabels(value: unknown): string[] {
@@ -116,7 +131,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const issueNumber = requireInteger(input.number, 'number', 1);
                 const marker = effectMarker(key);
-                const since = new Date(new Date(ctx.run.trigger.receivedAt).getTime() - RECONCILE_SKEW_MS).toISOString();
+                const since = reconcileSince(ctx);
                 return withOctokit(app, ctx, { owner, repo }, async (octokit) => {
                     const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
                         owner,
@@ -195,6 +210,68 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                         state: 'closed' as const,
                         stateReason: data.state_reason ?? null,
                     };
+                });
+            },
+        }),
+
+        github_create_issue: defineEffectTool<IssueInput, GithubCreatedIssue>({
+            description: 'Open an issue, e.g. a report or a question for the maintainers. Applied at most once per run for the same input.',
+            inputSchema: objectSchema<IssueInput>({
+                repo: REPO_PROPERTY,
+                title: {
+                    type: 'string',
+                    minLength: 1,
+                    maxLength: ISSUE_TITLE_MAX_CHARS,
+                    description: 'The issue title.',
+                },
+                body: {
+                    type: 'string',
+                    minLength: 1,
+                    description: 'The issue in GitHub Markdown.',
+                },
+                labels: {
+                    type: 'array',
+                    items: { type: 'string', minLength: 1 },
+                    maxItems: LABELS_MAX,
+                    description: 'Labels to set (existing label names).',
+                },
+            }, ['labels']),
+            effectKey: issueKey,
+            alreadyApplied: async (key, input, ctx) => {
+                const { owner, repo } = parseRepo(input.repo);
+                const marker = effectMarker(key);
+                return withOctokit(app, ctx, { owner, repo }, async (octokit) => {
+                    const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/issues', {
+                        owner,
+                        repo,
+                        state: 'all',
+                        creator: await app.botLogin(),
+                        since: reconcileSince(ctx),
+                        per_page: 100,
+                    });
+                    for await (const { data } of pages) {
+                        for (const issue of data) {
+                            if (issue.body?.includes(marker)) return { number: issue.number, url: issue.html_url };
+                        }
+                    }
+                    return undefined;
+                });
+            },
+            execute: async (input, options) => {
+                const { owner, repo } = parseRepo(input.repo);
+                const title = requireString(input.title, 'title');
+                const body = requireString(input.body, 'body');
+                const labels = input.labels === undefined ? undefined : requireLabels(input.labels);
+                const marker = effectMarker(issueKey(input, options.context));
+                return withOctokit(app, options.context, { owner, repo }, async (octokit) => {
+                    const { data } = await octokit.request('POST /repos/{owner}/{repo}/issues', {
+                        owner,
+                        repo,
+                        title,
+                        body: `${body}\n\n${marker}`,
+                        ...(labels ? { labels } : {}),
+                    });
+                    return { number: data.number, url: data.html_url };
                 });
             },
         }),

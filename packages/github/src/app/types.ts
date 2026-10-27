@@ -56,6 +56,15 @@ export type GithubInstallation = {
     permissions: GithubPermissions;
 };
 
+/** A merge method of `github_merge_pull_request`. */
+export type GithubMergeMethod = 'merge' | 'squash' | 'rebase';
+
+/** Options of `IGithubApp.writeTools()`. */
+export type GithubWriteToolsOptions = {
+    /** The merge method when a call names none (default DEFAULT_MERGE_METHOD, `squash`). */
+    mergeMethod?: GithubMergeMethod;
+};
+
 export interface IGithubApp {
     readonly appId: string;
     readonly installationId?: number;
@@ -90,11 +99,18 @@ export interface IGithubApp {
     installations(): Promise<GithubInstallation[]>;
     /** `sha256=<hex>` of the raw body under any webhook secret, compared in constant time. */
     verifySignature(body: Uint8Array, signature: string | null): boolean;
-    /** The read-only tools (`github_get_issue`, `github_search_issues`, ...), acting as the run's installation. */
+    /**
+     * The read-only tools (`github_get_issue`, `github_search_issues`,
+     * `github_list_pull_requests`, ...), each acting as the installation of
+     * the repository it names.
+     */
     readTools(): ToolSet;
     /**
      * The write tools (`github_add_labels`, `github_create_comment`,
-     * `github_close_issue`), effect tools applied at most once per run.
+     * `github_close_issue`, `github_create_issue`,
+     * `github_create_pull_request`, `github_merge_pull_request`), effect
+     * tools applied at most once per run. An unknown `mergeMethod` is an
+     * InvalidAgentDefinitionError.
      */
-    writeTools(): ToolSet;
+    writeTools(options?: GithubWriteToolsOptions): ToolSet;
 }

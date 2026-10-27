@@ -11,8 +11,10 @@ export type {
     GithubAppOptions,
     GithubBotIdentity,
     GithubInstallation,
+    GithubMergeMethod,
     GithubOctokit,
     GithubPermissions,
     GithubRepositoryToken,
+    GithubWriteToolsOptions,
     IGithubApp,
 } from './types.ts';

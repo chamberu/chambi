@@ -12,6 +12,8 @@ export type {
     GithubChecksState,
     GithubClosedIssue,
     GithubComment,
+    GithubCreatedIssue,
+    GithubCreatedPullRequest,
     GithubDirectory,
     GithubFile,
     GithubIssue,
