@@ -11,7 +11,7 @@ import { NotFoundError, UnauthorizedError, UnsupportedMediaTypeError } from '@eb
 import { isSameLogin } from '../app/helpers.ts';
 import type { IGithubApp } from '../app/types.ts';
 import type { ResolvedGithubChannelOptions } from '../channel/types.ts';
-import { eventAddress, matchesGithubSubscription } from '../subscription/helpers.ts';
+import { acceptsSelfSent, eventAddress, matchesGithubSubscription } from '../subscription/helpers.ts';
 import type { GithubEvent } from '../subscription/types.ts';
 import {
     isJsonMediaType,
@@ -45,7 +45,8 @@ async function isSelfSent(app: IGithubApp, event: GithubEvent): Promise<boolean>
  * this channel matching the event gets one run, keyed by
  * `idempotencyKey(event) ?? delivery`, with the address of the event's
  * issue or pull request; all keys are computed before any dispatch. A
- * delivery the App sent itself dispatches nothing. A failing agent (filter,
+ * delivery the App sent itself dispatches only to subscriptions whose
+ * `selfEvents` name its event. A failing agent (filter,
  * key function, refused key, dispatch) goes to `onError`, the others are
  * still dispatched, and the answer is then 500.
  */
@@ -77,7 +78,7 @@ export async function receiveDelivery(
         failed = true;
         options.onError(error);
     };
-    const envelopes: ChannelDispatchEnvelope[] = [];
+    const envelopes: Array<ChannelDispatchEnvelope & { selfSent: boolean }> = [];
     for (const agent of ctx.engine.listAgents()) {
         try {
             const subscription = (agent.definition.channels ?? [])
@@ -85,6 +86,7 @@ export async function receiveDelivery(
             if (!subscription) continue;
             const concurrencyKey = subscription.concurrencyKey?.(event);
             envelopes.push({
+                selfSent: acceptsSelfSent(subscription, event),
                 agent: agent.name,
                 trigger: subscription.id,
                 payload: event,
@@ -98,18 +100,19 @@ export async function receiveDelivery(
     }
 
     const result: GithubWebhookResult = { delivery, runs: [] };
-    if (envelopes.length > 0 && !await isSelfSent(options.app, event)) {
-        for (const envelope of envelopes) {
-            try {
-                const { runId, deduplicated } = await ctx.dispatch(envelope);
-                result.runs.push({
-                    agent: envelope.agent,
-                    runId,
-                    deduplicated,
-                });
-            } catch (error) {
-                fail(error);
-            }
+    const selfSent = envelopes.length > 0 && await isSelfSent(options.app, event);
+    for (const { selfSent: accepted, ...envelope } of envelopes) {
+        // the loop guard: a delivery the App sent itself starts only subscriptions that opted in
+        if (selfSent && !accepted) continue;
+        try {
+            const { runId, deduplicated } = await ctx.dispatch(envelope);
+            result.runs.push({
+                agent: envelope.agent,
+                runId,
+                deduplicated,
+            });
+        } catch (error) {
+            fail(error);
         }
     }
     return failed ? dispatchFailed() : Response.json(result, { status: 202 });
