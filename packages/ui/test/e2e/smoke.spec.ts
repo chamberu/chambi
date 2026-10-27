@@ -208,3 +208,42 @@ test('an approval link by run signs in, highlights the card and approves', async
     await expect(page).toHaveURL(new RegExp(`/ui/runs/${runId}$`));
     expect(errors).toEqual([]);
 });
+
+test('choose an option on an approval card', async ({ page, request }) => {
+    const errors = watchErrors(page);
+    await page.goto('');
+    await signIn(page);
+    const response = await request.post(`${E2E_ORIGIN}/agents/release/runs`, { headers: AUTH, data: { payload: {} } });
+    expect(response.status()).toBe(202);
+    const { runId } = await response.json() as { runId: string };
+    await expect.poll(async () => (await readRun(request, runId)).status, { timeout: 15_000 }).toBe('waiting');
+
+    await page.getByRole('link', { name: 'Approvals' }).first().click();
+    const card = page.locator(`[data-testid="approval"][data-run="${runId}"]`);
+    await expect(card).toBeVisible();
+    await expect(card.getByTestId('approval-option')).toHaveCount(2);
+    const approve = card.getByRole('button', { name: 'Approve' });
+    await expect(approve).toBeDisabled();
+
+    await card.locator('[data-option="1.4.0"]').locator('xpath=..').getByText('Details').click();
+    await expect(card.locator('.diff-add')).toHaveText('+"version": "1.4.0"');
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    await card.getByLabel('Minor 1.4.0').check();
+    await expect(approve).toBeEnabled();
+    await approve.click();
+
+    await expect(page.getByTestId('decided').filter({ hasText: runId.slice(0, 8) })).toContainText('Approved by e2e');
+    await expect.poll(async () => (await readRun(request, runId)).status, { timeout: 20_000 }).toBe('completed');
+    const wait = (await readRun(request, runId)).steps.find((step) => step.kind === 'wait');
+    expect(wait?.output).toMatchObject({ approved: true, selected: ['1.4.0'] });
+
+    await page.goto(`runs/${runId}`);
+    await expect(page.getByTestId('status').first()).toHaveText('completed', { timeout: 20_000 });
+    const step = page.getByTestId('timeline').locator('[data-testid="step"][data-kind="wait"]');
+    await step.getByTestId('decision').click();
+    await expect(step.getByTestId('selected')).toHaveText('Selected: Minor 1.4.0');
+    expect(errors).toEqual([]);
+});
