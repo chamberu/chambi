@@ -209,7 +209,8 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
         github_merge_pull_request: defineEffectTool<MergeInput, GithubMergeResult>({
             description: 'Merge a pull request at the head commit you checked (`sha`, from github_get_pull_request or github_get_pull_request_checks). ' +
                 'Refused while the head moved, it is a draft or closed, GitHub has not computed its mergeability, it conflicts, is blocked or behind, ' +
-                'or a required check is not green or has not reported yet. Never bypasses branch protection.',
+                'a required check is not green or has not reported yet, the required checks cannot be read, no check reported at all, ' +
+                'or any check is still running. A failing check that is not required does not stop it. Never bypasses branch protection.',
             inputSchema: numberSchema<MergeInput>('pull request', {
                 sha: {
                     type: 'string',
@@ -293,12 +294,24 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
                         headSha: pull.headSha, 
                         base: pull.base, 
                     });
+                    // fail closed: a token that cannot read the protection may be on its bypass list
+                    if (!checks.required.known) {
+                        throw new ToolDeniedError(`The required checks of ${pull.base} could not be read (branch protection or rulesets); #${n} must be merged by hand.`);
+                    }
                     const notGreen = [
                         ...checks.checks.filter((check) => check.required && check.outcome !== 'success').map((check) => check.name),
                         ...checks.required.missing,
                     ];
                     if (notGreen.length > 0) {
                         throw new ToolDeniedError(`#${n} has required checks that are not green: ${[...new Set(notGreen)].join(', ')}.`);
+                    }
+                    // CI has not reported yet (a push seconds ago), or has not finished
+                    if (checks.state === 'none') {
+                        throw new ToolDeniedError(`#${n} has no checks reported yet; read its checks again once CI ran.`);
+                    }
+                    const running = checks.checks.filter((check) => check.outcome === 'pending').map((check) => check.name);
+                    if (running.length > 0) {
+                        throw new ToolDeniedError(`#${n} has checks that are still running: ${[...new Set(running)].join(', ')}.`);
                     }
                     // only these fields: nothing that asks GitHub to bypass protection
                     const { data: merged } = await octokit.request('PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', {

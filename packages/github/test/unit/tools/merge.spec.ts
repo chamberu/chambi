@@ -346,6 +346,62 @@ describe('github_merge_pull_request', () => {
         expect(await denied(merge())).toBe('#3 has required checks that are not green: test.');
     });
 
+    it.each([
+        ['GET', '/repos/octo/demo/branches/main', 403],
+        ['GET', '/repos/octo/demo/branches/main', 404],
+        ['GET', '/repos/octo/demo/rules/branches/main', 403],
+        ['GET', '/repos/octo/demo/rules/branches/main', 404],
+    ])('refuses when %s %s answers %i (the required checks are unknown)', async (method, path, status) => {
+        const {
+            fake,
+            merge,
+            merges,
+        } = mergeable();
+        fake.failNext(method, path, status);
+        fake.checkRuns.set('octo/demo@abc', [{
+            name: 'test',
+            status: 'completed',
+            conclusion: 'failure',
+        }]);
+        expect(await denied(merge())).toBe('The required checks of main could not be read (branch protection or rulesets); #3 must be merged by hand.');
+        expect(merges()).toEqual([]);
+    });
+
+    it('refuses while no check has reported', async () => {
+        const {
+            fake,
+            merge,
+            merges,
+        } = mergeable();
+        fake.checkRuns.set('octo/demo@abc', []);
+        expect(await denied(merge())).toBe('#3 has no checks reported yet; read its checks again once CI ran.');
+        expect(merges()).toEqual([]);
+    });
+
+    it('refuses while a check that is not required is pending', async () => {
+        const {
+            fake,
+            merge,
+            merges,
+            requireTest,
+        } = mergeable(undefined, { mergeable_state: 'unstable' });
+        requireTest();
+        fake.checkRuns.set('octo/demo@abc', [
+            {
+                name: 'test',
+                status: 'completed',
+                conclusion: 'success',
+            },
+            {
+                name: 'lint',
+                status: 'in_progress',
+                conclusion: null,
+            },
+        ]);
+        expect(await denied(merge())).toBe('#3 has checks that are still running: lint.');
+        expect(merges()).toEqual([]);
+    });
+
     it('passes GitHub\'s 409 as a tool error', async () => {
         const { fake, merge } = mergeable();
         fake.route('PUT', '/repos/:owner/:repo/pulls/:number/merge', () => ({ status: 409, body: { message: 'Head branch was modified.' } }));
