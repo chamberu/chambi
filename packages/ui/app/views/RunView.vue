@@ -26,6 +26,7 @@ import {
     formatDuration,
     formatTokens,
     landedModelSteps,
+    parentOf,
     runDuration,
     shortId,
 } from '../runs/helpers.ts';
@@ -51,6 +52,7 @@ onScopeDispose(() => clearInterval(clock));
 const run = computed(() => state.value?.run);
 const budget = computed(() => agents.value.find((agent) => agent.name === run.value?.agent)?.budget);
 const permissions = computed(() => session.principal.value?.permissions ?? []);
+const parent = computed(() => (run.value ? parentOf(run.value) : undefined));
 const cancellable = computed(() => !!run.value && canCancel(run.value, permissions.value));
 
 const liveSteps = computed(() => {
@@ -161,6 +163,14 @@ async function onCancel(): Promise<void> {
                         <dt>trigger</dt>
                         <dd class="mono">
                             {{ run.trigger.trigger }}
+                        </dd>
+                    </div>
+                    <div v-if="parent">
+                        <dt>{{ parent.label }}</dt>
+                        <dd class="mono">
+                            <RouterLink :to="{ name: RouteName.RUN, params: { id: parent.runId } }">
+                                {{ parent.runId }}
+                            </RouterLink>
                         </dd>
                     </div>
                     <div v-if="run.concurrencyKey">
