@@ -13,6 +13,7 @@ import {
     formatTokens,
     lastStepIndex,
     mergeRunEvent,
+    parentOf,
 } from '../../../../app/runs/helpers.ts';
 import type { RunDetailState } from '../../../../app/runs/helpers.ts';
 import { wireRun, wireStep } from '../../../utils/runs.ts';
@@ -132,5 +133,35 @@ describe('format', () => {
         expect(formatDuration(48_000)).toBe('0:48');
         expect(formatDuration(134_000)).toBe('2:14');
         expect(formatDuration(3_725_000)).toBe('1:02:05');
+    });
+});
+
+describe('parentOf', () => {
+    it('names the run a hand-off came from', () => {
+        const base = wireRun();
+        const run = wireRun({
+            trigger: {
+                ...base.trigger,
+                channel: 'agent',
+                trigger: 'handoff',
+                parent: {
+                    kind: 'handoff',
+                    runId: 'p1',
+                    agent: 'deploy',
+                    depth: 1,
+                },
+            },
+        });
+        expect(parentOf(run)).toEqual({ runId: 'p1', label: 'handed off from' });
+    });
+
+    it('is undefined without a parent', () => {
+        expect(parentOf(wireRun())).toBeUndefined();
+    });
+
+    it('is undefined for a kind it does not know', () => {
+        const base = wireRun();
+        const run = wireRun({ trigger: { ...base.trigger, parent: { kind: 'other', runId: 'p1' } as never } });
+        expect(parentOf(run)).toBeUndefined();
     });
 });

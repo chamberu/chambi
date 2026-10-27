@@ -65,9 +65,17 @@ describe('public api', () => {
         'agentPermission',
         'resolveModel',
         'checkAgentModel',
+        'agentChannel',
+        'startHandoff',
     ])('exports %s', (name) => {
         expect(app).toHaveProperty(name);
         expect(app[name as keyof typeof app]).toBeTypeOf('function');
+    });
+
+    it('exports the handoff subscription builder and the agent channel name', () => {
+        expect(app.handoff.on).toBeTypeOf('function');
+        expect(app.handoff.on()).toMatchObject({ channel: 'agent', id: 'handoff' });
+        expect(app.AGENT_CHANNEL_NAME).toBe('agent');
     });
 
     it.each(['createModelRegistry', 'installDefaultProvider', 'resolveModels'])('does not export %s', (name) => {

@@ -24,6 +24,7 @@ import {
 import type { EngineOptions, Run, RunEvent } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { MemoryStore } from '../../../src/store/index.ts';
+import { createChannelContext } from '../../../src/channel/helpers.ts';
 
 const model = {} as LanguageModel;
 const agent = defineAgent({
@@ -414,5 +415,28 @@ describe('Engine.on', () => {
         offStep();
         expect(statuses).toEqual(['queued']);
         expect(ids).toEqual([]);
+    });
+});
+
+describe('dispatch keeps lineage private', () => {
+    const parent = {
+        kind: 'handoff' as const,
+        runId: 'x',
+        agent: 'triage',
+        depth: 1,
+    };
+
+    it('dispatch drops a parent from the envelope', async () => {
+        const { engine, store } = make();
+        const { runId } = await engine.dispatch({ ...env(), parent } as never);
+        expect((await store.getRun(runId))!.trigger.parent).toBeUndefined();
+    });
+
+    it("a channel's ctx.dispatch drops a parent", async () => {
+        const { engine, store } = make();
+        const { runId } = await createChannelContext(engine, { name: 'http' }).dispatch({ ...env(), parent } as never);
+        const run = await store.getRun(runId);
+        expect(run!.trigger.parent).toBeUndefined();
+        expect(run!.trigger.channel).toBe('http');
     });
 });
