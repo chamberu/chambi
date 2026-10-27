@@ -17,7 +17,12 @@ import {
 import type { StateSchema } from '../state/types.ts';
 import type { ToolContext } from '../tool/types.ts';
 import { APPROVAL_TIMEOUT_MAX_MS, DEFAULT_APPROVAL_TIMEOUT_MS } from './constants.ts';
-import { approvalDecisionKey, toApprovalDecision, toApprovalOptions } from './helpers.ts';
+import {
+    approvalDecisionKey,
+    fitRecordedDecision,
+    toApprovalDecision,
+    toApprovalOptions,
+} from './helpers.ts';
 import type { ApprovalDecision, ApprovalRequestInput } from './types.ts';
 
 /**
@@ -80,7 +85,7 @@ export async function requestApproval(
     // taken before any await, so the ordinals follow the order of the calls
     const approvalId = `${frame.stepIndex}:${frame.toolCallId}:${frame.approvals++}`;
     const recorded = await frame.effects.getEffect(approvalDecisionKey(frame.runId, approvalId));
-    if (recorded) return toApprovalDecision(recorded.result);
+    if (recorded) return fitRecordedDecision(toApprovalDecision(recorded.result), { approvalId, ...choice });
 
     const pending: ApprovalRequest = {
         approvalId,

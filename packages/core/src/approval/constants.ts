@@ -11,7 +11,6 @@ export const DEFAULT_APPROVAL_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 /** The longest `timeoutMs` approve() takes (a larger Node timer fires after 1 ms). */
 export const APPROVAL_TIMEOUT_MAX_MS = 2 ** 31 - 1;
 
-/** The placeholder a suspended tool call resolves with; it never reaches a checkpoint. */
 /** The most options an approval request may offer (at least one). */
 export const APPROVAL_OPTIONS_MAX = 20;
 
@@ -27,4 +26,5 @@ export const APPROVAL_OPTION_DETAIL_MAX_LENGTH = 20_000;
 /** The longest details of all options of one request together. */
 export const APPROVAL_OPTIONS_DETAIL_MAX_LENGTH = 100_000;
 
+/** The placeholder a suspended tool call resolves with; it never reaches a checkpoint. */
 export const SUSPENDED_RESULT = Object.freeze({ suspended: 'approval' });

@@ -11,6 +11,7 @@ import {
     describe,
     expect,
     it,
+    vi,
 } from 'vitest';
 import { z } from 'zod';
 import {
@@ -196,6 +197,11 @@ describe('approve() with options', () => {
         ['an option that is no object', { options: ['a'] }],
         ['multiple without options', { multiple: true }],
         ['multiple that is no boolean', { options: OPTIONS, multiple: 'yes' }],
+        ['a label with a line separator', { options: [{ id: 'a', label: 'a\u2028b' }] }],
+        ['a label with a paragraph separator', { options: [{ id: 'a', label: 'a\u2029b' }] }],
+        ['a label with an escape', { options: [{ id: 'a', label: '\u001b[31mred' }] }],
+        ['a label with a C1 control', { options: [{ id: 'a', label: 'a\u0085b' }] }],
+        ['a label with a tab', { options: [{ id: 'a', label: 'a\tb' }] }],
     ])('refuses %s as a tool error', async (_, extra) => {
         const { store, engine } = setup(mockModel([ask({ title: 'Pick?', ...extra }), text('done')]));
         const { runId, run } = await dispatch(engine, store);
@@ -203,6 +209,14 @@ describe('approve() with options', () => {
         expect(run?.waiting).toBeUndefined();
         const tools = (await store.listSteps(runId)).filter((s) => s.kind === 'tool');
         expect(tools[0]).toMatchObject({ name: 'pick', error: { code: 'validation_error' } });
+    });
+
+    it('takes multiple: false without options as a plain request', async () => {
+        const { store, engine } = setup(mockModel([ask({ title: 'Deploy?', multiple: false }), text('done')]));
+        const { run } = await dispatch(engine, store);
+        expect(run?.status).toBe('waiting');
+        expect(Object.keys(run?.waiting ?? {})).not.toContain('options');
+        expect(Object.keys(run?.waiting ?? {})).not.toContain('multiple');
     });
 
     it('accepts ids such as rule names and versions', async () => {
@@ -377,6 +391,71 @@ describe('answering an approval with options', () => {
         expect(Object.keys(wait?.output as object)).not.toContain('selected');
     });
 
+    it('answers a stored plain wait point without options', async () => {
+        const request = { title: 'Deploy?' };
+        const {
+            clock,
+            store,
+            engine,
+            decisions,
+        } = setup(mockModel([text('done')]));
+        const now = clock.now();
+        const runId = 'pre-upgrade';
+        const trigger = {
+            id: 't-1',
+            agent: 'release',
+            trigger: 'http',
+            channel: 'http',
+            payload: {},
+            receivedAt: now,
+        };
+        // a row the code before options wrote: no options or multiple keys
+        await store.createRun({
+            id: runId,
+            agent: 'release',
+            status: 'waiting',
+            trigger,
+            waiting: {
+                kind: 'approval',
+                approvalId: '0:c1:0',
+                toolName: 'pick',
+                toolCallId: 'c1',
+                title: 'Deploy?',
+                expiresAt: new Date(now.getTime() + 60_000),
+            },
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: now,
+            updatedAt: now,
+        });
+        await store.saveCheckpoint({
+            runId,
+            stepIndex: 0,
+            messages: [
+                { role: 'user', content: 'start' },
+                {
+                    role: 'assistant',
+                    content: [{
+                        type: 'tool-call',
+                        toolCallId: 'c1',
+                        toolName: 'pick',
+                        input: { request },
+                    }],
+                },
+            ],
+            finishReason: 'tool-calls',
+            createdAt: now,
+        });
+        await engine.start();
+        await engine.approve(runId, { approvalId: '0:c1:0', approved: true });
+        await engine.idle();
+        expect(decisions).toEqual([{ approved: true }]);
+        expect(Object.keys(decisions[0]!)).not.toContain('selected');
+        expect(await store.getRun(runId)).toMatchObject({ status: 'completed' });
+        const wait = (await store.listSteps(runId)).find((s) => s.kind === 'wait');
+        expect(wait?.output).toMatchObject({ approvalId: '0:c1:0', approved: true });
+        expect(Object.keys(wait?.output as object)).not.toContain('selected');
+    });
+
     it('reads a recorded selection back', () => {
         expect(toApprovalDecision({ approved: true, selected: ['b'] })).toEqual({ approved: true, selected: ['b'] });
         expect(toApprovalDecision({ approved: true, selected: 'b' })).toEqual({ approved: true });
@@ -445,5 +524,138 @@ describe('delivering an approval with options', () => {
         expect(plainSent).toHaveLength(1);
         expect(Object.keys(plainSent[0]!)).not.toContain('options');
         expect(Object.keys(plainSent[0]!)).not.toContain('multiple');
+    });
+});
+
+describe('replaying an answered approval with options', () => {
+    /**
+     * Two engines over one store: the first answers and runs the pending
+     * call, which blocks after approve() returned (the decision is recorded);
+     * its clock never moves, so it never renews the claim, which expires on
+     * the store's clock and the second engine recovers and runs the call again
+     * (a crash or lost lease between the decision write and the call's result).
+     */
+    async function replay(first: unknown, second: unknown, answer: { approved: boolean; selected?: string[] }) {
+        const clock = new ControllableClock(new Date(START));
+        const frozen = new ControllableClock(new Date(START));
+        const store = new MemoryStore({ clock });
+        const decisions: ApprovalDecision[] = [];
+        const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+        const make = (model: LanguageModel, engineClock: ControllableClock) => {
+            const engine = new Engine({
+                store,
+                clock: engineClock,
+                claimTtlMs: 30,
+                agents: [defineAgent({
+                    name: 'release',
+                    instructions: 'You release.',
+                    model,
+                    tools: {
+                        pick: defineTool({
+                            inputSchema: z.object({}),
+                            execute: async (_input, { context }) => {
+                                const decision = await approve(context, (decisions.length === 0 ? first : second) as never);
+                                decisions.push(decision);
+                                if (decisions.length === 1) await gate;
+                                return decision.approved ? 'picked' : 'denied';
+                            },
+                        }),
+                    },
+                })],
+                onError: () => {},
+            });
+            engines.push(engine);
+            return engine;
+        };
+        const call: MockResponse = {
+            parts: [{
+                type: 'tool-call',
+                toolName: 'pick',
+                input: {},
+                toolCallId: 'c1',
+            }],
+        };
+        const stale = make(mockModel([call, text('done')]), frozen);
+        await stale.start();
+        const { runId } = await stale.dispatch({
+            agent: 'release',
+            trigger: 'http',
+            channel: 'http',
+            payload: {},
+        });
+        await stale.idle();
+        const run = await store.getRun(runId);
+        if (!run?.waiting) throw new Error('not waiting');
+        await stale.approve(runId, { approvalId: run.waiting.approvalId, ...answer });
+        await vi.waitFor(() => expect(decisions).toHaveLength(1));
+
+        clock.advance(31);
+        const fresh = make(mockModel([text('done')]), clock);
+        await fresh.start();
+        await fresh.idle();
+        release();
+        return {
+            store,
+            runId,
+            decisions,
+        };
+    }
+
+    const MULTIPLE = {
+        title: 'Pick?',
+        options: OPTIONS,
+        multiple: true,
+    };
+
+    it('returns the recorded selection on replay', async () => {
+        const {
+            store, 
+            runId, 
+            decisions, 
+        } = await replay(MULTIPLE, MULTIPLE, { approved: true, selected: ['c', 'a'] });
+        expect(decisions).toEqual([
+            { approved: true, selected: ['a', 'c'] },
+            { approved: true, selected: ['a', 'c'] },
+        ]);
+        expect(await store.getRun(runId)).toMatchObject({ status: 'completed' });
+        expect(toApprovalDecision({ approved: true, selected: ['a', 'c'] })).toEqual({ approved: true, selected: ['a', 'c'] });
+    });
+
+    it('denies a replayed request whose options no longer hold the selection', async () => {
+        const { decisions } = await replay(MULTIPLE, {
+            title: 'Pick?',
+            options: [{ id: 'a', label: 'Alpha' }],
+            multiple: true,
+        }, { approved: true, selected: ['a', 'c'] });
+        expect(decisions[1]).toEqual({ approved: false, reason: 'options changed' });
+    });
+
+    it('denies a replayed request that became a single choice', async () => {
+        const { decisions } = await replay(MULTIPLE, { title: 'Pick?', options: OPTIONS }, { approved: true, selected: ['a', 'c'] });
+        expect(decisions[1]).toEqual({ approved: false, reason: 'options changed' });
+    });
+
+    it('denies a replayed request that became plain', async () => {
+        const { decisions } = await replay(MULTIPLE, { title: 'Pick?' }, { approved: true, selected: ['a'] });
+        expect(decisions[1]).toEqual({ approved: false, reason: 'options changed' });
+    });
+
+    it('denies a replayed request that gained options', async () => {
+        const { decisions } = await replay({ title: 'Pick?' }, MULTIPLE, { approved: true });
+        expect(decisions[1]).toEqual({ approved: false, reason: 'options changed' });
+    });
+
+    it('keeps a recorded denial whatever the replayed request offers', async () => {
+        const { decisions } = await replay(MULTIPLE, { title: 'Pick?' }, { approved: false });
+        expect(decisions).toEqual([{ approved: false }, { approved: false }]);
+    });
+
+    it('keeps the selection when the replayed options still hold it', async () => {
+        const { decisions } = await replay(MULTIPLE, {
+            title: 'Pick?',
+            options: [{ id: 'c', label: 'Gamma' }, { id: 'a', label: 'Alpha' }, { id: 'd', label: 'Delta' }],
+            multiple: true,
+        }, { approved: true, selected: ['a', 'c'] });
+        expect(decisions[1]).toEqual({ approved: true, selected: ['c', 'a'] });
     });
 });

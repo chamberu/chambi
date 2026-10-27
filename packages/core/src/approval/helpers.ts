@@ -38,6 +38,18 @@ export function toApprovalDecision(value: unknown): ApprovalDecision {
     };
 }
 
+/**
+ * True without a C0 or C1 control character (line breaks, tabs, terminal
+ * escapes) and a line or paragraph separator: channels write labels raw.
+ */
+function isOneLine(text: string): boolean {
+    for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        if (code < 0x20 || (code >= 0x7F && code <= 0x9F) || code === 0x2028 || code === 0x2029) return false;
+    }
+    return true;
+}
+
 function toApprovalOption(value: unknown, index: number): ApprovalOption {
     if (!isObject(value)) throw new ValidationError(`Approval option ${index} must be an object.`);
     const {
@@ -54,7 +66,7 @@ function toApprovalOption(value: unknown, index: number): ApprovalOption {
         typeof label !== 'string' ||
         label.trim().length === 0 ||
         label.length > APPROVAL_OPTION_LABEL_MAX_LENGTH ||
-        /[\r\n]/.test(label)
+        !isOneLine(label)
     ) {
         throw new ValidationError(
             `Approval option "${id}" needs a label of one line with 1 to ${APPROVAL_OPTION_LABEL_MAX_LENGTH} characters.`,
@@ -85,7 +97,7 @@ export function toApprovalOptions(
         throw new ValidationError('An approval request\'s multiple must be a boolean.');
     }
     if (options === undefined) {
-        if (multiple !== undefined) throw new ValidationError('An approval request with multiple needs options.');
+        if (multiple === true) throw new ValidationError('An approval request with multiple needs options.');
         return {};
     }
     if (!Array.isArray(options) || options.length === 0 || options.length > APPROVAL_OPTIONS_MAX) {
@@ -156,4 +168,46 @@ export function toSelection(
         throw new ValidationError('An approval of a single choice selects exactly one option.');
     }
     return options.filter((option) => chosen.has(option.id)).map((option) => option.id);
+}
+
+/**
+ * A recorded decision as a replayed request gets it: unchanged when it still
+ * fits the request (a denial always does), with the selection in the
+ * request's option order; a denial `options changed` when the request now
+ * offers other options than the recorded selection was made from (a
+ * selection the request does not offer, a selection for a plain request,
+ * none for a request with options), so a tool never gets an id it did not
+ * offer.
+ */
+export function fitRecordedDecision(
+    decision: ApprovalDecision,
+    request: {
+        approvalId: string; 
+        options?: ApprovalOption[]; 
+        multiple?: boolean 
+    },
+): ApprovalDecision {
+    if (!decision.approved) return decision;
+    const changed: ApprovalDecision = {
+        approved: false,
+        reason: 'options changed',
+        ...(decision.approver ? { approver: decision.approver } : {}),
+    };
+    if (!request.options) return decision.selected ? changed : decision;
+    let selected: string[] | undefined;
+    try {
+        selected = toSelection({
+            kind: 'approval',
+            approvalId: request.approvalId,
+            toolName: '',
+            toolCallId: '',
+            title: '',
+            options: request.options,
+            ...(request.multiple ? { multiple: true } : {}),
+            expiresAt: new Date(0),
+        }, true, decision.selected);
+    } catch {
+        return changed;
+    }
+    return { ...decision, ...(selected ? { selected } : {}) };
 }
