@@ -72,6 +72,12 @@ describePostgres('TypeormStore runs', () => {
                 toolCallId: 'call-1',
                 title: 'Approve tool',
                 body: 'details',
+                options: [{
+                    id: 'a', 
+                    label: 'A', 
+                    detail: '--- a\n+++ b', 
+                }],
+                multiple: true,
                 channel: 'github',
                 address: 'o/r#1',
                 expiresAt: new Date('2026-03-08T07:15:00.456Z'),

@@ -24,6 +24,8 @@ import {
 import type {
     ApprovalDecision,
     ApprovalOption,
+    ChannelMessage,
+    IChannel,
 } from '@chamvi/core';
 import { toApprovalDecision } from '../../../src/approval/helpers.ts';
 import { MemoryStore } from '../../../src/store/index.ts';
@@ -60,7 +62,7 @@ const OPTIONS: ApprovalOption[] = [
     { id: 'c', label: 'Gamma' },
 ];
 
-function setup(model: LanguageModel) {
+function setup(model: LanguageModel, channels: IChannel[] = []) {
     const clock = new ControllableClock(new Date(START));
     const store = new MemoryStore({ clock });
     const decisions: ApprovalDecision[] = [];
@@ -68,7 +70,10 @@ function setup(model: LanguageModel) {
     const pick = defineTool({
         inputSchema: z.object({ request: z.any() }),
         execute: async ({ request }, { context }) => {
-            const decision = await approve(context, request);
+            const { via, ...rest } = request;
+            const decision = typeof via === 'string' ?
+                await context.channels.findOneOrFail(via).approve({ ...rest, address: 'ops' }) :
+                await approve(context, request);
             decisions.push(decision);
             return decision.approved ? `picked ${(decision.selected ?? []).join(',')}` : 'denied';
         },
@@ -81,6 +86,7 @@ function setup(model: LanguageModel) {
             model,
             tools: { pick },
         })],
+        channels,
         clock,
         claimTtlMs: 30,
         onError: (error) => {
@@ -375,5 +381,69 @@ describe('answering an approval with options', () => {
         expect(toApprovalDecision({ approved: true, selected: ['b'] })).toEqual({ approved: true, selected: ['b'] });
         expect(toApprovalDecision({ approved: true, selected: 'b' })).toEqual({ approved: true });
         expect(toApprovalDecision({ approved: true, selected: ['b', 1] })).toEqual({ approved: true });
+    });
+});
+
+describe('delivering an approval with options', () => {
+    it('delivers the options through the channel', async () => {
+        const sent: ChannelMessage[] = [];
+        const rec: IChannel = {
+            name: 'rec',
+            async out(message) {
+                sent.push(message);
+            },
+        };
+        const model = mockModel([
+            {
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolName: 'pick',
+                        input: {
+                            request: {
+                                via: 'rec', 
+                                title: 'Pick?', 
+                                options: OPTIONS, 
+                                multiple: true,
+                            },
+                        },
+                        toolCallId: 'c1',
+                    },
+                ],
+            },
+            text('done'),
+        ]);
+        const { engine, store } = setup(model, [rec]);
+        await dispatch(engine, store);
+        expect(sent).toHaveLength(1);
+        expect(sent[0]).toMatchObject({
+            kind: 'approval', 
+            options: OPTIONS, 
+            multiple: true, 
+        });
+
+        const plainSent: ChannelMessage[] = [];
+        const plain = setup(mockModel([
+            {
+                parts: [
+                    {
+                        type: 'tool-call',
+                        toolName: 'pick',
+                        input: { request: { via: 'rec', title: 'Deploy?' } },
+                        toolCallId: 'c1',
+                    },
+                ],
+            },
+            text('done'),
+        ]), [{
+            name: 'rec',
+            async out(message) {
+                plainSent.push(message);
+            },
+        }]);
+        await dispatch(plain.engine, plain.store);
+        expect(plainSent).toHaveLength(1);
+        expect(Object.keys(plainSent[0]!)).not.toContain('options');
+        expect(Object.keys(plainSent[0]!)).not.toContain('multiple');
     });
 });

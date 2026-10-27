@@ -898,6 +898,8 @@ export class Engine implements IContextProvider {
                     body: waiting.body ?? '',
                     approvalId: waiting.approvalId,
                     expiresAt: waiting.expiresAt,
+                    ...(waiting.options !== undefined ? { options: waiting.options } : {}),
+                    ...(waiting.multiple === true ? { multiple: true } : {}),
                 }, waiting.address ?? '', { signal: controller.signal, trigger: run.trigger }),
                 aborted,
             ]);
