@@ -349,7 +349,7 @@ Every option is checked when `githubChannel()` is called; a bad one throws `Inva
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `createGithubApp` | function | The App: `octokit(installationId)`, `botLogin()`, `botIdentity()`, `installationFor({ owner, repo })`, `installations()`, `repositoryToken()`, `verifySignature()`, `readTools()`, `writeTools({ mergeMethod? })` |
+| `createGithubApp` | function | The App: `octokit(installationId)`, `botLogin()`, `botIdentity()`, `installationFor({ owner, repo })`, `repositoryInstallation({ owner, repo })` (the whole installation, permissions included, from the same cache), `installations()`, `repositoryToken()`, `verifySignature()`, `readTools()`, `writeTools({ mergeMethod? })` |
 | `githubAppCredentials` | function | Repository-scoped git credentials for `@chamvi/sandbox` workspaces |
 | `DEFAULT_GITHUB_GIT_HOST`, `GITHUB_TOKEN_USERNAME` | constant | `'github.com'`, `'x-access-token'` |
 | `githubChannel` | function | The channel: deliveries `in`, comments `out`, plus `on()` and `to()` bound to its name |

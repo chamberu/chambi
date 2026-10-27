@@ -21,7 +21,7 @@ Throws `InvalidAgentDefinitionError` for an empty `appId`, a key that is no RSA 
 
 <<< ../../../github/src/app/types.ts{ts}
 
-`installationFor({ owner, repo })` answers the App's installation on a repository (App JWT, cached per lower-cased `owner/repo` for `INSTALLATION_CACHE_TTL_MS` on the clock, concurrent callers sharing one lookup; `undefined`, not cached, where the App is not installed); `installations()` lists every installation (`GET /app/installations`, not cached). `writeTools({ mergeMethod })` throws `InvalidAgentDefinitionError` for a method outside `MERGE_METHODS`.
+`installationFor({ owner, repo })` answers the App's installation on a repository (App JWT, cached per lower-cased `owner/repo` for `INSTALLATION_CACHE_TTL_MS` on the clock, concurrent callers sharing one lookup; `undefined`, not cached, where the App is not installed); `repositoryInstallation({ owner, repo })` answers the whole installation of that lookup (`GithubInstallation`, permissions included) from the same cache; `installations()` lists every installation (`GET /app/installations`, not cached). `writeTools({ mergeMethod })` throws `InvalidAgentDefinitionError` for a method outside `MERGE_METHODS`.
 
 ```ts
 const GITHUB_REQUEST_ERROR_CODE: 'github_request';

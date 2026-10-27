@@ -64,21 +64,22 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
     let login: Promise<string> | undefined = slug ? Promise.resolve(`${slug}[bot]`) : undefined;
     let identity: Promise<GithubBotIdentity> | undefined;
 
-    /** The installation id per lower-cased `owner/repo` until `expiresAt` (INSTALLATION_CACHE_TTL_MS on the clock). */
-    const installationCache = new Map<string, { id: number; expiresAt: number }>();
-    const pendingLookups = new Map<string, Promise<number | undefined>>();
+    /** The installation per lower-cased `owner/repo` until `expiresAt` (INSTALLATION_CACHE_TTL_MS on the clock). */
+    const installationCache = new Map<string, { installation: GithubInstallation; expiresAt: number }>();
+    const pendingLookups = new Map<string, Promise<GithubInstallation | undefined>>();
 
-    function lookupInstallation(owner: string, repo: string): Promise<number | undefined> {
+    function lookupInstallation(owner: string, repo: string): Promise<GithubInstallation | undefined> {
         const key = `${owner}/${repo}`.toLowerCase();
         const cached = installationCache.get(key);
-        if (cached && clock.now().getTime() < cached.expiresAt) return Promise.resolve(cached.id);
+        if (cached && clock.now().getTime() < cached.expiresAt) return Promise.resolve(cached.installation);
         let pending = pendingLookups.get(key);
         if (!pending) {
             pending = tokens.app()
                 .then((octokit) => octokit.request('GET /repos/{owner}/{repo}/installation', { owner, repo }))
                 .then(({ data }) => {
-                    installationCache.set(key, { id: data.id, expiresAt: clock.now().getTime() + INSTALLATION_CACHE_TTL_MS });
-                    return data.id;
+                    const installation = toInstallation(data);
+                    installationCache.set(key, { installation, expiresAt: clock.now().getTime() + INSTALLATION_CACHE_TTL_MS });
+                    return installation;
                 }, (error: unknown) => {
                     installationCache.delete(key);
                     if ((error as { status?: number })?.status === 404) return undefined;
@@ -142,7 +143,10 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
             }
             return identity;
         },
-        installationFor(target): Promise<number | undefined> {
+        async installationFor(target): Promise<number | undefined> {
+            return (await lookupInstallation(target.owner, target.repo))?.id;
+        },
+        repositoryInstallation(target): Promise<GithubInstallation | undefined> {
             return lookupInstallation(target.owner, target.repo);
         },
         async installations(): Promise<GithubInstallation[]> {
@@ -158,7 +162,7 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
             const { owner, repo } = target;
             const installation = await lookupInstallation(owner, repo);
             if (installation === undefined) return undefined;
-            const scoped = await tokens.repository(installation, repo, tokenOptions.permissions).catch((error: unknown) => {
+            const scoped = await tokens.repository(installation.id, repo, tokenOptions.permissions).catch((error: unknown) => {
                 // the App may have been removed from the repository: look it up again next time
                 installationCache.delete(`${owner}/${repo}`.toLowerCase());
                 throw toolError(error);

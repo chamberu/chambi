@@ -16,6 +16,29 @@ function setup() {
     return { ...fixture, lookups };
 }
 
+describe('IGithubApp.repositoryInstallation', () => {
+    it('answers the installation with its permissions, sharing the installationFor cache', async () => {
+        const { fake, gh, lookups } = setup();
+        fake.installations.set('acme/api', 9);
+        fake.appInstallations.set(9, {
+            id: 9,
+            account: { login: 'acme', type: 'Organization' },
+            repository_selection: 'selected',
+            permissions: { contents: 'write', metadata: 'read' },
+        });
+        expect(await gh.repositoryInstallation({ owner: 'acme', repo: 'api' })).toEqual({
+            id: 9,
+            account: 'acme',
+            accountType: 'Organization',
+            repositorySelection: 'selected',
+            permissions: { contents: 'write', metadata: 'read' },
+        });
+        expect(await gh.installationFor({ owner: 'Acme', repo: 'Api' })).toBe(9);
+        expect(lookups()).toBe(1);
+        expect(await gh.repositoryInstallation({ owner: 'acme', repo: 'other' })).toBeUndefined();
+    });
+});
+
 describe('IGithubApp.installationFor', () => {
     it('looks up the installation of a repository once per TTL', async () => {
         const {

@@ -173,7 +173,8 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
         if (method === 'GET' && repoInstallation) {
             if (!verifyJwt(authorization)) return json(401, { message: 'Bad credentials' });
             const id = fake.installations.get(`${decodeURIComponent(repoInstallation[1]!)}/${decodeURIComponent(repoInstallation[2]!)}`.toLowerCase());
-            return id === undefined ? json(404, { message: 'Not Found' }) : json(200, { id });
+            // GitHub answers the whole installation (account, permissions, ...)
+            return id === undefined ? json(404, { message: 'Not Found' }) : json(200, { ...fake.appInstallations.get(id), id });
         }
         const user = /^\/users\/([^/]+)$/.exec(path);
         if (method === 'GET' && user) {

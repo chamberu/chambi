@@ -137,6 +137,15 @@ describe('github_get_push_target', () => {
         });
     });
 
+    it('reads the permissions from the cached repository installation, never the installation list', async () => {
+        const { fake, call } = setup();
+        fake.pulls.set('octo/demo#1', pull(1));
+        await call('github_get_push_target', { repo: 'octo/demo', number: 1 });
+        await call('github_get_push_target', { repo: 'octo/demo', number: 1 });
+        expect(fake.requests.filter((r) => r.path === '/app/installations')).toEqual([]);
+        expect(fake.requests.filter((r) => r.path === '/repos/octo/demo/installation')).toHaveLength(1);
+    });
+
     it('cannot push to an uninstalled fork', async () => {
         const { fake, call } = setup();
         fake.pulls.set('octo/demo#2', pull(2, {

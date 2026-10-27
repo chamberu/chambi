@@ -219,11 +219,11 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
                     };
                     if (pull.headRepo === null) return { ...target, reason: 'head repository deleted' };
                     const head = parseRepo(pull.headRepo);
-                    const installationId = await app.installationFor(head);
-                    if (installationId === undefined) return { ...target, reason: `GitHub App not installed on ${pull.headRepo}` };
-                    const installation = (await app.installations()).find((item) => item.id === installationId);
-                    const contents = permissionOf(installation?.permissions.contents);
-                    const workflows = permissionOf(installation?.permissions.workflows);
+                    const installation = await app.repositoryInstallation(head);
+                    if (installation === undefined) return { ...target, reason: `GitHub App not installed on ${pull.headRepo}` };
+                    const installationId = installation.id;
+                    const contents = permissionOf(installation.permissions.contents);
+                    const workflows = permissionOf(installation.permissions.workflows);
                     const canPush = contents === 'write';
                     return {
                         ...target,

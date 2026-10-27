@@ -95,6 +95,12 @@ export interface IGithubApp {
      * cached.
      */
     installationFor(target: { owner: string; repo: string }): Promise<number | undefined>;
+    /**
+     * The whole installation `installationFor()` looked up (account,
+     * permissions), from the same cache; undefined where the App is not
+     * installed.
+     */
+    repositoryInstallation(target: { owner: string; repo: string }): Promise<GithubInstallation | undefined>;
     /** Every installation of the App (`GET /app/installations`, paginated), not cached. */
     installations(): Promise<GithubInstallation[]>;
     /** `sha256=<hex>` of the raw body under any webhook secret, compared in constant time. */
