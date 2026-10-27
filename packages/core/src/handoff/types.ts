@@ -6,7 +6,11 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { ChannelSubscription } from '../channel/types.ts';
+import type { Agent } from '../agent/types.ts';
+import type { ChannelSubscription, DispatchResult } from '../channel/types.ts';
+import type { DispatchEnvelope } from '../engine/types.ts';
+import type { IEffectStore } from '../store/types.ts';
+import type { TriggerParent } from '../trigger/types.ts';
 
 export type HandoffSubscriptionOptions<P = unknown> = {
     /** Parses the payload a tool hands off; the parsed value is the child's payload. */
@@ -37,4 +41,16 @@ export type HandoffInput = {
 export type HandoffResult = {
     runId: string;
     deduplicated: boolean;
+};
+
+/** The engine side of startHandoff() (internal, provided under HANDOFF_CONTEXT). */
+export type HandoffHost = {
+    getAgent(name: string): Agent | undefined;
+    effects: IEffectStore;
+    /** Creates the run with `parent` as its lineage (dispatch() never sets one). */
+    dispatch(envelope: DispatchEnvelope, parent: TriggerParent): Promise<DispatchResult>;
+    /** Runs `fn` after every earlier call of the same run settled (the count read-check-write). */
+    serial<T>(runId: string, fn: () => Promise<T>): Promise<T>;
+    /** Hand-offs in flight by effect key, so identical parallel calls share one. */
+    inflight: Map<string, Promise<HandoffResult>>;
 };

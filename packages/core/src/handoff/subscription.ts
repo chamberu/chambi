@@ -18,7 +18,7 @@ import type { HandoffSubscriber } from './types.ts';
 export const handoff: HandoffSubscriber = {
     on: (options = {}) => {
         const maxPerRun = options.maxPerRun ?? DEFAULT_MAX_HANDOFFS_PER_RUN;
-        if (!Number.isInteger(maxPerRun) || maxPerRun <= 0) {
+        if (!Number.isSafeInteger(maxPerRun) || maxPerRun <= 0) {
             throw new InvalidAgentDefinitionError('handoff.on({ maxPerRun }) must be a positive integer.');
         }
         return {

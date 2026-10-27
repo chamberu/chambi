@@ -5,6 +5,11 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export * from './constants.ts';
+export { DEFAULT_MAX_HANDOFFS_PER_RUN, HANDOFF_SUBSCRIPTION_ID, MAX_HANDOFF_DEPTH } from './constants.ts';
 export * from './subscription.ts';
-export type * from './types.ts';
+export type {
+    HandoffInput,
+    HandoffResult,
+    HandoffSubscriber,
+    HandoffSubscriptionOptions,
+} from './types.ts';

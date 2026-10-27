@@ -55,8 +55,16 @@ describe('handoff.on()', () => {
 
     it('an agent subscribing without agentChannel() is refused', () => {
         const store = new MemoryStore();
-        expect(() => new Engine({ store, agents: [agent()], channels: [] })).toThrow(/unknown channel "agent"/);
-        expect(() => new Engine({ store, agents: [agent()], channels: [agentChannel()] })).not.toThrow();
+        expect(() => new Engine({
+            store, 
+            agents: [agent()], 
+            channels: [], 
+        })).toThrow(/unknown channel "agent"/);
+        expect(() => new Engine({
+            store, 
+            agents: [agent()], 
+            channels: [agentChannel()], 
+        })).not.toThrow();
     });
 
     it('agentChannel() has neither in nor out', () => {

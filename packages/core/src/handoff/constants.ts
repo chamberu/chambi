@@ -5,6 +5,9 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { defineContextKey } from '../context/module.ts';
+import type { HandoffHost } from './types.ts';
+
 /** The id of the `handoff.on()` subscription (one per agent). */
 export const HANDOFF_SUBSCRIPTION_ID = 'handoff';
 
@@ -13,3 +16,6 @@ export const DEFAULT_MAX_HANDOFFS_PER_RUN = 100;
 
 /** A handed-off run cannot hand off again. */
 export const MAX_HANDOFF_DEPTH = 1;
+
+/** The engine's hand-off host (internal, kept out of the barrel). */
+export const HANDOFF_CONTEXT = defineContextKey<HandoffHost>('handoff');
