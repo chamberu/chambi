@@ -21,6 +21,7 @@ import {
 } from './helpers.ts';
 import { toolError } from '../tools/helpers.ts';
 import { createReadTools } from '../tools/read.ts';
+import { createRepositoryTools } from '../tools/repositories.ts';
 import { GITHUB_REQUEST_ERROR_CODE } from '../tools/constants.ts';
 import { createWriteTools } from '../tools/write.ts';
 import { verifySignature } from '../webhook/helpers.ts';
@@ -165,7 +166,7 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
             return verifySignature(secrets, body, signature);
         },
         readTools(): ToolSet {
-            return createReadTools(app);
+            return { ...createReadTools(app), ...createRepositoryTools(app) };
         },
         writeTools(): ToolSet {
             return createWriteTools(app);

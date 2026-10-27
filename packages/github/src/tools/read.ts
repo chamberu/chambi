@@ -7,7 +7,6 @@
 
 import type { ToolSet } from 'ai';
 import { ValidationError, defineTool } from '@chamvi/core';
-import { isObject } from 'smob';
 import type { IGithubApp } from '../app/types.ts';
 import {
     COMMIT_MESSAGE_MAX_CHARS,
@@ -25,6 +24,8 @@ import {
     REPO_PROPERTY,
     compareVersions,
     cut,
+    labelName,
+    login,
     numberSchema,
     objectSchema,
     parseRepo,
@@ -51,15 +52,6 @@ import type {
     NumberInput,
     RepoInput,
 } from './types.ts';
-
-function login(user: unknown): string | null {
-    return isObject(user) && typeof user.login === 'string' ? user.login : null;
-}
-
-function labelName(label: unknown): string {
-    if (typeof label === 'string') return label;
-    return isObject(label) && typeof label.name === 'string' ? label.name : '';
-}
 
 /** The `owner/name` of an API URL ending in `/repos/<owner>/<name>`. */
 function repoOfUrl(url: unknown): string {

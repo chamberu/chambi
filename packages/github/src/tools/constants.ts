@@ -47,3 +47,9 @@ export const COMMIT_MESSAGE_MAX_CHARS = 300;
 
 /** A branch, tag or commit `github_compare` takes (`owner:branch` for a fork). */
 export const REF_PATTERN = '^[\\w./:@+-]{1,255}$';
+
+/** Repositories `github_list_repositories` returns at most (over every installation). */
+export const REPOSITORIES_MAX = 1000;
+
+/** Issues `github_list_issues` returns at most (and without a `limit`). */
+export const ISSUES_MAX = 100;

@@ -63,6 +63,17 @@ export async function installationOf(app: IGithubApp, ctx: ToolContext, target?:
     });
 }
 
+/** A user's login, else null (a deleted account). */
+export function login(user: unknown): string | null {
+    return isObject(user) && typeof user.login === 'string' ? user.login : null;
+}
+
+/** A label's name (GitHub sends objects, older payloads strings). */
+export function labelName(label: unknown): string {
+    if (typeof label === 'string') return label;
+    return isObject(label) && typeof label.name === 'string' ? label.name : '';
+}
+
 const REPO = new RegExp(REPO_PATTERN);
 
 /** `owner/name`; a ValidationError (a tool error the model can correct) otherwise. */

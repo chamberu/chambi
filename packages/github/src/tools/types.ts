@@ -147,3 +147,39 @@ export type GithubClosedIssue = {
     state: 'closed';
     stateReason: string | null;
 };
+
+/** One repository of `github_list_repositories`: `repo` is `owner/name`, `account` the installation's account. */
+export type GithubRepository = {
+    repo: string;
+    installationId: number;
+    account: string;
+    private: boolean;
+    archived: boolean;
+    fork: boolean;
+    defaultBranch: string;
+    url: string;
+};
+
+/** `github_list_repositories`, sorted by `repo`; `truncated` when REPOSITORIES_MAX cut it. */
+export type GithubRepositoryList = {
+    repositories: GithubRepository[];
+    truncated: boolean;
+};
+
+/** One open issue of `github_list_issues`. */
+export type GithubIssueSummary = {
+    number: number;
+    title: string;
+    author: string | null;
+    labels: string[];
+    comments: number;
+    createdAt: string;
+    updatedAt: string;
+    url: string;
+};
+
+/** `github_list_issues`, newest updated first; `truncated` when more remained. */
+export type GithubIssueList = {
+    issues: GithubIssueSummary[];
+    truncated: boolean;
+};

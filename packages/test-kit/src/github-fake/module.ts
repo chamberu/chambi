@@ -117,6 +117,13 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
     }
 
     fake.fetch = async (resource, init) => {
+        const response = await answer(resource, init);
+        // a Response built in process has no url; Octokit's paginate reads it for object lists
+        Object.defineProperty(response, 'url', { value: resource instanceof Request ? resource.url : String(resource) });
+        return response;
+    };
+
+    const answer = async (resource: Parameters<typeof globalThis.fetch>[0], init: Parameters<typeof globalThis.fetch>[1]): Promise<Response> => {
         const request = new Request(resource as RequestInfo, init);
         const { signal } = request;
         if (signal.aborted) throw signal.reason;

@@ -58,8 +58,10 @@ describe('read tools', () => {
             'github_get_issue',
             'github_get_latest_release',
             'github_get_pull_request',
+            'github_list_issues',
             'github_list_labels',
             'github_list_releases',
+            'github_list_repositories',
             'github_search_issues',
         ]);
     });
