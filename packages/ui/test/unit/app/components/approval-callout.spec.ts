@@ -70,4 +70,51 @@ describe('ApprovalCallout', () => {
         expect(html).toContain('Deploy &lt;prod&gt;?');
         expect(html).not.toContain('data-testid="approval-body"');
     });
+
+    const options = [
+        {
+            id: 'a', 
+            label: 'Alpha', 
+            detail: '@@ -1 +1 @@\n-old\n+new <script>x</script>', 
+        },
+        { id: 'b', label: 'Beta' },
+    ];
+
+    it('renders radios for a single choice', async () => {
+        const html = await render(wireRun({ status: 'waiting', waiting: { ...waiting, options } }));
+        expect(html).toContain('data-testid="approval-options"');
+        expect(html).toContain('Choose one');
+        const radios = html.match(/<input[^>]*type="radio"[^>]*>/g) ?? [];
+        expect(radios).toHaveLength(2);
+        for (const radio of radios) expect(radio).toContain('name="option-r1"');
+        expect(html.match(/<details/g)).toHaveLength(1);
+        expect(html).toContain('<pre class="option-detail"');
+        expect(html).toContain('<span class="diff-add">+new &lt;script&gt;x&lt;/script&gt;</span>');
+        // one line per span, the SSR fragment markers aside
+        expect(html.replace(/<!--[[\]]-->/g, '')).toContain('<span class="diff-del">-old</span>\n<span class="diff-add">');
+        expect(html).not.toContain('<script>x');
+        expect(html).toContain('Alpha');
+        expect(html).toContain('Beta');
+    });
+
+    it('renders checkboxes for a multiple choice', async () => {
+        const html = await render(wireRun({
+            status: 'waiting',
+            waiting: {
+                ...waiting, 
+                options, 
+                multiple: true, 
+            }, 
+        }));
+        expect(html.match(/<input[^>]*type="checkbox"[^>]*>/g)).toHaveLength(2);
+        expect(html).not.toContain('type="radio"');
+        expect(html).toContain('Choose one or more');
+    });
+
+    it('renders a plain approval without options', async () => {
+        const html = await render(wireRun({ status: 'waiting', waiting }));
+        expect(html).not.toContain('type="radio"');
+        expect(html).not.toContain('type="checkbox"');
+        expect(html).not.toContain('data-testid="approval-options"');
+    });
 });

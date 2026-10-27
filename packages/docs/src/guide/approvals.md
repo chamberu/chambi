@@ -29,6 +29,18 @@ Other rules:
 - **Streaming tools** (an `execute` returning an async iterable) cannot call `approve()` in their body (`InvalidRunStateError`); gate them in `beforeToolExecution`.
 - AI SDK tools that declare their own `needsApproval` are refused when the agent is defined (`InvalidAgentDefinitionError`; a tools factory fails the run), since nothing answers that request.
 
+## Offering options
+
+An approval can offer choices instead of a plain yes or no:
+
+<<< @/snippets/approvals.ts#choice
+
+`approve(ctx, { title, body?, options?: [{ id, label, detail? }], multiple?, timeoutMs? })` resolves `{ approved, reason?, approver?, selected? }`. The owner picks one option (with `multiple: true` one or more) and approves, or denies; `selected` holds the chosen ids in the order of `options`, only on an approval. "None of them" is a denial with a reason.
+
+- **Limits** (`ValidationError`, a tool error): 1 to `APPROVAL_OPTIONS_MAX` (20) options; ids match `APPROVAL_OPTION_ID_PATTERN` (up to 128 characters without whitespace, such as `unicorn/no-null`, `@typescript-eslint/no-explicit-any`, `1.2.3` or a branch name) and are unique; a label is one non-blank line (no control character, line or paragraph separator) of at most `APPROVAL_OPTION_LABEL_MAX_LENGTH` (200) characters; a `detail` has at most `APPROVAL_OPTION_DETAIL_MAX_LENGTH` (20 000) characters, all details together at most `APPROVAL_OPTIONS_DETAIL_MAX_LENGTH` (100 000); `multiple: true` needs `options` (`multiple: false` without options is a plain request). Other keys of an option are dropped.
+- **Where they show**: the wait point (`run.waiting.options`, `multiple` only when true) and the `wait` step's input keep the options; the dashboard renders each as a radio or checkbox with its `detail` as preformatted text (a diff colored by line); channels list `<id>: <label>` and link to the dashboard, never the detail.
+- **Replay**: on resume `approve()` returns the recorded decision (the request is still validated first), its `selected` in the order of the options the tool passes now. When those options no longer fit the recorded answer (an id the request does not offer any more, a single choice that was a multiple one, options added to a plain request or removed from one), it returns a denial with the reason `options changed` instead, so a tool never gets an id it did not offer. A recorded denial is returned as is.
+
 ## Asking through a channel
 
 `approve()` on its own asks the [dashboard inbox](/guide/ui) and the API only. To ask where the owner is, call it on a [channel](/guide/channels):
@@ -53,7 +65,9 @@ The coding tools, the GitHub tools and any third-party tool have an `execute` yo
 
 <<< @/snippets/approvals.ts#answer
 
-`engine.approve(runId, { approvalId, approved, reason?, approver? })` answers the run's current wait point, for a caller that authorized the approver itself (the `@chamvi/http` endpoint `POST /runs/:id/approve`, which the dashboard uses). An `approvalId` that is not the current one, an expired wait point (the next `tick()` denies it) or a run that is not `waiting` throws `InvalidRunStateError`.
+`engine.approve(runId, { approvalId, approved, reason?, approver?, selected? })` answers the run's current wait point, for a caller that authorized the approver itself (the `@chamvi/http` endpoint `POST /runs/:id/approve`, which the dashboard uses). An `approvalId` that is not the current one, an expired wait point (the next `tick()` denies it) or a run that is not `waiting` throws `InvalidRunStateError`.
+
+`selected` answers a wait point with options: an approval needs exactly one id (with `multiple` at least one) of the wait point's options; a denial selects nothing (an empty `selected` is dropped). Anything else is a `ValidationError` (400 over HTTP), checked after the state checks above, and the run keeps waiting: `selected` on a plain wait point, an unknown id, several ids for a single choice, an approval without a selection, or a selection that is no array of at most 20 distinct strings (this shape is checked before any store read). The decision and the `wait` step's `output.selected` hold the ids in option order; a timeout and a denial never have a selection.
 
 An answer is single use: a second answer of the same wait point throws `InvalidRunStateError`.
 

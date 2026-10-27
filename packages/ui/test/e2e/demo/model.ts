@@ -47,24 +47,28 @@ function words(id: string, text: string): LanguageModelV4StreamPart[] {
 
 /**
  * A stateless demo model, decided by the prompt: without a tool result it
- * explains itself and calls `deploy` with `{ env: 'prod' }`; with one it
- * streams the answer word by word. A short delay per chunk keeps the run
- * `running` long enough to watch.
+ * explains itself and calls `toolName` (default `deploy` with
+ * `{ env: 'prod' }`); with one it streams the answer word by word. A short
+ * delay per chunk keeps the run `running` long enough to watch.
  */
-export function createDemoModel(chunkDelayInMs = 120): LanguageModel {
+export function createDemoModel(chunkDelayInMs = 120, toolName = 'deploy', input: unknown = { env: 'prod' }): LanguageModel {
     return new MockLanguageModelV4({
         doStream: async ({ prompt }) => {
             const answered = hasToolResult(prompt);
             const chunks: LanguageModelV4StreamPart[] = [{ type: 'stream-start', warnings: [] }];
             if (answered) {
-                chunks.push(...words('t0', 'The deploy step answered. deployed prod, all checks green.'));
+                chunks.push(...words('t0', toolName === 'deploy' ?
+                    'The deploy step answered. deployed prod, all checks green.' :
+                    `The ${toolName} step answered.`));
             } else {
-                chunks.push(...words('t0', 'Deploying the payload environment needs the deploy tool. '));
+                chunks.push(...words('t0', toolName === 'deploy' ?
+                    'Deploying the payload environment needs the deploy tool. ' :
+                    `This needs the ${toolName} tool. `));
                 chunks.push({
                     type: 'tool-call',
                     toolCallId: `call-${Date.now()}`,
-                    toolName: 'deploy',
-                    input: JSON.stringify({ env: 'prod' }),
+                    toolName,
+                    input: JSON.stringify(input),
                 });
             }
             chunks.push({

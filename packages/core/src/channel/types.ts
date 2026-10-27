@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { ApprovalDecision, ApprovalRequestInput } from '../approval/types.ts';
+import type { ApprovalDecision, ApprovalOption, ApprovalRequestInput } from '../approval/types.ts';
 import type { Engine } from '../engine/module.ts';
 import type { DispatchEnvelope } from '../engine/types.ts';
 import type { TriggerEnvelope } from '../trigger/types.ts';
@@ -43,6 +43,10 @@ export type ChannelMessage = {
     approvalId?: string;
     /** Set for kind `approval`. */
     expiresAt?: Date;
+    /** Set for kind `approval` with options. */
+    options?: ApprovalOption[];
+    /** Set (true) for kind `approval` with options of which several may be selected. */
+    multiple?: boolean;
 };
 
 export type ChannelSendOptions = {

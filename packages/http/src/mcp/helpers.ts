@@ -142,6 +142,8 @@ export function toRunToolResult(run: Run, deduplicated: boolean): RunToolResult 
             toolName: run.waiting.toolName,
             title: run.waiting.title,
             ...(run.waiting.body !== undefined ? { body: run.waiting.body } : {}),
+            ...(run.waiting.options !== undefined ? { options: run.waiting.options } : {}),
+            ...(run.waiting.multiple === true ? { multiple: true } : {}),
             expiresAt: run.waiting.expiresAt.toISOString(),
         };
     }

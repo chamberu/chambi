@@ -34,7 +34,7 @@ An agent without `http.on()` answers 404 on REST and gets no MCP tool; the engin
 | `GET /runs/:id/artifacts` | as `GET /runs/:id` | `200 { data: Artifact[] }` |
 | `GET /runs/:id/artifacts/:artifactId` | as `GET /runs/:id` | The bytes, as a download |
 | `POST /runs/:id/cancel` | `run:cancel` | `202 { runId, status }` |
-| `POST /runs/:id/approve` | `agent:<run.agent>:approve` | `202 { runId, status: 'queued' }`; body `{ approvalId, approved, reason? }`; answers the run's current wait point without a token (409 for another `approvalId`, an expired wait point or a run not waiting) |
+| `POST /runs/:id/approve` | `agent:<run.agent>:approve` | `202 { runId, status: 'queued' }`; body `{ approvalId, approved, reason?, selected? }`; answers the run's current wait point without a token (409 for another `approvalId`, an expired wait point or a run not waiting; 400 for a `selected` that does not fit the wait point's [options](/guide/approvals#offering-options)) |
 | `POST /channels/<name>[/...]` | the channel's own | Whatever the channel's `in` answers; only for the channels in `channels` |
 | `GET /agents`, `GET /schedules` | `run:read` | `{ data, issues }`: agent summaries and the [agent folders](/guide/agent-folders) that failed to load (`{ agent, message, at }`); agent summaries list their subscriptions `{ channel, id, hook? }`; cron subscriptions with their channel and next fire time |
 | `GET /agents/:name/state/kv` | `state:read` | `200 { data: Array<{ key, value }> }` in key code-point order; `page[limit]` (default 50, at most 100), `page[offset]` |
@@ -102,7 +102,7 @@ The invoker is a snapshot: a run keeps the grants it was started with, even when
 
 - `run_<agent>` for each agent with `http.on()` it may run (runs carry channel `mcp`): `{ payload?, idempotencyKey?, address?, waitSeconds? }`. With `waitSeconds` (capped by `mcp.maxWaitSeconds`, default 60) it waits for `completed`, `failed`, `cancelled` or `waiting` and returns the output, the error or the pending approval. A wait counts against `stream.maxOpen`: over the cap the call does not wait and answers at once with `{ runId, status, deduplicated }`, as with `waitSeconds: 0`; the run is already dispatched and goes on.
 - `get_run`, `list_runs`: the REST read rule applies.
-- `approve_run`: `{ runId, approvalId, approved, reason? }` (the `approvalId` of the run's `waiting`, from `get_run`), with the approve permission.
+- `approve_run`: `{ runId, approvalId, approved, reason?, selected? }` (the `approvalId` of the run's `waiting`, from `get_run`; `selected` the chosen ids of `waiting.options`), with the approve permission. A `run_<agent>` result's `waiting` carries `options` and `multiple` too.
 
 An MCP start dedupes its `idempotencyKey` under `<agent>:mcp:<kind>:<id>`, a REST start under `<agent>:http:<kind>:<id>` (the principal's `kind` and `id`, URI-encoded): one key used over both transports, or by two principals, creates two runs. A client registers the endpoint like any HTTP MCP server:
 

@@ -48,7 +48,7 @@ function assertTriggerKey(name: string, value: string | undefined): void;     //
 
 <<< ../../../core/src/channel/types.ts{ts}
 
-`consoleChannel()` writes `[chamvi] <kind>: <title or the body's first line> (agent <agent>, run <runId>, key <key>)`, then the body lines and, for an approval, `approval <approvalId> waits until <ISO>`, one `write` call per line. It never throws; an invalid `name` throws `InvalidAgentDefinitionError`.
+`consoleChannel()` writes `[chamvi] <kind>: <title or the body's first line> (agent <agent>, run <runId>, key <key>)`, then the body lines and, for an approval, with options `select one:` (or `select one or more:`) and one `option <id>: <label>` line per option, then `approval <approvalId> waits until <ISO>`, one `write` call per line. It never throws; an invalid `name` throws `InvalidAgentDefinitionError`.
 
 The envelope (`TriggerEnvelope`, `Invoker`):
 
@@ -231,11 +231,16 @@ function approve(ctx: ToolContext, request: ApprovalRequestInput): Promise<Appro
 
 const DEFAULT_APPROVAL_TIMEOUT_MS: 86_400_000; // 24 hours
 const APPROVAL_TIMEOUT_MAX_MS: 2_147_483_647;
+const APPROVAL_OPTIONS_MAX: 20;
+const APPROVAL_OPTION_ID_PATTERN: RegExp; // /^[A-Za-z0-9@][\w.:/@+-]{0,127}$/
+const APPROVAL_OPTION_LABEL_MAX_LENGTH: 200;
+const APPROVAL_OPTION_DETAIL_MAX_LENGTH: 20_000;
+const APPROVAL_OPTIONS_DETAIL_MAX_LENGTH: 100_000; // all details of one request
 ```
 
 <<< ../../../core/src/approval/types.ts{ts}
 
-`approve()` outside a tool call, or in a streaming tool's body, throws `InvalidRunStateError`; a `timeoutMs` that is no positive integer up to `APPROVAL_TIMEOUT_MAX_MS` is a `ValidationError`. `ChannelHandle.approve()` is the same with the request delivered through the channel. The agent hooks (`AgentHooks`, `ToolCallInfo`) are on `AgentDefinition` above. See [Approvals & Hooks](/guide/approvals).
+`approve()` outside a tool call, or in a streaming tool's body, throws `InvalidRunStateError`; a `timeoutMs` that is no positive integer up to `APPROVAL_TIMEOUT_MAX_MS` is a `ValidationError`, as are options outside the limits above (see [Offering options](/guide/approvals#offering-options)). `ChannelHandle.approve()` is the same with the request delivered through the channel. The agent hooks (`AgentHooks`, `ToolCallInfo`) are on `AgentDefinition` above. See [Approvals & Hooks](/guide/approvals).
 
 ## State
 

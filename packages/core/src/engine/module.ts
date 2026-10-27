@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { pid } from 'node:process';
 import type { Agent } from '../agent/types.ts';
-import { approvalDecisionKey } from '../approval/helpers.ts';
+import { approvalDecisionKey, assertSelectionShape, toSelection } from '../approval/helpers.ts';
 import { assertArtifactInput } from '../artifact/helpers.ts';
 import { attachmentIds, storeArtifact } from '../artifact/module.ts';
 import { assertChannelName, assertDefaultAddress, createChannelContext } from '../channel/helpers.ts';
@@ -712,6 +712,7 @@ export class Engine implements IContextProvider {
             ...(answer.reason !== undefined ? { reason: answer.reason } : {}),
             ...(answer.approver !== undefined ? { approver: toInvoker(answer.approver, 'approver') } : {}),
         };
+        assertSelectionShape(answer.selected);
         const run = await this.store.getRun(runId);
         if (!run) throw new RunNotFoundError(runId);
         if (run.status !== RunStatus.WAITING || !run.waiting) {
@@ -723,10 +724,11 @@ export class Engine implements IContextProvider {
         if (this.clock.now().getTime() >= run.waiting.expiresAt.getTime()) {
             throw new InvalidRunStateError(`Approval "${answer.approvalId}" of run "${run.id}" expired.`);
         }
+        const selected = toSelection(run.waiting, answer.approved, answer.selected);
         await this.answer(
             run,
             run.waiting,
-            decision,
+            { ...decision, ...(selected !== undefined ? { selected } : {}) },
             () => new InvalidRunStateError(`Run "${run.id}" moved on to another approval.`),
         );
     }
@@ -800,6 +802,7 @@ export class Engine implements IContextProvider {
                 approved: decision.approved,
                 ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
                 ...(decision.approver ? { approver: decision.approver } : {}),
+                ...(decision.selected !== undefined ? { selected: decision.selected } : {}),
             });
             const step: Step = {
                 runId: run.id,
@@ -810,12 +813,15 @@ export class Engine implements IContextProvider {
                     toolCallId: waiting.toolCallId,
                     title: waiting.title,
                     ...(waiting.body !== undefined ? { body: waiting.body } : {}),
+                    ...(waiting.options !== undefined ? { options: waiting.options } : {}),
+                    ...(waiting.multiple === true ? { multiple: true } : {}),
                 },
                 output: {
                     approvalId: waiting.approvalId,
                     approved: decision.approved,
                     reason: decision.reason,
                     ...(decision.approver ? { approver: decision.approver } : {}),
+                    ...(decision.selected !== undefined ? { selected: decision.selected } : {}),
                 },
                 startedAt: run.updatedAt,
                 finishedAt: now,
@@ -932,6 +938,8 @@ export class Engine implements IContextProvider {
                     body: waiting.body ?? '',
                     approvalId: waiting.approvalId,
                     expiresAt: waiting.expiresAt,
+                    ...(waiting.options !== undefined ? { options: waiting.options } : {}),
+                    ...(waiting.multiple === true ? { multiple: true } : {}),
                 }, waiting.address ?? '', { signal: controller.signal, trigger: run.trigger }),
                 aborted,
             ]);

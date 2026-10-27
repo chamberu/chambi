@@ -18,9 +18,9 @@ import {
 } from '../../utils/app.ts';
 import type { TestAppOverrides } from '../../utils/app.ts';
 
-async function pausedGate(overrides: TestAppOverrides = {}) {
+async function pausedGate(overrides: TestAppOverrides = {}, agent = 'gate') {
     const ctx = createRunTestApp(overrides);
-    const response = await call(ctx.app, 'POST', '/agents/gate/runs', { token: ADMIN_TOKEN });
+    const response = await call(ctx.app, 'POST', `/agents/${agent}/runs`, { token: ADMIN_TOKEN });
     const { runId } = await response.json() as { runId: string };
     await ctx.engine.start();
     await ctx.engine.idle();
@@ -194,6 +194,93 @@ describe('POST /runs/:id/approve', () => {
         } = await pausedGate();
         const response = await call(app, 'POST', `/runs/${runId}/approve`, { token: ADMIN_TOKEN, body });
         expect(response.status).toBe(400);
+        expect((await store.getRun(runId))?.status).toBe('waiting');
+        await engine.drain();
+    });
+
+    it('approves a choice with selected ids', async () => {
+        const {
+            app,
+            engine,
+            store,
+            runId,
+            waiting,
+        } = await pausedGate({}, 'choose');
+        const before = await call(app, 'GET', `/runs/${runId}`, { token: ADMIN_TOKEN });
+        expect((await before.json()).waiting.options).toEqual([{ id: 'a', label: 'A' }, {
+            id: 'b', 
+            label: 'B', 
+            detail: 'diff', 
+        }]);
+        const response = await call(app, 'POST', `/runs/${runId}/approve`, {
+            token: ADMIN_TOKEN,
+            body: {
+                approvalId: waiting.approvalId, 
+                approved: true, 
+                selected: ['b'], 
+            },
+        });
+        expect(response.status).toBe(202);
+        await engine.idle();
+        const run = await store.getRun(runId);
+        expect(run?.status).toBe('completed');
+        const detail = await (await call(app, 'GET', `/runs/${runId}`, { token: ADMIN_TOKEN })).json();
+        const wait = detail.steps.find((s: { kind: string }) => s.kind === 'wait');
+        expect(wait.output.selected).toEqual(['b']);
+        const tool = detail.steps.find((s: { kind: string; name?: string }) => s.kind === 'tool' && s.name === 'pick');
+        expect(tool.output).toBe('picked b');
+        await engine.drain();
+    });
+
+    it.each([
+        ['an unknown id', 'choose', { approved: true, selected: ['z'] }],
+        ['two ids for a single choice', 'choose', { approved: true, selected: ['a', 'b'] }],
+        ['an approval without a selection', 'choose', { approved: true }],
+        ['a selection on a plain wait point', 'gate', { approved: true, selected: ['a'] }],
+    ])('400 for %s, the run still waiting', async (_, agent, answer) => {
+        const {
+            app, 
+            engine, 
+            store, 
+            runId, 
+            waiting,
+        } = await pausedGate({}, agent);
+        const response = await call(app, 'POST', `/runs/${runId}/approve`, {
+            token: ADMIN_TOKEN,
+            body: { approvalId: waiting.approvalId, ...answer },
+        });
+        expect(response.status).toBe(400);
+        expect((await response.json()).code).toBe('validation_error');
+        expect((await store.getRun(runId))?.status).toBe('waiting');
+        await engine.drain();
+    });
+
+    it.each([
+        ['a string', 'a'],
+        ['21 items', Array.from({ length: 21 }, (_, i) => `o${i}`)],
+        ['an item of 129 characters', ['x'.repeat(129)]],
+        ['an empty item', ['']],
+        ['an item that is no string', [1]],
+    ])('400 from the body for selected as %s', async (_, selected) => {
+        const {
+            app, 
+            engine, 
+            store, 
+            runId, 
+            waiting,
+        } = await pausedGate({}, 'choose');
+        const response = await call(app, 'POST', `/runs/${runId}/approve`, {
+            token: ADMIN_TOKEN,
+            body: {
+                approvalId: waiting.approvalId, 
+                approved: true, 
+                selected, 
+            },
+        });
+        expect(response.status).toBe(400);
+        const json = await response.json();
+        expect(json.code).toBe('validation_error');
+        expect(JSON.stringify(json.issues)).toContain('selected');
         expect((await store.getRun(runId))?.status).toBe('waiting');
         await engine.drain();
     });

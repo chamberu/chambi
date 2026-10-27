@@ -17,7 +17,12 @@ import {
 import type { StateSchema } from '../state/types.ts';
 import type { ToolContext } from '../tool/types.ts';
 import { APPROVAL_TIMEOUT_MAX_MS, DEFAULT_APPROVAL_TIMEOUT_MS } from './constants.ts';
-import { approvalDecisionKey, toApprovalDecision } from './helpers.ts';
+import {
+    approvalDecisionKey,
+    fitRecordedDecision,
+    toApprovalDecision,
+    toApprovalOptions,
+} from './helpers.ts';
 import type { ApprovalDecision, ApprovalRequestInput } from './types.ts';
 
 /**
@@ -37,7 +42,7 @@ export class SuspendSignal extends ChamviError {
     }
 }
 
-function assertRequest(request: unknown): asserts request is ApprovalRequestInput {
+function assertRequest(request: unknown): Pick<ApprovalRequest, 'options' | 'multiple'> {
     if (!isObject(request)) throw new ValidationError('An approval request must be an object.');
     if (typeof request.title !== 'string' || request.title.length === 0) {
         throw new ValidationError('An approval request needs a non-empty title.');
@@ -52,6 +57,7 @@ function assertRequest(request: unknown): asserts request is ApprovalRequestInpu
     ) {
         throw new ValidationError(`An approval timeoutMs must be an integer from 1 to ${APPROVAL_TIMEOUT_MAX_MS}.`);
     }
+    return toApprovalOptions(request.options, request.multiple);
 }
 
 /**
@@ -75,11 +81,11 @@ export async function requestApproval(
             `approve() cannot run in the body of the streaming tool "${frame.toolName}"; gate it in beforeToolExecution.`,
         );
     }
-    assertRequest(request);
+    const choice = assertRequest(request);
     // taken before any await, so the ordinals follow the order of the calls
     const approvalId = `${frame.stepIndex}:${frame.toolCallId}:${frame.approvals++}`;
     const recorded = await frame.effects.getEffect(approvalDecisionKey(frame.runId, approvalId));
-    if (recorded) return toApprovalDecision(recorded.result);
+    if (recorded) return fitRecordedDecision(toApprovalDecision(recorded.result), { approvalId, ...choice });
 
     const pending: ApprovalRequest = {
         approvalId,
@@ -87,6 +93,7 @@ export async function requestApproval(
         toolCallId: frame.toolCallId,
         title: request.title,
         ...(request.body !== undefined ? { body: request.body } : {}),
+        ...choice,
         ...(target.channel !== undefined ? { channel: target.channel } : {}),
         ...(target.address !== undefined ? { address: target.address } : {}),
         timeoutMs: request.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,

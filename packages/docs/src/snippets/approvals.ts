@@ -35,6 +35,38 @@ const deploy = defineTool({
 });
 // #endregion tool
 
+// #region choice
+const RULES = [
+    {
+        id: 'unicorn/no-null', 
+        label: 'unicorn/no-null', 
+        detail: '@@ -1 +1 @@\n-const user = null;\n+const user = undefined;', 
+    },
+    {
+        id: 'unicorn/prefer-at', 
+        label: 'unicorn/prefer-at', 
+        detail: '@@ -1 +1 @@\n-items[items.length - 1]\n+items.at(-1)', 
+    },
+];
+
+const pickRules = defineTool({
+    description: 'Asks which new lint rules to adopt.',
+    inputSchema: z.object({}),
+    execute: async (_input, { context }) => {
+        const decision = await approve(context, {
+            title: 'Adopt which new rules?',
+            body: 'Each option shows what the rule changes.',
+            options: RULES,
+            multiple: true,
+        });
+        if (!decision.approved) return `Adopt none: ${decision.reason ?? 'denied'}.`;
+        // map the ids back to your own options; an id you do not know is a denial
+        const adopted = RULES.filter((rule) => decision.selected?.includes(rule.id));
+        return `Adopt ${adopted.map((rule) => rule.id).join(', ')}.`;
+    },
+});
+// #endregion choice
+
 // #region channel
 const restart = defineTool({
     description: 'Restarts the service.',
@@ -89,7 +121,11 @@ export async function approvalFlow(model: LanguageModel) {
         name: 'deployer',
         model,
         instructions: 'Deploy the requested version.',
-        tools: { deploy, restart },
+        tools: {
+            deploy, 
+            restart, 
+            pickRules, 
+        },
     });
 
     const engine = new Engine({

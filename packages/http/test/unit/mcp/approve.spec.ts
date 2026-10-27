@@ -18,9 +18,9 @@ import {
 } from '../../utils/app.ts';
 import { callTool, connectMcp, textOf } from '../../utils/mcp.ts';
 
-async function waitingGate() {
+async function waitingGate(agent = 'gate') {
     const setup = createRunTestApp();
-    const response = await call(setup.app, 'POST', '/agents/gate/runs', { token: ADMIN_TOKEN });
+    const response = await call(setup.app, 'POST', `/agents/${agent}/runs`, { token: ADMIN_TOKEN });
     const { runId } = await response.json() as { runId: string };
     await setup.engine.start();
     await setup.engine.idle();
@@ -100,5 +100,29 @@ describe('mcp approve_run', () => {
             reason: 'r'.repeat(1_001),
         })).isError).toBe(true);
         await client.close();
+    });
+
+    it('answers a choice with selected', async () => {
+        const setup = await waitingGate('choose');
+        const client = await connectMcp(setup.app, ADMIN_TOKEN);
+        const refused = await callTool(client, 'approve_run', {
+            runId: setup.runId,
+            approvalId: setup.approvalId,
+            approved: true,
+            selected: [1],
+        });
+        expect(refused.isError).toBe(true);
+        const result = await callTool(client, 'approve_run', {
+            runId: setup.runId,
+            approvalId: setup.approvalId,
+            approved: true,
+            selected: ['a'],
+        });
+        expect(result.isError).toBeFalsy();
+        await setup.engine.idle();
+        const steps = await setup.store.listSteps(setup.runId);
+        expect(steps.find((s) => s.kind === 'wait')?.output).toMatchObject({ selected: ['a'] });
+        await client.close();
+        await setup.engine.drain();
     });
 });

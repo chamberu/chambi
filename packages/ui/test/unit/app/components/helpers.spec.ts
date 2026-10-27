@@ -10,6 +10,7 @@ import { tokenizeJson } from '../../../../app/components/json-block/helpers.ts';
 import {
     approverName,
     errorText,
+    selectedLabels,
     stepMeta,
     stepTitle,
     waitOutput,
@@ -51,5 +52,16 @@ describe('step labels', () => {
         const output = waitOutput(wireStep(0, 'wait', { output: { approved: true, approver: { id: 'e2e', kind: 'token' } } }));
         expect(approverName(output)).toBe('e2e');
         expect(approverName(waitOutput(wireStep(0, 'wait')))).toBeUndefined();
+    });
+});
+
+describe('wait step selection', () => {
+    it('names the selected options by label, ids as fallback', () => {
+        const step = wireStep(0, 'wait', {
+            input: { options: [{ id: 'a', label: 'Alpha' }] },
+            output: { approved: true, selected: ['a', 'z'] },
+        });
+        expect(selectedLabels(step)).toEqual(['Alpha', 'z']);
+        expect(selectedLabels(wireStep(0, 'wait', { output: { approved: true } }))).toEqual([]);
     });
 });

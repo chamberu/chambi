@@ -51,6 +51,62 @@ describe('renderComment', () => {
         ].join('\n'));
     });
 
+    it('renders a choice approval', () => {
+        const choice: ChannelMessage = {
+            ...approval,
+            options: [{
+                id: 'a', 
+                label: '@owner see #1', 
+                detail: 'never shown', 
+            }, { id: 'b', label: 'B' }],
+        };
+        const input = {
+            mentions: ['owner'],
+            approvalUrl: (ref: { runId: string; approvalId: string }) => `https://app.example/ui/approvals?run=${ref.runId}&approval=${ref.approvalId}`,
+            marker: '<!-- chamvi:effect=r1:a1 -->',
+        };
+        const comment = renderComment(choice, input);
+        expect(comment).toBe([
+            '@owner',
+            '',
+            '### Approval required: deploy',
+            '',
+            '```',
+            approval.body,
+            '```',
+            '',
+            'Options (choose one):',
+            '```',
+            '- a: @owner see #1',
+            '- b: B',
+            '```',
+            '',
+            'Waiting for approval until 2026-10-21T10:00:00.000Z. Choose and approve or deny: https://app.example/ui/approvals?run=r1&approval=a1',
+            'Run `r1` of agent `release`.',
+            '',
+            '<!-- chamvi:effect=r1:a1 -->',
+        ].join('\n'));
+        expect(comment).not.toContain('never shown');
+        expect(renderComment({ ...choice, multiple: true }, input)).toContain('Options (choose one or more):');
+        expect(renderComment(choice, { mentions: [], marker: '<!-- m -->' }))
+            .toContain('Waiting for approval until 2026-10-21T10:00:00.000Z. Choose in the chamvi UI or through POST /runs/:id/approve with selected.');
+    });
+
+    it('stays under GitHub\'s limit for maximal options', () => {
+        const options = Array.from({ length: 20 }, (_, i) => ({ id: `${i}`.padEnd(128, 'x'), label: 'l'.repeat(200) }));
+        const comment = renderComment({
+            ...approval, 
+            body: 'b'.repeat(100_000), 
+            options, 
+        }, {
+            mentions: ['owner'],
+            approvalUrl: () => 'https://app.example/ui/approvals',
+            marker: '<!-- chamvi:effect=r1:a1 -->',
+        });
+        expect(comment.length).toBeLessThanOrEqual(65_536);
+        expect(comment).toContain(`- ${options[19]!.id}: ${options[19]!.label}`);
+    });
+
     it('puts a title with line breaks on one heading line', () => {
         const comment = renderComment({ ...approval, title: '  Approval\nrequired:\t\tdeploy ' }, { mentions: [], marker: '<!-- m -->' });
         expect(comment.split('\n')[0]).toBe('### Approval required: deploy');

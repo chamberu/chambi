@@ -96,6 +96,25 @@ describe('public api', () => {
         expect(core.APPROVAL_TIMEOUT_MAX_MS).toBe(2 ** 31 - 1);
     });
 
+    it('exports the approval option limits', () => {
+        expect(core.APPROVAL_OPTIONS_MAX).toBe(20);
+        expect(core.APPROVAL_OPTION_ID_PATTERN).toBeInstanceOf(RegExp);
+        expect(core.APPROVAL_OPTION_LABEL_MAX_LENGTH).toBe(200);
+        expect(core.APPROVAL_OPTION_DETAIL_MAX_LENGTH).toBe(20_000);
+        expect(core.APPROVAL_OPTIONS_DETAIL_MAX_LENGTH).toBe(100_000);
+        expect(core).not.toHaveProperty('toApprovalOptions');
+    });
+
+    it('exports the approval option types', () => {
+        expectTypeOf<core.ApprovalOption>().toEqualTypeOf<{
+            id: string; 
+            label: string; 
+            detail?: string 
+        }>();
+        expectTypeOf<core.ApprovalRequestInput['options']>().toEqualTypeOf<core.ApprovalOption[] | undefined>();
+        expectTypeOf<core.ApprovalRequestInput['multiple']>().toEqualTypeOf<boolean | undefined>();
+    });
+
     it('keeps the approval internals internal', () => {
         expect(core).not.toHaveProperty('SuspendSignal');
         expect(core).not.toHaveProperty('requestApproval');
@@ -194,6 +213,16 @@ describe('public api', () => {
             approved: boolean;
             reason?: string;
             approver?: core.Invoker;
+            selected?: string[];
+        }>();
+    });
+
+    it('exports the ApprovalDecision type', () => {
+        expectTypeOf<core.ApprovalDecision>().toEqualTypeOf<{
+            approved: boolean;
+            reason?: string;
+            approver?: core.Invoker;
+            selected?: string[];
         }>();
     });
 });

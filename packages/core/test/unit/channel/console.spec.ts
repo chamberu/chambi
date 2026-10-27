@@ -76,6 +76,37 @@ describe('consoleChannel', () => {
         ]);
     });
 
+    it('lists the options of an approval', async () => {
+        const { lines, write } = collect();
+        const message = {
+            kind: 'approval' as const,
+            key: 'r1:a1',
+            runId: 'r1',
+            agent: 'release',
+            title: 'Adopt?',
+            body: 'Pick rules.',
+            approvalId: 'a1',
+            expiresAt: new Date('2026-10-21T10:00:00Z'),
+            options: [{
+                id: 'a', 
+                label: 'Alpha', 
+                detail: 'x', 
+            }, { id: 'b', label: 'Beta' }],
+        };
+        await consoleChannel({ write }).out!({ ...message, multiple: true }, 'x', opts);
+        expect(lines).toEqual([
+            '[chamvi] approval: Adopt? (agent release, run r1, key r1:a1)',
+            'Pick rules.',
+            'select one or more:',
+            'option a: Alpha',
+            'option b: Beta',
+            'approval a1 waits until 2026-10-21T10:00:00.000Z',
+        ]);
+        lines.length = 0;
+        await consoleChannel({ write }).out!(message, 'x', opts);
+        expect(lines[2]).toBe('select one:');
+    });
+
     it('swallows a throwing write', async () => {
         const channel = consoleChannel({
             write: () => {

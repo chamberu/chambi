@@ -30,6 +30,7 @@ describe('public api', () => {
         'DEFAULT_NOTIFIER_NAME',
         'ERROR_TEXT_MAX_LENGTH',
         'APPROVAL_HINT',
+        'CHOICE_HINT',
         'resolveOptions',
         'openclawContextKey',
         'renderMessage',

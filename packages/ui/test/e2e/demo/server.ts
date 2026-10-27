@@ -9,6 +9,7 @@ import { z } from 'zod';
 import {
     Engine,
     MemoryStore,
+    approve,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -53,6 +54,32 @@ const engine = new Engine({
                             address: 'ops',
                         });
                         return decision.approved ? { deployed: env } : { denied: decision.reason ?? 'denied' };
+                    },
+                }),
+            },
+        }),
+        defineAgent({
+            name: 'release',
+            model: createDemoModel(120, 'pick_version', {}),
+            instructions: 'Release the version the owner picks.',
+            channels: [http.on()],
+            tools: {
+                pick_version: defineTool({
+                    description: 'Ask which version to release.',
+                    inputSchema: z.object({}),
+                    execute: async (_input, { context }) => {
+                        const decision = await approve(context, {
+                            title: 'Release which version?',
+                            options: [
+                                {
+                                    id: '1.4.0',
+                                    label: 'Minor 1.4.0',
+                                    detail: '@@ -1 +1 @@\n-"version": "1.3.2"\n+"version": "1.4.0"',
+                                },
+                                { id: '2.0.0', label: 'Major 2.0.0' },
+                            ],
+                        });
+                        return { released: decision.selected?.[0] ?? null };
                     },
                 }),
             },

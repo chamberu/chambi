@@ -31,3 +31,6 @@ export const ERROR_TEXT_MAX_LENGTH = 500;
 
 /** An approval line without `approvalUrl`: how to answer. */
 export const APPROVAL_HINT = 'Answer it in the chamvi UI or through POST /runs/:id/approve.';
+
+/** What a choice approval says instead of a link when no `approvalUrl` is set. */
+export const CHOICE_HINT = 'Choose in the chamvi UI or through POST /runs/:id/approve with selected.';

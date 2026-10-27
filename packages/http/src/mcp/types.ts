@@ -7,6 +7,7 @@
 
 import type {
     Agent,
+    ApprovalOption,
     ChannelSubscription,
     Run,
     RunStatusLiteral,
@@ -30,6 +31,10 @@ export type RunToolResult = {
         /** What the tool asks the owner to approve. */
         title: string;
         body?: string;
+        /** The choices to answer with `approve_run`'s `selected`; absent for a plain yes or no. */
+        options?: ApprovalOption[];
+        /** Set (true) when several options may be selected. */
+        multiple?: boolean;
         expiresAt: string;
     };
 };

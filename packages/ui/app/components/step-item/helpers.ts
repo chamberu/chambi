@@ -24,6 +24,7 @@ export type WaitOutput = {
         kind: string;
         name?: string
     };
+    selected?: string[];
 };
 
 export function llmOutput(step: StepWire): LlmOutput {
@@ -64,4 +65,18 @@ export function stepMeta(step: StepWire): string {
 
 export function approverName(output: WaitOutput): string | undefined {
     return output.approver ? (output.approver.name ?? output.approver.id) : undefined;
+}
+
+/** The labels of a wait step's selected options (from the step input's options), the ids when unknown. */
+export function selectedLabels(step: StepWire): string[] {
+    const { selected } = waitOutput(step);
+    if (!Array.isArray(selected)) return [];
+    const options = isObject(step.input) && Array.isArray(step.input.options) ? step.input.options : [];
+    const labels = new Map<string, string>();
+    for (const option of options) {
+        if (isObject(option) && typeof option.id === 'string' && typeof option.label === 'string') {
+            labels.set(option.id, option.label);
+        }
+    }
+    return selected.map((id) => labels.get(id) ?? id);
 }
