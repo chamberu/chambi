@@ -14,7 +14,7 @@ import { isChannelOf } from '../app/helpers.ts';
 import type { GithubOctokit, IGithubApp } from '../app/types.ts';
 import { GITHUB_CHANNEL_NAME } from '../channel/constants.ts';
 import type { NumberInput, RepoInput, RepoTarget } from './types.ts';
-import { GITHUB_REQUEST_ERROR_CODE, REPO_PATTERN } from './constants.ts';
+import { GITHUB_REQUEST_ERROR_CODE, REF_PATTERN, REPO_PATTERN } from './constants.ts';
 
 function isGithubRun(ctx: ToolContext, app: IGithubApp): boolean {
     const { channel } = ctx.run.trigger;
@@ -96,6 +96,17 @@ export function searchTarget(query: string): RepoTarget | undefined {
         }
     }
     return targets.length === 1 ? targets[0] : undefined;
+}
+
+const REF = new RegExp(REF_PATTERN);
+
+/** A branch, tag or commit (REF_PATTERN, no `..`), else a ValidationError. */
+export function requireRef(value: unknown, name: string): string {
+    const ref = requireString(value, name);
+    if (!REF.test(ref) || ref.includes('..')) {
+        throw new ValidationError(`${name} must be a branch, tag or commit, got ${JSON.stringify(ref)}.`);
+    }
+    return ref;
 }
 
 /** An integer in `[min, max]`, else a ValidationError. */

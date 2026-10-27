@@ -20,6 +20,7 @@ import {
     toInstallation,
 } from './helpers.ts';
 import { toolError } from '../tools/helpers.ts';
+import { createPullRequestTools } from '../tools/pulls.ts';
 import { createReadTools } from '../tools/read.ts';
 import { createRepositoryTools } from '../tools/repositories.ts';
 import { GITHUB_REQUEST_ERROR_CODE } from '../tools/constants.ts';
@@ -166,7 +167,11 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
             return verifySignature(secrets, body, signature);
         },
         readTools(): ToolSet {
-            return { ...createReadTools(app), ...createRepositoryTools(app) };
+            return {
+                ...createReadTools(app),
+                ...createRepositoryTools(app),
+                ...createPullRequestTools(app),
+            };
         },
         writeTools(): ToolSet {
             return createWriteTools(app);

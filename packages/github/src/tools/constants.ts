@@ -53,3 +53,6 @@ export const REPOSITORIES_MAX = 1000;
 
 /** Issues `github_list_issues` returns at most (and without a `limit`). */
 export const ISSUES_MAX = 100;
+
+/** Open pull requests `github_list_pull_requests` returns at most (and without a `limit`). */
+export const PULL_REQUESTS_MAX = 100;

@@ -8,6 +8,7 @@
 import type { ToolSet } from 'ai';
 import { ValidationError, defineTool } from '@chamvi/core';
 import type { IGithubApp } from '../app/types.ts';
+import { toPullRequest } from './pulls.ts';
 import {
     COMMIT_MESSAGE_MAX_CHARS,
     COMPARE_COMMITS_MAX,
@@ -31,6 +32,7 @@ import {
     parseRepo,
     repoSchema,
     requireInteger,
+    requireRef,
     requireString,
     searchTarget,
     statusOf,
@@ -77,17 +79,6 @@ function decodeFile(path: string, data: Record<string, unknown>): GithubFile {
         content: text.slice(0, FILE_MAX_CHARS),
         truncated: text.length > FILE_MAX_CHARS,
     };
-}
-
-const REF = new RegExp(REF_PATTERN);
-
-/** A branch, tag or commit for github_compare, else a ValidationError. */
-function requireRef(value: unknown, name: string): string {
-    const ref = requireString(value, name);
-    if (!REF.test(ref) || ref.includes('..')) {
-        throw new ValidationError(`${name} must be a branch, tag or commit, got ${JSON.stringify(ref)}.`);
-    }
-    return ref;
 }
 
 function releaseNote(data: Record<string, unknown>): GithubReleaseNote {
@@ -199,7 +190,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
         }),
 
         github_get_pull_request: defineTool<NumberInput, GithubPullRequest>({
-            description: 'Read one pull request: title, body, state, branches, author, number of changed files.',
+            description: 'Read one pull request: title, body, state, branches, head sha and repository (fork or not), author and its type, labels, mergeability, number of changed files.',
             inputSchema: numberSchema('pull request'),
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
@@ -210,19 +201,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                         repo,
                         pull_number: pullNumber,
                     });
-                    return {
-                        number: data.number,
-                        title: data.title,
-                        body: data.body ?? null,
-                        state: data.state,
-                        draft: data.draft ?? false,
-                        merged: data.merged,
-                        base: data.base.ref,
-                        head: data.head.ref,
-                        author: login(data.user),
-                        url: data.html_url,
-                        changedFiles: data.changed_files,
-                    };
+                    return toPullRequest(data);
                 });
             },
         }),

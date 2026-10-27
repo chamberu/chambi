@@ -58,8 +58,10 @@ describe('read tools', () => {
             'github_get_issue',
             'github_get_latest_release',
             'github_get_pull_request',
+            'github_get_push_target',
             'github_list_issues',
             'github_list_labels',
+            'github_list_pull_requests',
             'github_list_releases',
             'github_list_repositories',
             'github_search_issues',
@@ -143,9 +145,22 @@ describe('read tools', () => {
             state: 'open',
             draft: false,
             merged: false,
-            base: { ref: 'main', sha: 'a' },
-            head: { ref: 'fix/crash', sha: 'b' },
-            user: { login: 'bob' },
+            mergeable: true,
+            mergeable_state: 'unstable',
+            maintainer_can_modify: true,
+            merge_commit_sha: 'm',
+            labels: [{ name: 'dependencies' }],
+            base: {
+                ref: 'main', 
+                sha: 'a', 
+                repo: { full_name: 'octo/demo' }, 
+            },
+            head: {
+                ref: 'fix/crash', 
+                sha: 'b', 
+                repo: { full_name: 'Octo/Demo' }, 
+            },
+            user: { login: 'bob', type: 'User' },
             html_url: 'https://github.com/octo/demo/pull/7',
             changed_files: 3,
         });
@@ -161,6 +176,51 @@ describe('read tools', () => {
             author: 'bob',
             url: 'https://github.com/octo/demo/pull/7',
             changedFiles: 3,
+            headSha: 'b',
+            headRepo: 'Octo/Demo',
+            fork: false,
+            authorType: 'User',
+            labels: ['dependencies'],
+            mergeable: true,
+            mergeableState: 'unstable',
+            maintainerCanModify: true,
+            mergeCommitSha: 'm',
+        });
+    });
+
+    it('github_get_pull_request reads absent fields as unknown', async () => {
+        const { fake, call } = setup();
+        fake.pulls.set('octo/demo#8', {
+            number: 8,
+            title: 'Gone fork',
+            state: 'open',
+            merged: false,
+            base: {
+                ref: 'main', 
+                sha: 'a', 
+                repo: { full_name: 'octo/demo' }, 
+            },
+            head: {
+                ref: 'patch', 
+                sha: 'c', 
+                repo: null, 
+            },
+            user: null,
+            html_url: 'https://github.com/octo/demo/pull/8',
+            changed_files: 1,
+        });
+        expect(await call('github_get_pull_request', { repo: 'octo/demo', number: 8 })).toMatchObject({
+            body: null,
+            draft: false,
+            author: null,
+            headRepo: null,
+            fork: true,
+            authorType: null,
+            labels: [],
+            mergeable: null,
+            mergeableState: 'unknown',
+            maintainerCanModify: false,
+            mergeCommitSha: null,
         });
     });
 

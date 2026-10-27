@@ -59,6 +59,20 @@ export type GithubPullRequest = {
     author: string | null;
     url: string;
     changedFiles: number;
+    headSha: string;
+    /** `owner/name` of the head repository; null when the fork was deleted. */
+    headRepo: string | null;
+    /** The head lives in another repository than the base (or was deleted). */
+    fork: boolean;
+    /** The author's account type, e.g. `Bot` or `User`. */
+    authorType: string | null;
+    labels: string[];
+    /** null while GitHub is still computing it. */
+    mergeable: boolean | null;
+    /** GitHub's `mergeable_state` (`clean`, `unstable`, `dirty`, `blocked`, `behind`, `draft`, `has_hooks`, `unknown`). */
+    mergeableState: string;
+    maintainerCanModify: boolean;
+    mergeCommitSha: string | null;
 };
 
 /** `github_get_file` for a file: UTF-8 text, cut at FILE_MAX_CHARS characters. */
@@ -182,4 +196,46 @@ export type GithubIssueSummary = {
 export type GithubIssueList = {
     issues: GithubIssueSummary[];
     truncated: boolean;
+};
+
+/** One open pull request of `github_list_pull_requests`. */
+export type GithubPullRequestSummary = {
+    number: number;
+    title: string;
+    author: string | null;
+    authorType: string | null;
+    draft: boolean;
+    base: string;
+    head: string;
+    headSha: string;
+    headRepo: string | null;
+    fork: boolean;
+    labels: string[];
+    createdAt: string;
+    updatedAt: string;
+    url: string;
+};
+
+/** `github_list_pull_requests`; `truncated` when more remained. */
+export type GithubPullRequestList = {
+    pullRequests: GithubPullRequestSummary[];
+    truncated: boolean;
+};
+
+/** `github_get_push_target`: whether the App can push fix commits onto a pull request's branch. */
+export type GithubPushTarget = {
+    number: number;
+    headRepo: string | null;
+    headBranch: string;
+    headSha: string;
+    fork: boolean;
+    /** The App's installation on the head repository, null when not installed. */
+    installationId: number | null;
+    contents: 'read' | 'write' | null;
+    workflows: 'read' | 'write' | null;
+    maintainerCanModify: boolean;
+    /** headRepo set, installed, contents write. A fork the App is not installed on is never pushable (App tokens cannot use maintainer edits). */
+    canPush: boolean;
+    /** Why `canPush` is false, else null. */
+    reason: string | null;
 };
