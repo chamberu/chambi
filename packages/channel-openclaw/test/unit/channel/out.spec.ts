@@ -232,6 +232,50 @@ describe('openclawChannel out', () => {
         expect(text).toContain('Answer it in the chamvi UI or through POST /runs/:id/approve.');
     });
 
+    it('lists the options of a choice approval', async () => {
+        const { fake, send } = setup({ approvalUrl });
+        const choice: ChannelMessage = {
+            ...approval,
+            options: [{
+                id: 'a', 
+                label: 'A', 
+                detail: 'secret detail', 
+            }, { id: 'b', label: 'B' }],
+        };
+        await send(choice);
+        await send(choice);
+        const text = messageOf(fake.requests[0]!.body);
+        expect(text).toBe([
+            RELAY,
+            '',
+            'Deploy to prod?',
+            '',
+            approval.body,
+            '',
+            'Options (choose one):\n- a: A\n- b: B',
+            '',
+            'Agent: release',
+            'Run: r1',
+            '',
+            'Expires: 2026-10-21T10:00:00.000Z',
+            'Choose and approve or deny: https://app.example/ui/approvals?run=r1&approval=a1',
+        ].join('\n'));
+        expect(text).not.toContain('secret detail');
+        expect(messageOf(fake.requests[1]!.body)).toBe(text);
+    });
+
+    it('names where to choose without a link', async () => {
+        const { fake, send } = setup();
+        await send({
+            ...approval, 
+            options: [{ id: 'a', label: 'A' }], 
+            multiple: true, 
+        });
+        const text = messageOf(fake.requests[0]!.body);
+        expect(text).toContain('Options (choose one or more):\n- a: A');
+        expect(text.endsWith('Choose in the chamvi UI or through POST /runs/:id/approve with selected.')).toBe(true);
+    });
+
     it('renders a message without approval lines', async () => {
         const { fake, send } = setup({ approvalUrl });
         await send(message, 'C1');
