@@ -48,9 +48,14 @@ export type GithubSubscriptionOptions = {
     concurrencyKey?: (event: GithubEvent) => string | undefined;
     /**
      * Events (`name` or `name.action`) the App's own bot may start this
-     * subscription with, e.g. `['pull_request', 'check_suite.completed']`
-     * for the pull requests the agent opens or pushes to. Every other
-     * delivery the bot sent dispatches nothing (the loop guard).
+     * subscription with, e.g. `['pull_request.opened',
+     * 'pull_request.synchronize', 'check_suite.completed']` for the pull
+     * requests the agent opens or pushes to. Every other delivery the bot
+     * sent dispatches nothing (the loop guard). A bare `pull_request` also
+     * takes the `labeled`, `closed`, ... the agent's own tools cause, so it
+     * starts again after each of its writes: name the actions. The agent's
+     * first subscription matching the event whose `selfEvents` name it is
+     * the one started.
      * `issue_comment`, `issues` and `pull_request_review_comment` are
      * refused (InvalidAgentDefinitionError): the bot's own comment would
      * start the agent again.

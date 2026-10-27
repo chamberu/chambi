@@ -5,7 +5,12 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { ChannelContext, ChannelDispatchEnvelope, ChannelRequest } from '@chamvi/core';
+import type {
+    ChannelContext,
+    ChannelDispatchEnvelope,
+    ChannelRequest,
+    ChannelSubscription,
+} from '@chamvi/core';
 import { readRequestBody } from '@chamvi/http';
 import { NotFoundError, UnauthorizedError, UnsupportedMediaTypeError } from '@ebec/http';
 import { isSameLogin } from '../app/helpers.ts';
@@ -45,8 +50,8 @@ async function isSelfSent(app: IGithubApp, event: GithubEvent): Promise<boolean>
  * this channel matching the event gets one run, keyed by
  * `idempotencyKey(event) ?? delivery`, with the address of the event's
  * issue or pull request; all keys are computed before any dispatch. A
- * delivery the App sent itself dispatches only to subscriptions whose
- * `selfEvents` name its event. A failing agent (filter,
+ * delivery the App sent itself goes to each agent's first matching
+ * subscription whose `selfEvents` name its event (none: no run). A failing agent (filter,
  * key function, refused key, dispatch) goes to `onError`, the others are
  * still dispatched, and the answer is then 500.
  */
@@ -78,16 +83,35 @@ export async function receiveDelivery(
         failed = true;
         options.onError(error);
     };
-    const envelopes: Array<ChannelDispatchEnvelope & { selfSent: boolean }> = [];
+    // per agent its first matching subscription, and the first one that
+    // also takes the bot's own delivery (a later subscription may opt in)
+    const matches: Array<{ agent: string; first: ChannelSubscription; self?: ChannelSubscription }> = [];
     for (const agent of ctx.engine.listAgents()) {
         try {
-            const subscription = (agent.definition.channels ?? [])
-                .find((s) => matchesGithubSubscription(s, options.name, event));
-            if (!subscription) continue;
+            const subscriptions = agent.definition.channels ?? [];
+            const first = subscriptions.find((s) => matchesGithubSubscription(s, options.name, event));
+            if (!first) continue;
+            const self = subscriptions.find((s) => acceptsSelfSent(s, event) && matchesGithubSubscription(s, options.name, event));
+            matches.push({
+                agent: agent.name, 
+                first, 
+                ...(self ? { self } : {}), 
+            });
+        } catch (error) {
+            fail(error);
+        }
+    }
+
+    // the loop guard: a delivery the App sent itself starts only subscriptions that opted in
+    const selfSent = matches.length > 0 && await isSelfSent(options.app, event);
+    const envelopes: ChannelDispatchEnvelope[] = [];
+    for (const match of matches) {
+        const subscription = selfSent ? match.self : match.first;
+        if (!subscription) continue;
+        try {
             const concurrencyKey = subscription.concurrencyKey?.(event);
             envelopes.push({
-                selfSent: acceptsSelfSent(subscription, event),
-                agent: agent.name,
+                agent: match.agent,
                 trigger: subscription.id,
                 payload: event,
                 idempotencyKey: subscription.idempotencyKey?.(event) ?? delivery,
@@ -100,10 +124,7 @@ export async function receiveDelivery(
     }
 
     const result: GithubWebhookResult = { delivery, runs: [] };
-    const selfSent = envelopes.length > 0 && await isSelfSent(options.app, event);
-    for (const { selfSent: accepted, ...envelope } of envelopes) {
-        // the loop guard: a delivery the App sent itself starts only subscriptions that opted in
-        if (selfSent && !accepted) continue;
+    for (const envelope of envelopes) {
         try {
             const { runId, deduplicated } = await ctx.dispatch(envelope);
             result.runs.push({

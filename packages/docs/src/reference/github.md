@@ -52,7 +52,7 @@ Every option is checked when `githubChannel()` is called (`InvalidAgentDefinitio
 const github: GithubSubscriber; // github.on(events, options?), github.to({ repo, number }) for the channel named 'github'
 ```
 
-`github.on()` throws `InvalidAgentDefinitionError` without events or for an event that is not `name` or `name.action` (lower case letters, digits and underscores, e.g. `projects_v2_item.created`), and for a `selfEvents` entry of that shape naming `issue_comment`, `issues` or `pull_request_review_comment` (the bot's own comment would start the agent again). A delivery the App's bot sent reaches only subscriptions whose `selfEvents` name its event. `github.to({ repo, number })` returns the address `<owner>/<repo>#<number>`.
+`github.on()` throws `InvalidAgentDefinitionError` without events or for an event that is not `name` or `name.action` (lower case letters, digits and underscores, e.g. `projects_v2_item.created`), and for a `selfEvents` entry of that shape naming `issue_comment`, `issues` or `pull_request_review_comment` (the bot's own comment would start the agent again). A bot-sent delivery starts each agent's first matching subscription whose `selfEvents` name it; a bare `pull_request` there also takes the `labeled`, `closed` and `synchronize` deliveries the agent's own tools and pushes cause, so name the actions (`pull_request.opened`). A delivery the App's bot sent reaches only subscriptions whose `selfEvents` name its event. `github.to({ repo, number })` returns the address `<owner>/<repo>#<number>`.
 
 <<< ../../../github/src/subscription/types.ts{ts}
 
