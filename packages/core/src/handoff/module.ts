@@ -15,7 +15,6 @@ import { stableHash } from '../effect/helpers.ts';
 import { InvalidRunStateError, ValidationError } from '../errors/index.ts';
 import type { ToolContext } from '../tool/types.ts';
 import {
-    DEFAULT_MAX_HANDOFFS_PER_RUN,
     HANDOFF_CONTEXT,
     HANDOFF_SUBSCRIPTION_ID,
     MAX_HANDOFF_DEPTH,
@@ -24,6 +23,9 @@ import {
     assertHandoffKey,
     claimKey,
     findHandoffSubscription,
+    maxPerRunOf,
+    readCount,
+    runSnapshotOf,
     validatePayload,
 } from './helpers.ts';
 import type { HandoffInput, HandoffResult } from './types.ts';
@@ -45,7 +47,9 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
     if (!frame) {
         throw new InvalidRunStateError('startHandoff() runs inside a tool call, not in the tools factory.');
     }
-    if (ctx?.run?.runId !== frame.runId) {
+    // the engine's copy, never ctx.run itself: tool code can write to that
+    const run = runSnapshotOf(ctx?.run);
+    if (!run || run.runId !== frame.runId) {
         throw new InvalidRunStateError('startHandoff() got the context of another run than the tool call it runs in.');
     }
     const host = inject(ctx, HANDOFF_CONTEXT);
@@ -55,13 +59,13 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
     assertHandoffKey('concurrency key', input.concurrencyKey, true);
     assertHandoffKey('address', input.address, true);
 
-    const { run } = ctx;
     const agent = host.getAgent(run.agent);
     const subscription = agent ? findHandoffSubscription(agent) : undefined;
     if (!subscription) {
         throw new ValidationError(`Agent "${run.agent}" accepts no hand-offs: add handoff.on() to its channels.`);
     }
-    const depth = run.trigger.parent?.kind === 'handoff' ? run.trigger.parent.depth : 0;
+    const maxPerRun = maxPerRunOf(run.agent, subscription);
+    const depth = run.parent?.kind === 'handoff' ? run.parent.depth : 0;
     if (depth >= MAX_HANDOFF_DEPTH) {
         throw new ValidationError(`A handed-off run cannot hand off again (depth ${MAX_HANDOFF_DEPTH}).`);
     }
@@ -73,33 +77,24 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
     assertHandoffKey('idempotency key', given, false);
     const { address } = input;
     const key = claimKey(given ?? `${run.runId}:${stableHash({
-        payload, 
-        concurrencyKey, 
-        address, 
+        payload,
+        concurrencyKey,
+        address,
     })}`);
-    const effectKey = `${run.runId}:handoff:${stableHash({
+    const callHash = stableHash({
         payload,
         key,
         concurrencyKey,
         address,
-    })}`;
+    });
+    const effectKey = `${run.runId}:handoff:${callHash}`;
 
-    const recorded = await host.effects.getEffect(effectKey);
-    if (recorded) return recorded.result as HandoffResult;
+    // looked up and registered without an await in between, so identical calls share one
     const pending = host.inflight.get(effectKey);
     if (pending) return pending;
 
-    const maxPerRun = (subscription.options.maxPerRun as number | undefined) ?? DEFAULT_MAX_HANDOFFS_PER_RUN;
-    const promise = host.serial(run.runId, async (): Promise<HandoffResult> => {
-        const countKey = `handoff-count:${run.runId}`;
-        const stored = await host.effects.getEffect(countKey);
-        const count = isObject(stored?.result) && typeof stored.result.count === 'number' ? stored.result.count : 0;
-        if (count >= maxPerRun) {
-            throw new ValidationError(`Run ${run.runId} reached its ${maxPerRun} hand-offs (handoff.on({ maxPerRun })).`);
-        }
-        // counted before the dispatch: a crash in between burns one slot, never adds one
-        await host.effects.putEffect(countKey, { count: count + 1 });
-        const { invoker } = run.trigger;
+    const dispatch = async (): Promise<HandoffResult> => {
+        const { invoker } = run;
         const result = await host.dispatch({
             agent: run.agent,
             trigger: HANDOFF_SUBSCRIPTION_ID,
@@ -108,7 +103,7 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
             idempotencyKey: key,
             ...(concurrencyKey !== undefined ? { concurrencyKey } : {}),
             ...(address !== undefined ? { address } : {}),
-            ...(invoker ? { invoker } : {}),
+            ...(invoker ? { invoker: { ...invoker, permissions: [...invoker.permissions] } } : {}),
         }, {
             kind: 'handoff',
             runId: run.runId,
@@ -124,7 +119,28 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
             console.error('[chamvi] recording a hand-off failed', error);
         }
         return value;
-    });
+    };
+
+    const promise = (async (): Promise<HandoffResult> => {
+        const recorded = await host.effects.getEffect(effectKey);
+        if (recorded) return recorded.result as HandoffResult;
+        return host.serial(run.runId, async (): Promise<HandoffResult> => {
+            // again behind the run's earlier calls: one of them may have recorded it meanwhile
+            const again = await host.effects.getEffect(effectKey);
+            if (again) return again.result as HandoffResult;
+            const countKey = `handoff-count:${run.runId}`;
+            const stored = await host.effects.getEffect(countKey);
+            const { count, calls } = readCount(stored?.result);
+            // a call that already spent its slot (its record lost) redoes the deduplicating dispatch
+            if (calls.includes(callHash)) return dispatch();
+            if (count >= maxPerRun) {
+                throw new ValidationError(`Run ${run.runId} reached its ${maxPerRun} hand-offs (handoff.on({ maxPerRun })).`);
+            }
+            // counted before the dispatch: a crash in between spends the call's slot, a redo reuses it
+            await host.effects.putEffect(countKey, { count: count + 1, calls: [...calls, callHash] });
+            return dispatch();
+        });
+    })();
     host.inflight.set(effectKey, promise);
     try {
         return await promise;

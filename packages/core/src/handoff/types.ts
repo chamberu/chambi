@@ -10,7 +10,7 @@ import type { Agent } from '../agent/types.ts';
 import type { ChannelSubscription, DispatchResult } from '../channel/types.ts';
 import type { DispatchEnvelope } from '../engine/types.ts';
 import type { IEffectStore } from '../store/types.ts';
-import type { TriggerParent } from '../trigger/types.ts';
+import type { Invoker, TriggerParent } from '../trigger/types.ts';
 
 export type HandoffSubscriptionOptions<P = unknown> = {
     /** Parses the payload a tool hands off; the parsed value is the child's payload. */
@@ -41,6 +41,14 @@ export type HandoffInput = {
 export type HandoffResult = {
     runId: string;
     deduplicated: boolean;
+};
+
+/** The engine's copy of a run startHandoff() reads (internal). */
+export type HandoffRunSnapshot = {
+    readonly runId: string;
+    readonly agent: string;
+    readonly invoker?: Invoker;
+    readonly parent?: TriggerParent;
 };
 
 /** The engine side of startHandoff() (internal, provided under HANDOFF_CONTEXT). */

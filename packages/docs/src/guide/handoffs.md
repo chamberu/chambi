@@ -19,7 +19,7 @@ With [`@chamvi/app`](/guide/app) the engine module contributes `agentChannel()`,
 | Option | Meaning |
 |---|---|
 | `schema` | A Standard Schema the payload goes through; the child gets the parsed value. A failing payload is a `ValidationError` tool error and starts nothing. Without one the payload passes unchanged |
-| `maxPerRun` | How many hand-offs one run may start over all its executions, default `DEFAULT_MAX_HANDOFFS_PER_RUN` (100). A positive integer, else `InvalidAgentDefinitionError` |
+| `maxPerRun` | How many hand-offs one run may start over all its executions, default `DEFAULT_MAX_HANDOFFS_PER_RUN` (100). A positive integer, else `InvalidAgentDefinitionError` (also for a subscription built by hand, when the agent is registered) |
 | `concurrencyKey(payload)` | The child's concurrency key when the call gives none |
 | `idempotencyKey(payload)` | The child's idempotency key when the call gives none |
 
@@ -45,9 +45,9 @@ Each call is recorded under the effect key `<runId>:handoff:<hash of payload, ke
 
 ## Limits
 
-- **Per run**: at most `maxPerRun` hand-offs, counted durably across executions (the effect `handoff-count:<runId>`), so a run that paused on an approval keeps its count. The count goes up before the dispatch, also for a deduplicated one; a crash in between burns one slot. Past the limit: `Run <id> reached its <n> hand-offs (handoff.on({ maxPerRun })).`
+- **Per run**: at most `maxPerRun` hand-offs, counted durably across executions (the effect `handoff-count:<runId>`), so a run that paused on an approval keeps its count. The count goes up before the dispatch, also for a deduplicated one; a crash in between spends that call's slot, and its redo reuses the slot (it never fails at the limit). Past the limit: `Run <id> reached its <n> hand-offs (handoff.on({ maxPerRun })).`
 - **Depth 1** (`MAX_HANDOFF_DEPTH`): a handed-off run cannot hand off again (`A handed-off run cannot hand off again (depth 1).`), so a fan-out never recurses.
-- **The invoker** is inherited: the child gets the parent's invoker snapshot (none for a cron parent), so `requireToolPermission()` decides the same in the child as in the parent and a hand-off never widens grants.
+- **The invoker** is inherited: the child gets the parent's invoker snapshot (none for a cron parent), so `requireToolPermission()` decides the same in the child as in the parent and a hand-off never widens grants. The agent, the invoker and the parent come from the engine's copy of the run, so tool code that writes to `ctx.run` cannot change what a hand-off starts.
 
 ## Outbound in a child
 

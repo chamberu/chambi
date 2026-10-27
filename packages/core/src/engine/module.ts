@@ -38,6 +38,7 @@ import type {
 } from '../run/types.ts';
 import { HANDOFF_CONTEXT } from '../handoff/constants.ts';
 import type { HandoffHost } from '../handoff/types.ts';
+import { assertHandoffSubscription } from '../handoff/helpers.ts';
 import { MODEL_CONTEXT } from '../model/constants.ts';
 import { checkAgentModel, checkDefaultModel } from '../model/module.ts';
 import type { IModelResolver, ModelContext, ModelRef } from '../model/types.ts';
@@ -1133,6 +1134,7 @@ export class Engine implements IContextProvider {
                 throw new InvalidAgentDefinitionError(`Agent "${agent.name}" subscribes to unknown channel "${subscription.channel}".`);
             }
         }
+        assertHandoffSubscription(agent);
     }
 
     protected registry(): RegistryContext {
