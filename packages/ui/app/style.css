@@ -534,6 +534,7 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 
     background: var(--ch-sunken); border: 1px solid var(--ch-line); border-radius: var(--ch-radius-sm);
 }
 .option-detail .diff-add { color: var(--ch-ok); background: var(--ch-ok-tint); }
+/* removed lines use the accent, not --ch-fail: Crimson's fail is near-ink and would read as plain text */
 .option-detail .diff-del { color: var(--ch-accent-text); background: var(--ch-accent-tint); }
 .option-detail .diff-hunk { color: var(--ch-run); background: var(--ch-run-tint); }
 .callout-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: space-between; padding: 12px 20px; background: var(--ch-sunken); border-top: 1px solid var(--ch-line); }

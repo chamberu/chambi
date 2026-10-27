@@ -48,7 +48,7 @@ function assertTriggerKey(name: string, value: string | undefined): void;     //
 
 <<< ../../../core/src/channel/types.ts{ts}
 
-`consoleChannel()` writes `[chamvi] <kind>: <title or the body's first line> (agent <agent>, run <runId>, key <key>)`, then the body lines and, for an approval, `approval <approvalId> waits until <ISO>`, one `write` call per line. It never throws; an invalid `name` throws `InvalidAgentDefinitionError`.
+`consoleChannel()` writes `[chamvi] <kind>: <title or the body's first line> (agent <agent>, run <runId>, key <key>)`, then the body lines and, for an approval, with options `select one:` (or `select one or more:`) and one `option <id>: <label>` line per option, then `approval <approvalId> waits until <ISO>`, one `write` call per line. It never throws; an invalid `name` throws `InvalidAgentDefinitionError`.
 
 The envelope (`TriggerEnvelope`, `Invoker`):
 
