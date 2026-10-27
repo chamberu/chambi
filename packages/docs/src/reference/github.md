@@ -14,11 +14,14 @@ npm install @chamvi/github @chamvi/http @chamvi/core ai --save
 function createGithubApp(options: GithubAppOptions): IGithubApp;
 
 const DEFAULT_GITHUB_API_URL: 'https://api.github.com';
+const INSTALLATION_CACHE_TTL_MS: 600_000;
 ```
 
 Throws `InvalidAgentDefinitionError` for an empty `appId`, a key that is no RSA private key, an empty webhook secret, an `installationId` that is no positive integer, a `baseUrl` that is no absolute https URL without query (empty means `https://api.github.com`) and a `slug` that is not the App's lower-case slug (`^[a-z0-9]+(-[a-z0-9]+)*$`, as in the App's URL; a miscased one would silently disable the self guard).
 
 <<< ../../../github/src/app/types.ts{ts}
+
+`installationFor({ owner, repo })` answers the App's installation on a repository (App JWT, cached per lower-cased `owner/repo` for `INSTALLATION_CACHE_TTL_MS` on the clock, concurrent callers sharing one lookup; `undefined`, not cached, where the App is not installed); `installations()` lists every installation (`GET /app/installations`, not cached). `writeTools({ mergeMethod })` throws `InvalidAgentDefinitionError` for a method outside `MERGE_METHODS`.
 
 ```ts
 const GITHUB_REQUEST_ERROR_CODE: 'github_request';
@@ -49,13 +52,19 @@ Every option is checked when `githubChannel()` is called (`InvalidAgentDefinitio
 const github: GithubSubscriber; // github.on(events, options?), github.to({ repo, number }) for the channel named 'github'
 ```
 
-`github.on()` throws `InvalidAgentDefinitionError` without events or for an event that is not `name` or `name.action` (lower case letters, digits and underscores, e.g. `projects_v2_item.created`). `github.to({ repo, number })` returns the address `<owner>/<repo>#<number>`.
+`github.on()` throws `InvalidAgentDefinitionError` without events or for an event that is not `name` or `name.action` (lower case letters, digits and underscores, e.g. `projects_v2_item.created`), and for a `selfEvents` entry of that shape naming `issue_comment`, `issues` or `pull_request_review_comment` (the bot's own comment would start the agent again). A delivery the App's bot sent reaches only subscriptions whose `selfEvents` name its event. `github.to({ repo, number })` returns the address `<owner>/<repo>#<number>`.
 
 <<< ../../../github/src/subscription/types.ts{ts}
 
 ## Tools
 
-`gh.readTools()` and `gh.writeTools()` return plain AI SDK `ToolSet`s; the results are these shapes.
+```ts
+const DEFAULT_MERGE_METHOD: 'squash';
+const MERGE_METHODS: readonly ['merge', 'squash', 'rebase'];
+const MERGE_STATES: readonly ['clean', 'unstable', 'has_hooks'];
+```
+
+`gh.readTools()` (`github_get_issue`, `github_search_issues`, `github_list_labels`, `github_get_pull_request`, `github_get_file`, `github_get_latest_release`, `github_list_releases`, `github_compare`, `github_list_repositories`, `github_list_issues`, `github_list_pull_requests`, `github_get_pull_request_checks`, `github_get_push_target`) and `gh.writeTools(options?)` (`github_add_labels`, `github_create_comment`, `github_close_issue`, `github_create_issue`, `github_create_pull_request`, `github_merge_pull_request`) return plain AI SDK `ToolSet`s. Each tool acts as the installation of the repository it names: the delivery's for a run of the GitHub channel on that repository, else `installationFor()`, else the delivery's or `installationId` (a public repository the App is not installed on stays readable); without any a `github_request` tool error. `github_merge_pull_request` refuses with `ToolDeniedError`, before the merge request, a closed pull request, a head that moved from `sha`, a draft, a mergeability not computed yet, a `mergeable_state` outside `MERGE_STATES` and any required check that is not green or has not reported. The results are these shapes.
 
 <<< ../../../github/src/tools/types.ts{ts}
 

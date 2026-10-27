@@ -47,8 +47,8 @@ ESM only, Node.js `>=22`. `@chamvi/core`, [`@chamvi/http`](../http) (it serves t
 One GitHub App per agent repository (or organisation):
 
 1. Create a GitHub App. Set the **webhook URL** to `https://<host><basePath>/channels/github` (the channel's name), the **content type to `application/json`** (a hook created by hand defaults to `application/x-www-form-urlencoded`, which the channel answers with `415`) and a **webhook secret**.
-2. Grant the permissions your tools need: *Issues* read and write for labels, comments and closing; *Pull requests* read; *Contents* read for `github_get_file`, `github_get_latest_release`, `github_list_releases` and `github_compare` (read and write for workspaces that push, *Workflows* write to push changes under `.github/workflows`). Subscribe to the events your subscriptions name (e.g. *Issues*).
-3. Generate a private key and install the App on the repositories the agents may act on.
+2. Grant the permissions your tools need: *Issues* read and write for labels, comments, closing and `github_create_issue`; *Pull requests* read (write for `github_create_pull_request` and `github_merge_pull_request`); *Checks* and *Commit statuses* read for `github_get_pull_request_checks` and the merge guard; *Metadata* read; *Contents* read for `github_get_file`, `github_get_latest_release`, `github_list_releases` and `github_compare` (read and write for workspaces that push, *Workflows* write to push changes under `.github/workflows`). Subscribe to the events your subscriptions name (e.g. *Issues*).
+3. Generate a private key and install the App on the repositories the agents may act on (several accounts and organisations are fine: every tool finds the installation of the repository it names). Never put the App on a ruleset bypass list or a branch protection exception: `github_merge_pull_request` refuses unsafe merges itself, but a bypass would let GitHub report a blocked pull request as `clean`.
 4. Pass the App id, the private key (PKCS#1 or PKCS#8 PEM; a one-line env var with literal `\n` works) and the webhook secret to `createGithubApp()`. Set `slug` in production, so the bot login needs no `GET /app`.
 
 ## Usage
@@ -178,6 +178,7 @@ github.on(['issues.opened', 'issue_comment.created'], {   // 'issues' matches ev
 | `filter` | none | `(event) => boolean`, after the event match; also the way to break loops between two Apps, which see each other as ordinary bots |
 | `idempotencyKey` | the delivery id | `(event) => string \| undefined` |
 | `concurrencyKey` | `<owner>/<repo>#<issue or pull request number>`, else `<owner>/<repo>` | `(event) => string \| undefined`; runs on one issue wait for each other |
+| `selfEvents` | none | Events (`name` or `name.action`) the App's own bot may start this subscription with, e.g. `['pull_request', 'check_suite.completed']` for the pull requests the agent opens or pushes to; `issue_comment`, `issues` and `pull_request_review_comment` are refused, since the bot's own comment would start the agent again |
 
 `github.on()` subscribes to the channel named `github`; a second channel makes its subscriptions with its own `channel.on()`. The run payload is a `GithubEvent { name, action?, delivery, installationId?, payload }`, where `payload` is the full GitHub body. A derived key above 255 characters or with a NUL fails that agent like a throwing `filter` (see *Failures*).
 
@@ -202,7 +203,7 @@ const answer = defineTool({
 
 Per message the channel:
 
-1. parses the address (anything but `owner/repo#n` is a `ValidationError`) and picks the installation: the event's for a run this channel started, else `installationId` from `createGithubApp()`; without one it throws `InvalidAgentDefinitionError` before any request,
+1. parses the address (anything but `owner/repo#n` is a `ValidationError`) and picks the installation: the event's for a run this channel started on the same repository, else the App's installation on the address's repository (`installationFor()`), else the event's, else `installationId` from `createGithubApp()`; without one it throws `InvalidAgentDefinitionError` before any comment request,
 2. lists the issue's comments updated since the run's `receivedAt` minus one hour and returns when one by the App bot (`<slug>[bot]`, compared case-insensitively) holds the marker `effectMarker(message.key)`,
 3. else posts the comment: the `mention` logins, `### <title>` (when given), the body in a fence, for an approval the approval line, the run line and the marker:
 
@@ -229,25 +230,35 @@ Gate a tool in the agent's `hooks.beforeToolExecution` with a durable `approve()
 
 ## Tools
 
-Every tool acts as an installation: the delivery's for a run the `github` channel started, else `installationId` from `createGithubApp()` (cron, REST and MCP runs). Without either, a tool fails the run (`FatalToolError`). Inputs name the repository as `owner/name` (GitHub's name characters; `.` and `..` are refused). Every installation request carries the run's signal, so cancel, drain and the run timeout abort a stalled GitHub call. The App-authenticated requests (the token exchange and `GET /app` for the bot login) are shared by every waiting run and delivery, so they carry no run's signal; each is aborted after 30 s on the app's clock instead, and the next caller retries. A failed GitHub call reaches the model as `GitHub <status>: <message>`, never with the request or its token.
+Every tool acts as the installation of the repository it names: the delivery's for a run the `github` channel started on that repository (no request), else the App's installation there (`installationFor()`, `GET /repos/{owner}/{repo}/installation` with the App JWT, cached 10 minutes), else the delivery's or `installationId` from `createGithubApp()` (so a public repository the App is not installed on is still readable). Without any, the call is a tool error (`github_request`), never a failed run. Inputs name the repository as `owner/name` (GitHub's name characters; `.` and `..` are refused). Every installation request carries the run's signal, so cancel, drain and the run timeout abort a stalled GitHub call. The App-authenticated requests (the token exchange and `GET /app` for the bot login) are shared by every waiting run and delivery, so they carry no run's signal; each is aborted after 30 s on the app's clock instead, and the next caller retries. A failed GitHub call reaches the model as `GitHub <status>: <message>`, never with the request or its token.
 
 | Tool | Kind | Input | Result |
 |---|---|---|---|
 | `github_get_issue` | read | `repo`, `number` | `number`, `title`, `body`, `state`, `labels`, `author`, `url`, `createdAt`, `comments`, `isPullRequest` |
 | `github_search_issues` | read | `query`, `limit?` (1 to 20, default 10) | `total`, `items: [{ repo, number, title, state, url }]` |
 | `github_list_labels` | read | `repo` | `[{ name, description }]`, every page |
-| `github_get_pull_request` | read | `repo`, `number` | `number`, `title`, `body`, `state`, `draft`, `merged`, `base`, `head`, `author`, `url`, `changedFiles` |
+| `github_get_pull_request` | read | `repo`, `number` | `number`, `title`, `body`, `state`, `draft`, `merged`, `base`, `head`, `author`, `url`, `changedFiles`, `headSha`, `headRepo` (null for a deleted fork), `fork`, `authorType`, `labels`, `mergeable` (null while GitHub computes it), `mergeableState`, `maintainerCanModify`, `mergeCommitSha` |
 | `github_get_file` | read | `repo`, `path`, `ref?` | `{ path, size, content, truncated }` (cut at 65 536 characters) or `{ path, entries }` for a directory |
 | `github_get_latest_release` | read | `repo` | `{ tag, name, publishedAt, url, body }` or `{ none: true }` |
 | `github_list_releases` | read | `repo`, `from?`, `to?`, `tagPrefix?`, `exhaustive?` | `{ releases: [{ tag, name, publishedAt, url, prerelease, body, bodyTruncated }], truncated }`: published releases after `from` up to and including `to` (`v1.2.3` and `1.2.3` both match), oldest first, at most 20, notes cut at 8 000 characters; without `from` the newest 20; drafts skipped; reading stops at the first page of 100 whose releases are all at or below `from` (listed by publication date), `exhaustive: true` reads every page up to 1 000 |
 | `github_compare` | read | `repo`, `base`, `head` | `{ status, aheadBy, behindBy, totalCommits, url, commits: [{ sha, message, author, date }], files: [{ path, status, additions, deletions }], truncated }`: commit first lines (at most 100) and changed files (at most 300) |
+| `github_list_repositories` | read | `includeArchived?` | `{ repositories: [{ repo, installationId, account, private, archived, fork, defaultBranch, url }], truncated }`: every repository of every installation (`GET /app/installations`), sorted by name, archived ones dropped unless asked, at most 1 000 |
+| `github_list_issues` | read | `repo`, `labels?`, `limit?` (1 to 100, default 100) | `{ issues: [{ number, title, author, labels, comments, createdAt, updatedAt, url }], truncated }`: open issues, pull requests left out, most recently updated first |
+| `github_list_pull_requests` | read | `repo`, `base?`, `limit?` (1 to 100, default 100) | `{ pullRequests: [{ number, title, author, authorType, draft, base, head, headSha, headRepo, fork, labels, createdAt, updatedAt, url }], truncated }`: open pull requests |
+| `github_get_pull_request_checks` | read | `repo`, `number` | `{ number, headSha, base, state, pending, failing, checks: [{ name, kind, status, conclusion, outcome, required, url }], required: { known, contexts, missing }, truncated }`: the latest check runs (at most 300) and commit statuses of the head; required contexts from branch protection and rulesets (`known: false` when GitHub refused to show them); `state` is `none` without any report and `pending` while a check runs or a required context has not reported, never green |
+| `github_get_push_target` | read | `repo`, `number` | `{ number, headRepo, headBranch, headSha, fork, installationId, contents, workflows, maintainerCanModify, canPush, reason }`: whether the App can push fix commits onto the head branch (a fork the App is not installed on never is: App tokens cannot use maintainer edits) |
 | `github_add_labels` | effect | `repo`, `number`, `labels` (1 to 20) | `{ labels }`: once per run and input (labels are a set) |
 | `github_create_comment` | effect | `repo`, `number`, `body` | `{ id, url }`: **one comment per issue per model step** |
 | `github_close_issue` | effect | `repo`, `number`, `reason?` (`completed`, `not_planned`) | `{ number, state, stateReason }`; an issue already closed is not patched again |
+| `github_create_issue` | effect | `repo`, `title`, `body`, `labels?` | `{ number, url }`: once per run and input; the body carries the effect marker, so a redone step finds the App's issue instead of opening a second |
+| `github_create_pull_request` | effect | `repo`, `head` (`branch` or `owner:branch`), `base?` (default the default branch), `title`, `body`, `draft?` | `{ number, url, base, head }`: once per run and input, found again by its marker; GitHub's `422` for an existing pull request is a tool error |
+| `github_merge_pull_request` | effect | `repo`, `number`, `sha`, `method?`, `commitTitle?`, `commitMessage?` | `{ number, sha, method, alreadyMerged }`: see the merge guard below |
 
 The write tools are effect tools (`defineEffectTool` from core). `github_create_comment` keys its effect by run, issue and model step (`<runId>:github_create_comment:<owner>/<repo>#<n>:<step>`, owner and repo lower-cased since GitHub resolves them case-insensitively) and embeds the key as a hidden marker (`<!-- chamvi:effect=... -->`). When the effect record is lost (a crash between GitHub accepting the comment and the checkpoint), the redone step finds the App's own comment with that marker (comments updated since the run was received, less an hour) and returns it instead of posting again, although the model wrote a different text. A second call for the same issue in the same step returns the first comment, so the tool description asks the model to put everything for one issue into one comment.
 
-Gate destructive tools (`github_close_issue`) with an approval in `hooks.beforeToolExecution`, see [Approvals](#approvals).
+`github_merge_pull_request` never bypasses protection: before the merge request it refuses (`ToolDeniedError`, a tool error) a closed or merged pull request, a head that moved from `sha` (read the checks again), a draft, a mergeability GitHub has not computed yet, a `mergeable_state` outside `MERGE_STATES` (`clean`, `unstable`, `has_hooks`; `dirty` conflicts, `blocked` protection, `behind` out of date) and any required check that is not green or has not reported. The merge request sends only `sha`, `merge_method` and the commit title and message, so GitHub's own `405`/`409` stay tool errors. The method is `method`, else `writeTools({ mergeMethod })`, else `DEFAULT_MERGE_METHOD` (`squash`). Which pull requests to merge (authors, version bumps) is the agent's policy, never a tool's.
+
+Gate destructive tools (`github_close_issue`, `github_merge_pull_request` for anything your policy does not merge alone) with an approval in `hooks.beforeToolExecution`, see [Approvals](#approvals).
 
 ## Security
 
@@ -338,18 +349,20 @@ Every option is checked when `githubChannel()` is called; a bad one throws `Inva
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `createGithubApp` | function | The App: `octokit(installationId)`, `botLogin()`, `botIdentity()`, `repositoryToken()`, `verifySignature()`, `readTools()`, `writeTools()` |
+| `createGithubApp` | function | The App: `octokit(installationId)`, `botLogin()`, `botIdentity()`, `installationFor({ owner, repo })`, `installations()`, `repositoryToken()`, `verifySignature()`, `readTools()`, `writeTools({ mergeMethod? })` |
 | `githubAppCredentials` | function | Repository-scoped git credentials for `@chamvi/sandbox` workspaces |
 | `DEFAULT_GITHUB_GIT_HOST`, `GITHUB_TOKEN_USERNAME` | constant | `'github.com'`, `'x-access-token'` |
 | `githubChannel` | function | The channel: deliveries `in`, comments `out`, plus `on()` and `to()` bound to its name |
 | `github` | object | `github.on(events, options?)` subscriptions and `github.to({ repo, number })` addresses for the channel named `github` |
 | `GITHUB_CHANNEL_NAME`, `GITHUB_CHANNEL_TIMEOUT_MS`, `COMMENT_BODY_MAX_LENGTH` | constant | `'github'`, `30_000`, `60_000` |
 | `DEFAULT_GITHUB_API_URL` | constant | `https://api.github.com` |
+| `INSTALLATION_CACHE_TTL_MS` | constant | `600_000`, how long `installationFor()` keeps a repository's installation |
+| `DEFAULT_MERGE_METHOD`, `MERGE_METHODS`, `MERGE_STATES` | constant | `'squash'`, `['merge', 'squash', 'rebase']`, `['clean', 'unstable', 'has_hooks']` |
 | `GITHUB_REQUEST_ERROR_CODE` | constant | `'github_request'`, the `code` of a failed GitHub request |
 | `provideGithubContext`, `injectGithubContext` | function | Provide the App on the engine, read it from a `ToolContext` |
 | `REPO_PATTERN` | constant | The `owner/name` pattern the tools accept (a regular expression source; `.` and `..` segments never match) |
 
-Types: `GithubAppOptions`, `IGithubApp`, `GithubOctokit`, `GithubPermissions`, `GithubRepositoryToken`, `GithubBotIdentity`, `IGithubGitCredentials`, `GithubGitCredentialRequest`, `GithubGitCredential`, `GithubAppCredentialsOptions`, `GithubChannel`, `GithubChannelOptions`, `GithubApprovalRef`, `GithubEvent`, `GithubPayload`, `GithubSubscriber`, `GithubSubscriptionOptions`, `GithubTarget`, `GithubWebhookResult`, `GithubIssue`, `GithubIssueSearch`, `GithubLabel`, `GithubPullRequest`, `GithubFile`, `GithubDirectory`, `GithubRelease`, `GithubComment`, `GithubIssueLabels`, `GithubClosedIssue`.
+Types: `GithubAppOptions`, `IGithubApp`, `GithubOctokit`, `GithubPermissions`, `GithubRepositoryToken`, `GithubBotIdentity`, `GithubInstallation`, `GithubWriteToolsOptions`, `GithubMergeMethod`, `IGithubGitCredentials`, `GithubGitCredentialRequest`, `GithubGitCredential`, `GithubAppCredentialsOptions`, `GithubChannel`, `GithubChannelOptions`, `GithubApprovalRef`, `GithubEvent`, `GithubPayload`, `GithubSubscriber`, `GithubSubscriptionOptions`, `GithubTarget`, `GithubWebhookResult`, `GithubIssue`, `GithubIssueSearch`, `GithubLabel`, `GithubPullRequest`, `GithubFile`, `GithubDirectory`, `GithubRelease`, `GithubComment`, `GithubIssueLabels`, `GithubClosedIssue`, `GithubRepository`, `GithubRepositoryList`, `GithubIssueSummary`, `GithubIssueList`, `GithubPullRequestSummary`, `GithubPullRequestList`, `GithubPushTarget`, `GithubCheck`, `GithubCheckOutcome`, `GithubChecksState`, `GithubPullRequestChecks`, `GithubCreatedIssue`, `GithubCreatedPullRequest`, `GithubMergeResult`.
 
 `@chamvi/github/module`: `githubModule`, `GithubModule`, `GITHUB_MODULE_NAME`, types `GithubModuleOptions`, `GithubModuleChannelOptions`.
 
