@@ -15,6 +15,8 @@ import {
 import { z } from 'zod';
 import {
     Engine,
+    InvalidRunStateError,
+    ValidationError,
     approve,
     defineAgent,
     defineTool,
@@ -23,6 +25,7 @@ import type {
     ApprovalDecision,
     ApprovalOption,
 } from '@chamvi/core';
+import { toApprovalDecision } from '../../../src/approval/helpers.ts';
 import { MemoryStore } from '../../../src/store/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
@@ -67,7 +70,7 @@ function setup(model: LanguageModel) {
         execute: async ({ request }, { context }) => {
             const decision = await approve(context, request);
             decisions.push(decision);
-            return decision.approved ? 'picked' : 'denied';
+            return decision.approved ? `picked ${(decision.selected ?? []).join(',')}` : 'denied';
         },
     });
     const engine = new Engine({
@@ -206,5 +209,171 @@ describe('approve() with options', () => {
         const { store, engine } = setup(mockModel([ask({ title: 'Pick?', options }), text('done')]));
         const { run } = await dispatch(engine, store);
         expect(run?.waiting?.options).toEqual(options);
+    });
+});
+
+async function paused(request: unknown) {
+    const ctx = setup(mockModel([ask(request), text('done')]));
+    const { runId, run } = await dispatch(ctx.engine, ctx.store);
+    if (!run?.waiting) throw new Error('not waiting');
+    return {
+        ...ctx,
+        runId,
+        waiting: run.waiting,
+    };
+}
+
+describe('answering an approval with options', () => {
+    it('returns the selection in option order', async () => {
+        const {
+            engine, 
+            store, 
+            runId, 
+            waiting, 
+            decisions,
+        } = await paused({
+            title: 'Pick?', 
+            options: OPTIONS, 
+            multiple: true, 
+        });
+        await engine.approve(runId, {
+            approvalId: waiting.approvalId, 
+            approved: true, 
+            selected: ['c', 'a'], 
+        });
+        await engine.idle();
+        expect(decisions).toEqual([{ approved: true, selected: ['a', 'c'] }]);
+        expect(await store.getRun(runId)).toMatchObject({ status: 'completed' });
+        const wait = (await store.listSteps(runId)).find((s) => s.kind === 'wait');
+        expect(wait?.input).toEqual({
+            toolCallId: 'c1',
+            title: 'Pick?',
+            options: OPTIONS,
+            multiple: true,
+        });
+        expect(wait?.output).toMatchObject({ approved: true, selected: ['a', 'c'] });
+    });
+
+    it('returns a single selection', async () => {
+        const {
+            engine, 
+            runId, 
+            waiting, 
+            decisions,
+        } = await paused({ title: 'Pick?', options: OPTIONS });
+        await engine.approve(runId, {
+            approvalId: waiting.approvalId, 
+            approved: true, 
+            selected: ['b'], 
+        });
+        await engine.idle();
+        expect(decisions).toEqual([{ approved: true, selected: ['b'] }]);
+    });
+
+    const SINGLE = { title: 'Pick?', options: OPTIONS };
+    const MULTIPLE = {
+        title: 'Pick?', 
+        options: OPTIONS, 
+        multiple: true, 
+    };
+    const PLAIN = { title: 'Deploy?' };
+
+    it.each([
+        ['several ids for a single choice', SINGLE, true, ['a', 'b']],
+        ['an unknown id', SINGLE, true, ['z']],
+        ['an empty selection of a single choice', SINGLE, true, []],
+        ['no selection for a single choice', SINGLE, true, undefined],
+        ['an empty selection of a multiple choice', MULTIPLE, true, []],
+        ['a selection on a denial', SINGLE, false, ['a']],
+        ['a selection on a plain wait point', PLAIN, true, ['a']],
+        ['a selection that is no array', SINGLE, true, 'a'],
+        ['a duplicate id', MULTIPLE, true, ['a', 'a']],
+        ['21 ids', MULTIPLE, true, Array.from({ length: 21 }, (_, i) => `o${i}`)],
+        ['an id that is no string', MULTIPLE, true, [1]],
+    ])('refuses %s', async (_, request, approved, selected) => {
+        const {
+            engine, 
+            store, 
+            runId, 
+            waiting,
+        } = await paused(request);
+        await expect(engine.approve(runId, {
+            approvalId: waiting.approvalId,
+            approved,
+            selected: selected as string[],
+        })).rejects.toThrow(ValidationError);
+        const run = await store.getRun(runId);
+        expect(run?.status).toBe('waiting');
+        expect(run?.waiting).toEqual(waiting);
+    });
+
+    it('checks the state before the selection', async () => {
+        const { engine, runId } = await paused(SINGLE);
+        await expect(engine.approve(runId, {
+            approvalId: 'stale', 
+            approved: true, 
+            selected: ['z'], 
+        }))
+            .rejects.toThrow(InvalidRunStateError);
+    });
+
+    it('drops an empty selection on a denial', async () => {
+        const {
+            engine, 
+            store, 
+            runId, 
+            waiting, 
+            decisions,
+        } = await paused(MULTIPLE);
+        await engine.approve(runId, {
+            approvalId: waiting.approvalId, 
+            approved: false, 
+            reason: 'none', 
+            selected: [],
+        });
+        await engine.idle();
+        expect(decisions).toEqual([{ approved: false, reason: 'none' }]);
+        const effect = await store.getEffect(`approval:${runId}:${waiting.approvalId}`);
+        expect(effect?.result).toEqual({ approved: false, reason: 'none' });
+        const wait = (await store.listSteps(runId)).find((s) => s.kind === 'wait');
+        expect(Object.keys(wait?.output as object)).not.toContain('selected');
+    });
+
+    it('times out without a selection', async () => {
+        const {
+            engine, 
+            clock, 
+            runId, 
+            decisions, 
+            store,
+        } = await paused({ ...SINGLE, timeoutMs: 1000 });
+        clock.advance(1000);
+        await engine.tick();
+        await engine.idle();
+        expect(decisions).toEqual([{ approved: false, reason: 'approval timed out' }]);
+        const wait = (await store.listSteps(runId)).find((s) => s.kind === 'wait');
+        expect(wait?.input).toMatchObject({ options: OPTIONS });
+    });
+
+    it('answers a plain wait point without a selected key', async () => {
+        const {
+            engine, 
+            store, 
+            runId, 
+            waiting, 
+            decisions,
+        } = await paused(PLAIN);
+        await engine.approve(runId, { approvalId: waiting.approvalId, approved: true });
+        await engine.idle();
+        expect(decisions).toEqual([{ approved: true }]);
+        const wait = (await store.listSteps(runId)).find((s) => s.kind === 'wait');
+        expect(wait?.input).toEqual({ toolCallId: 'c1', title: 'Deploy?' });
+        expect(Object.keys(wait?.output as object)).not.toContain('selected');
+    });
+
+    it('reads a recorded selection back', () => {
+        expect(toApprovalDecision({ approved: true, selected: ['b'] })).toEqual({ approved: true, selected: ['b'] });
+        expect(toApprovalDecision({ approved: true, selected: 'b' })).toEqual({ approved: true });
+        expect(toApprovalDecision({ approved: true, selected: ['b', 1] })).toEqual({ approved: true });
     });
 });

@@ -199,6 +199,16 @@ describe('public api', () => {
             approved: boolean;
             reason?: string;
             approver?: core.Invoker;
+            selected?: string[];
+        }>();
+    });
+
+    it('exports the ApprovalDecision type', () => {
+        expectTypeOf<core.ApprovalDecision>().toEqualTypeOf<{
+            approved: boolean;
+            reason?: string;
+            approver?: core.Invoker;
+            selected?: string[];
         }>();
     });
 });

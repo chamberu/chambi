@@ -102,6 +102,11 @@ export type ApprovalAnswer = {
     reason?: string;
     /** Who answered; recorded on the wait step (\`output.approver\`). */
     approver?: Invoker;
+    /**
+     * The chosen option ids of a wait point with options: exactly one for a
+     * single choice, at least one for a multiple choice; none on a denial.
+     */
+    selected?: string[];
 };
 
 export type EngineStartOptions = {

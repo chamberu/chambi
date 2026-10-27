@@ -7,6 +7,7 @@
 
 import { isObject } from 'smob';
 import { ValidationError } from '../errors/index.ts';
+import type { WaitPoint } from '../run/types.ts';
 import type { Invoker } from '../trigger/types.ts';
 import {
     APPROVAL_OPTIONS_DETAIL_MAX_LENGTH,
@@ -18,6 +19,10 @@ import {
 import type { ApprovalDecision, ApprovalOption } from './types.ts';
 
 /** The effect store key the decision of `approvalId` is recorded under. */
+function isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
 export function approvalDecisionKey(runId: string, approvalId: string): string {
     return `approval:${runId}:${approvalId}`;
 }
@@ -29,6 +34,7 @@ export function toApprovalDecision(value: unknown): ApprovalDecision {
         approved: record.approved === true,
         ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
         ...(isObject(record.approver) ? { approver: record.approver as Invoker } : {}),
+        ...(isStringArray(record.selected) ? { selected: [...record.selected] } : {}),
     };
 }
 
@@ -99,4 +105,55 @@ export function toApprovalOptions(
         );
     }
     return { options: copied, ...(multiple === true ? { multiple: true as const } : {}) };
+}
+
+/**
+ * The shape of an answer's `selected`: absent, or an array of at most
+ * APPROVAL_OPTIONS_MAX distinct strings. Checked before any store read.
+ */
+export function assertSelectionShape(selected: unknown): asserts selected is string[] | undefined {
+    if (selected === undefined) return;
+    if (!isStringArray(selected) || selected.length > APPROVAL_OPTIONS_MAX) {
+        throw new ValidationError(`An approval's selected must be an array of at most ${APPROVAL_OPTIONS_MAX} option ids.`);
+    }
+    if (new Set(selected).size !== selected.length) {
+        throw new ValidationError('An approval\'s selected names an option twice.');
+    }
+}
+
+/**
+ * The selection an answer records for `waiting`: the ids in the wait
+ * point's option order, undefined for a plain wait point or a denial (an
+ * empty selection on a denial is dropped). Throws ValidationError for a
+ * selection that does not fit the wait point.
+ */
+export function toSelection(
+    waiting: WaitPoint,
+    approved: boolean,
+    selected: string[] | undefined,
+): string[] | undefined {
+    const options = waiting.options ?? [];
+    if (options.length === 0) {
+        if (selected !== undefined && selected.length > 0) {
+            throw new ValidationError(`Approval "${waiting.approvalId}" has no options to select.`);
+        }
+        return undefined;
+    }
+    if (!approved) {
+        if (selected !== undefined && selected.length > 0) {
+            throw new ValidationError('A denial selects no option.');
+        }
+        return undefined;
+    }
+    const chosen = new Set(selected ?? []);
+    const known = new Set(options.map((option) => option.id));
+    for (const id of chosen) {
+        if (!known.has(id)) throw new ValidationError(`Approval "${waiting.approvalId}" has no option "${id}".`);
+    }
+    if (waiting.multiple === true) {
+        if (chosen.size === 0) throw new ValidationError('An approval of a multiple choice selects at least one option.');
+    } else if (chosen.size !== 1) {
+        throw new ValidationError('An approval of a single choice selects exactly one option.');
+    }
+    return options.filter((option) => chosen.has(option.id)).map((option) => option.id);
 }

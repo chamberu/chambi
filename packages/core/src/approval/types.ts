@@ -32,4 +32,6 @@ export type ApprovalDecision = {
     reason?: string;
     /** Who answered, when known. */
     approver?: Invoker;
+    /** The selected option ids in the request's option order; only on an approval of a request with options. */
+    selected?: string[];
 };
