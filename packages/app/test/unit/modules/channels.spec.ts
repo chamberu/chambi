@@ -117,12 +117,12 @@ async function rejectionOf(promise: Promise<unknown>): Promise<Error> {
 }
 
 describe('channels', () => {
-    it('the built-in modules register the cron, http, mcp and webhook channels', async () => {
+    it('the built-in modules register the agent, cron, http, mcp and webhook channels', async () => {
         const { harness } = await build();
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
-        expect(engine.listChannels().map((channel) => channel.name)).toEqual(['cron', 'http', 'mcp', 'webhook']);
+        expect(engine.listChannels().map((channel) => channel.name).sort()).toEqual(['agent', 'cron', 'http', 'mcp', 'webhook']);
     });
 
     it('a module\'s channel reaches the engine and, with in, the http app\'s mount', async () => {

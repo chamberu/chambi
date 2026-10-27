@@ -46,6 +46,8 @@ describe('public api', () => {
         'AgentNotFoundError',
         'checkAgentModel',
         'resolveModel',
+        'agentChannel',
+        'startHandoff',
     ])('exports %s', (name) => {
         expect(core).toHaveProperty(name);
         expect(core[name as keyof typeof core]).toBeTypeOf('function');
@@ -57,6 +59,18 @@ describe('public api', () => {
 
     it('exports the tool context schema', () => {
         expect(core.toolContextSchema['~standard'].vendor).toBe('chamvi');
+    });
+
+    it('exports the hand-off api', () => {
+        expect(core.AGENT_CHANNEL_NAME).toBe('agent');
+        expect(core.HANDOFF_SUBSCRIPTION_ID).toBe('handoff');
+        expect(core.DEFAULT_MAX_HANDOFFS_PER_RUN).toBe(100);
+        expect(core.MAX_HANDOFF_DEPTH).toBe(1);
+        expect(core.handoff.on).toBeTypeOf('function');
+        expect(core).not.toHaveProperty('HANDOFF_CONTEXT');
+        expect(core).not.toHaveProperty('claimKey');
+        expectTypeOf<core.TriggerEnvelope>().toHaveProperty('parent').toEqualTypeOf<core.TriggerParent | undefined>();
+        expectTypeOf<core.HandoffResult>().toEqualTypeOf<{ runId: string; deduplicated: boolean }>();
     });
 
     it('exports the trigger key bound', () => {

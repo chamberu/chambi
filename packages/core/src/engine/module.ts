@@ -36,13 +36,16 @@ import type {
     Usage,
     WaitPoint,
 } from '../run/types.ts';
+import { HANDOFF_CONTEXT } from '../handoff/constants.ts';
+import type { HandoffHost } from '../handoff/types.ts';
+import { assertHandoffSubscription } from '../handoff/helpers.ts';
 import { MODEL_CONTEXT } from '../model/constants.ts';
 import { checkAgentModel, checkDefaultModel } from '../model/module.ts';
 import type { IModelResolver, ModelContext, ModelRef } from '../model/types.ts';
 import type { IStore } from '../store/types.ts';
 import { idempotencyScope, toInvoker } from '../trigger/helpers.ts';
 import { assertTriggerKey } from '../trigger/key.ts';
-import type { TriggerEnvelope } from '../trigger/types.ts';
+import type { TriggerEnvelope, TriggerParent } from '../trigger/types.ts';
 import {
     APPROVAL_TIMED_OUT,
     DEFAULT_DRAIN_TIMEOUT_MS,
@@ -174,6 +177,7 @@ export class Engine implements IContextProvider {
             models: this.models,
             agentModel: (name: string) => this.agents.get(name)?.definition.model,
         } satisfies ModelContext);
+        this.provided.set(HANDOFF_CONTEXT, this.createHandoffHost());
         for (const agent of opts.agents) this.assertRegistrable(agent);
         // eslint-disable-next-line no-console
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));
@@ -196,6 +200,17 @@ export class Engine implements IContextProvider {
     }
 
     async dispatch(envelope: DispatchEnvelope): Promise<{ runId: string; deduplicated: boolean }> {
+        // a JS caller may pass a parent anyway: dropped, so nobody forges lineage
+        const rest: DispatchEnvelope & { parent?: unknown } = { ...envelope };
+        delete rest.parent;
+        return this.createRun(rest);
+    }
+
+    /**
+     * dispatch()'s body; `parent` comes only from this argument (the
+     * hand-off host), never from the envelope.
+     */
+    protected async createRun(envelope: DispatchEnvelope, parent?: TriggerParent): Promise<{ runId: string; deduplicated: boolean }> {
         if (!this.agents.has(envelope.agent)) throw new AgentNotFoundError(envelope.agent);
         const {
             attachments, 
@@ -215,6 +230,7 @@ export class Engine implements IContextProvider {
         const trigger: TriggerEnvelope = {
             ...rest,
             ...(snapshot ? { invoker: snapshot } : {}),
+            ...(parent ? { parent: { ...parent } } : {}),
             id: envelope.id ?? randomUUID(),
             receivedAt: envelope.receivedAt ?? now,
         };
@@ -260,6 +276,30 @@ export class Engine implements IContextProvider {
         this.emit({ type: 'run.updated', run });
         if (this.started) void this.queue.pump();
         return { runId, deduplicated: false };
+    }
+
+    /**
+     * The internal host startHandoff() reaches through inject(): the only
+     * dispatch path that sets a run's parent.
+     */
+    protected createHandoffHost(): HandoffHost {
+        const chains = new Map<string, Promise<unknown>>();
+        return {
+            getAgent: (name) => this.agents.get(name),
+            effects: this.store,
+            dispatch: (envelope, parent) => this.createRun(envelope, parent),
+            serial: (runId, fn) => {
+                const previous = chains.get(runId) ?? Promise.resolve();
+                const next = previous.then(fn, fn);
+                const tail = next.catch(() => {});
+                chains.set(runId, tail);
+                void tail.then(() => {
+                    if (chains.get(runId) === tail) chains.delete(runId);
+                });
+                return next;
+            },
+            inflight: new Map(),
+        };
     }
 
     /**
@@ -1102,6 +1142,7 @@ export class Engine implements IContextProvider {
                 throw new InvalidAgentDefinitionError(`Agent "${agent.name}" subscribes to unknown channel "${subscription.channel}".`);
             }
         }
+        assertHandoffSubscription(agent);
     }
 
     protected registry(): RegistryContext {
