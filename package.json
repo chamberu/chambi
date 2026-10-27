@@ -1,7 +1,7 @@
 {
     "name": "chamvi-root",
     "private": true,
-    "version": "0.3.0",
+    "version": "0.3.1",
     "type": "module",
     "description": "Self-hosted, trigger-driven AI agents with durable runs, built on the Vercel AI SDK.",
     "author": {

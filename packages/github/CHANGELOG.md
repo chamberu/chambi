@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.1](https://github.com/chamvi/chamvi/compare/v0.3.0...v0.3.1) (2026-10-27)
+
+
+### Features
+
+* **core:** approvals with options ([#65](https://github.com/chamvi/chamvi/issues/65)) ([994da69](https://github.com/chamvi/chamvi/commit/994da698399a0b3c08e7aa9d3d4a55f82ff23169))
+* **github:** pull request tools and per-repository installations ([#66](https://github.com/chamvi/chamvi/issues/66)) ([1a87a3a](https://github.com/chamvi/chamvi/commit/1a87a3a68942aab59f7fe70d52b85b68756f6263))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @chamvi/app bumped from ^0.3.0 to ^0.3.1
+    * @chamvi/core bumped from ^0.3.0 to ^0.3.1
+    * @chamvi/http bumped from ^0.2.2 to ^0.3.1
+    * @chamvi/test-kit bumped from ^0.3.0 to ^0.3.1
+  * peerDependencies
+    * @chamvi/app bumped from ^0.3.0 to ^0.3.1
+    * @chamvi/core bumped from ^0.3.0 to ^0.3.1
+    * @chamvi/http bumped from ^0.2.2 to ^0.3.1
+
 ## [0.3.0](https://github.com/chamvi/chamvi/compare/v0.2.1...v0.3.0) (2026-10-26)
 
 

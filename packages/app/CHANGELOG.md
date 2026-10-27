@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.1](https://github.com/chamvi/chamvi/compare/v0.3.0...v0.3.1) (2026-10-27)
+
+
+### Features
+
+* **core:** start runs of the same agent from a tool ([#64](https://github.com/chamvi/chamvi/issues/64)) ([083c385](https://github.com/chamvi/chamvi/commit/083c3852f1a0c494193e9e6ae36ca5739d1b275c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @chamvi/channel-cron bumped from ^0.2.2 to ^0.3.1
+    * @chamvi/core bumped from ^0.3.0 to ^0.3.1
+    * @chamvi/http bumped from ^0.2.2 to ^0.3.1
+    * @chamvi/store-typeorm bumped from ^0.3.0 to ^0.3.1
+  * devDependencies
+    * @chamvi/test-kit bumped from ^0.3.0 to ^0.3.1
+
 ## [0.3.0](https://github.com/chamvi/chamvi/compare/v0.2.1...v0.3.0) (2026-10-26)
 
 

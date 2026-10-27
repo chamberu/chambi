@@ -1,6 +1,6 @@
 {
     "name": "@chamvi/test-kit",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "type": "module",
     "description": "Test helpers for chamvi: a controllable clock, the store and workspace contract suites, a git fixture and a fake GitHub.",
     "author": {
@@ -51,10 +51,10 @@
     },
     "license": "Apache-2.0",
     "devDependencies": {
-        "@chamvi/core": "^0.3.0"
+        "@chamvi/core": "^0.3.1"
     },
     "peerDependencies": {
-        "@chamvi/core": "^0.3.0",
+        "@chamvi/core": "^0.3.1",
         "vitest": "^5"
     }
 }
