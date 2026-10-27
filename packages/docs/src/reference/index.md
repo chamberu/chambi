@@ -231,11 +231,16 @@ function approve(ctx: ToolContext, request: ApprovalRequestInput): Promise<Appro
 
 const DEFAULT_APPROVAL_TIMEOUT_MS: 86_400_000; // 24 hours
 const APPROVAL_TIMEOUT_MAX_MS: 2_147_483_647;
+const APPROVAL_OPTIONS_MAX: 20;
+const APPROVAL_OPTION_ID_PATTERN: RegExp; // /^[A-Za-z0-9@][\w.:/@+-]{0,127}$/
+const APPROVAL_OPTION_LABEL_MAX_LENGTH: 200;
+const APPROVAL_OPTION_DETAIL_MAX_LENGTH: 20_000;
+const APPROVAL_OPTIONS_DETAIL_MAX_LENGTH: 100_000; // all details of one request
 ```
 
 <<< ../../../core/src/approval/types.ts{ts}
 
-`approve()` outside a tool call, or in a streaming tool's body, throws `InvalidRunStateError`; a `timeoutMs` that is no positive integer up to `APPROVAL_TIMEOUT_MAX_MS` is a `ValidationError`. `ChannelHandle.approve()` is the same with the request delivered through the channel. The agent hooks (`AgentHooks`, `ToolCallInfo`) are on `AgentDefinition` above. See [Approvals & Hooks](/guide/approvals).
+`approve()` outside a tool call, or in a streaming tool's body, throws `InvalidRunStateError`; a `timeoutMs` that is no positive integer up to `APPROVAL_TIMEOUT_MAX_MS` is a `ValidationError`, as are options outside the limits above (see [Offering options](/guide/approvals#offering-options)). `ChannelHandle.approve()` is the same with the request delivered through the channel. The agent hooks (`AgentHooks`, `ToolCallInfo`) are on `AgentDefinition` above. See [Approvals & Hooks](/guide/approvals).
 
 ## State
 
