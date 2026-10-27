@@ -52,6 +52,9 @@ describe('write tools', () => {
             'github_add_labels',
             'github_close_issue',
             'github_create_comment',
+            'github_create_issue',
+            'github_create_pull_request',
+            'github_merge_pull_request',
         ]);
     });
 
@@ -245,5 +248,88 @@ describe('write tools', () => {
             number: 5, 
             reason: 'duplicate', 
         }, ctx)).rejects.toThrow(/reason/);
+    });
+
+    describe('github_create_issue', () => {
+        function cron() {
+            const fixture = createGithubFixture();
+            const ctx = toolContext({ channel: 'cron' });
+            fixture.fake.installations.set('tada5hi/agents-dev', 77);
+            const wrap = (store = new MemoryStore()): ToolSet => wrapToolsForRun(fixture.gh.writeTools(), ctx, store);
+            const create = (tools: ToolSet) => callTool<{ number: number; url: string }>(tools, 'github_create_issue', {
+                repo: 'tada5hi/agents-dev',
+                title: 'Daily digest',
+                body: 'Open issues: 3',
+                labels: ['report'],
+            }, ctx);
+            return {
+                ...fixture, 
+                ctx, 
+                wrap, 
+                create, 
+            };
+        }
+        const issuePosts = (fake: ReturnType<typeof setup>['fake']) => fake.requests.filter((r) => r.method === 'POST' && r.path === '/repos/tada5hi/agents-dev/issues');
+
+        it('embeds the marker and acts as the repository installation', async () => {
+            const {
+                fake, 
+                wrap, 
+                create, 
+            } = cron();
+            const result = await create(wrap());
+            expect(result).toEqual({ number: 1, url: 'https://github.com/tada5hi/agents-dev/issues/1' });
+            const body = issuePosts(fake)[0]!.body as {
+                title: string; 
+                body: string; 
+                labels: string[] 
+            };
+            expect(body).toMatchObject({ title: 'Daily digest', labels: ['report'] });
+            expect(body.body).toMatch(/^Open issues: 3\n\n<!-- chamvi:effect=run-1:github_create_issue:[0-9a-f]{64} -->$/);
+            expect(fake.tokenInstallations).toEqual([77]);
+        });
+
+        it('finds its issue after a lost record', async () => {
+            const {
+                fake, 
+                wrap, 
+                create, 
+            } = cron();
+            const first = await create(wrap());
+            const second = await create(wrap());
+            expect(second).toEqual(first);
+            expect(issuePosts(fake)).toHaveLength(1);
+            const list = fake.requests.find((r) => r.method === 'GET' && r.path === '/repos/tada5hi/agents-dev/issues');
+            expect(list?.query).toMatchObject({
+                state: 'all', 
+                creator: 'chamvi-test[bot]', 
+                since: new Date(START.getTime() - 3_600_000).toISOString(), 
+            });
+        });
+
+        it('treats an empty labels list as no labels', async () => {
+            const {
+                fake, 
+                wrap, 
+                ctx, 
+            } = cron();
+            const result = await callTool<{ number: number }>(wrap(), 'github_create_issue', {
+                repo: 'tada5hi/agents-dev',
+                title: 'Daily digest',
+                body: 'Open issues: 3',
+                labels: [],
+            }, ctx);
+            expect(result.number).toBe(1);
+            expect(issuePosts(fake)[0]!.body).not.toHaveProperty('labels');
+        });
+
+        it('refuses a missing title', async () => {
+            const { wrap, ctx } = cron();
+            await expect(callTool(wrap(), 'github_create_issue', {
+                repo: 'tada5hi/agents-dev', 
+                title: '', 
+                body: 'x', 
+            }, ctx)).rejects.toMatchObject({ code: 'validation_error' });
+        });
     });
 });

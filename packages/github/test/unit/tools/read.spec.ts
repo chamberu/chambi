@@ -58,8 +58,13 @@ describe('read tools', () => {
             'github_get_issue',
             'github_get_latest_release',
             'github_get_pull_request',
+            'github_get_pull_request_checks',
+            'github_get_push_target',
+            'github_list_issues',
             'github_list_labels',
+            'github_list_pull_requests',
             'github_list_releases',
+            'github_list_repositories',
             'github_search_issues',
         ]);
     });
@@ -141,9 +146,22 @@ describe('read tools', () => {
             state: 'open',
             draft: false,
             merged: false,
-            base: { ref: 'main', sha: 'a' },
-            head: { ref: 'fix/crash', sha: 'b' },
-            user: { login: 'bob' },
+            mergeable: true,
+            mergeable_state: 'unstable',
+            maintainer_can_modify: true,
+            merge_commit_sha: 'm',
+            labels: [{ name: 'dependencies' }],
+            base: {
+                ref: 'main', 
+                sha: 'a', 
+                repo: { full_name: 'octo/demo' }, 
+            },
+            head: {
+                ref: 'fix/crash', 
+                sha: 'b', 
+                repo: { full_name: 'Octo/Demo' }, 
+            },
+            user: { login: 'bob', type: 'User' },
             html_url: 'https://github.com/octo/demo/pull/7',
             changed_files: 3,
         });
@@ -159,6 +177,51 @@ describe('read tools', () => {
             author: 'bob',
             url: 'https://github.com/octo/demo/pull/7',
             changedFiles: 3,
+            headSha: 'b',
+            headRepo: 'Octo/Demo',
+            fork: false,
+            authorType: 'User',
+            labels: ['dependencies'],
+            mergeable: true,
+            mergeableState: 'unstable',
+            maintainerCanModify: true,
+            mergeCommitSha: 'm',
+        });
+    });
+
+    it('github_get_pull_request reads absent fields as unknown', async () => {
+        const { fake, call } = setup();
+        fake.pulls.set('octo/demo#8', {
+            number: 8,
+            title: 'Gone fork',
+            state: 'open',
+            merged: false,
+            base: {
+                ref: 'main', 
+                sha: 'a', 
+                repo: { full_name: 'octo/demo' }, 
+            },
+            head: {
+                ref: 'patch', 
+                sha: 'c', 
+                repo: null, 
+            },
+            user: null,
+            html_url: 'https://github.com/octo/demo/pull/8',
+            changed_files: 1,
+        });
+        expect(await call('github_get_pull_request', { repo: 'octo/demo', number: 8 })).toMatchObject({
+            body: null,
+            draft: false,
+            author: null,
+            headRepo: null,
+            fork: true,
+            authorType: null,
+            labels: [],
+            mergeable: null,
+            mergeableState: 'unknown',
+            maintainerCanModify: false,
+            mergeCommitSha: null,
         });
     });
 
@@ -625,9 +688,70 @@ describe('read tools', () => {
         expect(fake.tokenInstallations).toEqual([7]);
     });
 
-    it('fails the run without an installation', async () => {
+    it('acts as the repository installation for a cron run', async () => {
+        const { fake, call } = setup({}, { channel: 'cron' });
+        fake.installations.set('octo/demo', 9);
+        fake.issues.set('octo/demo#5', { ...ISSUE });
+        await call('github_get_issue', { repo: 'octo/demo', number: 5 });
+        expect(fake.tokenInstallations).toEqual([9]);
+    });
+
+    it('seeds from the event for the same repository in another case', async () => {
+        const { fake, call } = setup({}, {
+            payload: {
+                name: 'issues',
+                delivery: 'd-1',
+                installationId: 42,
+                payload: { repository: { full_name: 'Octo/Demo' } },
+            },
+        });
+        fake.installations.set('octo/demo', 42);
+        fake.issues.set('octo/demo#5', { ...ISSUE });
+        await call('github_get_issue', { repo: 'octo/demo', number: 5 });
+        expect(fake.tokenInstallations).toEqual([42]);
+        expect(fake.requests.some((r) => r.path.endsWith('/installation'))).toBe(false);
+    });
+
+    it('looks up another repository than the event one', async () => {
+        const { fake, call } = setup({}, {
+            payload: {
+                name: 'issues',
+                delivery: 'd-1',
+                installationId: 42,
+                payload: { repository: { full_name: 'octo/demo' } },
+            },
+        });
+        fake.installations.set('acme/api', 9);
+        fake.issues.set('acme/api#5', { ...ISSUE });
+        await call('github_get_issue', { repo: 'acme/api', number: 5 });
+        expect(fake.tokenInstallations).toEqual([9]);
+    });
+
+    it('falls back to the default installation for an uninstalled repository', async () => {
+        const { fake, call } = setup({ installationId: 7 }, { channel: 'cron' });
+        fake.issues.set('upstream/lib#5', { ...ISSUE });
+        await call('github_get_issue', { repo: 'upstream/lib', number: 5 });
+        expect(fake.tokenInstallations).toEqual([7]);
+    });
+
+    it('answers a tool error without any installation', async () => {
         const { call } = setup({}, { channel: 'http' });
-        await expect(call('github_get_issue', { repo: 'octo/demo', number: 5 })).rejects.toBeInstanceOf(FatalToolError);
+        const error = await call('github_get_issue', { repo: 'octo/demo', number: 5 }).catch((e: unknown) => e);
+        expect(error).not.toBeInstanceOf(FatalToolError);
+        expect(error).toMatchObject({ code: 'github_request', message: expect.stringContaining('not installed on octo/demo') });
+    });
+
+    it('answers a tool error when the installation lookup fails', async () => {
+        const { fake, call } = setup({ installationId: 7 }, { channel: 'cron' });
+        fake.failNext('GET', '/repos/octo/demo/installation', 500);
+        await expect(call('github_get_issue', { repo: 'octo/demo', number: 5 })).rejects.toMatchObject({ code: 'github_request' });
+    });
+
+    it('takes the repo: qualifier of a search query', async () => {
+        const { fake, call } = setup({}, { channel: 'cron' });
+        fake.installations.set('acme/api', 9);
+        await call('github_search_issues', { query: 'is:open repo:acme/api' });
+        expect(fake.tokenInstallations).toEqual([9]);
     });
 
     it('rejects a malformed repo as a tool error', async () => {

@@ -10,7 +10,12 @@ import type { ChannelSubscription } from '@chamvi/core';
 import { isObject } from 'smob';
 import { GITHUB_CHANNEL_NAME } from '../channel/constants.ts';
 import { GITHUB_EVENT_PATTERN } from './constants.ts';
-import { defaultConcurrencyKey, isPositiveInteger, isRepo } from './helpers.ts';
+import {
+    assertSelfEvents,
+    defaultConcurrencyKey,
+    isPositiveInteger,
+    isRepo,
+} from './helpers.ts';
 import type {
     GithubEvent,
     GithubSubscriber,
@@ -22,8 +27,8 @@ import type {
  * A subscription of `channel` (a GitHub channel's name) to deliveries of
  * `events`, matched by event name and optional action (`'issues'`,
  * `'issues.opened'`); the run payload is a `GithubEvent`. Throws
- * InvalidAgentDefinitionError without events, for a malformed one or an
- * empty id.
+ * InvalidAgentDefinitionError without events, for a malformed one, an
+ * empty id or a `selfEvents` entry that is malformed or refused.
  */
 export function createGithubSubscription(
     channel: string,
@@ -46,10 +51,16 @@ export function createGithubSubscription(
         throw new InvalidAgentDefinitionError('A github.on() id must not be empty.');
     }
 
+    const selfEvents = assertSelfEvents(options.selfEvents);
+
     const subscription: ChannelSubscription<GithubEvent> = {
         channel,
         id,
-        options: options.filter ? { events: list, filter: options.filter } : { events: list },
+        options: {
+            events: list,
+            ...(options.filter ? { filter: options.filter } : {}),
+            ...(selfEvents ? { selfEvents } : {}),
+        },
         concurrencyKey: options.concurrencyKey ?? defaultConcurrencyKey,
     };
     if (options.idempotencyKey) subscription.idempotencyKey = options.idempotencyKey;

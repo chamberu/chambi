@@ -5,11 +5,16 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { GithubMergeMethod } from '../app/types.ts';
+
 /** The input of a tool on a repository. */
 export type RepoInput = { repo: string };
 
 /** The input of a tool on an issue or pull request. */
 export type NumberInput = RepoInput & { number: number };
+
+/** A parsed repository (`parseRepo`), the target an installation is resolved for. */
+export type RepoTarget = { owner: string; repo: string };
 
 /** `github_get_issue`. */
 export type GithubIssue = {
@@ -56,6 +61,20 @@ export type GithubPullRequest = {
     author: string | null;
     url: string;
     changedFiles: number;
+    headSha: string;
+    /** `owner/name` of the head repository; null when the fork was deleted. */
+    headRepo: string | null;
+    /** The head lives in another repository than the base (or was deleted). */
+    fork: boolean;
+    /** The author's account type, e.g. `Bot` or `User`. */
+    authorType: string | null;
+    labels: string[];
+    /** null while GitHub is still computing it. */
+    mergeable: boolean | null;
+    /** GitHub's `mergeable_state` (`clean`, `unstable`, `dirty`, `blocked`, `behind`, `draft`, `has_hooks`, `unknown`). */
+    mergeableState: string;
+    maintainerCanModify: boolean;
+    mergeCommitSha: string | null;
 };
 
 /** `github_get_file` for a file: UTF-8 text, cut at FILE_MAX_CHARS characters. */
@@ -143,4 +162,142 @@ export type GithubClosedIssue = {
     number: number;
     state: 'closed';
     stateReason: string | null;
+};
+
+/** One repository of `github_list_repositories`: `repo` is `owner/name`, `account` the installation's account. */
+export type GithubRepository = {
+    repo: string;
+    installationId: number;
+    account: string;
+    private: boolean;
+    archived: boolean;
+    fork: boolean;
+    defaultBranch: string;
+    url: string;
+};
+
+/** `github_list_repositories`, sorted by `repo`; `truncated` when REPOSITORIES_MAX cut it. */
+export type GithubRepositoryList = {
+    repositories: GithubRepository[];
+    truncated: boolean;
+};
+
+/** One open issue of `github_list_issues`. */
+export type GithubIssueSummary = {
+    number: number;
+    title: string;
+    author: string | null;
+    labels: string[];
+    comments: number;
+    createdAt: string;
+    updatedAt: string;
+    url: string;
+};
+
+/** `github_list_issues`, newest updated first; `truncated` when more remained. */
+export type GithubIssueList = {
+    issues: GithubIssueSummary[];
+    truncated: boolean;
+};
+
+/** One open pull request of `github_list_pull_requests`. */
+export type GithubPullRequestSummary = {
+    number: number;
+    title: string;
+    author: string | null;
+    authorType: string | null;
+    draft: boolean;
+    base: string;
+    head: string;
+    headSha: string;
+    headRepo: string | null;
+    fork: boolean;
+    labels: string[];
+    createdAt: string;
+    updatedAt: string;
+    url: string;
+};
+
+/** `github_list_pull_requests`; `truncated` when more remained. */
+export type GithubPullRequestList = {
+    pullRequests: GithubPullRequestSummary[];
+    truncated: boolean;
+};
+
+/** `github_get_push_target`: whether the App can push fix commits onto a pull request's branch. */
+export type GithubPushTarget = {
+    number: number;
+    headRepo: string | null;
+    headBranch: string;
+    headSha: string;
+    fork: boolean;
+    /** The App's installation on the head repository, null when not installed. */
+    installationId: number | null;
+    contents: 'read' | 'write' | null;
+    workflows: 'read' | 'write' | null;
+    maintainerCanModify: boolean;
+    /** headRepo set, installed, contents write. A fork the App is not installed on is never pushable (App tokens cannot use maintainer edits). */
+    canPush: boolean;
+    /** Why `canPush` is false, else null. */
+    reason: string | null;
+};
+
+/** How a check reads: green, red, or not finished. */
+export type GithubCheckOutcome = 'success' | 'failure' | 'pending';
+
+/** One check run or commit status of a pull request's head. */
+export type GithubCheck = {
+    name: string;
+    kind: 'check_run' | 'status';
+    /** check run: queued | in_progress | completed | waiting | requested | pending; status: its state. */
+    status: string;
+    conclusion: string | null;
+    outcome: GithubCheckOutcome;
+    required: boolean;
+    url: string | null;
+};
+
+/** `none` while no check reported at all (a push seconds ago): never read as green. */
+export type GithubChecksState = 'success' | 'failure' | 'pending' | 'none';
+
+/** `github_get_pull_request_checks`. */
+export type GithubPullRequestChecks = {
+    number: number;
+    headSha: string;
+    base: string;
+    state: GithubChecksState;
+    pending: number;
+    failing: number;
+    checks: GithubCheck[];
+    required: {
+        /** false when branch protection or the rulesets could not be read (403, 404): required checks may exist that are not listed. */
+        known: boolean;
+        contexts: string[];
+        /** Required contexts with no report yet; counted as pending. */
+        missing: string[];
+    };
+    truncated: boolean;
+};
+
+/** `github_create_issue`. */
+export type GithubCreatedIssue = {
+    number: number;
+    url: string;
+};
+
+/** `github_create_pull_request`; `head` as `owner:branch`. */
+export type GithubCreatedPullRequest = {
+    number: number;
+    url: string;
+    base: string;
+    head: string;
+};
+
+/** `github_merge_pull_request`: `sha` is the merge commit. */
+export type GithubMergeResult = {
+    number: number;
+    sha: string;
+    method: GithubMergeMethod;
+    /** It was merged at the given head before this call (a redone step). */
+    alreadyMerged: boolean;
 };

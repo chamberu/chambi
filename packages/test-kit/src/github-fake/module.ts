@@ -12,6 +12,7 @@ import {
     base64UrlJson,
     compile,
     json,
+    page,
 } from './helpers.ts';
 import type {
     FakeGithub,
@@ -31,7 +32,7 @@ type IssuedToken = { installationId: number; expiresAt: number };
 
 /**
  * An in-process GitHub: verifies App JWTs (RS256 under the fake's public key,
- * `iss`, at most 600 s) on `/app*` and `/repos/:owner/:repo/installation`,
+ * `iss`, at most 600 s) on `/app*` (incl. `GET /app/installations`) and `/repos/:owner/:repo/installation`,
  * answers `/users/:login` without credentials, and installation tokens on
  * every other route, issues tokens valid for one hour on the fake's clock, answers 404
  * for unknown routes. A request whose signal aborts (also while a route
@@ -68,6 +69,12 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
         pulls: new Map(),
         installations: new Map(),
         users: new Map(),
+        repositories: new Map(),
+        appInstallations: new Map(),
+        checkRuns: new Map(),
+        statuses: new Map(),
+        branches: new Map(),
+        rules: new Map(),
         route(method, path, handler) {
             routes.unshift({
                 method, 
@@ -110,6 +117,13 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
     }
 
     fake.fetch = async (resource, init) => {
+        const response = await answer(resource, init);
+        // a Response built in process has no url; Octokit's paginate reads it for object lists
+        Object.defineProperty(response, 'url', { value: resource instanceof Request ? resource.url : String(resource) });
+        return response;
+    };
+
+    const answer = async (resource: Parameters<typeof globalThis.fetch>[0], init: Parameters<typeof globalThis.fetch>[1]): Promise<Response> => {
         const request = new Request(resource as RequestInfo, init);
         const { signal } = request;
         if (signal.aborted) throw signal.reason;
@@ -138,6 +152,10 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
             if (method === 'GET' && path === '/app') {
                 return json(200, { id: Number(input.appId), slug: input.slug ?? 'chamvi-test' });
             }
+            if (method === 'GET' && path === '/app/installations') {
+                const result = page(path, Object.fromEntries(url.searchParams), Array.from(fake.appInstallations.values()));
+                return json(result.status, result.body, result.headers);
+            }
             const exchange = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(path);
             if (method === 'POST' && exchange?.[1]) {
                 issued++;
@@ -155,7 +173,8 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
         if (method === 'GET' && repoInstallation) {
             if (!verifyJwt(authorization)) return json(401, { message: 'Bad credentials' });
             const id = fake.installations.get(`${decodeURIComponent(repoInstallation[1]!)}/${decodeURIComponent(repoInstallation[2]!)}`.toLowerCase());
-            return id === undefined ? json(404, { message: 'Not Found' }) : json(200, { id });
+            // GitHub answers the whole installation (account, permissions, ...)
+            return id === undefined ? json(404, { message: 'Not Found' }) : json(200, { ...fake.appInstallations.get(id), id });
         }
         const user = /^\/users\/([^/]+)$/.exec(path);
         if (method === 'GET' && user) {
@@ -170,6 +189,12 @@ export function createFakeGithub(input: FakeGithubOptions): FakeGithub {
 
         const installationId = installationOf(authorization);
         if (installationId === undefined) return json(401, { message: 'Bad credentials' });
+        // as GitHub: a token of one installation does not see a repository of another
+        const repository = /^\/repos\/([^/]+)\/([^/]+)(?:\/|$)/.exec(path);
+        if (repository) {
+            const owning = fake.installations.get(`${decodeURIComponent(repository[1]!)}/${decodeURIComponent(repository[2]!)}`.toLowerCase());
+            if (owning !== undefined && owning !== installationId) return json(404, { message: 'Not Found' });
+        }
 
         for (const route of routes) {
             if (route.method !== method) continue;

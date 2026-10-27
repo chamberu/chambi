@@ -11,7 +11,11 @@ npm install @chamvi/github @chamvi/http @chamvi/core ai --save
 Each agent repository (and so each image) gets its own GitHub App, with its own webhook URL, App credentials and Secret. There is no shared intake router: an App's webhooks go straight to the app that owns it.
 
 1. Create a GitHub App. Set the webhook URL to `https://<host><basePath>/channels/github` (the channel's name), the **content type to `application/json`** and a webhook secret. A hook created by hand defaults to `application/x-www-form-urlencoded`, which the channel answers with `415`.
-2. Grant the permissions the tools use (for triage: issues read and write, pull requests read, contents read, metadata read) and subscribe to the events the subscriptions name.
+2. Grant the permissions the tools use (for triage: issues read and write, pull requests read, contents read, metadata read; for a maintainer that merges and opens pull requests also pull requests read and write, checks read and commit statuses read, plus the events `pull_request`, `check_suite` and `check_run`) and subscribe to the events the subscriptions name.
+
+::: warning Never let the App bypass protection
+Do not add the App to a ruleset bypass list or a branch protection exception. `github_merge_pull_request` refuses unsafe merges itself, but GitHub reports a blocked pull request as `clean` to a token that may bypass, so protection would no longer stand between the model and the default branch.
+:::
 3. Generate a private key and install the App on the repositories the agents may act on.
 
 <<< @/snippets/github.ts#app
@@ -59,14 +63,14 @@ An approval asked through the channel (`ctx.channels.findOneOrFail('github').app
 
 ## Tools
 
-Every tool acts as an installation: the delivery's for a run started by a delivery, else `installationId` from `createGithubApp()` (cron, REST and MCP runs); without either the run fails with `FatalToolError`. Installation tokens are cached per installation on the `clock` given to `createGithubApp()` (default `systemClock`, not the engine's), replaced five minutes before they expire (so a run resumed hours after an approval gets a fresh one) and never logged or stored. A failed GitHub call reaches the model as `GitHub <status>: <message>`, never with the request or its token. Every installation request carries the run's signal: cancel, drain and the run timeout abort a stalled call. The token exchange and `GET /app` are shared by every waiting run and delivery, so they are bounded by their own 30 s timeout on that same clock instead; a timed-out one is not cached and the next caller retries.
+Every tool acts as the installation of the repository it names: the delivery's for a run the GitHub channel started on that repository (no request), else the App's installation on it (`GET /repos/{owner}/{repo}/installation` with the App JWT, cached 10 minutes, so an App installed on several accounts and organisations reaches all of them from one run), else the delivery's or `installationId` from `createGithubApp()` (a public repository the App is not installed on stays readable). Without any the call is a `github_request` tool error, never a failed run. Installation tokens are cached per installation on the `clock` given to `createGithubApp()` (default `systemClock`, not the engine's), replaced five minutes before they expire (so a run resumed hours after an approval gets a fresh one) and never logged or stored. A failed GitHub call reaches the model as `GitHub <status>: <message>`, never with the request or its token. Every installation request carries the run's signal: cancel, drain and the run timeout abort a stalled call. The token exchange and `GET /app` are shared by every waiting run and delivery, so they are bounded by their own 30 s timeout on that same clock instead; a timed-out one is not cached and the next caller retries.
 
 | Tool | Kind | Purpose |
 |---|---|---|
 | `github_get_issue` | read | One issue or pull request |
 | `github_search_issues` | read | GitHub issue search, at most 20 results |
 | `github_list_labels` | read | Every label of a repository |
-| `github_get_pull_request` | read | One pull request with its branches |
+| `github_get_pull_request` | read | One pull request with its branches, head sha and repository, labels and mergeability |
 | `github_get_file` | read | A file (cut at 65 536 characters) or a directory listing |
 | `github_get_latest_release` | read | The latest release, or `{ none: true }` |
 | `github_list_releases` | read | The releases between two versions (`v1.2.3` and `1.2.3` both match, `tagPrefix` for a monorepo), oldest first, at most 20, notes cut at 8 000 characters |
@@ -74,6 +78,14 @@ Every tool acts as an installation: the delivery's for a run started by a delive
 | `github_add_labels` | effect | Adds labels (a set, so naturally idempotent) |
 | `github_create_comment` | effect | One comment per issue per model step, found again by its marker |
 | `github_close_issue` | effect | Closes an issue; meant to sit behind an [approval](/guide/approvals#gating-tools-you-did-not-write) in a `beforeToolExecution` hook |
+| `github_list_repositories` | read | Every repository of every installation, sorted, archived ones only when asked, at most 1 000 |
+| `github_list_issues` | read | The open issues of a repository (pull requests left out), at most 100 |
+| `github_list_pull_requests` | read | The open pull requests with author type, head sha and repository (fork or not) and labels, at most 100 |
+| `github_get_pull_request_checks` | read | Check runs and commit statuses of the head with the required ones; `none` until something reported, `pending` while a required check is missing |
+| `github_get_push_target` | read | Whether the App can push onto a pull request's branch (never onto a fork it is not installed on) |
+| `github_create_issue` | effect | Opens an issue, found again by its marker |
+| `github_create_pull_request` | effect | Opens a pull request (`branch` or `owner:branch`, base default the default branch), found again by its marker |
+| `github_merge_pull_request` | effect | Merges at the checked head `sha`; refuses a moved head, a draft, an unknown or blocked `mergeable_state` and any required check that is not green, and never sends a bypass |
 
 Write tools are [effect tools](/guide/effect-tools). A comment embeds an [`effectMarker`](/guide/effect-tools#the-crash-window) keyed by run, issue and model step (`<runId>:github_create_comment:<owner>/<repo>#<n>:<step>`, owner and repo lower-cased since GitHub resolves them case-insensitively), and `alreadyApplied` looks for the App's own comment with that marker before posting. A crash between posting and recording redoes the model step with a different text, and the step-based key still finds the first comment, so nothing is posted twice. A second call for the same issue in the same step returns the first comment.
 

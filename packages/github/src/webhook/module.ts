@@ -5,13 +5,18 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { ChannelContext, ChannelDispatchEnvelope, ChannelRequest } from '@chamvi/core';
+import type {
+    ChannelContext,
+    ChannelDispatchEnvelope,
+    ChannelRequest,
+    ChannelSubscription,
+} from '@chamvi/core';
 import { readRequestBody } from '@chamvi/http';
 import { NotFoundError, UnauthorizedError, UnsupportedMediaTypeError } from '@ebec/http';
 import { isSameLogin } from '../app/helpers.ts';
 import type { IGithubApp } from '../app/types.ts';
 import type { ResolvedGithubChannelOptions } from '../channel/types.ts';
-import { eventAddress, matchesGithubSubscription } from '../subscription/helpers.ts';
+import { acceptsSelfSent, eventAddress, matchesGithubSubscription } from '../subscription/helpers.ts';
 import type { GithubEvent } from '../subscription/types.ts';
 import {
     isJsonMediaType,
@@ -45,7 +50,8 @@ async function isSelfSent(app: IGithubApp, event: GithubEvent): Promise<boolean>
  * this channel matching the event gets one run, keyed by
  * `idempotencyKey(event) ?? delivery`, with the address of the event's
  * issue or pull request; all keys are computed before any dispatch. A
- * delivery the App sent itself dispatches nothing. A failing agent (filter,
+ * delivery the App sent itself goes to each agent's first matching
+ * subscription whose `selfEvents` name its event (none: no run). A failing agent (filter,
  * key function, refused key, dispatch) goes to `onError`, the others are
  * still dispatched, and the answer is then 500.
  */
@@ -77,15 +83,41 @@ export async function receiveDelivery(
         failed = true;
         options.onError(error);
     };
-    const envelopes: ChannelDispatchEnvelope[] = [];
+    // per agent its first matching subscription; for a delivery the App sent
+    // itself, the first one that opts in instead (searched only then, so a
+    // self subscription's filter never runs for a human delivery)
+    const matches: Array<{
+        agent: string;
+        subscriptions: readonly ChannelSubscription[];
+        first: ChannelSubscription;
+    }> = [];
     for (const agent of ctx.engine.listAgents()) {
         try {
-            const subscription = (agent.definition.channels ?? [])
-                .find((s) => matchesGithubSubscription(s, options.name, event));
+            const subscriptions = agent.definition.channels ?? [];
+            const first = subscriptions.find((s) => matchesGithubSubscription(s, options.name, event));
+            if (!first) continue;
+            matches.push({
+                agent: agent.name,
+                subscriptions,
+                first,
+            });
+        } catch (error) {
+            fail(error);
+        }
+    }
+
+    // the loop guard: a delivery the App sent itself starts only subscriptions that opted in
+    const selfSent = matches.length > 0 && await isSelfSent(options.app, event);
+    const envelopes: ChannelDispatchEnvelope[] = [];
+    for (const match of matches) {
+        try {
+            const subscription = selfSent ?
+                match.subscriptions.find((s) => acceptsSelfSent(s, event) && matchesGithubSubscription(s, options.name, event)) :
+                match.first;
             if (!subscription) continue;
             const concurrencyKey = subscription.concurrencyKey?.(event);
             envelopes.push({
-                agent: agent.name,
+                agent: match.agent,
                 trigger: subscription.id,
                 payload: event,
                 idempotencyKey: subscription.idempotencyKey?.(event) ?? delivery,
@@ -98,18 +130,16 @@ export async function receiveDelivery(
     }
 
     const result: GithubWebhookResult = { delivery, runs: [] };
-    if (envelopes.length > 0 && !await isSelfSent(options.app, event)) {
-        for (const envelope of envelopes) {
-            try {
-                const { runId, deduplicated } = await ctx.dispatch(envelope);
-                result.runs.push({
-                    agent: envelope.agent,
-                    runId,
-                    deduplicated,
-                });
-            } catch (error) {
-                fail(error);
-            }
+    for (const envelope of envelopes) {
+        try {
+            const { runId, deduplicated } = await ctx.dispatch(envelope);
+            result.runs.push({
+                agent: envelope.agent,
+                runId,
+                deduplicated,
+            });
+        } catch (error) {
+            fail(error);
         }
     }
     return failed ? dispatchFailed() : Response.json(result, { status: 202 });

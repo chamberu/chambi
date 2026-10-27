@@ -5,8 +5,10 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { InvalidAgentDefinitionError } from '@chamvi/core';
 import type { ChannelSubscription } from '@chamvi/core';
 import { REPO_PATTERN } from '../tools/constants.ts';
+import { GITHUB_EVENT_PATTERN, SELF_EVENTS_REFUSED } from './constants.ts';
 import type { GithubEvent } from './types.ts';
 
 const REPO = new RegExp(REPO_PATTERN);
@@ -54,4 +56,25 @@ export function eventAddress(event: GithubEvent): string | undefined {
     const repo = event.payload.repository?.full_name;
     const number = event.payload.issue?.number ?? event.payload.pull_request?.number;
     return isRepo(repo) && isPositiveInteger(number) ? `${repo}#${number}` : undefined;
+}
+
+/** `selfEvents` checked: event specs, none of SELF_EVENTS_REFUSED; undefined when not given. */
+export function assertSelfEvents(value: unknown): string[] | undefined {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) throw new InvalidAgentDefinitionError('github.on() selfEvents must be a list of event names.');
+    return value.map((spec: unknown) => {
+        if (typeof spec !== 'string' || !GITHUB_EVENT_PATTERN.test(spec)) {
+            throw new InvalidAgentDefinitionError(`GitHub event "${String(spec)}" in selfEvents must look like "pull_request" or "check_suite.completed".`);
+        }
+        if (SELF_EVENTS_REFUSED.includes(spec.split('.')[0]!)) {
+            throw new InvalidAgentDefinitionError(`selfEvents may not name "${spec}": the bot's own ${spec.split('.')[0]} would start the agent again.`);
+        }
+        return spec;
+    });
+}
+
+/** True when `subscription` lets a delivery the App's bot sent start it (its `selfEvents` name the event). */
+export function acceptsSelfSent(subscription: ChannelSubscription, event: GithubEvent): boolean {
+    const specs = subscription.options.selfEvents as readonly string[] | undefined;
+    return Array.isArray(specs) && specs.some((spec) => matchesEvent(spec, event));
 }

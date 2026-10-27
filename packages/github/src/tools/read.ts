@@ -7,8 +7,8 @@
 
 import type { ToolSet } from 'ai';
 import { ValidationError, defineTool } from '@chamvi/core';
-import { isObject } from 'smob';
 import type { IGithubApp } from '../app/types.ts';
+import { toPullRequest } from './pulls.ts';
 import {
     COMMIT_MESSAGE_MAX_CHARS,
     COMPARE_COMMITS_MAX,
@@ -25,12 +25,16 @@ import {
     REPO_PROPERTY,
     compareVersions,
     cut,
+    labelName,
+    login,
     numberSchema,
     objectSchema,
     parseRepo,
     repoSchema,
     requireInteger,
+    requireRef,
     requireString,
+    searchTarget,
     statusOf,
     versionBound,
     versionOf,
@@ -50,15 +54,6 @@ import type {
     NumberInput,
     RepoInput,
 } from './types.ts';
-
-function login(user: unknown): string | null {
-    return isObject(user) && typeof user.login === 'string' ? user.login : null;
-}
-
-function labelName(label: unknown): string {
-    if (typeof label === 'string') return label;
-    return isObject(label) && typeof label.name === 'string' ? label.name : '';
-}
 
 /** The `owner/name` of an API URL ending in `/repos/<owner>/<name>`. */
 function repoOfUrl(url: unknown): string {
@@ -84,17 +79,6 @@ function decodeFile(path: string, data: Record<string, unknown>): GithubFile {
         content: text.slice(0, FILE_MAX_CHARS),
         truncated: text.length > FILE_MAX_CHARS,
     };
-}
-
-const REF = new RegExp(REF_PATTERN);
-
-/** A branch, tag or commit for github_compare, else a ValidationError. */
-function requireRef(value: unknown, name: string): string {
-    const ref = requireString(value, name);
-    if (!REF.test(ref) || ref.includes('..')) {
-        throw new ValidationError(`${name} must be a branch, tag or commit, got ${JSON.stringify(ref)}.`);
-    }
-    return ref;
 }
 
 function releaseNote(data: Record<string, unknown>): GithubReleaseNote {
@@ -127,7 +111,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const issueNumber = requireInteger(input.number, 'number', 1);
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/issues/{issue_number}', {
                         owner,
                         repo,
@@ -169,7 +153,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                 const limit = input.limit === undefined ?
                     SEARCH_DEFAULT_RESULTS :
                     requireInteger(input.limit, 'limit', 1, SEARCH_MAX_RESULTS);
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, searchTarget(query), async (octokit) => {
                     const { data } = await octokit.request('GET /search/issues', {
                         q: query,
                         per_page: limit,
@@ -194,7 +178,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
             inputSchema: repoSchema(),
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const labels = await octokit.paginate('GET /repos/{owner}/{repo}/labels', {
                         owner,
                         repo,
@@ -206,30 +190,18 @@ export function createReadTools(app: IGithubApp): ToolSet {
         }),
 
         github_get_pull_request: defineTool<NumberInput, GithubPullRequest>({
-            description: 'Read one pull request: title, body, state, branches, author, number of changed files.',
+            description: 'Read one pull request: title, body, state, branches, head sha and repository (fork or not), author and its type, labels, mergeability, number of changed files.',
             inputSchema: numberSchema('pull request'),
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const pullNumber = requireInteger(input.number, 'number', 1);
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
                         owner,
                         repo,
                         pull_number: pullNumber,
                     });
-                    return {
-                        number: data.number,
-                        title: data.title,
-                        body: data.body ?? null,
-                        state: data.state,
-                        draft: data.draft ?? false,
-                        merged: data.merged,
-                        base: data.base.ref,
-                        head: data.head.ref,
-                        author: login(data.user),
-                        url: data.html_url,
-                        changedFiles: data.changed_files,
-                    };
+                    return toPullRequest(data);
                 });
             },
         }),
@@ -253,7 +225,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const path = requireString(input.path, 'path').replace(/^\/+|\/+$/g, '');
                 const ref = input.ref === undefined ? undefined : requireString(input.ref, 'ref');
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
                         owner,
                         repo,
@@ -280,7 +252,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
             inputSchema: repoSchema(),
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     try {
                         const { data } = await octokit.request('GET /repos/{owner}/{repo}/releases/latest', { owner, repo });
                         return {
@@ -357,7 +329,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                     if (to && compareVersions(version, to) > 0) return undefined;
                     return { release, version };
                 };
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     // Listed by publication date, newest first, so a backport of an older
                     // line can come before the wanted range. With from: read until a whole
                     // page is at or below from. Without: the newest RELEASES_MAX matching,
@@ -428,7 +400,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const base = requireRef(input.base, 'base');
                 const head = requireRef(input.head, 'head');
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/compare/{basehead}', {
                         owner,
                         repo,

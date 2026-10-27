@@ -17,17 +17,24 @@ import {
     normalizeInstallationId,
     normalizeSecrets,
     normalizeSlug,
+    toInstallation,
 } from './helpers.ts';
-import { toolError } from '../tools/helpers.ts';
+import { resolveMergeMethod, toolError } from '../tools/helpers.ts';
+import { createPullRequestWriteTools } from '../tools/merge.ts';
+import { createPullRequestTools } from '../tools/pulls.ts';
 import { createReadTools } from '../tools/read.ts';
+import { createRepositoryTools } from '../tools/repositories.ts';
 import { GITHUB_REQUEST_ERROR_CODE } from '../tools/constants.ts';
 import { createWriteTools } from '../tools/write.ts';
 import { verifySignature } from '../webhook/helpers.ts';
+import { INSTALLATION_CACHE_TTL_MS } from './constants.ts';
 import type {
     GithubAppOptions,
     GithubBotIdentity,
+    GithubInstallation,
     GithubOctokit,
     GithubRepositoryToken,
+    GithubWriteToolsOptions,
     IGithubApp,
 } from './types.ts';
 
@@ -57,8 +64,33 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
     let login: Promise<string> | undefined = slug ? Promise.resolve(`${slug}[bot]`) : undefined;
     let identity: Promise<GithubBotIdentity> | undefined;
 
-    /** The installation id per lower-cased `owner/repo`, so a cached scoped token needs no lookup. */
-    const installations = new Map<string, number>();
+    /** The installation per lower-cased `owner/repo` until `expiresAt` (INSTALLATION_CACHE_TTL_MS on the clock). */
+    const installationCache = new Map<string, { installation: GithubInstallation; expiresAt: number }>();
+    const pendingLookups = new Map<string, Promise<GithubInstallation | undefined>>();
+
+    function lookupInstallation(owner: string, repo: string): Promise<GithubInstallation | undefined> {
+        const key = `${owner}/${repo}`.toLowerCase();
+        const cached = installationCache.get(key);
+        if (cached && clock.now().getTime() < cached.expiresAt) return Promise.resolve(cached.installation);
+        let pending = pendingLookups.get(key);
+        if (!pending) {
+            pending = tokens.app()
+                .then((octokit) => octokit.request('GET /repos/{owner}/{repo}/installation', { owner, repo }))
+                .then(({ data }) => {
+                    const installation = toInstallation(data);
+                    installationCache.set(key, { installation, expiresAt: clock.now().getTime() + INSTALLATION_CACHE_TTL_MS });
+                    return installation;
+                }, (error: unknown) => {
+                    installationCache.delete(key);
+                    if ((error as { status?: number })?.status === 404) return undefined;
+                    throw toolError(error);
+                })
+                .finally(() => pendingLookups.delete(key));
+            pendingLookups.set(key, pending);
+        }
+        return pending;
+    }
+
     const app: IGithubApp = {
         appId,
         ...(installationId !== undefined ? { installationId } : {}),
@@ -111,22 +143,28 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
             }
             return identity;
         },
+        async installationFor(target): Promise<number | undefined> {
+            return (await lookupInstallation(target.owner, target.repo))?.id;
+        },
+        repositoryInstallation(target): Promise<GithubInstallation | undefined> {
+            return lookupInstallation(target.owner, target.repo);
+        },
+        async installations(): Promise<GithubInstallation[]> {
+            try {
+                const octokit = await tokens.app();
+                const items = await octokit.paginate('GET /app/installations', { per_page: 100 });
+                return items.map((item) => toInstallation(item));
+            } catch (error) {
+                throw toolError(error);
+            }
+        },
         async repositoryToken(target, tokenOptions): Promise<GithubRepositoryToken | undefined> {
             const { owner, repo } = target;
-            const key = `${owner}/${repo}`.toLowerCase();
-            let installation = installations.get(key);
-            if (installation === undefined) {
-                installation = await tokens.app().then((octokit) => octokit.request('GET /repos/{owner}/{repo}/installation', { owner, repo }))
-                    .then(({ data }) => data.id, (error: unknown) => {
-                        if ((error as { status?: number })?.status === 404) return undefined;
-                        throw toolError(error);
-                    });
-                if (installation === undefined) return undefined;
-                installations.set(key, installation);
-            }
-            const scoped = await tokens.repository(installation, repo, tokenOptions.permissions).catch((error: unknown) => {
+            const installation = await lookupInstallation(owner, repo);
+            if (installation === undefined) return undefined;
+            const scoped = await tokens.repository(installation.id, repo, tokenOptions.permissions).catch((error: unknown) => {
                 // the App may have been removed from the repository: look it up again next time
-                installations.delete(key);
+                installationCache.delete(`${owner}/${repo}`.toLowerCase());
                 throw toolError(error);
             });
             return { token: scoped.token, expiresAt: new Date(scoped.expiresAt) };
@@ -135,10 +173,15 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
             return verifySignature(secrets, body, signature);
         },
         readTools(): ToolSet {
-            return createReadTools(app);
+            return {
+                ...createReadTools(app),
+                ...createRepositoryTools(app),
+                ...createPullRequestTools(app),
+            };
         },
-        writeTools(): ToolSet {
-            return createWriteTools(app);
+        writeTools(toolsOptions?: GithubWriteToolsOptions): ToolSet {
+            const mergeMethod = resolveMergeMethod(toolsOptions?.mergeMethod);
+            return { ...createWriteTools(app), ...createPullRequestWriteTools(app, { mergeMethod }) };
         },
     };
     return app;

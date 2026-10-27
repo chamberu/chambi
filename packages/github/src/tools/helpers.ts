@@ -7,32 +7,78 @@
 
 import { jsonSchema } from 'ai';
 import type { JSONSchema7, ModelMessage, ToolExecutionOptions } from 'ai';
-import { ChamviError, FatalToolError, ValidationError } from '@chamvi/core';
+import { createHash } from 'node:crypto';
+import { ChamviError, InvalidAgentDefinitionError, ValidationError } from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
 import { isObject } from 'smob';
 import { isChannelOf } from '../app/helpers.ts';
-import type { GithubOctokit, IGithubApp } from '../app/types.ts';
-import { GITHUB_CHANNEL_NAME } from '../channel/constants.ts';
-import type { NumberInput, RepoInput } from './types.ts';
-import { GITHUB_REQUEST_ERROR_CODE, REPO_PATTERN } from './constants.ts';
+import type { GithubMergeMethod, GithubOctokit, IGithubApp } from '../app/types.ts';
+import { GITHUB_CHANNEL_NAME, RECONCILE_SKEW_MS } from '../channel/constants.ts';
+import type { NumberInput, RepoInput, RepoTarget } from './types.ts';
+import {
+    DEFAULT_MERGE_METHOD,
+    GITHUB_REQUEST_ERROR_CODE,
+    MERGE_METHODS,
+    REF_PATTERN,
+    REPO_PATTERN,
+} from './constants.ts';
+
+function isGithubRun(ctx: ToolContext, app: IGithubApp): boolean {
+    const { channel } = ctx.run.trigger;
+    return channel === GITHUB_CHANNEL_NAME || isChannelOf(app, channel);
+}
+
+/** The delivery's installation of a run a GitHub channel of this app started, else undefined. */
+function eventInstallation(ctx: ToolContext, app: IGithubApp): { id: number; repository?: string } | undefined {
+    const { payload } = ctx.run.trigger;
+    if (!isGithubRun(ctx, app) || !isObject(payload) || typeof payload.installationId !== 'number') return undefined;
+    const event = isObject(payload.payload) ? payload.payload : {};
+    const repository = isObject(event.repository) && typeof event.repository.full_name === 'string' ?
+        event.repository.full_name :
+        undefined;
+    return { id: payload.installationId, ...(repository ? { repository } : {}) };
+}
 
 /**
- * The installation a tool acts as: the delivery's for a run a GitHub
- * channel of this app started (the default `github`, or any name a
- * githubChannel({ app }) took), else the app's `installationId`. A payload
- * of another channel never chooses the installation, since its caller could
- * name any. Neither is a FatalToolError, since every GitHub tool of the run
- * would fail.
+ * The installation a tool acts as for `target`: (1) the delivery's for a
+ * run a GitHub channel of this app started (the default `github`, or any
+ * name a githubChannel({ app }) took) on the same repository (compared
+ * case-insensitively, no request); (2) the App's installation on the
+ * repository (`app.installationFor`); (3) the delivery's installation for
+ * any repository, else the app's `installationId`, so a public repository
+ * the App is not installed on is still readable. A payload of another
+ * channel never chooses the installation, since its caller could name any.
+ * Without `target` only (3). Without any, a `github_request` ChamviError (a
+ * tool error, never a FatalToolError, since every GitHub tool of the run
+ * would fail).
  */
-export function installationIdOf(ctx: ToolContext, app: IGithubApp): number {
-    const { trigger } = ctx.run;
-    const fromGithub = trigger.channel === GITHUB_CHANNEL_NAME || isChannelOf(app, trigger.channel);
-    if (fromGithub && isObject(trigger.payload)) {
-        const { installationId } = trigger.payload;
-        if (typeof installationId === 'number') return installationId;
+export async function installationOf(app: IGithubApp, ctx: ToolContext, target?: RepoTarget): Promise<number> {
+    const event = eventInstallation(ctx, app);
+    if (target) {
+        const name = `${target.owner}/${target.repo}`.toLowerCase();
+        if (event?.repository?.toLowerCase() === name) return event.id;
+        const found = await app.installationFor(target);
+        if (found !== undefined) return found;
     }
+    if (event) return event.id;
     if (app.installationId !== undefined) return app.installationId;
-    throw new FatalToolError('The run has no GitHub installation: start it from a GitHub delivery or set installationId on createGithubApp().');
+    const where = target ? ` on ${target.owner}/${target.repo}` : '';
+    throw new ChamviError({
+        code: GITHUB_REQUEST_ERROR_CODE,
+        message: `The GitHub App is not installed${where} and the run has no default installation ` +
+            '(start it from a GitHub delivery or set installationId on createGithubApp()).',
+    });
+}
+
+/** A user's login, else null (a deleted account). */
+export function login(user: unknown): string | null {
+    return isObject(user) && typeof user.login === 'string' ? user.login : null;
+}
+
+/** A label's name (GitHub sends objects, older payloads strings). */
+export function labelName(label: unknown): string {
+    if (typeof label === 'string') return label;
+    return isObject(label) && typeof label.name === 'string' ? label.name : '';
 }
 
 const REPO = new RegExp(REPO_PATTERN);
@@ -44,6 +90,30 @@ export function parseRepo(repo: unknown): { owner: string; repo: string } {
         throw new ValidationError(`repo must look like "owner/name", got ${JSON.stringify(repo)}.`);
     }
     return { owner: match[1], repo: match[2] };
+}
+
+/** The repository of a search query's single `repo:owner/name` qualifier (an unparsable one ignored), else undefined. */
+export function searchTarget(query: string): RepoTarget | undefined {
+    const targets: RepoTarget[] = [];
+    for (const match of query.matchAll(/(?:^|\s)repo:(\S+)/g)) {
+        try {
+            targets.push(parseRepo(match[1]));
+        } catch {
+            // not a repository: no target from it
+        }
+    }
+    return targets.length === 1 ? targets[0] : undefined;
+}
+
+const REF = new RegExp(REF_PATTERN);
+
+/** A branch, tag or commit (REF_PATTERN, no `..`), else a ValidationError. */
+export function requireRef(value: unknown, name: string): string {
+    const ref = requireString(value, name);
+    if (!REF.test(ref) || ref.includes('..')) {
+        throw new ValidationError(`${name} must be a branch, tag or commit, got ${JSON.stringify(ref)}.`);
+    }
+    return ref;
 }
 
 /** An integer in `[min, max]`, else a ValidationError. */
@@ -115,22 +185,43 @@ export function toolError(error: unknown): Error {
     });
 }
 
+/** Binds every request of `octokit` to `signal` (cancel, drain and the run timeout abort a stalled GitHub call). */
+export function bindSignal(octokit: GithubOctokit, signal: AbortSignal): GithubOctokit {
+    octokit.hook.before('request', (options) => {
+        options.request = { ...options.request, signal };
+    });
+    return octokit;
+}
+
 /**
- * Runs `fn` with the run's installation Octokit, every request bound to the
- * run's signal (cancel, drain and the run timeout abort a stalled GitHub
- * call); every failure through `toolError`.
+ * `promise`, or a rejection with the signal's reason once it aborts. For a
+ * shared request (the single-flight installation lookup) one caller's
+ * signal must not abort, so the caller only stops waiting.
+ */
+export function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+    if (signal.aborted) return Promise.reject(signal.reason);
+    return new Promise<T>((resolve, reject) => {
+        const onAbort = () => reject(signal.reason);
+        signal.addEventListener('abort', onAbort, { once: true });
+        promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+    });
+}
+
+/**
+ * Runs `fn` with the Octokit of the installation `installationOf()`
+ * resolves for `target`, every request bound to the run's signal; every
+ * failure through `toolError`.
  */
 export async function withOctokit<T>(
     app: IGithubApp,
     ctx: ToolContext,
+    target: RepoTarget | undefined,
     fn: (octokit: GithubOctokit) => Promise<T>,
 ): Promise<T> {
     try {
-        const octokit = await app.octokit(installationIdOf(ctx, app));
         const { signal } = ctx.run;
-        octokit.hook.before('request', (options) => {
-            options.request = { ...options.request, signal };
-        });
+        const installationId = await untilAborted(installationOf(app, ctx, target), signal);
+        const octokit = bindSignal(await app.octokit(installationId), signal);
         return await fn(octokit);
     } catch (error) {
         throw toolError(error);
@@ -217,4 +308,30 @@ export function versionBound(value: unknown, name: string, tagPrefix: string): V
 /** `text` cut after `max` characters. */
 export function cut(text: string, max: number): { text: string; truncated: boolean } {
     return text.length > max ? { text: text.slice(0, max), truncated: true } : { text, truncated: false };
+}
+
+/** `writeTools({ mergeMethod })`: DEFAULT_MERGE_METHOD when unset, an InvalidAgentDefinitionError outside MERGE_METHODS. */
+export function resolveMergeMethod(value: unknown): GithubMergeMethod {
+    if (value === undefined) return DEFAULT_MERGE_METHOD;
+    if (!(MERGE_METHODS as readonly unknown[]).includes(value)) {
+        throw new InvalidAgentDefinitionError(`writeTools: mergeMethod must be one of ${MERGE_METHODS.join(', ')}.`);
+    }
+    return value as GithubMergeMethod;
+}
+
+/**
+ * `<runId>:<tool>:<sha256 of parts>`: one application per run and input,
+ * like core's default effect key, but known to `execute`, which embeds its
+ * marker in what it creates.
+ */
+export function inputEffectKey(runId: string, tool: string, parts: unknown[]): string {
+    return `${runId}:${tool}:${createHash('sha256').update(JSON.stringify(parts)).digest('hex')}`;
+}
+
+/**
+ * `since` for a reconcile list: a marker of this run is only in what was
+ * updated after the run was received, less RECONCILE_SKEW_MS for clock skew.
+ */
+export function reconcileSince(ctx: ToolContext): string {
+    return new Date(new Date(ctx.run.trigger.receivedAt).getTime() - RECONCILE_SKEW_MS).toISOString();
 }

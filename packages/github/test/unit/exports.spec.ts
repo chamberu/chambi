@@ -34,6 +34,13 @@ describe('public api', () => {
         expect(pkg.GITHUB_TOKEN_USERNAME).toBe('x-access-token');
     });
 
+    it('exports the merge and installation defaults', () => {
+        expect(pkg.INSTALLATION_CACHE_TTL_MS).toBe(600_000);
+        expect(pkg.DEFAULT_MERGE_METHOD).toBe('squash');
+        expect(pkg.MERGE_METHODS).toEqual(['merge', 'squash', 'rebase']);
+        expect(pkg.MERGE_STATES).toEqual(['clean', 'unstable', 'has_hooks']);
+    });
+
     it('exports the request error code and the repository pattern', () => {
         expect(pkg.GITHUB_REQUEST_ERROR_CODE).toBe('github_request');
         const repo = new RegExp(pkg.REPO_PATTERN);
@@ -70,6 +77,20 @@ describe('public api', () => {
         'resolveOptions',
         'markerKey',
         'stepOf',
+        'createRepositoryTools',
+        'createPullRequestTools',
+        'createPullRequestWriteTools',
+        'readChecks',
+        'summarizeChecks',
+        'installationOf',
+        'toPullRequest',
+        'REPOSITORIES_MAX',
+        'ISSUES_MAX',
+        'PULL_REQUESTS_MAX',
+        'CHECKS_MAX',
+        'HEAD_PATTERN',
+        'SHA_PATTERN',
+        'SELF_EVENTS_REFUSED',
     ])('keeps %s internal', (name) => {
         expect(pkg).not.toHaveProperty(name);
     });

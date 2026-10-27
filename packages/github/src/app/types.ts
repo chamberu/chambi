@@ -45,6 +45,28 @@ export type GithubBotIdentity = {
     email: string;
 };
 
+/** An installation of the App (`IGithubApp.installations()`). */
+export type GithubInstallation = {
+    id: number;
+    /** The account login, e.g. `tada5hi` or an org. */
+    account: string;
+    /** `User` or `Organization`. */
+    accountType: string;
+    repositorySelection: 'all' | 'selected';
+    permissions: GithubPermissions;
+    /** Whether the account suspended the App (`suspended_at` set): its token exchange answers 403. */
+    suspended: boolean;
+};
+
+/** A merge method of `github_merge_pull_request`. */
+export type GithubMergeMethod = 'merge' | 'squash' | 'rebase';
+
+/** Options of `IGithubApp.writeTools()`. */
+export type GithubWriteToolsOptions = {
+    /** The merge method when a call names none (default DEFAULT_MERGE_METHOD, `squash`). */
+    mergeMethod?: GithubMergeMethod;
+};
+
 export interface IGithubApp {
     readonly appId: string;
     readonly installationId?: number;
@@ -66,13 +88,37 @@ export interface IGithubApp {
      * failure is not cached. Undefined when the App is not installed there.
      */
     repositoryToken(target: { owner: string; repo: string }, options: { permissions: GithubPermissions }): Promise<GithubRepositoryToken | undefined>;
+    /**
+     * The App's installation on the repository (App JWT `GET
+     * /repos/{owner}/{repo}/installation`), cached per lower-cased
+     * `owner/repo` for INSTALLATION_CACHE_TTL_MS on the clock; concurrent
+     * callers share one lookup. Undefined (not cached) when the App is not
+     * installed there; a failure is a `github_request` ChamviError and not
+     * cached.
+     */
+    installationFor(target: { owner: string; repo: string }): Promise<number | undefined>;
+    /**
+     * The whole installation `installationFor()` looked up (account,
+     * permissions), from the same cache; undefined where the App is not
+     * installed.
+     */
+    repositoryInstallation(target: { owner: string; repo: string }): Promise<GithubInstallation | undefined>;
+    /** Every installation of the App (`GET /app/installations`, paginated), not cached. */
+    installations(): Promise<GithubInstallation[]>;
     /** `sha256=<hex>` of the raw body under any webhook secret, compared in constant time. */
     verifySignature(body: Uint8Array, signature: string | null): boolean;
-    /** The read-only tools (`github_get_issue`, `github_search_issues`, ...), acting as the run's installation. */
+    /**
+     * The read-only tools (`github_get_issue`, `github_search_issues`,
+     * `github_list_pull_requests`, ...), each acting as the installation of
+     * the repository it names.
+     */
     readTools(): ToolSet;
     /**
      * The write tools (`github_add_labels`, `github_create_comment`,
-     * `github_close_issue`), effect tools applied at most once per run.
+     * `github_close_issue`, `github_create_issue`,
+     * `github_create_pull_request`, `github_merge_pull_request`), effect
+     * tools applied at most once per run. An unknown `mergeMethod` is an
+     * InvalidAgentDefinitionError.
      */
-    writeTools(): ToolSet;
+    writeTools(options?: GithubWriteToolsOptions): ToolSet;
 }
