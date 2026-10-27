@@ -50,5 +50,7 @@ export type ApproveBody = {
     approvalId: string;
     approved: boolean;
     reason?: string;
+    /** The chosen option ids of a wait point with options (one, or one or more with `multiple`); none on a denial. */
+    selected?: string[];
 };
 

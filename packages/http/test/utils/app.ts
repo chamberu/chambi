@@ -169,6 +169,24 @@ export function deployTool() {
     });
 }
 
+/** A `pick` tool that asks to choose one of two options (no channel). */
+export function pickTool() {
+    return defineTool({
+        inputSchema: z.object({}),
+        execute: async (_input, { context }) => {
+            const decision = await approve(context, {
+                title: 'Pick?',
+                options: [{ id: 'a', label: 'A' }, {
+                    id: 'b', 
+                    label: 'B', 
+                    detail: 'diff', 
+                }],
+            });
+            return decision.approved ? `picked ${decision.selected?.join(',')}` : 'denied';
+        },
+    });
+}
+
 /** The approval id the run's current wait point waits on. */
 export async function approvalIdOf(store: IStore, runId: string): Promise<string> {
     const waiting = (await store.getRun(runId))?.waiting;
@@ -178,6 +196,7 @@ export async function approvalIdOf(store: IStore, runId: string): Promise<string
 
 /**
  * `echo` (http, text), `gate` (http, `deploy` asks for an approval),
+ * `choose` (http, `pick` asks to choose an option),
  * `sweep` (cron only) and `hooked` (webhook only); fresh models per call.
  */
 export function createRunAgents(): Agent[] {
@@ -194,6 +213,13 @@ export function createRunAgents(): Agent[] {
             instructions: 'Deploy.',
             channels: [http.on()],
             tools: () => ({ deploy: deployTool() }),
+        }),
+        defineAgent({
+            name: 'choose',
+            model: approvalModel('pick'),
+            instructions: 'Choose.',
+            channels: [http.on()],
+            tools: () => ({ pick: pickTool() }),
         }),
         defineAgent({
             name: 'sweep',

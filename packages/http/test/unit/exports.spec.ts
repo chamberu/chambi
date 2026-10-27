@@ -69,6 +69,7 @@ describe('public api', () => {
             approvalId: string;
             approved: boolean;
             reason?: string;
+            selected?: string[];
         }>();
     });
 });
