@@ -1,6 +1,6 @@
 {
     "name": "@chamvi/tool-web",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "type": "module",
     "description": "A web fetch tool for chamvi agents: public pages as markdown through a hapic client, with an address check against private and metadata hosts.",
     "author": {
@@ -65,13 +65,13 @@
         "smob": "^1.6.2"
     },
     "devDependencies": {
-        "@chamvi/core": "^0.2.1",
-        "@chamvi/http": "^0.2.1",
-        "@chamvi/test-kit": "^0.2.1",
+        "@chamvi/core": "^0.3.0",
+        "@chamvi/http": "^0.2.2",
+        "@chamvi/test-kit": "^0.3.0",
         "ai": "^7.0.146"
     },
     "peerDependencies": {
-        "@chamvi/core": "^0.2.1",
+        "@chamvi/core": "^0.3.0",
         "ai": "^7"
     }
 }

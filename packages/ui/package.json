@@ -1,6 +1,6 @@
 {
     "name": "@chamvi/ui",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "type": "module",
     "description": "The chamvi dashboard: an agents overview, start and watch runs live, answer approvals, inspect agent state and schedules, served by @chamvi/http.",
     "author": {
@@ -67,11 +67,11 @@
     "license": "Apache-2.0",
     "devDependencies": {
         "@authup/client-web-kit": "1.0.0-beta.71",
-        "@chamvi/app": "^0.2.1",
-        "@chamvi/channel-cron": "^0.2.1",
-        "@chamvi/core": "^0.2.1",
-        "@chamvi/http": "^0.2.1",
-        "@chamvi/test-kit": "^0.2.1",
+        "@chamvi/app": "^0.3.0",
+        "@chamvi/channel-cron": "^0.2.2",
+        "@chamvi/core": "^0.3.0",
+        "@chamvi/http": "^0.2.2",
+        "@chamvi/test-kit": "^0.3.0",
         "@ebec/core": "^1.3.2",
         "@fontsource-variable/instrument-sans": "^5.3.0",
         "@fontsource-variable/jetbrains-mono": "^5.3.0",
@@ -119,9 +119,9 @@
         "zod": "^4.6.7"
     },
     "peerDependencies": {
-        "@chamvi/app": "^0.2.1",
-        "@chamvi/core": "^0.2.1",
-        "@chamvi/http": "^0.2.1"
+        "@chamvi/app": "^0.3.0",
+        "@chamvi/core": "^0.3.0",
+        "@chamvi/http": "^0.2.2"
     },
     "peerDependenciesMeta": {
         "@chamvi/app": {

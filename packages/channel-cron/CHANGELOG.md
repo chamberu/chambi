@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.2](https://github.com/chamvi/chamvi/compare/v0.2.1...v0.2.2) (2026-10-26)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @chamvi/core bumped from ^0.2.1 to ^0.3.0
+    * @chamvi/test-kit bumped from ^0.2.1 to ^0.3.0
+  * peerDependencies
+    * @chamvi/core bumped from ^0.2.1 to ^0.3.0
+
 ## [0.2.1](https://github.com/chamvi/chamvi/compare/v0.2.0...v0.2.1) (2026-10-25)
 
 
