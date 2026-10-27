@@ -90,7 +90,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const issueNumber = requireInteger(input.number, 'number', 1);
                 const labels = requireLabels(input.labels);
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/labels', {
                         owner,
                         repo,
@@ -117,7 +117,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const issueNumber = requireInteger(input.number, 'number', 1);
                 const marker = effectMarker(key);
                 const since = new Date(new Date(ctx.run.trigger.receivedAt).getTime() - RECONCILE_SKEW_MS).toISOString();
-                return withOctokit(app, ctx, async (octokit) => {
+                return withOctokit(app, ctx, { owner, repo }, async (octokit) => {
                     const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
                         owner,
                         repo,
@@ -140,7 +140,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const body = requireString(input.body, 'body');
                 const { owner, repo } = parseRepo(input.repo);
                 const key = commentKey(input, options.context, options);
-                return withOctokit(app, options.context, async (octokit) => {
+                return withOctokit(app, options.context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
                         owner,
                         repo,
@@ -164,7 +164,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
             alreadyApplied: async (_key, input, ctx) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const issueNumber = requireInteger(input.number, 'number', 1);
-                return withOctokit(app, ctx, async (octokit) => {
+                return withOctokit(app, ctx, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/issues/{issue_number}', {
                         owner,
                         repo,
@@ -182,7 +182,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const issueNumber = requireInteger(input.number, 'number', 1);
                 const reason = requireReason(input.reason);
-                return withOctokit(app, context, async (octokit) => {
+                return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('PATCH /repos/{owner}/{repo}/issues/{issue_number}', {
                         owner,
                         repo,

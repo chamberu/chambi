@@ -625,9 +625,70 @@ describe('read tools', () => {
         expect(fake.tokenInstallations).toEqual([7]);
     });
 
-    it('fails the run without an installation', async () => {
+    it('acts as the repository installation for a cron run', async () => {
+        const { fake, call } = setup({}, { channel: 'cron' });
+        fake.installations.set('octo/demo', 9);
+        fake.issues.set('octo/demo#5', { ...ISSUE });
+        await call('github_get_issue', { repo: 'octo/demo', number: 5 });
+        expect(fake.tokenInstallations).toEqual([9]);
+    });
+
+    it('seeds from the event for the same repository in another case', async () => {
+        const { fake, call } = setup({}, {
+            payload: {
+                name: 'issues',
+                delivery: 'd-1',
+                installationId: 42,
+                payload: { repository: { full_name: 'Octo/Demo' } },
+            },
+        });
+        fake.installations.set('octo/demo', 9);
+        fake.issues.set('octo/demo#5', { ...ISSUE });
+        await call('github_get_issue', { repo: 'octo/demo', number: 5 });
+        expect(fake.tokenInstallations).toEqual([42]);
+        expect(fake.requests.some((r) => r.path.endsWith('/installation'))).toBe(false);
+    });
+
+    it('looks up another repository than the event one', async () => {
+        const { fake, call } = setup({}, {
+            payload: {
+                name: 'issues',
+                delivery: 'd-1',
+                installationId: 42,
+                payload: { repository: { full_name: 'octo/demo' } },
+            },
+        });
+        fake.installations.set('acme/api', 9);
+        fake.issues.set('acme/api#5', { ...ISSUE });
+        await call('github_get_issue', { repo: 'acme/api', number: 5 });
+        expect(fake.tokenInstallations).toEqual([9]);
+    });
+
+    it('falls back to the default installation for an uninstalled repository', async () => {
+        const { fake, call } = setup({ installationId: 7 }, { channel: 'cron' });
+        fake.issues.set('upstream/lib#5', { ...ISSUE });
+        await call('github_get_issue', { repo: 'upstream/lib', number: 5 });
+        expect(fake.tokenInstallations).toEqual([7]);
+    });
+
+    it('answers a tool error without any installation', async () => {
         const { call } = setup({}, { channel: 'http' });
-        await expect(call('github_get_issue', { repo: 'octo/demo', number: 5 })).rejects.toBeInstanceOf(FatalToolError);
+        const error = await call('github_get_issue', { repo: 'octo/demo', number: 5 }).catch((e: unknown) => e);
+        expect(error).not.toBeInstanceOf(FatalToolError);
+        expect(error).toMatchObject({ code: 'github_request', message: expect.stringContaining('not installed on octo/demo') });
+    });
+
+    it('answers a tool error when the installation lookup fails', async () => {
+        const { fake, call } = setup({ installationId: 7 }, { channel: 'cron' });
+        fake.failNext('GET', '/repos/octo/demo/installation', 500);
+        await expect(call('github_get_issue', { repo: 'octo/demo', number: 5 })).rejects.toMatchObject({ code: 'github_request' });
+    });
+
+    it('takes the repo: qualifier of a search query', async () => {
+        const { fake, call } = setup({}, { channel: 'cron' });
+        fake.installations.set('acme/api', 9);
+        await call('github_search_issues', { query: 'is:open repo:acme/api' });
+        expect(fake.tokenInstallations).toEqual([9]);
     });
 
     it('rejects a malformed repo as a tool error', async () => {

@@ -10,6 +10,7 @@ export { createGithubApp } from './module.ts';
 export type {
     GithubAppOptions,
     GithubBotIdentity,
+    GithubInstallation,
     GithubOctokit,
     GithubPermissions,
     GithubRepositoryToken,

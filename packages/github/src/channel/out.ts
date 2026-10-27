@@ -16,11 +16,13 @@ import type { ChannelMessage, ChannelSendOptions, TriggerEnvelope } from '@chamv
 import { isSameLogin } from '../app/helpers.ts';
 import { isPositiveInteger } from '../subscription/helpers.ts';
 import { GITHUB_REQUEST_ERROR_CODE } from '../tools/constants.ts';
+import { untilAborted } from '../tools/helpers.ts';
 import { RECONCILE_SKEW_MS } from './constants.ts';
 import { markerKey, parseAddress, renderComment } from './helpers.ts';
 import type { ResolvedGithubChannelOptions } from './types.ts';
 
 function requestError(error: unknown): ChamviError {
+    if (error instanceof ChamviError) return error;
     const status = isObject(error) && typeof error.status === 'number' ? error.status : undefined;
     const message = error instanceof Error ? error.message : String(error);
     return new ChamviError({
@@ -31,16 +33,39 @@ function requestError(error: unknown): ChamviError {
 
 /**
  * The installation to comment as, the github tools' rule: the event's for a
- * run this channel started, else the app's `installationId`.
+ * run this channel started on the address's repository (no request), else
+ * the App's installation on that repository, else the event's for a run
+ * this channel started, else the app's `installationId`. Without any an
+ * InvalidAgentDefinitionError, thrown before any comment request; a failed
+ * lookup is a `github_request` ChamviError.
  */
-function installationOf(message: ChannelMessage, trigger: TriggerEnvelope, options: ResolvedGithubChannelOptions): number {
-    if (trigger.channel === options.name && isObject(trigger.payload) && isPositiveInteger(trigger.payload.installationId)) {
-        return trigger.payload.installationId;
+async function installationOf(
+    target: { owner: string; repo: string },
+    message: ChannelMessage,
+    trigger: TriggerEnvelope,
+    options: ResolvedGithubChannelOptions,
+): Promise<number> {
+    const { payload } = trigger;
+    const event = trigger.channel === options.name && isObject(payload) && isPositiveInteger(payload.installationId) ?
+        payload.installationId :
+        undefined;
+    if (event !== undefined && isObject(payload)) {
+        const body = isObject(payload.payload) ? payload.payload : {};
+        const repository = isObject(body.repository) ? body.repository.full_name : undefined;
+        if (typeof repository === 'string' && repository.toLowerCase() === `${target.owner}/${target.repo}`.toLowerCase()) return event;
     }
+    let found: number | undefined;
+    try {
+        found = await options.app.installationFor(target);
+    } catch (error) {
+        throw requestError(error);
+    }
+    if (found !== undefined) return found;
+    if (event !== undefined) return event;
     if (options.app.installationId !== undefined) return options.app.installationId;
     throw new InvalidAgentDefinitionError(
         `githubChannel: run ${message.runId} of agent "${message.agent}" has no GitHub installation; ` +
-        'set installationId on createGithubApp() for runs not started by a GitHub delivery.',
+        'install the App on the repository or set installationId on createGithubApp() for runs not started by a GitHub delivery.',
     );
 }
 
@@ -49,8 +74,8 @@ function installationOf(message: ChannelMessage, trigger: TriggerEnvelope, optio
  * (`owner/repo#n`) as the GitHub App, carrying `effectMarker(message.key)`.
  * A resend first looks for the App bot's comment holding the marker and
  * posts nothing when it finds one. Throws a ValidationError for another
- * address and InvalidAgentDefinitionError without an installation (both
- * before any request), a `github_request` ChamviError for a GitHub failure
+ * address (before any request) and InvalidAgentDefinitionError without an
+ * installation (before any comment request), a `github_request` ChamviError for a GitHub failure
  * or a GitHub that does not answer within `timeoutMs`, and the caller's
  * abort reason when `opts.signal` aborts.
  */
@@ -61,7 +86,6 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
         if (!target) {
             throw new ValidationError(`The GitHub channel needs an address like "owner/repo#12", got ${JSON.stringify(address)}.`);
         }
-        const installationId = installationOf(message, opts.trigger, options);
         opts.signal?.throwIfAborted();
 
         const controller = new AbortController();
@@ -72,6 +96,7 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
         const timer = options.clock.setTimeout(() => controller.abort(timeout), options.timeoutMs);
         const signal = opts.signal ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
         try {
+            const installationId = await untilAborted(installationOf(target, message, opts.trigger, options), signal);
             const octokit = await app.octokit(installationId);
             octokit.hook.before('request', (request) => {
                 request.request = { ...request.request, signal };

@@ -45,6 +45,17 @@ export type GithubBotIdentity = {
     email: string;
 };
 
+/** An installation of the App (`IGithubApp.installations()`). */
+export type GithubInstallation = {
+    id: number;
+    /** The account login, e.g. `tada5hi` or an org. */
+    account: string;
+    /** `User` or `Organization`. */
+    accountType: string;
+    repositorySelection: 'all' | 'selected';
+    permissions: GithubPermissions;
+};
+
 export interface IGithubApp {
     readonly appId: string;
     readonly installationId?: number;
@@ -66,6 +77,17 @@ export interface IGithubApp {
      * failure is not cached. Undefined when the App is not installed there.
      */
     repositoryToken(target: { owner: string; repo: string }, options: { permissions: GithubPermissions }): Promise<GithubRepositoryToken | undefined>;
+    /**
+     * The App's installation on the repository (App JWT `GET
+     * /repos/{owner}/{repo}/installation`), cached per lower-cased
+     * `owner/repo` for INSTALLATION_CACHE_TTL_MS on the clock; concurrent
+     * callers share one lookup. Undefined (not cached) when the App is not
+     * installed there; a failure is a `github_request` ChamviError and not
+     * cached.
+     */
+    installationFor(target: { owner: string; repo: string }): Promise<number | undefined>;
+    /** Every installation of the App (`GET /app/installations`, paginated), not cached. */
+    installations(): Promise<GithubInstallation[]>;
     /** `sha256=<hex>` of the raw body under any webhook secret, compared in constant time. */
     verifySignature(body: Uint8Array, signature: string | null): boolean;
     /** The read-only tools (`github_get_issue`, `github_search_issues`, ...), acting as the run's installation. */

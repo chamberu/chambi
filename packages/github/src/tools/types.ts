@@ -11,6 +11,9 @@ export type RepoInput = { repo: string };
 /** The input of a tool on an issue or pull request. */
 export type NumberInput = RepoInput & { number: number };
 
+/** A parsed repository (`parseRepo`), the target an installation is resolved for. */
+export type RepoTarget = { owner: string; repo: string };
+
 /** `github_get_issue`. */
 export type GithubIssue = {
     number: number;

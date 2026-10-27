@@ -259,10 +259,46 @@ describe('github channel out', () => {
         expect(fake.tokenInstallations).toEqual([42]);
     });
 
-    it('throws a configuration error without an installation, before any request', async () => {
+    it('comments as the installation of the address repository', async () => {
+        const { send, fake } = setup({}, { installationId: 7 });
+        fake.installations.set('octo/demo', 9);
+        await send(APPROVAL, ADDRESS, httpTrigger());
+        expect(fake.tokenInstallations).toEqual([9]);
+    });
+
+    it('seeds from the event of the same repository without a lookup', async () => {
+        const { send, fake } = setup({}, { installationId: 7 });
+        fake.installations.set('octo/demo', 9);
+        const event = githubEvent({ payload: { repository: { full_name: 'Octo/Demo' }, issue: { number: 7 } } });
+        await send(APPROVAL, ADDRESS, githubTrigger(event));
+        expect(fake.tokenInstallations).toEqual([42]);
+        expect(fake.requests.some((r) => r.path.endsWith('/installation'))).toBe(false);
+    });
+
+    it('looks up the installation of another repository than the event one', async () => {
+        const { send, fake } = setup();
+        fake.installations.set('acme/api', 9);
+        fake.issues.set('acme/api#3', { number: 3 });
+        await send(APPROVAL, 'acme/api#3');
+        expect(fake.tokenInstallations).toEqual([9]);
+    });
+
+    it('throws a github_request error when the lookup fails', async () => {
+        const {
+            send, 
+            fake, 
+            posts, 
+        } = setup({}, { installationId: 7 });
+        fake.failNext('GET', '/repos/octo/demo/installation', 500);
+        const error = await rejection(send(APPROVAL, ADDRESS, httpTrigger()));
+        expect(error.code).toBe('github_request');
+        expect(posts()).toEqual([]);
+    });
+
+    it('throws a configuration error without an installation, before any comment request', async () => {
         const { send, fake } = setup();
         await expect(send(APPROVAL, ADDRESS, httpTrigger())).rejects.toBeInstanceOf(InvalidAgentDefinitionError);
         await expect(send(APPROVAL, ADDRESS, httpTrigger())).rejects.toThrow('installationId');
-        expect(fake.requests).toEqual([]);
+        expect(fake.requests.filter((r) => !r.path.endsWith('/installation'))).toEqual([]);
     });
 });

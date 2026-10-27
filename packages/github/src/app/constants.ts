@@ -7,3 +7,6 @@
 
 /** GitHub's REST API; GitHub Enterprise Server uses `https://<host>/api/v3`. */
 export const DEFAULT_GITHUB_API_URL = 'https://api.github.com';
+
+/** How long `IGithubApp.installationFor()` keeps a repository's installation (10 minutes, on the clock). */
+export const INSTALLATION_CACHE_TTL_MS = 600_000;
