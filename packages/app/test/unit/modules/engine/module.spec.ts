@@ -164,6 +164,9 @@ describe('engineModule', () => {
         await harness.setup();
 
         expect(harness.container.has(AppToken.ENGINE)).toBe(false);
+        // the agent channel is contributed in start and job mode only
+        const channels = harness.container.has(AppToken.CHANNELS) ? harness.container.resolveAll(AppToken.CHANNELS) : [];
+        expect(channels.map((channel) => channel.name)).not.toContain('agent');
     });
 
     it('channels come from every CHANNELS contribution', async () => {
