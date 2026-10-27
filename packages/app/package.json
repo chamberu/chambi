@@ -81,8 +81,8 @@
     "devDependencies": {
         "@ai-sdk/anthropic": "^4.0.87",
         "@ai-sdk/openai-compatible": "^3.0.78",
-        "@authup/core-http-kit": "^1.0.0-beta.70",
-        "@authup/server-adapter-kit": "^1.0.0-beta.70",
+        "@authup/core-http-kit": "^1.0.0-beta.72",
+        "@authup/server-adapter-kit": "^1.0.0-beta.72",
         "@chamvi/test-kit": "^0.3.1",
         "@swc/core": "^1.16.20",
         "@testcontainers/postgresql": "^12.2.1",
@@ -100,8 +100,8 @@
         "@ai-sdk/openai": "^4",
         "@ai-sdk/openai-compatible": "^3",
         "@ai-sdk/xai": "^5",
-        "@authup/core-http-kit": "^1.0.0-beta.70",
-        "@authup/server-adapter-kit": "^1.0.0-beta.70",
+        "@authup/core-http-kit": "^1.0.0-beta.72",
+        "@authup/server-adapter-kit": "^1.0.0-beta.72",
         "ai": "^7.0.150",
         "pg": "^8",
         "typeorm": "^1.1.2"

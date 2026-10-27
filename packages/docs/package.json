@@ -26,7 +26,7 @@
         "node": ">=22.0.0"
     },
     "devDependencies": {
-        "@authup/server-adapter-kit": "^1.0.0-beta.70",
+        "@authup/server-adapter-kit": "^1.0.0-beta.72",
         "@chamvi/app": "*",
         "@chamvi/channel-cron": "*",
         "@chamvi/channel-openclaw": "*",
