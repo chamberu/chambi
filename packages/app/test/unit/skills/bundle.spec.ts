@@ -173,6 +173,23 @@ describe('passive skill bundles', () => {
         expect(() => hashSkillBundle('relative')).toThrow(InvalidAgentDefinitionError);
     });
 
+    it.each(['/', '///'])('rejects root symlinks with trailing separators when hashing %j', (suffix) => {
+        const directory = bundle();
+        const parent = bundle();
+        const link = join(parent, 'linked');
+        fs.symlinkSync(directory, link, 'dir');
+        expect(hashSkillBundle(`${directory}${suffix}`)).toBe(hashSkillBundle(directory));
+        expect(() => hashSkillBundle(`${link}${suffix}`)).toThrow(InvalidAgentDefinitionError);
+    });
+
+    it.each(['/', '///'])('rejects root symlinks with trailing separators when loading %j', (suffix) => {
+        const approved = descriptor(bundle());
+        const parent = bundle();
+        const link = join(parent, 'linked');
+        fs.symlinkSync(approved.directory, link, 'dir');
+        expect(() => readSkillBundle({ ...approved, directory: `${link}${suffix}` })).toThrow(InvalidAgentDefinitionError);
+    });
+
     it('bounds_metadata_body_references_total_and_count', () => {
         const directory = bundle();
         const metadata = `${frontmatter}#${'x'.repeat(4096 - Buffer.byteLength(frontmatter) - 2)}\n`;
@@ -268,6 +285,29 @@ describe('passive skill bundles', () => {
                 fs.appendFileSync(join(directory, 'SKILL.md'), 'changed');
             }
             return result;
+        });
+        expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
+    });
+
+    it.each(['file', 'directory'])('rejects duplicate decoded inventory paths for a %s', (kind) => {
+        const directory = bundle({ '\uFFFD.txt': 'reference' });
+        fs.mkdirSync(join(directory, 'empty-dir'));
+        const open = fs.opendirSync;
+        vi.spyOn(fs, 'opendirSync').mockImplementation((...args: Parameters<typeof fs.opendirSync>) => {
+            const handle = open(...args);
+            const read = handle.readSync.bind(handle);
+            let duplicate: fs.Dirent | null = null;
+            let repeated = false;
+            vi.spyOn(handle, 'readSync').mockImplementation(() => {
+                if (duplicate && !repeated) {
+                    repeated = true;
+                    return duplicate;
+                }
+                const next = read();
+                if (next && !duplicate && next.isDirectory() === (kind === 'directory')) duplicate = next;
+                return next;
+            });
+            return handle;
         });
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
     });

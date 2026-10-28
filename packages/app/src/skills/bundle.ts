@@ -9,7 +9,12 @@ import { InvalidAgentDefinitionError } from '@chamvi/core';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { BigIntStats } from 'node:fs';
-import { basename, extname, join } from 'node:path';
+import {
+    basename,
+    extname,
+    join,
+    resolve,
+} from 'node:path';
 import {
     SKILL_CONTROL_PATTERN,
     SKILL_HASH_HEADER,
@@ -53,6 +58,7 @@ function inspectInventory(directory: string): SkillBundleInventory {
                 if (child.name.startsWith('.') || child.name.includes('\\') || SKILL_CONTROL_PATTERN.test(child.name)) {
                     invalidSkill(current.path || '.', 'hidden or invalid paths are unsupported');
                 }
+                if (entries.has(path) || pending.some((entry) => entry.path === path)) invalidSkill(path, 'duplicate decoded inventory path');
                 if (entries.size + pending.length >= SKILL_MAX_INVENTORY_ENTRIES) invalidSkill('.', 'inventory exceeds 1024 entries');
                 const stat = fs.lstatSync(join(directory, path), { bigint: true });
                 if (stat.isDirectory()) {
@@ -106,8 +112,9 @@ function readBoundedFile(directory: string, path: string, expected: BigIntStats)
 
 function readSnapshot(directory: string) {
     validateSkillDirectory(directory);
+    const root = resolve(directory);
     try {
-        const before = inspectInventory(directory);
+        const before = inspectInventory(root);
         const files = [...before].filter(([, stat]) => stat.isFile()).sort(([a], [b]) => compareSkillPaths(a, b));
         const hash = createHash('sha256').update(SKILL_HASH_HEADER);
         const contents = new Map<string, string>();
@@ -115,7 +122,7 @@ function readSnapshot(directory: string) {
         let total = 0;
         for (const [path, identity] of files) {
             if (BigInt(total) + identity.size > BigInt(SKILL_MAX_TOTAL_BYTES)) invalidSkill('.', 'bundle exceeds 1 MiB');
-            const buffer = readBoundedFile(directory, path, identity);
+            const buffer = readBoundedFile(root, path, identity);
             total += buffer.length;
             let content: string;
             try {
@@ -128,7 +135,7 @@ function readSnapshot(directory: string) {
             const pathBytes = Buffer.from(path);
             hash.update(`${pathBytes.length}:`).update(pathBytes).update(`${buffer.length}:`).update(buffer);
         }
-        const after = inspectInventory(directory);
+        const after = inspectInventory(root);
         if (before.size !== after.size || [...before].some(([path, identity]) => !after.has(path) || !sameIdentity(identity, after.get(path)!))) {
             invalidSkill('.', 'bundle changed during loading');
         }
