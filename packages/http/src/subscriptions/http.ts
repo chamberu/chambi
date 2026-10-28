@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { assertMaxConcurrentRuns } from '@chamvi/core';
 import { HTTP_CHANNEL_NAME } from '../channels/constants.ts';
 import type { HttpSubscriber } from './types.ts';
 
@@ -16,9 +17,13 @@ import type { HttpSubscriber } from './types.ts';
  * without a channel instance.
  */
 export const http: HttpSubscriber = {
-    on: (options = {}) => ({
-        channel: HTTP_CHANNEL_NAME,
-        id: 'http',
-        options: { schema: options.schema },
-    }),
+    on: (options = {}) => {
+        assertMaxConcurrentRuns(options.maxConcurrentRuns, 'http.on() maxConcurrentRuns');
+        return {
+            channel: HTTP_CHANNEL_NAME,
+            id: 'http',
+            ...(options.maxConcurrentRuns !== undefined ? { maxConcurrentRuns: options.maxConcurrentRuns } : {}),
+            options: { schema: options.schema },
+        };
+    },
 };

@@ -22,6 +22,18 @@ The store, the agents and the clock come from `engine` (`engine.store`, `engine.
 
 <<< ../../../http/src/app/types.ts#routes{ts}
 
+## Channel HTTP request limits
+
+`channelRateLimits?: Record<string, false | ChannelRateLimitOptions>` selects the HTTP intake policy for each mounted channel, without changing run execution capacity:
+
+- An omitted entry inherits the general `rateLimit` bucket (default 300 requests per 60 seconds per client IP), shared with REST and other unconfigured channels.
+- `{ max, windowMs? }` replaces that bucket for the channel with its own per-client bucket, separate from REST and other configured channels. `windowMs` defaults to 60,000. Explicit channel limits also work when the general `rateLimit` is `false`.
+- `false` removes request limiting only for that channel's mounted `POST /channels/<name>` and subpaths. It does not disable authentication, signatures or body-size checks. Other methods and unknown channel paths do not gain the exemption.
+
+The keys must exactly name mounted input channels. `max` must be a positive safe integer; `windowMs` a positive integer no greater than 2,147,483,647. Invalid policies throw `InvalidAgentDefinitionError` before serving. Buckets are local to this HTTP app, not coordinated through the run store. Refusals remain JSON `429` responses with `Retry-After` and rate-limit headers.
+
+The same options pass through `httpModule()` in `@chamvi/app`. See [GitHub intake behind an ingress](/deployment/github-app#bursts-and-http-intake) for finite and disabled examples. `trustProxy` defaults to trusting no forwarded headers; restrict it to known proxy source addresses or CIDRs, never blindly trust arbitrary client headers.
+
 ## Channels
 
 ```ts

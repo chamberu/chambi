@@ -12,6 +12,7 @@ import type { Agent } from '../agent/types.ts';
 import { approvalDecisionKey, assertSelectionShape, toSelection } from '../approval/helpers.ts';
 import { assertArtifactInput } from '../artifact/helpers.ts';
 import { attachmentIds, storeArtifact } from '../artifact/module.ts';
+import { assertMaxConcurrentRuns } from '../channel/concurrency.ts';
 import { assertChannelName, assertDefaultAddress, createChannelContext } from '../channel/helpers.ts';
 import type { IChannel } from '../channel/types.ts';
 import { systemClock } from '../clock/index.ts';
@@ -183,6 +184,7 @@ export class Engine implements IContextProvider {
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));
         this.queue = new RunQueue({
             store: this.store,
+            getAgent: (name) => this.getAgent(name),
             clock: this.clock,
             owner: this.owner,
             maxConcurrentRuns: opts.maxConcurrentRuns ?? 4,
@@ -1137,7 +1139,9 @@ export class Engine implements IContextProvider {
     protected assertRegistrable(agent: Agent): void {
         // first: putAgent refuses before syncing, the lock and any store write
         checkAgentModel(agent, { model: this.model, models: this.models });
+        assertMaxConcurrentRuns(agent.definition.maxConcurrentRuns, `Agent "${agent.name}" maxConcurrentRuns`);
         for (const subscription of agent.definition.channels ?? []) {
+            assertMaxConcurrentRuns(subscription.maxConcurrentRuns, `Agent "${agent.name}" subscription "${subscription.id}" maxConcurrentRuns`);
             if (!this.channels.has(subscription.channel)) {
                 throw new InvalidAgentDefinitionError(`Agent "${agent.name}" subscribes to unknown channel "${subscription.channel}".`);
             }

@@ -1,6 +1,6 @@
 # Multiple Replicas
 
-Running more than one replica of an agent app relies on the store. Core, the TypeORM store and `@chamvi/channel-cron` cover this today; part needs planned packages.
+Running more than one replica of an agent app relies on the store. Core, the TypeORM store, HTTP intake and `@chamvi/channel-cron` coordinate through that shared store.
 
 ## What core already guarantees
 
@@ -8,6 +8,7 @@ With a shared, durable store such as the [TypeORM store](/stores/typeorm) (`Memo
 
 - **One executor per run.** Run claims are leases (`claimTtlMs`, renewed every third of it). A replica that loses its lease stops writing.
 - **One run per concurrency key.** Checked under a store lock, across replicas.
+- **Shared numerical ceilings.** Agent and subscription `maxConcurrentRuns` count running runs under an agent admission lock. Waiting approvals release numerical capacity but keep their keys. All replicas must use compatible definitions and complete admission operations inside the lock TTL. `CHAMVI_MAX_CONCURRENT_RUNS` is still local to each engine, not a fleet cap. See [Concurrency](/guide/concurrency#shared-agent-and-subscription-ceilings).
 - **One run per idempotency key.** `dispatch()` claims the key atomically; redeliveries to any replica return the same run.
 - **Crash recovery.** Every replica's poll requeues runs whose claim expired, and the next execution continues from the latest checkpoint.
 - **Graceful drain.** A terminating pod marks its unfinished runs `interrupted` and another replica picks them up.
@@ -17,8 +18,8 @@ With a shared, durable store such as the [TypeORM store](/stores/typeorm) (`Memo
 
 Give each replica a distinct `owner` (the default `<hostname>-<pid>` already is in Kubernetes). See [Concurrency, Leases & Multi-Replica](/guide/concurrency).
 
-## What still needs planned packages <Badge type="warning" text="Planned" />
+## Webhooks and deployment
 
-- **Webhooks to any replica.** The planned HTTP app acknowledges webhooks with `202` and the run id, and uses the delivery id as the idempotency key, so a redelivery to another replica is deduplicated.
+The HTTP app can accept deliveries on any replica. GitHub uses the delivery id as its default idempotency key, so a redelivery to another replica deduplicates through the shared store. A `202` means durable acceptance, not execution completion. Excess work remains queued, without a storage bound; use [channel HTTP policies](/reference/http#channel-http-request-limits) separately from execution ceilings.
 
-The planned Helm chart defaults to one replica with the `Recreate` strategy. Raising the replica count is safe once the store is shared.
+The [Helm chart](https://github.com/chamvi/helm) defaults to one replica with the `Recreate` strategy. Raising the replica count requires a shared store and compatible definitions. Ingress settings do not configure the app's `trustProxy`; see [Ingress client addresses](/deployment/kubernetes#ingress-client-addresses-and-channel-bursts).

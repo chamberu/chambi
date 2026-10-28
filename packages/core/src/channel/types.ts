@@ -86,6 +86,8 @@ export interface IChannel<TInput = ChannelRequest, TOutput = Response> {
 export type ChannelSubscription<P = unknown> = {
     channel: string;
     id: string;
+    /** Shared-store execution cap within this agent; omitted or false adds no cap. */
+    maxConcurrentRuns?: number | false;
     options: Record<string, unknown>;
     // method signatures (bivariant): a ChannelSubscription<P> fits AgentDefinition.channels
     concurrencyKey?(payload: P): string | undefined;

@@ -13,7 +13,7 @@ import type { HttpRoute } from '../app/types.ts';
  * lower-cased: routup matches paths case-insensitively, so every check
  * against a route path must too.
  */
-function routePath(event: IAppEvent, basePath: string): string {
+export function routePath(event: IAppEvent, basePath: string): string {
     const path = event.path.toLowerCase();
     const base = basePath.toLowerCase();
     const relative = base && (path === base || path.startsWith(`${base}/`)) ?

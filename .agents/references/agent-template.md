@@ -9,6 +9,12 @@
 
 Checked the `feat/model-settings` worktree against base `272f04f`. App, CLI and UI dependencies now target published `^0.3.1`. `src/index.ts` supplies the app-wide model; `src/agents/example.ts` omits its own model so `CHAMVI_MODEL` can override the default. `test/unit/example.spec.ts` verifies inheritance and runs a scheduled job against an alternate fake provider selected through the environment. CI builds and runs `chamvi start --check` with placeholder credentials, without serving HTTP or calling a model. Deployment examples retain the existing published chart range and generic env/Secret mechanism rather than depending on unreleased chart values.
 
+## Channel concurrency compatibility check (2026-10-28)
+
+Scoped read-only check at commit `272f04f449f9162003d264ba1974f932959305aa`: `src/index.ts`, `src/modules.ts`, `src/agents/example.ts`. This does not replace the broader verification above. `createApp({ agents: [example], modules })` and existing `defineAgent`, `http` and `cron` imports remain compatible. Agent/subscription `maxConcurrentRuns` fields are additive; existing behavior is unchanged. The modules example has no `httpModule()` configuration example yet.
+
+Documentation follow-up in chamvi/agent-template: show `httpModule({ channelRateLimits, trustProxy })` with operator-supplied trusted proxy CIDRs for webhook bursts, and distinguish nested shared-store execution caps from the engine-local `CHAMVI_MAX_CONCURRENT_RUNS`. No mandatory source migration, new env variable or dependency change is required. No downstream edits, tests or publication performed in this check; a downstream documentation PR remains outstanding.
+
 ## Contract map (monorepo -> template)
 
 | Monorepo source | Template file | What the template relies on (and the test that pins it) |

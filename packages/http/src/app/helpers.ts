@@ -28,6 +28,7 @@ import {
 } from './constants.ts';
 import { validateChannels } from '../channels/helpers.ts';
 import { boundIssues } from '../request/helpers.ts';
+import { validateChannelRateLimits } from '../plugins/channels.ts';
 import type { AgentIssue } from '../agents/types.ts';
 import type {
     HttpAgents,
@@ -174,6 +175,9 @@ export function buildContext(options: HttpAppOptions): HttpContext {
         throw new InvalidAgentDefinitionError(`stream.maxOpen must be a positive integer, got ${maxOpenStreams}.`);
     }
 
+    const channels = validateChannels(options.engine, options.channels);
+    validateChannelRateLimits(options, channels);
+
     return {
         engine: options.engine,
         store: options.engine.store,
@@ -191,7 +195,7 @@ export function buildContext(options: HttpAppOptions): HttpContext {
         closers: new Set(),
         closed: false,
         routes: validateRoutes(options),
-        channels: validateChannels(options.engine, options.channels),
+        channels,
         // eslint-disable-next-line no-console
         onError: options.onError ?? ((error) => console.error('[chamvi]', error)),
     };

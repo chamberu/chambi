@@ -11,7 +11,7 @@ import { prometheus } from '@routup/prometheus';
 import { rateLimit } from '@routup/rate-limit';
 import { Registry } from 'prom-client';
 import { getRequestIP } from 'routup';
-import type { App } from 'routup';
+import type { App, IAppEvent } from 'routup';
 import {
     DEFAULT_METRICS_PATH,
     DEFAULT_RATE_LIMIT_MAX,
@@ -24,6 +24,7 @@ import {
     isUnlimitedRoute,
     routeLabel,
 } from './helpers.ts';
+import { matchesChannel } from './channels.ts';
 
 /**
  * CORS (only when configured), a rate limit keyed by the client address
@@ -41,20 +42,37 @@ export function installPlugins(app: App, options: HttpAppOptions): void {
         undefined :
         options.metrics?.metricsPath ?? DEFAULT_METRICS_PATH;
 
+    const channelPolicies = Object.entries(options.channelRateLimits ?? {});
+    const generalLimit = options.rateLimit;
+
     // before metrics: a refused request is not timed (and mints no series)
-    if (options.rateLimit !== false) {
+    if (generalLimit !== false) {
+        const skip = generalLimit?.skip ?? ((event: IAppEvent) => event.method === 'OPTIONS' ||
+            isOperationalPath(event, basePath, metricsPath ?? '') ||
+            isUnlimitedRoute(event, basePath, routes));
         app.use(rateLimit({
             windowMs: DEFAULT_RATE_LIMIT_WINDOW_MS,
             max: DEFAULT_RATE_LIMIT_MAX,
             // the library default trusts any X-Forwarded-For
             keyGenerator: (event) => getRequestIP(event) ?? 'unknown',
-            skip: (event) => event.method === 'OPTIONS' ||
-                isOperationalPath(event, basePath, metricsPath ?? '') ||
-                isUnlimitedRoute(event, basePath, routes),
             handler: () => {
                 throw new TooManyRequestsError({ message: 'Too many requests, please try again later.' });
             },
-            ...options.rateLimit,
+            ...generalLimit,
+            skip: (event) => channelPolicies.some(([name]) => matchesChannel(event, basePath, name)) || skip(event),
+        }));
+    }
+
+    for (const [name, policy] of channelPolicies) {
+        if (policy === false) continue;
+        app.use(rateLimit({
+            windowMs: policy.windowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
+            max: policy.max,
+            keyGenerator: (event) => getRequestIP(event) ?? 'unknown',
+            skip: (event) => !matchesChannel(event, basePath, name),
+            handler: () => {
+                throw new TooManyRequestsError({ message: 'Too many requests, please try again later.' });
+            },
         }));
     }
 

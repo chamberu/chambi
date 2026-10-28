@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { assertMaxConcurrentRuns } from '../channel/concurrency.ts';
 import { AGENT_CHANNEL_NAME } from '../channel/constants.ts';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
 import { DEFAULT_MAX_HANDOFFS_PER_RUN, HANDOFF_SUBSCRIPTION_ID } from './constants.ts';
@@ -17,6 +18,7 @@ import type { HandoffSubscriber } from './types.ts';
  */
 export const handoff: HandoffSubscriber = {
     on: (options = {}) => {
+        assertMaxConcurrentRuns(options.maxConcurrentRuns, 'handoff.on() maxConcurrentRuns');
         const maxPerRun = options.maxPerRun ?? DEFAULT_MAX_HANDOFFS_PER_RUN;
         if (!Number.isSafeInteger(maxPerRun) || maxPerRun <= 0) {
             throw new InvalidAgentDefinitionError('handoff.on({ maxPerRun }) must be a positive integer.');
@@ -24,6 +26,7 @@ export const handoff: HandoffSubscriber = {
         return {
             channel: AGENT_CHANNEL_NAME,
             id: HANDOFF_SUBSCRIPTION_ID,
+            ...(options.maxConcurrentRuns !== undefined ? { maxConcurrentRuns: options.maxConcurrentRuns } : {}),
             options: { schema: options.schema, maxPerRun },
             ...(options.concurrencyKey ? { concurrencyKey: options.concurrencyKey } : {}),
             ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),

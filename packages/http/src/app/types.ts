@@ -25,6 +25,13 @@ export type CorsOptions = CorsPluginOptions;
 
 export type RateLimitOptions = RateLimitPluginOptions;
 
+/** A mounted channel's independent per-client HTTP request limit. */
+export type ChannelRateLimitOptions = {
+    max: number;
+    /** Positive timer-safe milliseconds. Default: 60,000. */
+    windowMs?: number;
+};
+
 export type PrometheusOptions = PrometheusPluginOptions;
 
 /** routup's trust-proxy input: a predicate, CIDRs, `'loopback'`, a hop count or a boolean. */
@@ -75,6 +82,13 @@ export type HttpAppOptions = {
     /** CORS is off unless given. */
     cors?: false | CorsOptions;
     rateLimit?: false | Partial<RateLimitOptions>;
+    /**
+     * Policies for mounted POST /channels/<name> paths (including subpaths).
+     * An omitted name shares the general limit; false exempts the channel;
+     * an explicit policy replaces it with a separate per-channel/client bucket,
+     * also when rateLimit is false. Authentication and body limits are unchanged.
+     */
+    channelRateLimits?: Record<string, false | ChannelRateLimitOptions>;
     metrics?: false | Partial<PrometheusOptions>;
     /** How long `/readyz` waits for the store. Default: 2 s. */
     readyTimeoutMs?: number;

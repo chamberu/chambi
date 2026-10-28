@@ -1,12 +1,10 @@
-# Kubernetes & Flux <Badge type="warning" text="Planned" />
+# Kubernetes & Flux
 
-::: warning Planned
-The Helm chart and the template's Flux manifests do not exist yet.
-:::
+The [Helm chart](https://github.com/chamvi/helm) and [agent template](https://github.com/chamvi/agent-template) provide deployment and Flux manifests.
 
 ## Helm chart
 
-One shared chart, published to an OCI registry and used by every agent app. Planned contents:
+One shared chart, published to an OCI registry and used by every agent app. Its contents include:
 
 - **Deployment** with liveness (`/healthz`), readiness (`/readyz`) and startup probes, a long `terminationGracePeriodSeconds` (about 120 s) and a short `preStop` sleep, so the app fails readiness, drains and exits cleanly.
 - **Service** and an optional **Ingress** for webhooks, the API and the UI.
@@ -16,6 +14,12 @@ One shared chart, published to an OCI registry and used by every agent app. Plan
 - An optional **ServiceMonitor** for Prometheus.
 
 The values stay small: image, environment, Secrets, ingress, replicas, sandbox and cron jobs.
+
+## Ingress client addresses and channel bursts
+
+An ingress does not automatically make forwarded client addresses trustworthy to the app. Configure `httpModule({ trustProxy: [...] })` with the known source addresses or CIDRs of your ingress, and configure that ingress to sanitize incoming forwarded headers. Do not trust arbitrary forwarding headers from publicly reachable peers. Without this, the HTTP limiter may group all GitHub deliveries under the ingress IP; even correct forwarding can leave many deliveries sharing GitHub source IPs.
+
+Use `httpModule({ channelRateLimits: { github: { max: 3_000, windowMs: 60_000 } } })` for an independent GitHub request bucket, or `github: false` to disable only that intake limit. Neither changes signature validation or REST protection. These are code options, not chart env variables. See [GitHub bursts](/deployment/github-app#bursts-and-http-intake). `CHAMVI_MAX_CONCURRENT_RUNS` remains per pod/engine; use [agent/subscription ceilings](/guide/concurrency#shared-agent-and-subscription-ceilings) over a shared store for fleet-wide execution control.
 
 ## Graceful shutdown
 
@@ -31,7 +35,7 @@ Each agent repository gets:
 
 ## Sandboxes in the cluster
 
-[`@chamvi/sandbox-k8s`](/reference/sandbox#chamvi-sandbox-k8s) ships today; only the chart that wires it up is planned. Untrusted code runs in one bare pod per workspace (`chamvi-ws-<id>`):
+[`@chamvi/sandbox-k8s`](/reference/sandbox#chamvi-sandbox-k8s) and the chart's sandbox configuration ship today. Untrusted code runs in one bare pod per workspace (`chamvi-ws-<id>`):
 
 - root (uid and gid 0) with a writable root filesystem, every capability dropped but `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `FSETID`, `SETUID`, `SETGID` and `KILL`, seccomp `RuntimeDefault`, no privilege escalation, not privileged; the hardened mode (`user: { uid: 1000, gid: 1000 }`, `readOnlyRoot: true`) runs non-root on a read-only root without any capability
 - `automountServiceAccountToken: false`, `enableServiceLinks: false`, no chamvi Secrets or environment

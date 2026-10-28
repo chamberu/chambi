@@ -7,6 +7,7 @@
 
 export { createHttpApp } from './module.ts';
 export type {
+    ChannelRateLimitOptions,
     CorsOptions,
     HttpAppOptions,
     HttpRoute,

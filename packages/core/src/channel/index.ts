@@ -6,6 +6,7 @@
  */
 
 export * from './agent.ts';
+export * from './concurrency.ts';
 export * from './console.ts';
 export * from './constants.ts';
 export type * from './types.ts';

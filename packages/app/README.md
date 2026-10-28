@@ -126,6 +126,12 @@ The built-in modules read the lifecycle's `env` (`start({ env })`). The optional
 githubModule({ env: { GITHUB_APP_ID: '1', GITHUB_APP_PRIVATE_KEY: pem, GITHUB_WEBHOOK_SECRET: 'secret' } });
 ```
 
+## HTTP intake and execution limits
+
+`CHAMVI_MAX_CONCURRENT_RUNS` limits each engine instance (default `4`). Set `maxConcurrentRuns` on an agent and/or its `channel.on(...)` subscription to add nested ceilings across replicas sharing a store. Positive safe integers cap running runs; `false` or omission adds no ceiling at that level and never bypasses a parent cap. Waiting approvals release numerical capacity but retain concurrency-key exclusion. Excess runs stay durably queued, with no storage bound.
+
+Configure mounted channel HTTP policies separately through `httpModule({ channelRateLimits: { github: { max: 3000, windowMs: 60000 } } })`, or use `github: false` to disable only that channel's request limiter. Omitted channels share the general REST bucket; signatures and body limits remain enforced. `trustProxy` must identify only known ingress sources; ingress configuration does not set it automatically. These are TypeScript options, not new environment variables. A `202` acknowledges stored acceptance, not execution completion. GitHub does not automatically redeliver failed webhook deliveries, so monitor and reconcile them. See [GitHub intake](https://chamvi.dev/deployment/github-app#bursts-and-http-intake) and [concurrency](https://chamvi.dev/guide/concurrency).
+
 ## Modules
 
 Modules are orkos `IModule`s on an eldin container. The built-in ones are always there; listing a module with a built-in's name (`ModuleName`) in `modules` replaces it. Two modules of one name, a built-in's included, throw `InvalidAgentDefinitionError`.

@@ -5,12 +5,14 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { Agent } from '../../agent/types.ts';
 import type { IClock } from '../../clock/index.ts';
 import type { Run } from '../../run/types.ts';
 import type { IStore } from '../../store/types.ts';
 
 export type RunQueueOptions = {
     store: IStore;
+    getAgent: (name: string) => Agent | undefined;
     clock: IClock;
     owner: string;
     maxConcurrentRuns: number;

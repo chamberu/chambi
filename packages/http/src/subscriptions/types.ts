@@ -9,6 +9,8 @@ import type { ChannelSubscription } from '@chamvi/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 
 export type HttpSubscriptionOptions = {
+    /** Shared-store execution cap for REST, UI and MCP starts; omitted or false adds no cap. */
+    maxConcurrentRuns?: number | false;
     /** Validates the payload of a REST, UI or MCP start. */
     schema?: StandardSchemaV1;
 };
@@ -19,6 +21,8 @@ export type HttpSubscriber = {
 };
 
 export type WebhookSubscriptionOptions = {
+    /** Shared-store execution cap within the agent; omitted or false adds no cap. */
+    maxConcurrentRuns?: number | false;
     /** Validates the delivered payload. */
     schema?: StandardSchemaV1;
     /** The run's idempotency key when the delivery has no `Idempotency-Key` header. */
