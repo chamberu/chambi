@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { ToolSet } from 'ai';
 import { readFileSync } from 'node:fs';
 import {
     describe,
@@ -19,7 +20,11 @@ import type {
     AppCheckOptions,
     AppCheckResult,
     AppStartOptions,
+    ApprovedSkill,
     IApp,
+    LoadedSkill,
+    SkillCatalog,
+    SkillMetadata,
 } from '@chamvi/app';
 import type { AgentIssue } from '@chamvi/http';
 
@@ -39,6 +44,8 @@ describe('public api', () => {
         'envList',
         'envJson',
         'envOneOf',
+        'hashSkillBundle',
+        'loadSkillBundles',
         'loadAgent',
         'loadAgents',
         'hashAgentFolder',
@@ -162,6 +169,17 @@ describe('public api', () => {
         expectTypeOf<AppCheckOptions>().toEqualTypeOf<AppStartOptions>();
         expect(app.createApp({}).check).toBeTypeOf('function');
         expect(app.createApp({})).not.toHaveProperty('inspect');
+    });
+
+    it('exports the approved skill types', () => {
+        expectTypeOf<SkillCatalog['skills']>().toEqualTypeOf<readonly SkillMetadata[]>();
+        expectTypeOf<Parameters<typeof app.loadSkillBundles>[0]>().toEqualTypeOf<readonly ApprovedSkill[]>();
+        expectTypeOf<LoadedSkill['references']>().toEqualTypeOf<string[]>();
+        expectTypeOf<SkillCatalog['tools']>().toEqualTypeOf<ToolSet>();
+    });
+
+    it.each(['readSkillBundle', 'parseSkillDocument', 'SKILL_MAX_BUNDLES'])('keeps skill internal %s private', (name) => {
+        expect(app).not.toHaveProperty(name);
     });
 
     it('exports the app brand', () => {

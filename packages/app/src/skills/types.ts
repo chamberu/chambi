@@ -54,3 +54,8 @@ export type ParsedSkillDocument = {
     ignoredFields: readonly string[];
     body: string;
 };
+
+export type SkillInput = {
+    name: string;
+    reference?: string;
+};
