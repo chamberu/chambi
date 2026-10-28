@@ -12,6 +12,7 @@ import type { Agent } from '../agent/types.ts';
 import { approvalDecisionKey, assertSelectionShape, toSelection } from '../approval/helpers.ts';
 import { assertArtifactInput } from '../artifact/helpers.ts';
 import { attachmentIds, storeArtifact } from '../artifact/module.ts';
+import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
 import { assertChannelName, assertDefaultAddress, createChannelContext } from '../channel/helpers.ts';
 import type { IChannel } from '../channel/types.ts';
 import { systemClock } from '../clock/index.ts';
@@ -183,9 +184,10 @@ export class Engine implements IContextProvider {
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));
         this.queue = new RunQueue({
             store: this.store,
+            getAgent: (name) => this.getAgent(name),
             clock: this.clock,
             owner: this.owner,
-            maxConcurrentRuns: opts.maxConcurrentRuns ?? 4,
+            concurrencyMaxRuns: opts.concurrencyMaxRuns ?? 4,
             claimTtlMs: this.claimTtlMs,
             execute: (run) => this.guardedExecute(run),
             onError: (error, run) => this.onError(error, run),
@@ -321,7 +323,7 @@ export class Engine implements IContextProvider {
         this.provided.set(key, value);
     }
 
-    /** The registered agent of that name. */
+    /** Synchronous live registry lookup; no loading, creation or I/O. Missing agents return undefined. */
     getAgent(name: string): Agent | undefined {
         return this.agents.get(name);
     }
@@ -1137,7 +1139,9 @@ export class Engine implements IContextProvider {
     protected assertRegistrable(agent: Agent): void {
         // first: putAgent refuses before syncing, the lock and any store write
         checkAgentModel(agent, { model: this.model, models: this.models });
+        assertConcurrencyMaxRuns(agent.definition.concurrencyMaxRuns, `Agent "${agent.name}" concurrencyMaxRuns`);
         for (const subscription of agent.definition.channels ?? []) {
+            assertConcurrencyMaxRuns(subscription.concurrencyMaxRuns, `Agent "${agent.name}" subscription "${subscription.id}" concurrencyMaxRuns`);
             if (!this.channels.has(subscription.channel)) {
                 throw new InvalidAgentDefinitionError(`Agent "${agent.name}" subscribes to unknown channel "${subscription.channel}".`);
             }

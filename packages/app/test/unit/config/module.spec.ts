@@ -40,7 +40,7 @@ describe('readConfig', () => {
                 migrate: true,
                 purgeIntervalMs: 3_600_000,
             },
-            engine: { maxConcurrentRuns: 4 },
+            engine: { concurrencyMaxRuns: 4 },
             scheduler: { enabled: true },
             agents: { pollMs: 5_000 },
         });
@@ -82,7 +82,7 @@ describe('readConfig', () => {
                 migrate: false,
                 purgeIntervalMs: 60_000,
             },
-            engine: { maxConcurrentRuns: 8 },
+            engine: { concurrencyMaxRuns: 8 },
             scheduler: { enabled: false },
             agents: { dir: './agents', pollMs: 2000 },
         });

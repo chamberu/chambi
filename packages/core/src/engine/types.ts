@@ -80,7 +80,7 @@ export type EngineOptions = {
     /** Default `${hostname}-${pid}`. */
     owner?: string;
     /** Default 4. */
-    maxConcurrentRuns?: number;
+    concurrencyMaxRuns?: number;
     /** Default 60_000, renewed every ttl/3 while running. */
     claimTtlMs?: number;
     clock?: IClock;

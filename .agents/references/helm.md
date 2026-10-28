@@ -9,6 +9,12 @@
 
 Checked the `feat/model-settings` worktree against chart base `79850ef` (0.1.2) and chamvi 0.3.1. `values.yaml` adds `model` and named `providers`; `templates/_helpers.tpl` maps them to `CHAMVI_MODEL` and `CHAMVI_PROVIDER_<NAME>_*` on both Deployment and CronJobs. API keys and credential headers use Secret references only. `templates/_model-validations.tpl` checks settings without echoing rejected values; generated env names cannot collide with generic `env`. The readiness hook receives no model settings or credentials. Coverage lives in `tests/models_test.yaml` and `scripts/tests/test_models.py`. This is a proposed downstream change, not a published chart contract.
 
+## Channel concurrency compatibility check (2026-10-28)
+
+Scoped read-only check at commit `79850ef48f264eb2d6dcd879b18ff016838520c3`: `charts/agent-app/values.yaml`, `templates/deployment.yaml` and README HTTP/Secrets sections. This does not replace the broader verification above. Env pass-through remains compatible: `CHAMVI_MAX_CONCURRENT_RUNS` is local to each engine. Agent/subscription caps (`packages/core/src/engine/queue/admission.ts`) coordinate through the shared store; `httpModule({ channelRateLimits, trustProxy })` is code configuration, not a chart value or a new env variable. No template/schema migration is required. The TypeScript engine option is `concurrencyMaxRuns`; the chart continues to pass `CHAMVI_MAX_CONCURRENT_RUNS` unchanged.
+
+Documentation follow-up in chamvi/helm: explain known-source app `trustProxy` (Ingress annotations do not set it), separate channel request buckets or `github: false`, shared-store execution ceilings and unbounded queued backlog. No downstream edits, tests or publication performed in this check; a downstream documentation PR remains outstanding.
+
 ## Contract map (monorepo -> chart)
 
 | Monorepo source | Chart file | What the chart relies on |

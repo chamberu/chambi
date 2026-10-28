@@ -118,7 +118,7 @@ class Engine {
 |---|---|
 | `channels` | `[]` |
 | `owner` | `` `${hostname}-${pid}` `` |
-| `maxConcurrentRuns` | `4` |
+| `concurrencyMaxRuns` | `4` |
 | `claimTtlMs` | `60_000`, renewed and polled every `claimTtlMs / 3` |
 | `clock` | `systemClock` |
 | `onError` | logs to `console.error` |

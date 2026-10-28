@@ -13,6 +13,8 @@ import type { IEffectStore } from '../store/types.ts';
 import type { Invoker, TriggerParent } from '../trigger/types.ts';
 
 export type HandoffSubscriptionOptions<P = unknown> = {
+    /** Shared-store execution cap within the agent; omitted or false adds no cap. */
+    concurrencyMaxRuns?: number | false;
     /** Parses the payload a tool hands off; the parsed value is the child's payload. */
     schema?: StandardSchemaV1<unknown, P>;
     /** How many hand-offs one run may start (all executions together), default 100. */

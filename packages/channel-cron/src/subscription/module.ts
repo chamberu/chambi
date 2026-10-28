@@ -6,7 +6,7 @@
  */
 
 import type { ChannelSubscription } from '@chamvi/core';
-import { InvalidAgentDefinitionError } from '@chamvi/core';
+import { InvalidAgentDefinitionError, assertConcurrencyMaxRuns } from '@chamvi/core';
 import { CronExpressionParser } from 'cron-parser';
 import { CRON_CHANNEL_NAME } from '../channel/constants.ts';
 import { OVERLAP_POLICIES } from './constants.ts';
@@ -22,6 +22,7 @@ export function createCronSubscription(
     expression: string,
     options: CronSubscriptionOptions = {},
 ): ChannelSubscription {
+    assertConcurrencyMaxRuns(options.concurrencyMaxRuns, 'cron.on() concurrencyMaxRuns');
     try {
         CronExpressionParser.parse(expression, options.timezone ? { tz: options.timezone } : {});
     } catch (e) {
@@ -48,6 +49,7 @@ export function createCronSubscription(
     return {
         channel,
         id: options.id ?? `cron:${expression}`,
+        ...(options.concurrencyMaxRuns !== undefined ? { concurrencyMaxRuns: options.concurrencyMaxRuns } : {}),
         options: {
             expression,
             timezone: options.timezone,

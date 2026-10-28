@@ -24,7 +24,7 @@ export function createEngine(model: LanguageModel) {
         agents: [triage, digest],
         // tools reach it with ctx.channels.findOneOrFail('console')
         channels: [consoleChannel()],
-        maxConcurrentRuns: 8,
+        concurrencyMaxRuns: 8,
         claimTtlMs: 30_000,
     });
     // #endregion many

@@ -293,7 +293,7 @@ describe('runJob', () => {
             channels,
             clock,
             owner: 'a',
-            maxConcurrentRuns: 0,
+            concurrencyMaxRuns: 0,
         });
         const b = new Engine({
             store,

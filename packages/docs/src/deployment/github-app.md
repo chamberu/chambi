@@ -6,6 +6,26 @@
 npm install @chamvi/github @chamvi/http @chamvi/core ai --save
 ```
 
+## Bursts and HTTP intake
+
+A signed delivery may start runs for many repositories behind one ingress. By default the HTTP app shares one 300-per-minute, per-client-IP bucket between channel intake and REST. Without trusted-proxy configuration, every delivery can look like the ingress IP; even with correct forwarding, GitHub deliveries can share source IPs.
+
+Use a separate finite channel policy when request protection is still wanted:
+
+<<< @/snippets/concurrency.ts#finite-http
+
+Or disable just the GitHub intake limiter, retaining REST's default protection:
+
+<<< @/snippets/concurrency.ts#unlimited-http
+
+Include **one** of these `httpModule()` instances alongside `githubModule()` in `createApp({ modules })`. A custom channel name must be used as the policy key. With a bare engine, pass the same `channelRateLimits` option to `createHttpApp({ channels: [channel], ... })`. Signatures, media-type checks and body-size limits remain enforced. See the [HTTP policy reference](/reference/http#channel-http-request-limits).
+
+Only trust the actual ingress source addresses/CIDRs and ensure the ingress strips or replaces client-supplied forwarding headers. The example CIDR is not a recommendation for every cluster. Kubernetes Ingress or Helm settings do not configure the app's `trustProxy` automatically; avoid `trustProxy: true` on a publicly reachable app.
+
+Pair intake policy with [agent and subscription execution caps](/guide/concurrency#shared-agent-and-subscription-ceilings). A successful `202` acknowledges runs stored for execution, not completed work; excess runs remain `queued`. This backlog has no storage bound. The default GitHub concurrency key still serializes each issue or pull request, regardless of the numerical cap.
+
+GitHub does **not automatically redeliver failed webhook deliveries**, including `429` refusals. Monitor failed deliveries and arrange manual or automated redelivery, or reconcile through a scheduled sweep. Retries with the same delivery id deduplicate; an event rejected before dispatch was not queued.
+
 ## One App per agent repository
 
 Each agent repository (and so each image) gets its own GitHub App, with its own webhook URL, App credentials and Secret. There is no shared intake router: an App's webhooks go straight to the app that owns it.

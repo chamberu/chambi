@@ -14,6 +14,12 @@ import {
 import * as http from '@chamvi/http';
 
 describe('public api', () => {
+    it('exports the channel HTTP rate-limit policy type', () => {
+        expectTypeOf<http.ChannelRateLimitOptions>().toEqualTypeOf<{ max: number; windowMs?: number }>();
+        expectTypeOf<http.HttpAppOptions['channelRateLimits']>()
+            .toEqualTypeOf<Record<string, false | http.ChannelRateLimitOptions> | undefined>();
+    });
+
     it.each([
         'agentPermission',
         'assertMcpRunTool',

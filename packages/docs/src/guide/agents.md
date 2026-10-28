@@ -10,6 +10,7 @@ An agent is a typed config object passed to `defineAgent()`. It names a model, i
 
 - the name does not match `^[a-z0-9]+(-[a-z0-9]+)*$` (lowercase words joined by single hyphens), or is longer than 64 characters,
 - two subscriptions of the agent share an id,
+- the agent's or a subscription's `concurrencyMaxRuns` is neither `undefined`, `false` nor a positive safe integer,
 - a tool of a plain tool set declares the AI SDK's `needsApproval` (use [`approve()`](/guide/approvals) instead),
 - a `toolsContext` entry names a chamvi tool or no tool of a plain tool set (see [Third-party tools with their own context](/guide/tools#third-party-tools-with-their-own-context)).
 
@@ -24,6 +25,7 @@ The engine checks the rest when you construct it: agent names must be unique wit
 | `name` | `string` | required | Unique per engine, lowercase words joined by `-`, at most 64 characters |
 | `model` | `ModelRef` | `EngineOptions.model` | A `'<provider>/<model id>'` string resolved through `EngineOptions.models`, or any AI SDK `LanguageModel` |
 | `instructions` | `string` | required | System instructions |
+| `concurrencyMaxRuns` | `number \| false` | none | Shared-store ceiling for this agent's running runs; positive safe integer, or `false` for no additional ceiling |
 | `channels` | `ChannelSubscription[]` | none | From `http.on()`, `webhook.on()`, `cron.on()`, `github.on()`. See [Channels](/guide/channels) |
 | `tools` | `ToolSet \| (ctx) => ToolSet` | none | A plain tool set, or a factory called for each execution. See [Tools and their context](#tools-and-their-context) |
 | `toolsContext` | `Record<string, unknown>` | none | Per tool name, the context of a third-party tool. See [Tools](/guide/tools#third-party-tools-with-their-own-context) |
@@ -76,7 +78,7 @@ A run can start with files ([attachments](/guide/channels#attachments)) and tool
 
 ## Many agents per engine
 
-One engine runs any number of agents. They share the store, the concurrency limit and the channels:
+One engine runs any number of agents. They share the store, the engine's local concurrency limit and the channels. Optional agent and subscription ceilings also apply across replicas sharing the store; see [Concurrency](/guide/concurrency):
 
 <<< @/snippets/engine.ts#many
 

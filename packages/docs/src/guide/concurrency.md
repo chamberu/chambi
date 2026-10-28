@@ -8,9 +8,31 @@ Several engines can share one store. They coordinate through the store alone: ru
 
 ## Local slots
 
-`maxConcurrentRuns` (default `4`) caps the runs one engine executes at once. A scheduling pass lists `queued` runs in FIFO order (by `createdAt`, then `id`) and starts them until the slots are full. Passes run after a dispatch, after a run settles, after a resume and on every poll.
+`concurrencyMaxRuns` (default `4`) caps the runs one engine executes at once. A scheduling pass lists `queued` runs in FIFO order (by `createdAt`, then `id`) and starts them until the slots are full. Passes run after a dispatch, after a run settles, after a resume and on every poll.
 
 A `waiting` run holds no slot. A long approval wait does not block other work.
+
+::: warning TypeScript option rename
+The engine option is now `concurrencyMaxRuns`, replacing `maxConcurrentRuns` (a breaking TypeScript API change). Update engine configuration objects when upgrading. The deployment environment variable remains `CHAMVI_MAX_CONCURRENT_RUNS`; its name, default and local-engine scope are unchanged.
+:::
+
+## Shared agent and subscription ceilings
+
+Set `concurrencyMaxRuns` on an agent and, optionally, on each `channel.on(...)` subscription:
+
+<<< @/snippets/concurrency.ts#caps
+
+These are **nested ceilings**, coordinated across engines sharing a store. A run starts only when it fits the engine's local slots, its agent's ceiling, its subscription's ceiling and its concurrency key. A subscription cannot raise or disable its agent's ceiling. `undefined` or `false` means no additional numerical cap at that level; a number must be a positive safe integer. `0` is invalid, not a pause switch.
+
+Only `running` runs count against these numerical ceilings. A `waiting` approval or an `interrupted` run releases numerical capacity but still blocks its concurrency key. A resumed approval competes for capacity again. Subscription counts follow the subscription id (`run.trigger.trigger`), not the transport: REST and MCP runs of `http.on()` share its `http` cap. A direct dispatch without a matching subscription has only the agent ceiling.
+
+The scheduler checks queued work in FIFO order, skipping blocked runs so eligible work of another subscription or agent can progress. This is not weighted fairness or a guarantee against starvation. Excess work remains durably `queued`, without a separate broker; the backlog has no storage bound, so monitor queue age, run count and store capacity. A `202` intake response acknowledges stored acceptance, not that execution has started or completed.
+
+Numerical admission uses the store lock `admission:<agent>` around the count, claim and transition to `running`, also for uncapped sibling subscriptions. All replicas must use compatible agent definitions; ceilings are read from live definitions, not saved onto each run. Like the concurrency-key lock, the admission guarantee assumes its store operations finish inside the lock TTL (`claimTtlMs`), not an arbitrarily stalled database operation.
+
+`EngineOptions.concurrencyMaxRuns` and the app's `CHAMVI_MAX_CONCURRENT_RUNS` remain **per engine**, not fleet-wide. For example, two engines with four local slots can execute eight runs in total, but an agent ceiling of three permits at most three running runs of that agent across their shared store.
+
+GitHub's default per-issue concurrency key and cron's `overlap` policy are separate controls: keys serialize related work, overlap decides whether a cron tick dispatches, and numerical caps bound execution capacity.
 
 ## Concurrency keys
 

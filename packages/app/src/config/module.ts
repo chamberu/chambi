@@ -80,7 +80,7 @@ export function readConfig(env: Env, options: ReadConfigOptions): AppConfig {
             purgeIntervalMs: envInteger(env, 'CHAMVI_PURGE_INTERVAL_MS', { default: DEFAULT_PURGE_INTERVAL_MS, max: TIMER_MAX_MS }),
         },
         engine: {
-            maxConcurrentRuns: envInteger(env, 'CHAMVI_MAX_CONCURRENT_RUNS', {
+            concurrencyMaxRuns: envInteger(env, 'CHAMVI_MAX_CONCURRENT_RUNS', {
                 default: DEFAULT_MAX_CONCURRENT_RUNS,
                 min: 1,
             }),

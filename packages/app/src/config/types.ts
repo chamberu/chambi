@@ -29,7 +29,7 @@ export type AppConfig = {
         purgeIntervalMs: number;
     };
     engine: {
-        maxConcurrentRuns: number;
+        concurrencyMaxRuns: number;
     };
     scheduler: {
         enabled: boolean;

@@ -11,6 +11,8 @@ import type { ChannelSubscription } from '@chamvi/core';
 export type OverlapPolicy = 'skip' | 'queue-one' | 'allow';
 
 export type CronSubscriptionOptions = {
+    /** Shared-store execution cap within the agent; omitted or false adds no cap. */
+    concurrencyMaxRuns?: number | false;
     /** IANA zone; default the process's local zone. */
     timezone?: string;
     /** Default `skip`. */

@@ -7,6 +7,7 @@
 
 import { RunStatus } from '../../run/constants.ts';
 import type { Run } from '../../run/types.ts';
+import { admitRun } from './admission.ts';
 import { groupKey } from './helpers.ts';
 import type { RunQueueOptions } from './types.ts';
 
@@ -113,16 +114,16 @@ export class RunQueue {
     }
 
     protected async pass(): Promise<void> {
-        if (this.halted || this.running.size >= this.opts.maxConcurrentRuns) return;
+        if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
         const { store } = this.opts;
         const { data: queued } = await store.listRuns({ status: [RunStatus.QUEUED] });
         if (queued.length === 0) return;
         const mayStart = await this.opts.prepareStart?.();
         for (const run of queued) {
-            if (this.halted || this.running.size >= this.opts.maxConcurrentRuns) return;
+            if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
             if (mayStart && !mayStart(run)) continue;
 
-            const started = await this.tryStart(run);
+            const started = await admitRun(this.opts, run, (candidate) => this.tryStart(candidate), mayStart);
             if (started) this.launch(started);
         }
     }
@@ -142,8 +143,13 @@ export class RunQueue {
         try {
             return await this.transition(run, groupKey(run));
         } finally {
-            // a failing release must not strand a run that already transitioned
-            await store.release(lockKey, owner).catch((error: unknown) => this.opts.onError(error, run));
+            await store.release(lockKey, owner).catch((error: unknown) => {
+                try {
+                    this.opts.onError(error, run);
+                } catch {
+                    // A throwing reporter must not prevent launch after the running transition.
+                }
+            });
         }
     }
 
@@ -176,9 +182,10 @@ export class RunQueue {
                 status: RunStatus.RUNNING,
                 startedAt: now,
                 updatedAt: now,
-            }, { expectStatus: [RunStatus.QUEUED] });
-        } catch {
+            }, { expectStatus: [RunStatus.QUEUED], expectOwner: owner });
+        } catch (error) {
             this.running.delete(run.id);
+            this.opts.onError(error, run);
             return undefined;
         }
     }

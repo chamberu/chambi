@@ -87,7 +87,7 @@ export class EngineModule implements IModule {
             ...(this.model !== undefined && { model: this.model }),
             ...(this.models !== undefined && { models: this.models }),
             channels: container.resolveAll(AppToken.CHANNELS),
-            maxConcurrentRuns: config.engine.maxConcurrentRuns,
+            concurrencyMaxRuns: config.engine.concurrencyMaxRuns,
             clock: container.resolve(AppToken.CLOCK),
             ...(this.options.owner !== undefined && { owner: this.options.owner }),
             ...(this.options.claimTtlMs !== undefined && { claimTtlMs: this.options.claimTtlMs }),
