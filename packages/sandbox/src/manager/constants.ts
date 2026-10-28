@@ -19,3 +19,6 @@ export const CLOSE_TIMEOUT_MS = 30_000;
 
 /** Exec timeout of writing a workspace's git credentials file. */
 export const CREDENTIAL_INSTALL_TIMEOUT_MS = 30_000;
+
+/** Commits an approval of `git_push` (`push.mode: 'approve'`) lists at most. */
+export const PUSH_LOG_MAX_COMMITS = 50;

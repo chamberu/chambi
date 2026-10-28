@@ -61,6 +61,9 @@ The coding tools are not yours to edit, so the approval for `bash` sits in the a
 |---|---|---|
 | `create_workspace` | sandbox | `{ repo?, ref?, image? }`: a checkout of `repo` at `ref` with its history and the default branch beside it (`defaultBranch`), or an empty git repository, in the image asked for; the same repository again returns the same workspace (`reused: true`) |
 | `dispose_workspace` | sandbox | `{ workspace? }`: disposes one workspace |
+| `git_fetch` | sandbox | `{ remote?, refspec? }`: fetches with the run's credentials, every branch into `origin/*` by default |
+| `git_pull` | sandbox | `{ remote?, branch?, rebase? }`: fetches a branch and merges it, or rebases onto it; conflicts come back in the result |
+| `git_push` | sandbox | `{ remote?, branch?, force?, setUpstream? }`: pushes under the [push policy](#structured-git-tools-and-policy-scope) |
 | `read_file` | coding | A line range of a text file (at most 2000 lines, 65 536 characters, files up to 16 MiB); an image as an image the model sees; any file up to 1 MiB as base64; the output logs of `bash` |
 | `write_file` | coding | Replaces a file (text, or bytes as base64), creating directories |
 | `edit_file` | coding | Replaces an exact string, once (or every match with `replaceAll`); edits and writes of one file run one after the other, so several in one step all apply |
@@ -96,9 +99,9 @@ Issued tokens are redacted from results, file reads and errors (`[redacted]`, un
 
 Use ordinary `git fetch`, `git pull`, `git push` and `gh` through `bash`. The default sandbox-dev image includes GitHub CLI **2.103.3**, pinned from its official apt repository. Git's helper does not automatically authenticate `gh`; supply GitHub CLI authentication separately under your operator policy. No credentials are baked into the image. Durable `approve()` and effect tools remain available, but an agent's decision to ask before a bash write is advisory, not an enforced write boundary.
 
-### Migration from tools mode and push policy
+### Migration from tools-only credentials
 
-Remove `credentialMode` and `push` from manager/module options and remove `CHAMVI_GIT_CREDENTIAL_MODE` (it is no longer read). The `CredentialMode` and `PushPolicy` types, dedicated `git_fetch`, `git_pull`, `git_push` tools and their result types are removed. Update prompts/hooks to use bash commands and enforce write restrictions at the forge. Workspace-installed credentials are now the only mode; there is no mode promising to keep credentials inaccessible to sandbox code.
+Remove `credentialMode`, its `CredentialMode` type and `CHAMVI_GIT_CREDENTIAL_MODE`. Workspace-installed credentials are the only mode. The structured Git tools, their result types and `PushPolicy` remain available. Push checks govern `git_push` only; sandbox code with another execution path can bypass them.
 
 ## Lifecycle
 
@@ -153,3 +156,7 @@ Re-applying is safe instead: `write_file` is idempotent, `edit_file` and `multi_
 - **Credentials**: tokens are installed in the workspace and redacted from results, not isolated from sandbox code. Transformed or split tokens can escape whole-value redaction. Keep credentials out of URLs and enforce authorization with scoped grants and forge rules.
 - **A sandbox is a code-execution boundary, not a network boundary.** On a Docker bridge a workspace reaches the host gateway (the chamvi API, Postgres, an MCP server), other containers and cloud metadata (`169.254.169.254`); on Kubernetes every service in the cluster. Until the Helm chart's NetworkPolicy ships, add one yourself (select `app.kubernetes.io/component=sandbox`, allow only GitHub and the npm registry, deny the chamvi namespace and the metadata address), or on Docker a network with `enable_icc=false` plus host firewall rules.
 - **Docker socket access is root on the host.** Give chamvi a socket proxy or rootless Docker rather than the raw socket.
+
+### Structured Git tools and policy scope
+
+`manager.tools()` includes `git_fetch`, `git_pull` and `git_push` without granting a bash tool. They retain structured results, per-target credential lookup, force-with-lease, branch checks and the optional durable approval flow through `push: { mode: 'approve', channel?, allowBranch?, allowForce? }`. These checks apply only to `git_push`: bash with write credentials can bypass them. Disabling bash narrows the offered capabilities, but writable Git configuration, hooks and other indirect execution still require a threat model; the tools are not a credential-secrecy boundary. Enforce hard restrictions through token scope and forge rules.

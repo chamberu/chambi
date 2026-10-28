@@ -53,6 +53,9 @@ describe('README example', () => {
             'dispose_workspace',
             'edit_file',
             'git_diff',
+            'git_fetch',
+            'git_pull',
+            'git_push',
             'glob',
             'grep',
             'list_files',
@@ -69,24 +72,24 @@ describe('README example', () => {
         const agent = createCodingAgent(mockModel([
             {
                 parts: [{
-                    type: 'tool-call', 
-                    toolName: 'bash', 
-                    input: { command: 'rm -rf /workspace' }, 
-                    toolCallId: 'c1', 
-                }], 
+                    type: 'tool-call',
+                    toolName: 'bash',
+                    input: { command: 'rm -rf /workspace' },
+                    toolCallId: 'c1',
+                }],
             },
             { parts: [{ type: 'text', text: 'Not allowed.' }] },
         ]), workspaces);
         const engine = new Engine({
-            store: new MemoryStore(), 
-            agents: [agent], 
+            store: new MemoryStore(),
+            agents: [agent],
         });
         await engine.start();
 
         const { runId } = await engine.dispatch({
-            agent: agent.name, 
-            trigger: 'manual', 
-            channel: 'manual', 
+            agent: agent.name,
+            trigger: 'manual',
+            channel: 'manual',
             payload: {},
         });
         await engine.idle();
@@ -97,9 +100,9 @@ describe('README example', () => {
         expect(waiting?.waiting?.body).toBe('rm -rf /workspace');
 
         await engine.approve(runId, {
-            approvalId: waiting!.waiting!.approvalId, 
-            approved: false, 
-            reason: 'no', 
+            approvalId: waiting!.waiting!.approvalId,
+            approved: false,
+            reason: 'no',
         });
         await engine.idle();
 

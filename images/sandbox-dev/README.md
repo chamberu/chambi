@@ -41,6 +41,8 @@ The providers run the container as root with a writable root filesystem and only
 
 The providers add `SANDBOX_ENV` and the cache variables of `@chamvi/sandbox` (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`, all under `/cache`). The image holds no secrets, tokens or credentials, and the providers never pass the host's environment. Code in a workspace can read every value the operator configures in `env`, so put a credential there only on purpose.
 
+Git's workspace credential helper does not automatically authenticate `gh`. Configure GitHub CLI authentication separately when needed, with deliberately scoped credentials.
+
 ## Other images
 
 A run may ask for another image (`create_workspace({ image })`) only from the operator's allow-list (`allowImage`, `CHAMVI_SANDBOX_IMAGES`); the providers replace its entrypoint. The providers need `sh`, `git` and a GNU `timeout` that takes `-k` in it, plus `cat`, `head`, `mkdir`, `dirname`, `cp`, `mv` and `rm`; `create` probes the first three and fails with a message naming what is missing, before any checkout.

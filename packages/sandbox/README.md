@@ -96,6 +96,9 @@ await workspaces.close();
 |---|---|---|
 | `create_workspace` | `{ repo?, ref?, image? }` (`image` only with an allow-list, never on the local provider) | `{ workspace, root: '/workspace', repo, ref, commit, defaultBranch, image, expiresAt, reused }` |
 | `dispose_workspace` | `{ workspace? }` | `{ workspace, disposed: true }` |
+| `git_fetch` | `{ remote?, refspec?, workspace? }` | `{ workspace, remote, refspec, exitCode, stdout, stderr, timedOut }` |
+| `git_pull` | `{ remote?, branch?, rebase?, workspace? }` | the same plus `{ branch, rebase, step }` |
+| `git_push` | `{ remote?, branch?, force?, setUpstream?, workspace? }` | the same plus `{ branch, commit, pushed, forced }` |
 
 - `create_workspace` with a `repo` checks it out with its full history at `ref` (default: the default branch), a branch tracking `origin/<ref>` and the default branch fetched next to it (`defaultBranch` in the result); without one the workspace is an empty `git init`-ed directory (for "install the published package and run a repro script"). Calling it again for the same repository returns the same workspace with `reused: true`; another `ref` or `image` of a held repository is an error telling the model to dispose it first.
 - `image` picks a container image (`python:3.13`, `rust:1`) and exists only when the manager has an allow-list (`allowImage(image)`; in `sandboxModule()` also `CHAMVI_SANDBOX_IMAGES`, a comma list of exact references, which wins) and never on the local provider, which runs no images; a requested image without one, a refused or a malformed reference is a `ValidationError`, before any create. The image needs `sh`, `git` and a GNU `timeout` that takes `-k`; the provider probes them before the checkout and names what is missing. Without it the workspace runs the manager's `image`, else the provider's (`sandbox-dev`, where `mise use -g node@22` installs any toolchain).
@@ -255,6 +258,7 @@ export default createApp({ agents: [coder], modules: [sandboxModule({ provider: 
 | `credentials` | `IGitCredentials \| IGitCredentials[]` | none | Git credential sources, the first answer wins |
 | `depth` | `number` | full history | A shallow checkout |
 | `author` | `{ name, email }` | none | The commit identity |
+| `push` | `PushPolicy` | `{ mode: 'auto' }` | Approval, branch and force checks for `git_push` only |
 | `clock` | `IClock` | `systemClock` | Expiry, the collection interval, token refreshes |
 | `onError` | `(error) => void` | `console.error` | Background failures (disposal, garbage collection, credential refreshes) |
 
@@ -281,7 +285,7 @@ Misconfiguration throws core `InvalidAgentDefinitionError`.
 | `TIMEOUT_KILL_AFTER_SECONDS`, `EXEC_GRACE_MS`, `ALIVE_PROBE_TIMEOUT_MS` | constant | Remote timeout handling and the liveness probe bound |
 | `CACHE_DIR`, `CACHE_ENV`, `ROOT_CAPABILITIES`, `IMAGE_REQUIREMENTS`, `IMAGE_PROBE_TIMEOUT_MS` | constant | The cache mount and variables, the root capability set, the image probe |
 
-Types: `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult`, `ISandboxProvider`, `WorkspaceCreateOptions`, `SandboxLimits`, `IExecTransport`, `TransportExecOptions`, `TransportExecResult`, `RemoteWorkspaceInput`, `IWorkspaceManager`, `WorkspaceManagerOptions`, `AcquireInput`, `AcquireResult`, `CloseOptions`, `WorkspaceToolResult`, `DisposeWorkspaceResult`, `GitAuthor`, `IOutputCollector`, `NormalizeRepoOptions`, `CheckoutOptions`, `IGitCredentials`, `GitCredential`, `GitCredentialRequest`, `GitAccess`, `StaticGitCredential`, `Redactor`.
+Types: `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult`, `ISandboxProvider`, `WorkspaceCreateOptions`, `SandboxLimits`, `IExecTransport`, `TransportExecOptions`, `TransportExecResult`, `RemoteWorkspaceInput`, `IWorkspaceManager`, `WorkspaceManagerOptions`, `AcquireInput`, `AcquireResult`, `CloseOptions`, `WorkspaceToolResult`, `DisposeWorkspaceResult`, `GitAuthor`, `PushPolicy`, `GitFetchResult`, `GitPullResult`, `GitPushResult`, `IOutputCollector`, `NormalizeRepoOptions`, `CheckoutOptions`, `IGitCredentials`, `GitCredential`, `GitCredentialRequest`, `GitAccess`, `StaticGitCredential`, `Redactor`.
 
 `@chamvi/sandbox/module`: `sandboxModule`, `SandboxModule`, `SANDBOX_MODULE_NAME`, `SANDBOX_PROVIDER_NAMES`, types `SandboxModuleOptions`, `SandboxProviderName`.
 
@@ -291,4 +295,8 @@ Published under [Apache License 2.0](./LICENSE).
 
 ### Bash-first migration
 
-Remove `credentialMode`, `push` and `CHAMVI_GIT_CREDENTIAL_MODE`. The dedicated `git_fetch`, `git_pull`, `git_push` tools, their result types, `CredentialMode` and `PushPolicy` are removed. Use ordinary Git commands through bash. Credentials are installed in the workspace and are accessible to its code. Durable approval is advisory unless enforced outside the sandbox.
+Remove `credentialMode`, its `CredentialMode` type and `CHAMVI_GIT_CREDENTIAL_MODE`. Workspace-installed credentials are the only mode. The structured Git tools, their result types and `PushPolicy` remain available. Push checks govern `git_push` only; sandbox code with another execution path can bypass them.
+
+### Structured Git tools and policy scope
+
+`manager.tools()` includes `git_fetch`, `git_pull` and `git_push` without granting a bash tool. They retain structured results, per-target credential lookup, force-with-lease, branch checks and the optional durable approval flow through `push: { mode: 'approve', channel?, allowBranch?, allowForce? }`. These checks apply only to `git_push`: bash with write credentials can bypass them. Disabling bash narrows the offered capabilities, but writable Git configuration, hooks and other indirect execution still require a threat model; the tools are not a credential-secrecy boundary. Enforce hard restrictions through token scope and forge rules.
