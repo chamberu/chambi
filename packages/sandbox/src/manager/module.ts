@@ -29,7 +29,6 @@ import {
     offersImage,
     toSandboxError,
 } from './helpers.ts';
-import { createGitTools } from './git-tools.ts';
 import { createWorkspaceTools } from './tools.ts';
 import type {
     AcquireInput,
@@ -98,7 +97,6 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
     const sources = credentialSources(options.credentials);
     const credentials = sources.length === 0 ? undefined : createCredentialSupport({
         sources,
-        mode: options.credentialMode ?? 'workspace',
         clock,
         onError: (error) => onError(error),
     });
@@ -228,10 +226,12 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
 
         return (async () => {
             let workspace: IWorkspace;
+            let authenticated: boolean;
             try {
                 const credential = createOptions.repo === undefined || !credentials ?
                     undefined :
                     await credentials.lookup(createOptions.repo, 'read', runId, createOptions.signal);
+                authenticated = credential !== undefined;
                 if (credential || options.depth !== undefined) {
                     createOptions.checkout = {
                         ...(options.depth !== undefined && { depth: options.depth }),
@@ -254,7 +254,8 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             }
             entry.workspace = workspace;
             entry.image ??= workspace.info.image;
-            await credentials?.refresh(workspace, { fresh: true });
+            // an authenticated checkout left its read credential in the file
+            await credentials?.refresh(workspace, { fresh: !authenticated });
             return workspace;
         })();
     };
@@ -522,15 +523,7 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         release,
         attach,
         tools: () => {
-            tools ??= {
-                ...createWorkspaceTools(manager, { image: offersImage(options.provider, options.allowImage) }),
-                ...createGitTools({
-                    manager,
-                    lookup: async (url, access, runId, signal) => credentials?.lookup(url, access, runId, signal),
-                    normalize: (repo) => normalizeRepo(repo, { allowFileRepos: options.allowFileRepos, allowRepo: options.allowRepo }),
-                    push: options.push ?? {},
-                }),
-            };
+            tools ??= { ...createWorkspaceTools(manager, { image: offersImage(options.provider, options.allowImage) }) };
             return tools;
         },
         collectGarbage,

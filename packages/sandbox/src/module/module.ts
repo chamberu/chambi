@@ -31,7 +31,6 @@ import type { IWorkspaceManager } from '../manager/types.ts';
 import { DEFAULT_SANDBOX_IMAGE } from '../provider/constants.ts';
 import type { ISandboxProvider } from '../provider/types.ts';
 import {
-    CREDENTIAL_MODES,
     SANDBOX_MODULE_NAME,
     SANDBOX_PROVIDER_IDS,
     SANDBOX_PROVIDER_NAMES,
@@ -164,13 +163,11 @@ export class SandboxModule implements IModule {
         }
 
         const credentials = this.credentialSources(env, managerOptions.credentials);
-        const credentialMode = envOneOf(env, 'CHAMVI_GIT_CREDENTIAL_MODE', CREDENTIAL_MODES) ?? managerOptions.credentialMode;
         const allowImage = readImageAllowList(env) ?? managerOptions.allowImage;
         try {
             this.manager = createWorkspaceManager({
                 ...managerOptions,
                 credentials,
-                ...(credentialMode && { credentialMode }),
                 provider: target,
                 ...(allowImage && { allowImage }),
                 ...(workspaceEnv && { env: workspaceEnv }),

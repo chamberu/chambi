@@ -24,7 +24,6 @@ import type { IWorkspace } from '../workspace/types.ts';
 import type { ISandboxProvider } from '../provider/types.ts';
 import type {
     GitAuthor,
-    PushPolicy,
     WorkspaceManagerOptions,
     WorkspaceToolResult,
 } from './types.ts';
@@ -98,14 +97,10 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
         throw new InvalidAgentDefinitionError('onError must be a function.');
     }
     credentialSources(options.credentials);
-    if (options.credentialMode !== undefined && options.credentialMode !== 'workspace' && options.credentialMode !== 'tools') {
-        throw new InvalidAgentDefinitionError('credentialMode must be "workspace" or "tools".');
-    }
     if (options.depth !== undefined && (!Number.isSafeInteger(options.depth) || options.depth < 1)) {
         throw new InvalidAgentDefinitionError('depth must be an integer of at least 1.');
     }
     authorEnv(options.author);
-    assertPushPolicy(options.push);
 }
 
 /** The credential sources as a list, else InvalidAgentDefinitionError. */
@@ -131,18 +126,6 @@ export function authorEnv(author: GitAuthor | undefined): Record<string, string>
         GIT_COMMITTER_NAME: author.name,
         GIT_COMMITTER_EMAIL: author.email,
     };
-}
-
-function assertPushPolicy(push: PushPolicy | undefined): void {
-    if (push === undefined) return;
-    const fail = (rule: string) => new InvalidAgentDefinitionError(`push ${rule}`);
-    if (!isObject(push)) throw fail('must be an object { mode?, allowForce?, allowBranch?, channel? }.');
-    if (push.mode !== undefined && push.mode !== 'auto' && push.mode !== 'approve') throw fail('mode must be "auto" or "approve".');
-    if (push.allowForce !== undefined && typeof push.allowForce !== 'boolean') throw fail('allowForce must be a boolean.');
-    if (push.allowBranch !== undefined && typeof push.allowBranch !== 'function') throw fail('allowBranch must be a function.');
-    if (push.channel !== undefined && (typeof push.channel !== 'string' || push.channel.length === 0)) {
-        throw fail('channel must be a non-empty channel name.');
-    }
 }
 
 /** True for the statuses after which a run never executes again. */

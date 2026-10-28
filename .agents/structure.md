@@ -286,3 +286,8 @@ Folders without an `index.ts` export nothing public; other modules import the fi
 | `app/views/` | `LoginView`, `LoginCallbackView`, `AgentsView`, `AgentView`, `RunsView`, `RunView`, `ApprovalsView`, `SchedulesView` |
 | `vite.config.ts` | Root `app`, out `dist/app`, `base: './'` for the build, the dev proxy to port 3000, the `virtual:chamvi-icons` plugin |
 | `test/e2e/` | `smoke.spec.ts` (Playwright), `demo/` (`server.ts`, `model.ts`, `constants.ts`) |
+
+
+## Bash-first update (#59 and #72, 2026-10-28)
+
+This update supersedes the older tools-mode and dedicated Git-tool descriptions above. `credentialMode`, `CredentialMode`, `push`, `PushPolicy`, `git_fetch`, `git_pull`, `git_push`, `GIT_AUTH_SCRIPT` and their tool-only tests are removed. `manager.tools()` contains only workspace creation/disposal. Initial private checkout installs the read credential using `INSTALL_CREDENTIALS_SCRIPT` and the existing workspace helper before ls-remote/fetch. The manager refreshes repository write credentials (read fallback) and host read credentials, preserving source precedence, redaction, expiry and retry behavior. Use ordinary git commands through bash. Sandbox code can access credentials; token grants, installation scope and forge protections enforce authorization. GitHub CLI 2.103.3 is installed in sandbox-dev from its official apt repository; the Git credential helper does not authenticate gh automatically. Tests cover private checkout and ordinary Git via the local HTTPS fixture, workspace-helper scripts, refresh and redaction, rather than dedicated Git tools.

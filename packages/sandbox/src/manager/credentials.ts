@@ -10,20 +10,18 @@ import type { IClock } from '@chamvi/core';
 import { CREDENTIAL_REFRESH_MS, CREDENTIAL_RETRY_MS } from '../credentials/constants.ts';
 import { createRedactor, credentialRequest, resolveGitCredential } from '../credentials/helpers.ts';
 import type {
-    CredentialMode,
     GitAccess,
     GitCredential,
     IGitCredentials,
     Redactor,
 } from '../credentials/types.ts';
-import { CLEAR_CREDENTIALS_SCRIPT, CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../git/constants.ts';
+import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../git/constants.ts';
 import { credentialKey, credentialsFileContent, urlOrigin } from '../git/helpers.ts';
 import type { ExecResult, IWorkspace } from '../workspace/types.ts';
 import { CREDENTIAL_INSTALL_TIMEOUT_MS } from './constants.ts';
 
 /** The credential handling of one manager; only built when it has credential sources. */
 export type CredentialSupport = {
-    readonly mode: CredentialMode;
     readonly redactor: Redactor;
     /**
      * The first credential the sources answer for an https `url` (redacted
@@ -32,20 +30,19 @@ export type CredentialSupport = {
      */
     lookup(url: string, access: GitAccess, runId: string, signal?: AbortSignal): Promise<GitCredential | undefined>;
     /**
-     * In `workspace` mode, writes the credentials file of `workspace` (raw,
+     * Writes the credentials file of `workspace` (raw,
      * not wrapped) when it has none from this process yet, or one of its
      * credentials expires within `CREDENTIAL_REFRESH_MS`: the repository's
      * write credential, else (none, or a failing write lookup, reported to
      * `onError`) its read credential. A credential already inside that
      * window is rewritten `CREDENTIAL_RETRY_MS` later at the earliest. A failure goes to
      * `onError` and is retried `CREDENTIAL_RETRY_MS` later; it never throws.
-     * A workspace this process created (`fresh`) holds no file yet; one it
-     * found again may hold an earlier process's, which the first install
-     * overwrites (or clears). In `tools` mode it removes that file once,
-     * before the first exec of a workspace found again (an earlier
-     * workspace-mode process's tokens, which this process never issued and
-     * so never redacts). The file is never read back: it is
-     * model-writable, so its content is no secret to redact.
+     * A workspace this process created anonymously (`fresh`) holds no file
+     * yet; one whose checkout was authenticated holds the read credential,
+     * and one it found again may hold an earlier process's: the first
+     * install overwrites (or clears) both. The file is never read back: it
+     * is writable from inside the workspace, so its content is no secret to
+     * redact.
      */
     refresh(workspace: IWorkspace, options?: { fresh?: boolean }): Promise<void>;
     /** The workspace the manager hands out: redacting and refreshing before each call. One per raw workspace. */
@@ -73,13 +70,11 @@ function isHttps(url: string): boolean {
 
 export function createCredentialSupport(input: {
     sources: readonly IGitCredentials[];
-    mode: CredentialMode;
     clock: IClock;
     onError: (error: unknown) => void;
 }): CredentialSupport {
     const {
         sources,
-        mode,
         clock,
         onError,
     } = input;
@@ -136,16 +131,6 @@ export function createCredentialSupport(input: {
         return Math.max(Math.min(...expiries) - CREDENTIAL_REFRESH_MS, clock.now().getTime() + CREDENTIAL_RETRY_MS);
     };
 
-    /** Tools mode: removes the file an earlier workspace-mode process may have left (never rewritten). */
-    const clear = async (workspace: IWorkspace): Promise<undefined> => {
-        const result = await workspace.exec(['sh', '-c', CLEAR_CREDENTIALS_SCRIPT], { timeoutMs: CREDENTIAL_INSTALL_TIMEOUT_MS });
-        if (result.exitCode !== 0 || result.timedOut) {
-            const reason = result.timedOut ? 'timed out' : `exited with ${result.exitCode}`;
-            throw new SandboxError(`removing the git credentials of workspace ${workspace.id} ${reason}: ${redactor.redact(result.stderr.trim()).slice(0, 500)}`);
-        }
-        return undefined;
-    };
-
     const stateOf = (workspace: IWorkspace): InstallState | undefined => {
         const { repo } = workspace.info;
         if (repo === undefined || !isHttps(repo)) return undefined;
@@ -161,14 +146,12 @@ export function createCredentialSupport(input: {
         const state = stateOf(workspace);
         if (!state) return;
         if (options.fresh) state.empty = true;
-        // tools mode writes no file; a workspace it created holds none
-        if (mode !== 'workspace' && state.empty === true) return;
         const now = clock.now().getTime();
         if (state.installed && (state.refreshAt === undefined || now < state.refreshAt)) return;
         if (state.retryAt !== undefined && now < state.retryAt) return;
         if (!state.pending) {
             const current = state;
-            const write = mode === 'workspace' ? install(workspace, current) : clear(workspace);
+            const write = install(workspace, current);
             current.pending = write.then((refreshAt) => {
                 current.installed = true;
                 current.empty = undefined;
@@ -233,7 +216,6 @@ export function createCredentialSupport(input: {
     };
 
     return {
-        mode,
         redactor,
         lookup,
         refresh,

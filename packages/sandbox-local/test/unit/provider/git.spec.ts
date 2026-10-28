@@ -8,7 +8,6 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ToolSet } from 'ai';
 import {
     afterAll,
     beforeAll,
@@ -16,10 +15,9 @@ import {
     expect,
     it,
 } from 'vitest';
-import { MemoryStore, SandboxError, createAgentState } from '@chamvi/core';
-import type { IRunArtifacts, ToolContext } from '@chamvi/core';
+import { SandboxError } from '@chamvi/core';
 import { createWorkspaceManager, staticGitCredentials } from '@chamvi/sandbox';
-import type { CredentialMode, GitPushResult, IWorkspaceManager } from '@chamvi/sandbox';
+import type { IWorkspaceManager } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import { createGitFixture } from '@chamvi/test-kit';
 import type { GitFixture } from '@chamvi/test-kit';
@@ -27,36 +25,6 @@ import { canServeGit, startGitServer } from '../../utils/git-server.ts';
 import type { GitServer } from '../../utils/git-server.ts';
 
 const TOKEN = 'glpat-s3cretPrivateToken';
-
-function toolContext(runId: string): ToolContext {
-    return {
-        channels: {} as ToolContext['channels'],
-        run: {
-            runId,
-            agent: 'coder',
-            trigger: {
-                id: `env-${runId}`,
-                agent: 'coder',
-                trigger: 'http',
-                channel: 'http',
-                payload: {},
-                receivedAt: new Date(0),
-            },
-            signal: new AbortController().signal,
-        },
-        state: createAgentState('coder', undefined, new MemoryStore()),
-        artifacts: {} as IRunArtifacts,
-    };
-}
-
-async function call<T>(tools: ToolSet, name: string, input: unknown): Promise<T> {
-    const execute = tools[name]!.execute as (i: unknown, o: unknown) => Promise<unknown>;
-    return await execute(input, {
-        toolCallId: 'call-1', 
-        messages: [], 
-        context: toolContext('r1'), 
-    }) as T;
-}
 
 const serving = await canServeGit();
 
@@ -71,9 +39,9 @@ describe.skipIf(!serving && !process.env.CI)('git against a private https host',
         await fixture.git('commit', '-q', '--allow-empty', '-m', 'feature work');
         await fixture.git('switch', '-q', 'main');
         server = await startGitServer({
-            repos: { demo: fixture.path }, 
-            username: 'oauth2', 
-            password: TOKEN, 
+            repos: { demo: fixture.path },
+            username: 'oauth2',
+            password: TOKEN,
         });
         tmp = await mkdtemp(join(tmpdir(), 'chamvi-local-git-'));
     }, 60_000);
@@ -86,17 +54,16 @@ describe.skipIf(!serving && !process.env.CI)('git against a private https host',
 
     const repoUrl = () => `${server.origin}/demo.git`;
 
-    function manager(mode?: CredentialMode, root = join(tmp, String(Math.random()).slice(2))): IWorkspaceManager {
+    function manager(root = join(tmp, String(Math.random()).slice(2)), token = TOKEN): IWorkspaceManager {
         return createWorkspaceManager({
             provider: createLocalSandbox({ root, env: { GIT_SSL_CAINFO: server.caFile } }),
             gcIntervalMs: 0,
             credentials: staticGitCredentials([{
-                host: server.host, 
-                token: TOKEN, 
-                username: 'oauth2', 
+                host: server.host,
+                token,
+                username: 'oauth2',
             }]),
             author: { name: 'chamvi test', email: 'test@chamvi.dev' },
-            ...(mode && { credentialMode: mode }),
         });
     }
 
@@ -112,41 +79,54 @@ describe.skipIf(!serving && !process.env.CI)('git against a private https host',
         }
     }, 60_000);
 
-    it('tools mode: checks out and pushes with the token kept out of the workspace', async () => {
-        const workspaces = manager('tools');
+    it('checks out a private branch through the workspace helper, then plain git fetches, pulls and pushes', async () => {
+        const workspaces = manager();
         try {
             const { workspace } = await workspaces.acquire('r1', { repo: repoUrl(), ref: 'feature' });
             expect(workspace.info.defaultBranch).toBe('main');
             const sh = async (command: string) => workspace.exec(['sh', '-c', command]);
 
-            for (const probe of ['cat .git/config', 'env', 'cat "$HOME/.gitconfig" "$HOME/.chamvi/credentials" 2>&1; true']) {
-                const result = await sh(probe);
-                expect(result.stdout + result.stderr).not.toContain(TOKEN);
-            }
-            // a plain fetch in bash has no credentials
-            expect((await sh('git fetch origin 2>&1')).exitCode).not.toBe(0);
-
-            expect((await sh('echo fix > fix.txt && git add fix.txt && git commit -q -m fix')).exitCode).toBe(0);
-            const pushed = await call<GitPushResult>(workspaces.tools(), 'git_push', {});
-            expect(pushed).toMatchObject({
-                pushed: true, 
-                branch: 'feature', 
-                exitCode: 0, 
-            });
-            expect(JSON.stringify(pushed)).not.toContain(TOKEN);
-            expect((await server.git('demo', 'rev-parse', 'refs/heads/feature')).trim()).toBe(pushed.commit);
-            expect((await server.git('demo', 'log', '-1', '--format=%an <%ae>', 'refs/heads/feature')).trim()).toBe('chamvi test <test@chamvi.dev>');
-
-            // the default branch is refused
-            await expect(call(workspaces.tools(), 'git_push', { branch: 'main' })).rejects.toThrow(/not allowed/);
-            const fetched = await call<{ exitCode: number }>(workspaces.tools(), 'git_fetch', {});
-            expect(fetched.exitCode).toBe(0);
+            expect((await sh('git rev-parse --abbrev-ref HEAD')).stdout.trim()).toBe('feature');
+            expect((await sh('git log -1 --format=%s')).stdout.trim()).toBe('feature work');
+            expect((await sh('git fetch -q origin && git pull -q --no-rebase origin feature')).exitCode).toBe(0);
+            expect((await sh('echo fix > fix.txt && git add fix.txt && git commit -q -m fix && git push -q origin feature 2>&1')).exitCode).toBe(0);
+            expect((await server.git('demo', 'log', '-1', '--format=%s %an <%ae>', 'refs/heads/feature')).trim()).toBe('fix chamvi test <test@chamvi.dev>');
         } finally {
             await workspaces.close();
         }
     }, 60_000);
 
-    it('workspace mode: plain git works through the helper and the token comes back redacted', async () => {
+    it('fails a checkout with a refused token without echoing it', async () => {
+        const wrong = 'glpat-wrongTokenValue';
+        const workspaces = manager(undefined, wrong);
+        try {
+            const error = await workspaces.acquire('r1', { repo: repoUrl() }).catch((e: unknown) => e);
+            expect(error).toBeInstanceOf(SandboxError);
+            expect((error as Error).message).toMatch(/checkout failed: git ls-remote/);
+            expect((error as Error).message).not.toContain(wrong);
+        } finally {
+            await workspaces.close();
+        }
+    }, 60_000);
+
+    it('installs the credentials again into a workspace a restarted process finds', async () => {
+        const root = join(tmp, 'restart');
+        const first = manager(root);
+        const { workspace } = await first.acquire('r1', { repo: repoUrl() });
+        await first.close();
+        const restarted = manager(root);
+        try {
+            const found = await restarted.get('r1');
+            expect(found.id).toBe(workspace.id);
+            const file = await found.exec(['sh', '-c', 'cat "$HOME/.chamvi/credentials"']);
+            expect(file.stdout).toContain('[redacted]');
+            expect((await found.exec(['git', 'fetch', '-q', 'origin'])).exitCode).toBe(0);
+        } finally {
+            await restarted.close({ dispose: true });
+        }
+    }, 60_000);
+
+    it('keeps the token in the 0600 file only, and answers it redacted', async () => {
         const workspaces = manager();
         try {
             const { workspace } = await workspaces.acquire('r1', { repo: repoUrl() });

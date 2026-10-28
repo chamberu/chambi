@@ -98,12 +98,11 @@ describe('sandboxModule git credentials', () => {
         }
     });
 
-    it('reads the credential mode from CHAMVI_GIT_CREDENTIAL_MODE', async () => {
+    it('installs the workspace credentials whatever CHAMVI_GIT_CREDENTIAL_MODE says (the variable is gone)', async () => {
         const provider = createFakeProvider();
         const module = sandboxModule({
             provider,
             gcIntervalMs: 0,
-            credentialMode: 'workspace',
             env: {
                 CHAMVI_GIT_TOKENS: JSON.stringify([{ host: 'github.com', token: 'ghp_envtoken' }]),
                 CHAMVI_GIT_CREDENTIAL_MODE: 'tools',
@@ -112,8 +111,9 @@ describe('sandboxModule git credentials', () => {
         const { workspace } = await module.manager.acquire('r1', { repo: 'octo/demo' });
         await workspace.exec(['true']);
         const raw = provider.workspaces.get(workspace.id)!;
-        expect(raw.calls.some((call) => call.argv[2] === INSTALL_CREDENTIALS_SCRIPT)).toBe(false);
-        expect(() => sandboxModule({ provider, env: { CHAMVI_GIT_CREDENTIAL_MODE: 'env' } })).toThrow(/CHAMVI_GIT_CREDENTIAL_MODE/);
+        expect(raw.calls.some((call) => call.argv[2] === INSTALL_CREDENTIALS_SCRIPT)).toBe(true);
+        // a value the former parser refused is ignored too
+        expect(() => sandboxModule({ provider, env: { CHAMVI_GIT_CREDENTIAL_MODE: 'env' } })).not.toThrow();
         await module.manager.close();
     });
 

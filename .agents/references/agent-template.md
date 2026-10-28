@@ -23,3 +23,7 @@
 - CI (`.github/workflows/ci.yml`): test, typecheck, lint on Node 22 and 24; actionlint and shellcheck; docker smoke; kubeconform on `deploy/flux` (Flux v2.9.6 CRDs) and a `helm template` of the published chart; image push through `tada5hi/craneship@v4` with tags from `scripts/image-tags.sh` (pushes to `main` and `v*` tags only).
 - `package-lock.json` must resolve only to `https://registry.npmjs.org/` (`lockfile.spec.ts`).
 - Template files carry no copyright header (starter code the user owns); no release-please, commitlint or husky.
+
+## Bash-first migration (2026-10-28)
+
+Reviewed local template commit 0374e2b. `.env.example:49-50` advertises CHAMVI_GIT_CREDENTIAL_MODE and dedicated Git tools; remove those lines when consuming #59. Keep token and author configuration. No source/test consumer found. Downstream follow-up is separate from the monorepo PR.

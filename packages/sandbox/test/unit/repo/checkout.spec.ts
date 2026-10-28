@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
 import type { IClock } from '@chamvi/core';
 import { EXEC_TIMEOUT_MS, prepareWorkspace, readCheckout } from '@chamvi/sandbox';
+import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
 import { CHECKOUT_READ_ATTEMPTS } from '../../../src/repo/constants.ts';
 import { createScriptedWorkspace } from '../../utils/workspace.ts';
 
@@ -26,6 +27,7 @@ const immediateClock: IClock = {
 
 const head = `ref: refs/heads/main\tHEAD\n${sha}\tHEAD\n`;
 const NO_CREDENTIAL = ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null'];
+const AUTHENTICATED = ['git', '-c', 'core.hooksPath=/dev/null'];
 
 /** A remote whose default branch is main and whose branches are `branches`. */
 function remote(branches: string[] = ['main']) {
@@ -90,19 +92,72 @@ describe('prepareWorkspace', () => {
         expect(result).toEqual({ commit: sha });
     });
 
-    it('authenticates ls-remote and fetch with a credential on stdin only', async () => {
+    it('installs the workspace credential helper before ls-remote and fetch, the credential on stdin only', async () => {
         const workspace = remote();
         await prepareWorkspace(workspace, { repo: url, credential: { username: 'x-access-token', password: 'ghs_secret' } });
-        const authenticated = workspace.calls.filter((call) => call.argv[0] === 'sh');
-        expect(authenticated.map((call) => call.argv.slice(4, 8))).toEqual([
-            [url, 'https://github.com', 'octo/demo', 'ls-remote'],
-            [url, 'https://github.com', 'octo/demo', 'fetch'],
+        const content = 'https://github.com/octo/demo\tx-access-token\tghs_secret\n';
+        expect(workspace.calls.map((call) => call.argv)).toEqual([
+            ['git', 'init', '-q', '.'],
+            ['git', 'remote', 'add', 'origin', url],
+            ['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(content))],
+            [...AUTHENTICATED, 'ls-remote', '--symref', url, 'HEAD'],
+            [...AUTHENTICATED, 'fetch', '-q', 'origin', 'main'],
+            ['git', 'rev-parse', '-q', '--verify', 'refs/remotes/origin/main'],
+            ['git', 'checkout', '-q', '-B', 'main', '--track', 'origin/main'],
+            ['git', 'rev-parse', 'HEAD'],
+            ['git', 'config', 'chamvi.defaultBranch', 'main'],
+            ['git', 'config', 'chamvi.checkout', sha],
         ]);
         for (const call of workspace.calls) {
+            // the installed helper answers: an authenticated call never resets it
+            expect(call.argv).not.toContain('credential.helper=');
             expect(call.argv.join(' ')).not.toContain('ghs_secret');
-            if (call.argv[0] === 'sh') expect(call.options.stdin).toBe('x-access-token\nghs_secret\n');
+            if (call.argv[2] === INSTALL_CREDENTIALS_SCRIPT) expect(call.options.stdin).toBe(content);
             else expect(call.options.stdin).toBeUndefined();
         }
+    });
+
+    it('fails the checkout without running git remotely when the helper install fails, never echoing the credential', async () => {
+        const workspace = createScriptedWorkspace((argv) => (argv[2] === INSTALL_CREDENTIALS_SCRIPT ?
+            { exitCode: 1, stderr: 'head: cannot write ghs_secret\n' } :
+            {}));
+        const error = await prepareWorkspace(workspace, { repo: url, credential: { username: 'u', password: 'ghs_secret' } }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).toMatch(/checkout failed: .*credential/);
+        expect((error as Error).message).not.toContain('ghs_secret');
+        expect(workspace.calls.some((call) => call.argv.includes('ls-remote'))).toBe(false);
+    });
+
+    it('redacts the credential when the transport throws during installation or checkout', async () => {
+        for (const installation of [true, false]) {
+            const workspace = createScriptedWorkspace((argv) => {
+                if (installation ? argv[2] === INSTALL_CREDENTIALS_SCRIPT : argv.includes('ls-remote')) {
+                    throw new SandboxError('transport echoed ghs_secret');
+                }
+                return {};
+            });
+            const error = await prepareWorkspace(workspace, { repo: url, credential: { username: 'u', password: 'ghs_secret' } }).catch((e: unknown) => e);
+            expect(error).toBeInstanceOf(SandboxError);
+            expect((error as Error).message).not.toContain('ghs_secret');
+            expect((error as Error).cause).toBeUndefined();
+        }
+    });
+
+    it('redacts the credential from a failed authenticated step', async () => {
+        const workspace = createScriptedWorkspace((argv) => (argv.includes('fetch') ?
+            { exitCode: 128, stderr: 'fatal: https://u:ghs_secret@github.com refused\n' } :
+            {}));
+        const error = await prepareWorkspace(workspace, { repo: url, credential: { username: 'u', password: 'ghs_secret' } }).catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).toContain('git fetch exited with 128');
+        expect((error as Error).message).not.toContain('ghs_secret');
+    });
+
+    it('checks out a file repository anonymously, even with a credential', async () => {
+        const workspace = remote();
+        await prepareWorkspace(workspace, { repo: 'file:///tmp/r', credential: { username: 'u', password: 'ghs_secret' } });
+        expect(workspace.calls.some((call) => call.argv[2] === INSTALL_CREDENTIALS_SCRIPT)).toBe(false);
+        expect(workspace.calls[2]?.argv).toEqual([...NO_CREDENTIAL, 'ls-remote', '--symref', 'file:///tmp/r', 'HEAD']);
     });
 
     it('runs every command with the exec timeout and the signal', async () => {

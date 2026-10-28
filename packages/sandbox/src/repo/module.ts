@@ -23,8 +23,10 @@ import {
     NO_REPO_CHECKOUT,
     REPO_RULE,
 } from './constants.ts';
+import { REDACTED, REDACT_MIN_LENGTH } from '../credentials/constants.ts';
 import { decodeRepoPath } from '../credentials/helpers.ts';
-import { gitArgv } from '../git/module.ts';
+import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../git/constants.ts';
+import { credentialKey, credentialsFileContent } from '../git/helpers.ts';
 import {
     hasUnsafeCharacter,
     isGitRef,
@@ -95,8 +97,12 @@ export function assertGitRef(ref: string): void {
  * (`ls-remote --symref`), one fetch of `ref` (default: the default branch)
  * and the default branch, with full history unless `depth` is given; a
  * branch is checked out as a local branch tracking `origin/<ref>`, a tag or
- * commit detached. With a `credential`, `ls-remote` and the fetch get it over
- * stdin (`GIT_AUTH_SCRIPT`). Records the default branch, then, as the last
+ * commit detached. With a `credential` for an https repository, the
+ * workspace credential helper is installed first (`INSTALL_CREDENTIALS_SCRIPT`,
+ * the credential over stdin only), so `ls-remote`, the fetch and every later
+ * git call of the workspace authenticate through it; without one (or for a
+ * `file://` repository) every credential helper is reset for the remote
+ * calls. Hooks are off for the remote calls either way. Records the default branch, then, as the last
  * step, the end of the checkout as `git config chamvi.checkout` (the commit,
  * `none` for a repo-less workspace; `readCheckout`). Returns HEAD and the
  * default branch.
@@ -130,23 +136,41 @@ export async function prepareWorkspace(
         throw new ValidationError('depth must be an integer of at least 1.');
     }
 
-    const step = async (name: string, argv: string[], stdin?: string, allowFailure = false) => {
-        const result = await workspace.exec(argv, {
-            timeoutMs: EXEC_TIMEOUT_MS,
-            signal,
-            ...(stdin !== undefined && { stdin }),
-        });
-        if ((result.exitCode !== 0 && !allowFailure) || result.timedOut) {
-            const reason = result.timedOut ? 'timed out' : `exited with ${result.exitCode}`;
-            const stderr = result.stderr.trim().slice(0, CHECKOUT_STDERR_MAX_LENGTH);
-            throw new SandboxError(`checkout failed: git ${name} ${reason}${stderr ? `: ${stderr}` : ''}`);
+    // the credential never reaches a message, also when git or a script echoes it
+    const secret = repo !== undefined && repo.startsWith('https://') && credential ? credential.password : undefined;
+    const redact = (text: string) => (secret && secret.length >= REDACT_MIN_LENGTH ? text.split(secret).join(REDACTED) : text);
+    const fail = (what: string, result: {
+        exitCode: number;
+        timedOut: boolean;
+        stderr: string
+    }) => {
+        const reason = result.timedOut ? 'timed out' : `exited with ${result.exitCode}`;
+        const stderr = redact(result.stderr.trim()).slice(0, CHECKOUT_STDERR_MAX_LENGTH);
+        return new SandboxError(`checkout failed: ${what} ${reason}${stderr ? `: ${stderr}` : ''}`);
+    };
+    const exec = async (argv: string[], stdin?: string) => {
+        try {
+            return await workspace.exec(argv, {
+                stdin,
+                timeoutMs: EXEC_TIMEOUT_MS,
+                signal,
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (redact(message) !== message) throw new SandboxError(redact(message));
+            throw error;
         }
+    };
+    const step = async (name: string, argv: string[], allowFailure = false) => {
+        const result = await exec(argv);
+        if ((result.exitCode !== 0 && !allowFailure) || result.timedOut) throw fail(`git ${name}`, result);
         return result;
     };
-    const remoteStep = (name: string, args: string[]) => {
-        const { argv, stdin } = gitArgv(repo!, args, credential);
-        return step(name, argv, stdin);
-    };
+    // with a credential the installed helper answers, so it is not reset
+    const remoteGit = secret ?
+        ['git', '-c', 'core.hooksPath=/dev/null'] :
+        ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null'];
+    const remoteStep = (name: string, args: string[]) => step(name, [...remoteGit, ...args]);
 
     await step('init', ['git', 'init', '-q', '.']);
     if (repo === undefined) {
@@ -155,6 +179,14 @@ export async function prepareWorkspace(
         return {};
     }
     await step('remote', ['git', 'remote', 'add', 'origin', repo]);
+    if (secret) {
+        const content = credentialsFileContent([{ key: credentialKey(repo), ...credential! }]);
+        const result = await exec(
+            ['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(content))],
+            content,
+        );
+        if (result.exitCode !== 0 || result.timedOut) throw fail('installing the git credential', result);
+    }
 
     const announced = parseDefaultBranch((await remoteStep('ls-remote', ['ls-remote', '--symref', repo, 'HEAD'])).stdout);
     // a name git would refuse (or read as an option) is no default branch
@@ -165,7 +197,7 @@ export async function prepareWorkspace(
     await remoteStep('fetch', ['fetch', '-q', ...(depth === undefined ? [] : ['--depth', String(depth)]), 'origin', ...refs]);
 
     const isBranch = target !== undefined &&
-        (await step('rev-parse', ['git', 'rev-parse', '-q', '--verify', `refs/remotes/origin/${target}`], undefined, true)).exitCode === 0;
+        (await step('rev-parse', ['git', 'rev-parse', '-q', '--verify', `refs/remotes/origin/${target}`], true)).exitCode === 0;
     await step('checkout', isBranch ?
         ['git', 'checkout', '-q', '-B', target, '--track', `origin/${target}`] :
         ['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']);

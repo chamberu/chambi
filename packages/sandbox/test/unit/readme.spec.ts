@@ -26,7 +26,7 @@ describe('README example', () => {
             agents: [],
         });
         const manager = createWorkspaces(createFakeProvider(), engine);
-        expect(Object.keys(manager.tools()).sort()).toEqual(['create_workspace', 'dispose_workspace', 'git_fetch', 'git_pull', 'git_push']);
+        expect(Object.keys(manager.tools()).sort()).toEqual(['create_workspace', 'dispose_workspace']);
         await expect(manager.close()).resolves.toBeUndefined();
     });
 });
