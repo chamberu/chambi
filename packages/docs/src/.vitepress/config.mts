@@ -125,6 +125,7 @@ export default defineConfig({
                         { text: 'Execution & Checkpoints', link: '/guide/execution' },
                         { text: 'Budgets & Timeouts', link: '/guide/budgets' },
                         { text: 'Tools & Tool Errors', link: '/guide/tools' },
+                        { text: 'Approved Local Skills', link: '/guide/skills' },
                         { text: 'Effect Tools & Reconciliation', link: '/guide/effect-tools' },
                         { text: 'Approvals & Hooks', link: '/guide/approvals' },
                         { text: 'Hand-offs', link: '/guide/handoffs' },

@@ -41,3 +41,11 @@ Documentation follow-up in chamvi/helm: explain known-source app `trustProxy` (I
 ## Bash-first review (2026-10-28)
 
 Reviewed local helm commit a8bf3b3: charts use generic env/envFrom and do not reference credential modes or dedicated Git tools. #59/#72 require no chart template change.
+
+## Approved local skills compatibility check (2026-10-28, unreleased)
+
+Scoped check against refreshed downstream base `482f7de3759e43d61a7faedeb00547e9b3fc5202` and monorepo implementation `556173d9` (`packages/app/src/skills/{bundle,module,tools,types}.ts`). The additive `hashSkillBundle`/`loadSkillBundles` API uses explicit reviewed local passive bundles; no CLI, env, routes, chart values, RBAC or existing agent API requires migration. This does not replace the broader historical verification above.
+
+The shared Deployment/CronJob image, uid 1000 and read-only root remain compatible when bundles are included in the image at pinned absolute paths. The chart adds no mounts, installation, discovery or permissions. Documentation follow-up `68b84271ee2a3559e4abefa223c28a576037ab72` updates `charts/agent-app/README.md.gotmpl` and generated `README.md`, `.agents/references/chamvi.md`. Both explain reviewing and updating bytes/pins together and restart mismatch behavior.
+
+Verification recorded in the isolated downstream handoff: `make generate`, `make test` and post-commit `make drift` passed. Helm checks: 15 suites/82 tests, Python 40 passed/2 existing fixture-gated skips (no `AGENT_APP_CI_IMAGE`), five render configurations and 59-path values coverage. No provider calls or publication. Downstream PR links remain pending independent audit; these commits are prepared local documentation changes, not released contracts.

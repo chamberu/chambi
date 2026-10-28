@@ -10,7 +10,7 @@ npm install @chamvi/app ai typeorm pg
 
 | Entry | Exports | Needs |
 |---|---|---|
-| `@chamvi/app` | `createApp`, `isApp`, the built-in modules, the module contract (tokens, `ModuleName`, `AppContext`, `ILifecycleHook`, the `IModule` and `IContainer` types), env readers, `approvalUrlOf`, `readConfig`, `createLogger`, `BUILTIN_PROVIDERS`, the model and check types (`ProviderConfig`, `SecretValue`, `AppCheckOptions`, `AppCheckResult`, ...) | |
+| `@chamvi/app` | `createApp`, `isApp`, the built-in modules, the module contract (tokens, `ModuleName`, `AppContext`, `ILifecycleHook`, the `IModule` and `IContainer` types), env readers, `approvalUrlOf`, `readConfig`, `createLogger`, `BUILTIN_PROVIDERS`, `hashSkillBundle`, `loadSkillBundles`, the skill, model and check types (`ProviderConfig`, `SecretValue`, `AppCheckOptions`, `AppCheckResult`, ...) | |
 | `@chamvi/app/authup` | `authupModule`, `oidcModule` | `@authup/server-adapter-kit`, `@authup/core-http-kit` |
 | `@chamvi/app/testing` | `buildModuleHarness`, `createModuleHarness` | |
 
@@ -202,6 +202,53 @@ async function createModuleHarness(options?: ModuleHarnessOptions): Promise<Modu
 The real module lifecycle without `start()` and a port, over exactly `options.modules` (list the built-ins a module needs, e.g. `configModule()`, `storeModule()`, `engineModule()`) on a container holding `AppToken.CONTEXT` (and `CLOCK` with `clock`): `setup()` runs every `setup`, every `onReady` and the start steps like the app and tears down and rethrows when one fails, `reported` collects every `context.report()` call (a throwing lifecycle hook lands there), `stop()` aborts the context signal and tears down.
 
 <<< ../../../app/src/testing/types.ts{ts}
+
+## Approved local skills
+
+Synchronous, opt-in helpers from `@chamvi/app`. See [Approved Local Skills](/guide/skills) for review, digest framing, file bounds and deployment.
+
+```ts
+function hashSkillBundle(directory: string): string;
+function loadSkillBundles(approved: readonly ApprovedSkill[]): SkillCatalog;
+
+type ApprovedSkill = {
+    name: string;
+    version: string;
+    directory: string;
+    sha256: string;
+};
+
+type SkillMetadata = {
+    readonly name: string;
+    readonly description: string;
+    readonly version: string;
+    readonly sha256: string;
+    readonly ignoredFields: readonly string[];
+};
+
+type SkillCatalog = {
+    readonly skills: readonly SkillMetadata[];
+    readonly instructions: string;
+    readonly tools: ToolSet; // unchanged AI SDK type
+};
+
+type LoadedSkill = {
+    name: string;
+    version: string;
+    sha256: string;
+    reference: string | null;
+    content: string;
+    references: string[];
+};
+```
+
+`hashSkillBundle` validates and hashes all supported files; it is a review aid, not approval. `loadSkillBundles` verifies every explicit absolute directory and lowercase full digest before publishing an immutable catalog. Invalid descriptors, metadata, files, bounds, unstable reads or pin mismatches throw `InvalidAgentDefinitionError` with source-relative diagnostics and no file bodies. Names are unique; at most 16 bundles are allowed. Empty input returns empty `skills`, `instructions` and `tools`. Importing the package does no bundle I/O.
+
+`instructions` contains sorted, escaped approved name/description/version/digest metadata, without bodies, references or host paths. `skills` additionally exposes ignored frontmatter field names in `ignoredFields`; `allowed-tools`, `model` and other extra fields do not take effect.
+
+`tools.load_skill` accepts `{ name: string, reference?: string }`. It returns `LoadedSkill` with the body (`reference: null`) or one exact approved reference, plus the sorted supporting-path list in either form. `SKILL.md` is available only through the body form. Unknown names, invalid/unknown paths and malformed inputs raise `ValidationError` without filesystem access. References can be loaded directly and are never followed automatically. Repeated/parallel calls read the same private snapshot through normal tool policy, hooks, approvals and checkpointing.
+
+Compose instructions and tools explicitly; check for a `load_skill` collision before spreading tool sets. Runtime file edits cannot change an existing catalog, and changed bytes under an old pin fail on recreation. Update reviewed files and the tracked pin together; external directories are not automatically watched. These helpers grant no permissions or additional tools.
 
 ## Agent folders
 

@@ -37,3 +37,11 @@ Documentation follow-up in chamvi/agent-template: show `httpModule({ channelRate
 ## Bash-first migration (2026-10-28)
 
 Reviewed local template commit 0374e2b. `.env.example:49-50` advertises CHAMVI_GIT_CREDENTIAL_MODE and dedicated Git tools; remove those lines when consuming #59. Keep token and author configuration. No source/test consumer found. Downstream follow-up is separate from the monorepo PR.
+
+## Approved local skills compatibility check (2026-10-28, unreleased)
+
+Scoped check against refreshed downstream base `a720d7a6caae5ad7ea8ab84ad92bf8478386d6e4` and monorepo implementation `556173d9` (`packages/app/src/skills/{bundle,module,tools,types}.ts`). The additive `hashSkillBundle`/`loadSkillBundles` API uses explicit reviewed local passive bundles; no CLI, env, routes, chart values, RBAC or existing agent API requires migration. This does not replace the broader historical verification above.
+
+The current starter adopts this only after a release exports both helpers. Bundles need an explicit final-image `COPY` at their configured absolute paths, readable by uid 1000; the existing Dockerfile copies JS/dependencies only. Documentation follow-up `a43c6da631ff40203a7ee02454f7fd8c454aafcf` updates `README.md` and `.agents/deployment.md`. Both explain reviewing and updating bytes/pins together and restart mismatch behavior.
+
+Verification recorded in the isolated downstream handoff: `npm ci`, lint fix, build, test (13 files/51 tests), typecheck and lint passed; the embedded README fixture stayed unchanged. No provider calls or publication. Downstream PR links remain pending independent audit; these commits are prepared local documentation changes, not released contracts.

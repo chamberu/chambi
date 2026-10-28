@@ -21,6 +21,7 @@
 **Table of Contents**
 - [Installation](#installation)
 - [Usage](#usage)
+- [Approved local skills](#approved-local-skills)
 - [Environment](#environment)
 - [Modules](#modules)
 - [Lifecycle](#lifecycle)
@@ -84,6 +85,14 @@ export default createApp({
 | `check({ env?, dev? })` | `chamvi start --check` | the start path up to its start steps (config, store connection, model settings, every module, the agent folders' load and checks), then the teardown; writes nothing to the store, starts nothing, runs nothing (of the lifecycle hooks only `engineCreated` and `drained` run); `{ issues }` (the agent folders' load issues) |
 
 `env` defaults to `process.env`. An app runs one lifecycle (`check` counts as one); a second one rejects with `app_in_use`. `isApp(value)` recognizes an app, also one of another installed copy of the package.
+
+## Approved local skills
+
+`hashSkillBundle(directory)` validates and hashes a local passive instruction/reference bundle. After reviewing all its text, pin the exact `{ name, version, directory, sha256 }` in agent configuration and call `loadSkillBundles(approved)`. Append the returned `catalog.instructions` to the agent's instructions and compose `catalog.tools` with its tools, checking for an existing `load_skill` name. Compute the expected digest separately during review, never dynamically at startup.
+
+The catalog initially reveals approved metadata only. `load_skill({ name })` returns the body; `load_skill({ name, reference: 'references/checklist.md' })` returns one exact approved supporting file. Both are ordinary tool results, subject to existing policy, hooks and durable approvals, and stored in run checkpoints. Unknown frontmatter settings such as `allowed-tools` are ignored; their names appear in `catalog.skills[*].ignoredFields`.
+
+Catalog content is immutable after setup; changed bytes under an old pin fail when the catalog is recreated. External bundle edits are not automatically watched: update the tracked descriptor pin and reviewed runtime assets together. Bundles grant no tools, scripts, subagents or sandboxing. See [Approved Local Skills](https://chamvi.dev/guide/skills) for the review workflow, supported files, bounds, deployment and compatibility limits, and the [public API](https://chamvi.dev/reference/app#approved-local-skills).
 
 ## Environment
 
