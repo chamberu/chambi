@@ -42,7 +42,6 @@
         "eslint-plugin-vue": "^10.11.1",
         "husky": "^9.1.7",
         "nx": "^24.0.1",
-        "release-please": "^17.6.0",
         "ts-node": "^10.9.2",
         "tsdown": "^0.23.1",
         "typescript": "^6.0.3",

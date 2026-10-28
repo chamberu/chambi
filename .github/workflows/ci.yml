@@ -34,8 +34,6 @@ jobs:
               run: npm run build
             - name: Typecheck
               run: npm run typecheck
-            - name: Release configuration regression
-              run: node --test release-please.test.mjs
             - name: Test
               run: npm run test
 
