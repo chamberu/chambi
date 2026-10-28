@@ -38,6 +38,13 @@ describe('read_file', () => {
             endLine: 2,
             totalLines: 2,
             truncated: false,
+            instructions: {
+                commit: fixture.commit,
+                paths: ['src/a.ts'],
+                sources: [],
+                diagnostics: [],
+                complete: true,
+            },
         });
     });
 
@@ -53,6 +60,13 @@ describe('read_file', () => {
             endLine: 2,
             totalLines: 2,
             truncated: false,
+            instructions: {
+                commit: fixture.commit,
+                paths: ['src/a.ts'],
+                sources: [],
+                diagnostics: [],
+                complete: true,
+            },
         });
     });
 

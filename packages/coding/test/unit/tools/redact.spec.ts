@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { createHash } from 'node:crypto';
 import {
     afterAll,
     afterEach,
@@ -17,7 +18,7 @@ import {
 } from 'vitest';
 import { codingTools } from '@chamvi/coding';
 import type { BashJobResult, BashOutputResult, BashResult } from '@chamvi/coding';
-import type { IWorkspace } from '@chamvi/sandbox';
+import type { IWorkspace, RepositoryInstructions } from '@chamvi/sandbox';
 import type { GitFixture } from '@chamvi/test-kit';
 import { callTool, toolContext } from '../../utils/context.ts';
 import { createFixture, setupCoding } from '../../utils/setup.ts';
@@ -41,6 +42,23 @@ function redactingTools() {
 }
 
 describe('redaction of decoded output', () => {
+    it('redacts delivered instruction text and diagnostics while hashing disk bytes', async () => {
+        const content = `Private ${SECRET}\n@missing-${SECRET}.md\n`;
+        await s.workspace.writeFile('AGENTS.md', content);
+
+        const result = await redactingTools()('read_file', { path: 'src/a.ts' }) as { instructions: RepositoryInstructions };
+
+        expect(result.instructions.sources[0]).toMatchObject({
+            path: 'AGENTS.md',
+            content: 'Private [redacted]\n@missing-[redacted].md\n',
+            sha256: createHash('sha256').update(content).digest('hex'),
+        });
+        expect(result.instructions.diagnostics).toEqual([
+            expect.objectContaining({ path: 'missing-[redacted].md', code: 'missing-include' }),
+        ]);
+        expect(JSON.stringify(result)).not.toContain(SECRET);
+    });
+
     it('passes the excerpts of bash through the workspace redaction', async () => {
         const call = redactingTools();
         const result = await call('bash', { command: `echo "token ${SECRET}"; echo "${SECRET}" >&2` }) as BashResult;

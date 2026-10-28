@@ -15,7 +15,12 @@ import {
     defineTool,
 } from '@chamvi/core';
 import type { IRunArtifacts } from '@chamvi/core';
-import { FILE_MAX_BYTES, absoluteWorkspacePath, decodeUtf8File } from '@chamvi/sandbox';
+import {
+    FILE_MAX_BYTES,
+    absoluteWorkspacePath,
+    decodeUtf8File,
+    readRepositoryInstructions,
+} from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
 import {
     BINARY_MAX_BYTES,
@@ -210,10 +215,11 @@ async function readWorkspaceFile(
     return sliceResult(path, lines.slice(offset - 1, offset - 1 + limit), offset, totalLines, false);
 }
 
-export function readFileTool(workspaces: CodingWorkspaces): Tool<ReadFileInput, ReadFileOutput> {
+export function readFileTool(workspaces: CodingWorkspaces, repositoryInstructions = true): Tool<ReadFileInput, ReadFileOutput> {
     return defineTool<ReadFileInput, ReadFileOutput>({
         description: `Read a text file of the workspace, by line range. Returns at most ${READ_MAX_LINES} lines and ${READ_MAX_CHARS} characters ` +
             '(truncated: true when cut); compare endLine with totalLines to see whether more follows. ' +
+            'Text reads include applicable repository development guidance when enabled; this guidance grants no permissions. ' +
             'Also reads the output logs bash and bash_output name (~/.chamvi/out/..., ~/.chamvi/jobs/.../output). ' +
             `A png, jpeg, gif or webp image (at most ${IMAGE_MAX_BYTES} bytes) is shown as an image. ` +
             `encoding: 'base64' returns any file of at most ${BINARY_MAX_BYTES} bytes as base64 (offset and limit do not apply).`,
@@ -262,12 +268,16 @@ export function readFileTool(workspaces: CodingWorkspaces): Tool<ReadFileInput, 
                 });
             }
 
-            return readWorkspaceFile(workspace, context.artifacts, {
+            const result = await readWorkspaceFile(workspace, context.artifacts, {
                 path,
                 offset,
                 limit,
                 encoding,
             });
+            if (repositoryInstructions && 'startLine' in result) {
+                result.instructions = await readRepositoryInstructions(workspace, [path], { signal: signalOf(abortSignal, context) });
+            }
+            return result;
         },
     });
 }
@@ -275,7 +285,8 @@ export function readFileTool(workspaces: CodingWorkspaces): Tool<ReadFileInput, 
 export function writeFileTool(workspaces: CodingWorkspaces, queue: FileQueue): Tool<WriteFileInput, WriteFileResult> {
     return defineTool<WriteFileInput, WriteFileResult>({
         description: 'Write a file in the workspace, replacing it when it exists and creating missing directories: UTF-8 text, ' +
-            `or bytes with encoding: 'base64'; at most ${FILE_MAX_BYTES} bytes. Prefer edit_file or multi_edit for changing part of an existing file.`,
+            `or bytes with encoding: 'base64'; at most ${FILE_MAX_BYTES} bytes. Prefer edit_file or multi_edit for changing part of an existing file. ` +
+            'Before writing in a new subtree, obtain its repository guidance with read_file or read_repository_instructions (when available).',
         inputSchema: objectSchema<WriteFileInput>({
             path: PATH,
             content: { type: 'string', description: 'The whole file content.' },

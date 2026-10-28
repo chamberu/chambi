@@ -110,6 +110,7 @@ async function runCommand(
 export function bashTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number): Tool<BashInput, BashResult | BashJobResult> {
     return defineTool<BashInput, BashResult | BashJobResult>({
         description: 'Run a shell command in the workspace (bash when the image has it, else sh), e.g. to install dependencies, build or run tests. ' +
+            'Before shell work in a new subtree, obtain its repository guidance with read_file or read_repository_instructions (when available). ' +
             'The shell keeps its working directory and exported variables from one call to the next (not functions, aliases or options); ' +
             'cwd is where the next call starts. ' +
             `Output past ${EXCERPT_HEAD_BYTES + EXCERPT_TAIL_BYTES} bytes per stream shows its start and end; the whole of it is in stdoutLog and stderrLog ` +

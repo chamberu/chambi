@@ -47,6 +47,14 @@ const LINE_MAX_CHARS: 500;
 const OUTPUT_LOG_MAX_BYTES: 67_108_864; // 64 MiB, the default outputLogMaxBytes
 ```
 
+## Repository instructions
+
+`CodingToolsOptions.repositoryInstructions` defaults to `true`. Ordinary UTF-8 workspace `read_file` results add the optional `ReadFileResult.instructions?: RepositoryInstructions` field. Each read collects guidance for the file's root and ancestors, including include expansion, scopes, hashes, parents, diagnostics and `complete`; the [sandbox collector](/reference/sandbox#repository-instructions) defines ordering, bounds and failure behavior. An incomplete collection is still visible with `complete: false`; an inspection/transport error fails the tool instead of delivering an empty context. Resolve missing guidance that could change the task before proceeding.
+
+`codingTools(workspaces, { repositoryInstructions: false })` omits the field. Binary/base64 reads, image reads and HOME log reads always omit it. The coding option is independent of `createWorkspaceManager({ repositoryInstructions: false })`: the manager's flag controls root collection on create and the presence of `read_repository_instructions`, while coding's flag controls text-read attachments. Both default on; set both off to disable both forms of context delivery. Neither restricts filesystem access.
+
+There is no cross-call cache: new reads reflect current worktree instructions, while previous tool results remain in steps and checkpoints through pauses and restarts. Before direct edits or shell work in a new subtree, request its context through `read_file` or the manager's `read_repository_instructions` tool. Repository guidance or a system prompt grants no operator authorization, permissions, credentials, skill installation or publication rights. `write_file`, `edit_file`, `multi_edit` and arbitrary `bash` do not enforce instruction scope, and bash bypasses file-tool-only enforcement. Discovery's observed symlink, special-file, `.git` and escape refusal is best-effort; race-free confinement remains [#92](https://github.com/chamvi/chamvi/issues/92).
+
 ## ICodingBackend
 
 The contract for something that solves a coding task in a workspace with its own tool loop. Only the contract ships; backends (the own tools in a nested loop, Claude Code) are planned.

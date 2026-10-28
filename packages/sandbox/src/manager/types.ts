@@ -8,6 +8,7 @@
 import type { ToolSet } from 'ai';
 import type { Engine, IClock, ToolContext } from '@chamvi/core';
 import type { IGitCredentials } from '../credentials/types.ts';
+import type { RepositoryInstructions } from '../instructions/types.ts';
 import type { ISandboxProvider, SandboxLimits } from '../provider/types.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 
@@ -23,6 +24,8 @@ export type WorkspaceManagerOptions = {
     allowFileRepos?: boolean;
     /** Narrows the accepted repositories further; gets the normalized URL. */
     allowRepo?: (url: string) => boolean;
+    /** Collect root repository guidance and offer path-scoped guidance tools. Default true. */
+    repositoryInstructions?: boolean;
     /**
      * The images `create_workspace` may ask for; gets the reference as
      * requested. Without it, and on the local provider (it runs no images),
@@ -145,7 +148,7 @@ export interface IWorkspaceManager {
      * Returns the unsubscribe; after close() it subscribes nothing.
      */
     attach(engine: Pick<Engine, 'on'>): () => void;
-    /** Workspace lifecycle and structured Git tools (no bash tool). */
+    /** Workspace lifecycle, structured Git and (unless disabled) repository guidance tools (no bash tool). */
     tools(): ToolSet;
     /**
      * Disposes the manager's expired workspaces and, with `isSettled`, the
@@ -179,6 +182,8 @@ export type WorkspaceToolResult = {
     image: string | null;
     expiresAt: string;
     reused: boolean;
+    /** Current root guidance; null without a repository or when collection is disabled. */
+    instructions: RepositoryInstructions | null;
 };
 
 export type DisposeWorkspaceResult = {

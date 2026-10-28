@@ -23,6 +23,7 @@
 - [Providers](#providers)
 - [Usage](#usage)
 - [Workspace tools](#workspace-tools)
+- [Repository instructions](#repository-instructions)
 - [Lifecycle](#lifecycle)
 - [Workspaces](#workspaces)
 - [Repositories and refs](#repositories-and-refs)
@@ -94,7 +95,8 @@ await workspaces.close();
 
 | Tool | Input | Result |
 |---|---|---|
-| `create_workspace` | `{ repo?, ref?, image? }` (`image` only with an allow-list, never on the local provider) | `{ workspace, root: '/workspace', repo, ref, commit, defaultBranch, image, expiresAt, reused }` |
+| `create_workspace` | `{ repo?, ref?, image? }` (`image` only with an allow-list, never on the local provider) | `{ workspace, root: '/workspace', repo, ref, commit, defaultBranch, image, expiresAt, reused, instructions }` |
+| `read_repository_instructions` | `{ paths?, workspace? }` (paths default to `['.']`) | `RepositoryInstructions`: sources, provenance and diagnostics for those paths |
 | `dispose_workspace` | `{ workspace? }` | `{ workspace, disposed: true }` |
 | `git_fetch` | `{ remote?, refspec?, workspace? }` | `{ workspace, remote, refspec, exitCode, stdout, stderr, timedOut }` |
 | `git_pull` | `{ remote?, branch?, rebase?, workspace? }` | the same plus `{ branch, rebase, step }` |
@@ -105,6 +107,34 @@ await workspaces.close();
 - A run holds at most `maxWorkspacesPerRun` (3) workspaces at once.
 - A workspace id of another run is "not found", never that workspace: ids land in stored steps that other readers may see.
 - No tool is an effect tool: a workspace can be removed, expire or be collected, while an effect record would survive in the store and skip the redone step on a fresh workspace.
+
+## Repository instructions
+
+For a repository-backed workspace, `create_workspace` returns current root guidance in `instructions: RepositoryInstructions`; without a repository or with `createWorkspaceManager({ provider, repositoryInstructions: false })` it returns `instructions: null`. The flag defaults to `true` and, when disabled, also omits `read_repository_instructions`. `sandboxModule({ repositoryInstructions: false })` forwards the same option; there is no environment setting for it.
+
+Before direct edits or shell work in a new subtree, the model should call `read_repository_instructions({ paths: ['packages/api/src/new.ts'], workspace })` and examine `complete` and `diagnostics`. Existing directory paths include that directory; existing files and missing paths use their parent. Entrypoint discovery checks only root and ancestor directories; explicit includes may reference permitted files elsewhere in the workspace. It orders directories root first, then by depth and JavaScript string order; each reads `AGENTS.md`, then `CLAUDE.md`.
+
+A standalone `@relative/path` line includes a file relative to its source, depth-first in textual order. Surrounding whitespace is allowed, whitespace within the path is not. Markdown links, inline `@` text and text inside matching backtick or tilde fences of three or more characters are not includes. `..` is allowed only within the workspace; absolute paths, URLs, NUL, home paths and escapes are refused.
+
+Each source contains its canonical workspace-relative `path`, exact-byte `sha256`, UTF-8 `content`, applicable `scopes` (entrypoint directories, `.` for root) and `includedBy` parent paths. Included guides inherit their entrypoint's scope; content is deduplicated by path while preserving scopes and parents. Credential redaction applies before parsing and returning content and to outward paths and diagnostics; hashes describe the original bytes. `commit` is the workspace's recorded checkout commit or `null`, not a guarantee of the current HEAD or a frozen worktree. `paths` lists normalized accepted targets.
+
+| Collection bound | Maximum per request |
+|---|---|
+| Source bytes / total source bytes | 32 KiB / 128 KiB, a source returned whole or omitted |
+| Distinct sources / include edges deep | 32 / 8 |
+| Target paths / distinct ancestor directories (including root) | 32 / 64 |
+| Attempted inspections and include references | 512 |
+| Diagnostics | 64 entries, 8 KiB of paths and messages together |
+| UTF-8 bytes per path | 4096 |
+| Request / individual exec | 30 s / 5 s |
+
+Missing optional `AGENTS.md` or `CLAUDE.md` files are normal. Missing includes, unreadable files, invalid UTF-8, refused paths, cycles and exhausted bounds produce diagnostics (`missing-include`, `unreadable`, `invalid-utf8`, `outside-workspace`, `unsupported-file`, `cycle`, `limit`) and `complete: false`. Cancellation, transport failures, malformed or truncated responses, exec timeouts and missing inspection utilities reject as tool errors rather than succeeding with empty guidance. Resolve incomplete guidance that could change the task before continuing.
+
+Discovery uses fixed framework code through `IWorkspace.exec`, without executing repository code or commands from Markdown. It refuses every observed symlink component (including aliases inside the workspace), special file and `.git` path. These checks are best-effort: concurrent filesystem mutation can race them; race-free confinement is deferred to [#92](https://github.com/chamvi/chamvi/issues/92).
+
+There is no cache across calls: each create, including reuse or adoption after a restart, and each explicit context read collects current files. Delivered context remains in ordinary tool messages, stored steps and checkpoints through approval pauses and recovery. A later collection reflects modified guidance without rewriting older messages. [`@chamvi/coding`](../coding#repository-instructions) also attaches scoped guidance to ordinary UTF-8 workspace reads, controlled by its own independent flag.
+
+Repository instructions are development guidance. Loading them into model context or a system prompt grants no operator authorization, tool permissions, credentials, skill installation or publication rights. `write_file`, `edit_file`, `multi_edit` and arbitrary `bash` do not enforce instruction scope; shell commands bypass any file-tool-only enforcement. Keep permissions and approvals in operator policy.
 
 ## Lifecycle
 
@@ -252,6 +282,7 @@ export default createApp({ agents: [coder], modules: [sandboxModule({ provider: 
 | `limits` | `SandboxLimits` | the provider's | Passed to every `create` |
 | `allowFileRepos` | `boolean` | `false` | Accept `file:///absolute/path` repositories |
 | `allowRepo` | `(url) => boolean` | every https URL | Narrows the accepted repositories (gets the normalized URL) |
+| `repositoryInstructions` | `boolean` | `true` | Collect root guidance in `create_workspace` and offer `read_repository_instructions` |
 | `allowImage` | `(image) => boolean` | none: no `image` offered | The images `create_workspace` may ask for; without it `create_workspace` has no `image` input and `acquire` refuses one. Never offered on the local provider |
 | `maxWorkspacesPerRun` | `number` | `3` | Workspaces one run may hold at once |
 | `gcIntervalMs` | `number` | `600_000` | Minimum interval between the collections `acquire` starts, and with `sandboxModule()` in start mode the period of its collection timer; `0` disables both |
@@ -269,6 +300,7 @@ Misconfiguration throws core `InvalidAgentDefinitionError`.
 | Export | Kind | Purpose |
 |---|---|---|
 | `createWorkspaceManager` | function | Run-scoped workspaces and the workspace tools |
+| `readRepositoryInstructions` | function | Collect bounded current guidance: `(workspace, paths?, { signal?, clock? }?) => Promise<RepositoryInstructions>` |
 | `staticGitCredentials` | function | Git credentials from tokens |
 | `provideSandboxContext`, `injectSandboxContext` | function | Provide the manager on the engine, read it from a `ToolContext` |
 | `createRemoteWorkspace` | function | An `IWorkspace` over an `IExecTransport` |
@@ -280,12 +312,13 @@ Misconfiguration throws core `InvalidAgentDefinitionError`.
 | `createOutputCollector` | function | A capped output stream collector |
 | `WORKSPACE_ROOT`, `WORKSPACE_HOME`, `OUTPUT_MAX_BYTES`, `FILE_MAX_BYTES`, `EXEC_TIMEOUT_MS`, `EXEC_TIMEOUT_MAX_MS`, `SANDBOX_ENV` | constant | Workspace rules |
 | `DEFAULT_LIMITS`, `DEFAULT_SANDBOX_IMAGE`, `TMP_SIZE`, `SANDBOX_LABELS`, `RUN_LABEL`, `WORKSPACE_LABEL`, `EXPIRES_AT_KEY` | constant | Provider defaults and labels |
+| `INSTRUCTION_FILES`, `INSTRUCTION_SOURCE_MAX_BYTES`, `INSTRUCTION_TOTAL_MAX_BYTES`, `INSTRUCTION_SOURCES_MAX`, `INSTRUCTION_INCLUDE_DEPTH_MAX`, `INSTRUCTION_PATHS_MAX`, `INSTRUCTION_DIRECTORIES_MAX`, `INSTRUCTION_REFERENCES_MAX`, `INSTRUCTION_DIAGNOSTICS_MAX`, `INSTRUCTION_DIAGNOSTICS_MAX_BYTES`, `INSTRUCTION_PATH_MAX_BYTES`, `INSTRUCTION_REQUEST_TIMEOUT_MS`, `INSTRUCTION_EXEC_TIMEOUT_MS` | constant | Repository instruction filenames and collection bounds above |
 | `MAX_WORKSPACES_PER_RUN`, `GC_INTERVAL_MS`, `CLOSE_TIMEOUT_MS`, `CREDENTIAL_INSTALL_TIMEOUT_MS` | constant | Manager defaults |
 | `REDACTED`, `CREDENTIAL_REFRESH_MS`, `CREDENTIAL_RETRY_MS`, `CREDENTIALS_FILE`, `REDACT_MIN_LENGTH`, `REDACT_GRACE_MS` | constant | Git credential handling |
 | `TIMEOUT_KILL_AFTER_SECONDS`, `EXEC_GRACE_MS`, `ALIVE_PROBE_TIMEOUT_MS` | constant | Remote timeout handling and the liveness probe bound |
 | `CACHE_DIR`, `CACHE_ENV`, `ROOT_CAPABILITIES`, `IMAGE_REQUIREMENTS`, `IMAGE_PROBE_TIMEOUT_MS` | constant | The cache mount and variables, the root capability set, the image probe |
 
-Types: `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult`, `ISandboxProvider`, `WorkspaceCreateOptions`, `SandboxLimits`, `IExecTransport`, `TransportExecOptions`, `TransportExecResult`, `RemoteWorkspaceInput`, `IWorkspaceManager`, `WorkspaceManagerOptions`, `AcquireInput`, `AcquireResult`, `CloseOptions`, `WorkspaceToolResult`, `DisposeWorkspaceResult`, `GitAuthor`, `PushPolicy`, `GitFetchResult`, `GitPullResult`, `GitPushResult`, `IOutputCollector`, `NormalizeRepoOptions`, `CheckoutOptions`, `IGitCredentials`, `GitCredential`, `GitCredentialRequest`, `GitAccess`, `StaticGitCredential`, `Redactor`.
+Types: `RepositoryInstructions`, `RepositoryInstructionSource`, `RepositoryInstructionDiagnostic`, `RepositoryInstructionDiagnosticCode`, `ReadRepositoryInstructionsOptions`, `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult`, `ISandboxProvider`, `WorkspaceCreateOptions`, `SandboxLimits`, `IExecTransport`, `TransportExecOptions`, `TransportExecResult`, `RemoteWorkspaceInput`, `IWorkspaceManager`, `WorkspaceManagerOptions`, `AcquireInput`, `AcquireResult`, `CloseOptions`, `WorkspaceToolResult`, `DisposeWorkspaceResult`, `GitAuthor`, `PushPolicy`, `GitFetchResult`, `GitPullResult`, `GitPushResult`, `IOutputCollector`, `NormalizeRepoOptions`, `CheckoutOptions`, `IGitCredentials`, `GitCredential`, `GitCredentialRequest`, `GitAccess`, `StaticGitCredential`, `Redactor`.
 
 `@chamvi/sandbox/module`: `sandboxModule`, `SandboxModule`, `SANDBOX_MODULE_NAME`, `SANDBOX_PROVIDER_NAMES`, types `SandboxModuleOptions`, `SandboxProviderName`.
 
