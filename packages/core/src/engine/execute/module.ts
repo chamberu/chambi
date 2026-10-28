@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { bindConversationRun } from '../../conversation/module.ts';
 import { ToolLoopAgent, isStepCount } from 'ai';
 import type {
     LanguageModel,
@@ -22,6 +23,7 @@ import {
 } from '../../errors/index.ts';
 import { bindRunSnapshot } from '../../handoff/helpers.ts';
 import { toLanguageModel } from '../../model/asserts.ts';
+import { untilAborted } from '../../run/helpers.ts';
 import { RunStatus } from '../../run/constants.ts';
 import type { RunContext, Step, Usage } from '../../run/types.ts';
 import {
@@ -44,7 +46,6 @@ import {
     toToolResultPart,
     toValidationError,
     unansweredToolNames,
-    untilAborted,
     withToolResults,
     withoutPartialOutput,
     withoutResults,
@@ -69,7 +70,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     const budget = resolveBudget(agent);
     const checkpoint = await store.latestCheckpoint(run.id);
     // stored form: file parts hold artifact markers; the model gets a hydrated copy
-    let initial: ModelMessage[] = checkpoint?.messages ?? [initialMessage(run.trigger)];
+    let initial: ModelMessage[] = checkpoint?.messages ?? [...(ctx.conversation?.snapshot.messages ?? []), initialMessage(run.trigger)];
     const usage: Usage = { ...run.usage };
     let stepIndex = checkpoint ? checkpoint.stepIndex + 1 : 0;
     let stepSeq = (await store.listSteps(run.id)).length;
@@ -127,6 +128,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         signal,
     };
     bindRunSnapshot(runContext);
+    if (ctx.conversation) bindConversationRun(runContext, ctx.conversation.capability, run);
 
     // the calls approve() suspended in this execution, in the order they suspended
     const suspended: ApprovalRequest[] = [];
@@ -254,6 +256,13 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 stepIndex: stepIndex++,
                 messages: [...initial, ...responseMessages],
                 finishReason: step.finishReason,
+                ...(ctx.conversation ? {
+                    conversation: {
+                        scopeId: ctx.conversation.snapshot.scope.id,
+                        generation: ctx.conversation.snapshot.scope.generation,
+                        snapshotRunId: run.id,
+                    },
+                } : {}),
                 createdAt: finishedAt,
             }));
             usage.inputTokens += tokens.inputTokens;
@@ -306,6 +315,13 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                     stepIndex: checkpoint!.stepIndex,
                     messages: initial,
                     ...(checkpoint!.finishReason !== undefined ? { finishReason: checkpoint!.finishReason } : {}),
+                    ...(ctx.conversation ? {
+                        conversation: {
+                            scopeId: ctx.conversation.snapshot.scope.id,
+                            generation: ctx.conversation.snapshot.scope.generation,
+                            snapshotRunId: run.id,
+                        },
+                    } : {}),
                     createdAt: finishedAt,
                 }));
                 await append({
@@ -439,6 +455,8 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         }
         if (streamError) throw streamError.error;
         const [steps, finishReason, text] = await Promise.all([stream.steps, stream.finishReason, stream.text]);
+        // Keep normal sends alive until their journal settles; cancellation still exits via untilAborted.
+        await ctx.conversation?.capability.idle(run.id);
         return {
             stream,
             steps,

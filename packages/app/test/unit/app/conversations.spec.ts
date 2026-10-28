@@ -1,0 +1,138 @@
+/*
+ * Copyright (c) 2026.
+ * Author Peter Placzek (tada5hi)
+ * For the full copyright and license information,
+ * view the LICENSE file that was distributed with this source code.
+ */
+
+import { MemoryConversationStore, defineAgent } from '@chamvi/core';
+import type { Engine, IConversationStore } from '@chamvi/core';
+import { ControllableClock } from '@chamvi/test-kit';
+import type { IContainer } from 'eldin';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+} from 'vitest';
+import { AppToken, configModule, createApp } from '@chamvi/app';
+import type { AppOptions, IApp } from '@chamvi/app';
+import { TOKENS } from '../../utils/app.ts';
+import { createRecordingLogger } from '../../utils/logger.ts';
+import { textModel } from '../../utils/model.ts';
+
+const identity = {
+    agent: 'helper',
+    channel: 'chat',
+    account: 'main',
+    chat: 'example',
+    audience: 'direct',
+};
+const apps: IApp[] = [];
+
+afterEach(async () => {
+    await Promise.all(apps.map((app) => app.stop().catch(() => {})));
+    apps.length = 0;
+});
+
+function build(conversations?: AppOptions['conversations']) {
+    const clock = new ControllableClock(new Date('2026-10-28T00:00:00Z'));
+    const logger = createRecordingLogger(clock);
+    let container: IContainer;
+    const app = createApp({
+        agents: [defineAgent({
+            name: 'helper',
+            instructions: 'Help.',
+            model: textModel(),
+            conversation: conversations !== undefined,
+        })],
+        ...(conversations !== undefined && { conversations }),
+        modules: [configModule({ clock, logger }), {
+            name: 'test:capture',
+            async setup(value) { container = value; },
+        }],
+    });
+    apps.push(app);
+    return {
+        app,
+        clock,
+        logger,
+        container: () => container!,
+    };
+}
+
+const env = { CHAMVI_TOKENS: TOKENS };
+
+describe('app conversation capability', () => {
+    it('disabled_default_no_store_or_migration_side_effect', async () => {
+        const built = build();
+        await built.app.check({ env });
+        expect(built.container().has(AppToken.CONVERSATIONS)).toBe(false);
+        expect(built.container().has(AppToken.DATA_SOURCE)).toBe(false);
+    });
+
+    it('custom_store_respected and check_writes_nothing', async () => {
+        const calls: PropertyKey[] = [];
+        const custom = new Proxy(new MemoryConversationStore(), {
+            get(target, key) {
+                const value = Reflect.get(target, key);
+                return typeof value === 'function' ? (...args: unknown[]) => {
+                    calls.push(key);
+                    return value.apply(target, args);
+                } : value;
+            },
+        }) as IConversationStore;
+        const built = build({ authorize: () => true, store: custom });
+        await built.app.check({ env });
+        expect(built.container().resolve(AppToken.CONVERSATIONS)).toBe(custom);
+        expect(calls).toEqual([]);
+    });
+
+    it('memory_store_warns_no_restart_durability and uses app clock', async () => {
+        const built = build({ authorize: () => true });
+        await built.app.check({ env });
+        const store = built.container().resolve(AppToken.CONVERSATIONS);
+        expect(store).toBeInstanceOf(MemoryConversationStore);
+        const engine = built.container().resolve(AppToken.ENGINE) as Engine;
+        expect(await engine.inspectConversation(identity)).toBeUndefined();
+        const scope = await store.resolve(identity);
+        const begun = await store.beginTurn(scope, 'clock-run', 'hello', {
+            maxItems: 20,
+            maxHistoryBytes: 32768,
+            maxNotesBytes: 8192,
+            maxItemBytes: 16384,
+            retentionMs: 10000,
+            maxStoredItems: 1000,
+        });
+        expect(begun.kind === 'ready' && begun.snapshot.createdAt).toEqual(built.clock.now());
+        expect(built.logger.entries.some((entry) => entry.level === 'warn' && /conversation.*restart/i.test(entry.msg))).toBe(true);
+    });
+
+    it('two_apps_no_global_context', async () => {
+        const first = build({ authorize: () => true });
+        const second = build({ authorize: () => false });
+        await first.app.check({ env });
+        await second.app.check({ env });
+        const firstStore = first.container().resolve(AppToken.CONVERSATIONS);
+        const secondStore = second.container().resolve(AppToken.CONVERSATIONS);
+        expect(firstStore).not.toBe(secondStore);
+        await firstStore.resolve(identity);
+        expect(await secondStore.get(identity)).toBeUndefined();
+    });
+
+    it('copies limits before later caller mutation', async () => {
+        const limits = { maxItems: 1 };
+        const built = build({ authorize: () => true, limits });
+        limits.maxItems = -1;
+        await expect(built.app.check({ env })).resolves.toEqual({ issues: [] });
+    });
+
+    it.each([null, 42])('rejects malformed limits without replacing them with defaults: %s', async (limits) => {
+        const built = build({ authorize: () => true, limits: limits as never });
+        await expect(built.app.check({ env })).rejects.toMatchObject({ code: 'invalid_agent_definition' });
+    });
+
+    it('requires a conversation authorizer', () => {
+        expect(() => build({} as AppOptions['conversations'])).toThrow(/authoriz/i);
+    });
+});

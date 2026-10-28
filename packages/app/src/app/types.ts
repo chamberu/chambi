@@ -5,7 +5,12 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Agent, ModelRef } from '@chamvi/core';
+import type {
+    Agent,
+    ConversationOptions,
+    IConversationStore,
+    ModelRef,
+} from '@chamvi/core';
 import type { AgentIssue } from '@chamvi/http';
 import type { IModule } from 'orkos';
 import type { Env } from '../env/types.ts';
@@ -15,6 +20,8 @@ import type { APP_BRAND } from './constants.ts';
 export type AppOptions = {
     /** The code agents; may be omitted or empty when CHAMVI_AGENTS_DIR names an agents folder. */
     agents?: Agent[];
+    /** Optional conversation recall and notes; the default store follows the app's selected data source. */
+    conversations?: Omit<ConversationOptions, 'store'> & { store?: IConversationStore };
     /** Extra modules; one named like a built-in (`ModuleName`) replaces it. */
     modules?: IModule[];
     /** The default model of agents without one; CHAMVI_MODEL and the config file win. */

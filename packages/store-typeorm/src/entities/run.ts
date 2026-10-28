@@ -117,6 +117,13 @@ export class RunEntity {
     })
     cancelRequested!: boolean | null;
 
+    @Column({
+        type: 'jsonb',
+        nullable: true,
+        transformer: OPTIONAL_JSON_TRANSFORMER,
+    })
+    conversation!: Run['conversation'] | null;
+
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
 

@@ -16,3 +16,8 @@ export * from './kv.ts';
 export * from './lock.ts';
 export * from './run.ts';
 export * from './step.ts';
+export * from './conversation.ts';
+export * from './conversation-turn.ts';
+export * from './conversation-item.ts';
+export * from './conversation-note.ts';
+export * from './conversation-operation.ts';

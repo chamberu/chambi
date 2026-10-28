@@ -27,10 +27,7 @@ export function isWebhookChannel(channel: unknown): boolean {
  * the channel's own name.
  */
 export function createChannelContext(engine: Engine, channel: IChannel<any, any>): ChannelContext {
-    return {
-        engine,
-        dispatch: (envelope) => engine.dispatch({ ...envelope, channel: channel.name }),
-    };
+    return engine.channelContext(channel);
 }
 
 /**

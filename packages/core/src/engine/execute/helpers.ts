@@ -22,6 +22,7 @@ import { assertNoNeedsApproval, assertToolsContext } from '../../agent/asserts.t
 import { toFilePart } from '../../artifact/helpers.ts';
 import { createRunArtifacts } from '../../artifact/module.ts';
 import { createToolChannels } from '../../channel/helpers.ts';
+import { checkConversation, conversationFor } from '../../conversation/module.ts';
 import { bindProvided } from '../../context/helpers.ts';
 import { validateToolInput } from '../../effect/helpers.ts';
 import { wrapToolsForRun } from '../../effect/wrap.ts';
@@ -147,8 +148,15 @@ export function assembleTools(
         state: schema,
         toolPolicy,
         toolsContext: agentToolsContext,
-        hooks,
+        hooks: agentHooks,
     } = ctx.agent.definition;
+    const hooks = conversationFor(runContext) ? {
+        ...agentHooks,
+        beforeToolExecution: async (...args: Parameters<NonNullable<NonNullable<typeof agentHooks>['beforeToolExecution']>>) => {
+            await checkConversation(runContext);
+            return agentHooks?.beforeToolExecution?.(...args);
+        },
+    } : agentHooks;
     if (!userTools && !schema) {
         if (agentToolsContext) assertToolsContext(ctx.agent.name, {}, agentToolsContext);
         return { tools: {}, toolsContext: {} };
@@ -391,16 +399,6 @@ export async function executePendingCall(input: {
     } catch (error) {
         return { error };
     }
-}
-
-/** Rejects with the abort reason as soon as `signal` aborts, even if `work` ignores the signal. */
-export function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-    if (signal.aborted) return Promise.reject(signal.reason);
-    return new Promise<T>((resolve, reject) => {
-        const onAbort = () => reject(signal.reason);
-        signal.addEventListener('abort', onAbort, { once: true });
-        work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
-    });
 }
 
 /** Text of the last assistant message, '' when there is none. */

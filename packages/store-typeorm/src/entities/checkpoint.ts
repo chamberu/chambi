@@ -11,7 +11,7 @@ import {
     PrimaryColumn,
 } from 'typeorm';
 import type { Checkpoint } from '@chamvi/core';
-import { JSON_VALUE_TRANSFORMER, TableName } from './constants.ts';
+import { JSON_VALUE_TRANSFORMER, OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
 
 @Entity({ name: TableName.CHECKPOINTS })
 export class CheckpointEntity {
@@ -21,6 +21,13 @@ export class CheckpointEntity {
         length: 128, 
     })
     runId!: string;
+
+    @Column({
+        type: 'jsonb',
+        nullable: true,
+        transformer: OPTIONAL_JSON_TRANSFORMER,
+    })
+    conversation!: Checkpoint['conversation'] | null;
 
     @Column({ name: 'step_index', type: 'integer' })
     stepIndex!: number;

@@ -29,6 +29,10 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
     }
 
     assertConcurrencyMaxRuns(def.concurrencyMaxRuns, `Agent "${def.name}" concurrencyMaxRuns`);
+    if (def.conversation !== undefined && typeof def.conversation !== 'boolean') {
+        throw new InvalidAgentDefinitionError(`Agent "${def.name}" has a conversation option that is no boolean.`);
+    }
+
     const seen = new Set<string>();
     for (const subscription of def.channels ?? []) {
         assertConcurrencyMaxRuns(subscription.concurrencyMaxRuns, `Agent "${def.name}" subscription "${subscription.id}" concurrencyMaxRuns`);

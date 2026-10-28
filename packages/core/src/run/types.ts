@@ -7,6 +7,7 @@
 
 import type { ModelMessage } from 'ai';
 import type { ApprovalOption } from '../approval/types.ts';
+import type { ConversationBinding } from '../conversation/types.ts';
 import type { TriggerEnvelope } from '../trigger/types.ts';
 import type { RunStatus } from './constants.ts';
 
@@ -79,6 +80,8 @@ export type Run = {
      * aborts it on its next poll, and a later execution settles it cancelled.
      */
     cancelRequested?: boolean;
+    /** The conversation the run belongs to; set by the trusted conversation intake only, never by dispatch(). */
+    conversation?: ConversationBinding;
     createdAt: Date;
     updatedAt: Date;
     startedAt?: Date;
@@ -103,5 +106,11 @@ export type Checkpoint = {
     messages: ModelMessage[];
     /** AI SDK finish reason of the step this checkpoint was taken after. */
     finishReason?: string;
+    /** Provenance of a conversation run's recalled context (not an authorization). */
+    conversation?: {
+        scopeId: string;
+        generation: number;
+        snapshotRunId: string;
+    };
     createdAt: Date;
 };

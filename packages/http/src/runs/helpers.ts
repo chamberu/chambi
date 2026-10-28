@@ -72,8 +72,9 @@ function viewInvoker(invoker: Invoker): InvokerView {
  * `permissions` from a run.
  */
 export function serializeRun(run: Run): RunView {
-    const view: RunView & { claim?: unknown } = { ...run };
+    const view: RunView & { claim?: unknown; conversation?: unknown } = { ...run };
     delete view.claim;
+    delete view.conversation;
     if (run.trigger.invoker) view.trigger = { ...run.trigger, invoker: viewInvoker(run.trigger.invoker) };
     return view;
 }

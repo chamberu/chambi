@@ -22,3 +22,5 @@ export const MASKED_PAIR = ':***@';
  * during an unanswered connect ends well inside CHAMVI_FORCE_EXIT_MS.
  */
 export const STORE_CONNECT_TIMEOUT_MS = 10_000;
+
+export const MEMORY_CONVERSATION_WARNING = 'Conversation memory is process-local: restarts lose history and notes; replicas share nothing. Use PostgreSQL for durability.';

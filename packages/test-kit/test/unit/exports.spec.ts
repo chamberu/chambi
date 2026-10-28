@@ -13,6 +13,7 @@ describe('public api', () => {
         'ControllableClock',
         'createFakeGithub',
         'createGitFixture',
+        'describeConversationStoreContract',
         'describeStoreContract',
         'describeWorkspaceContract',
     ])('exports %s', (name) => {

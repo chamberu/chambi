@@ -74,6 +74,88 @@ describe('public api', () => {
         expectTypeOf<core.HandoffResult>().toEqualTypeOf<{ runId: string; deduplicated: boolean }>();
     });
 
+    it('exports the conversation contract', () => {
+        expect(core.CONVERSATION_FIELD_MAX_LENGTH).toBe(255);
+        expect(core.DEFAULT_CONVERSATION_LIMITS.maxItems).toBe(20);
+        expect(core.CONVERSATION_LIMITS_MAX.maxItems).toBe(100);
+        expect(Object.isFrozen(core.DEFAULT_CONVERSATION_LIMITS)).toBe(true);
+        expect(Object.isFrozen(core.CONVERSATION_LIMITS_MAX)).toBe(true);
+        expect(core.CONVERSATION_NOTE_KEY_MAX_LENGTH).toBe(128);
+        expect(core.CONVERSATION_NOTE_TEXT_MAX_BYTES).toBe(2048);
+        expect(core.CONVERSATION_NOTES_MAX).toBe(100);
+        expect(core.MemoryConversationStore).toBeTypeOf('function');
+        expectTypeOf<core.MemoryConversationStoreOptions>().toEqualTypeOf<{ clock?: core.IClock }>();
+        expectTypeOf<core.MemoryConversationStore>().toMatchTypeOf<core.IConversationStore>();
+        for (const name of [
+            'normalizeConversationLimits',
+            'identityId',
+            'conversationConcurrencyKey',
+            'assertConversationIdentity',
+            'assertConversationText',
+            'assertConversationScope',
+            'buildSnapshotContent',
+            'userItemId',
+            'isSameEmit',
+            'assertNoteOperationShape',
+            'assertNoteOperationContent',
+        ]) {
+            expect(core).not.toHaveProperty(name);
+        }
+        expectTypeOf<core.ConversationIdentity>().toEqualTypeOf<{
+            agent: string;
+            channel: string;
+            account: string;
+            chat: string;
+            audience: string;
+        }>();
+        expectTypeOf<core.ConversationScope>().toEqualTypeOf<{
+            id: string;
+            generation: number;
+            identity: core.ConversationIdentity;
+        }>();
+        expectTypeOf<core.ConversationTarget>().toEqualTypeOf<{
+            account: string;
+            chat: string;
+            audience: string;
+            text: string;
+        }>();
+        expectTypeOf<core.ConversationBinding>().toEqualTypeOf<{ scope: core.ConversationScope; text: string }>();
+        expectTypeOf<core.ConversationAccess>().toEqualTypeOf<{
+            operation: 'dispatch' | 'recall' | 'notes';
+            identity: core.ConversationIdentity;
+            invoker?: core.Invoker;
+        }>();
+        expectTypeOf<core.ConversationOptions>().toEqualTypeOf<{
+            store: core.IConversationStore;
+            authorize: (access: core.ConversationAccess) => boolean | Promise<boolean>;
+            limits?: core.ConversationLimits;
+        }>();
+        expectTypeOf<core.EngineOptions['conversations']>().toEqualTypeOf<core.ConversationOptions | undefined>();
+        expectTypeOf<core.ResolvedConversationLimits>().toEqualTypeOf<{
+            readonly maxItems: number;
+            readonly maxHistoryBytes: number;
+            readonly maxNotesBytes: number;
+            readonly maxItemBytes: number;
+            readonly retentionMs: number;
+            readonly maxStoredItems: number;
+        }>();
+        expectTypeOf<core.ConversationNoteResult>().toEqualTypeOf<
+            {
+                kind: 'set';
+                key: string;
+                updatedAt: Date
+            } | {
+                kind: 'remove';
+                key: string;
+                removed: boolean
+            }
+        >();
+        expectTypeOf<core.ConversationNoteOperation>().toHaveProperty('kind').toEqualTypeOf<'set' | 'remove'>();
+        expectTypeOf<core.IConversationStore['get']>()
+            .toEqualTypeOf<(identity: core.ConversationIdentity) => Promise<core.ConversationScope | undefined>>();
+        expectTypeOf<core.IStore>().not.toHaveProperty('resolve');
+    });
+
     it('exports the trigger key bound', () => {
         expect(core.TRIGGER_KEY_MAX_LENGTH).toBe(255);
     });
@@ -86,6 +168,10 @@ describe('public api', () => {
 
     it('keeps the channel context factory internal', () => {
         expect(core).not.toHaveProperty('createChannelContext');
+        expect(core.memoryTools).toBeTypeOf('function');
+        expect(core.hasConversation).toBeTypeOf('function');
+        expect(core).not.toHaveProperty('conversationFor');
+        expect(core).not.toHaveProperty('bindConversationRun');
         expect(core).not.toHaveProperty('assertChannelName');
         expect(core).not.toHaveProperty('createChannelHandle');
         expect(core).not.toHaveProperty('runToolCall');
@@ -108,9 +194,9 @@ describe('public api', () => {
 
     it('exports the approval option types', () => {
         expectTypeOf<core.ApprovalOption>().toEqualTypeOf<{
-            id: string; 
-            label: string; 
-            detail?: string 
+            id: string;
+            label: string;
+            detail?: string
         }>();
         expectTypeOf<core.ApprovalRequestInput['options']>().toEqualTypeOf<core.ApprovalOption[] | undefined>();
         expectTypeOf<core.ApprovalRequestInput['multiple']>().toEqualTypeOf<boolean | undefined>();
@@ -145,9 +231,9 @@ describe('public api', () => {
         expectTypeOf<core.Run>().toHaveProperty('address').toEqualTypeOf<string | undefined>();
         expectTypeOf<core.EngineStartOptions>().toEqualTypeOf<{ channels?: boolean }>();
         expectTypeOf<core.EmitMessage>().toEqualTypeOf<{
-            title?: string; 
-            body: string; 
-            key?: string 
+            title?: string;
+            body: string;
+            key?: string
         }>();
         expectTypeOf<core.ChannelHandle['emit']>().returns.toEqualTypeOf<Promise<void>>();
         expectTypeOf<core.ChannelHandle['approve']>().returns.toEqualTypeOf<Promise<core.ApprovalDecision>>();

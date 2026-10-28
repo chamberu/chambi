@@ -31,6 +31,7 @@ import type {
 
 /** Run properties that map one to one onto a RunEntity property. */
 const RUN_PROPERTIES: ReadonlySet<string> = new Set([
+    'conversation',
     'agent',
     'status',
     'trigger',
@@ -101,6 +102,7 @@ export function toCheckpointValues(cp: Checkpoint): QueryDeepPartialEntity<Check
         stepIndex: cp.stepIndex,
         messages: cp.messages,
         finishReason: cp.finishReason ?? null,
+        conversation: cp.conversation ?? null,
         createdAt: cp.createdAt,
     };
 
@@ -165,6 +167,7 @@ export function toRun(entity: RunEntity): Run {
         updatedAt: entity.updatedAt,
     };
 
+    if (entity.conversation != null) run.conversation = structuredClone(entity.conversation);
     if (entity.concurrencyKey !== null) run.concurrencyKey = entity.concurrencyKey;
     if (entity.address !== null) run.address = entity.address;
     if (entity.output !== null) run.output = entity.output;
@@ -205,6 +208,7 @@ export function toCheckpoint(entity: CheckpointEntity): Checkpoint {
         messages: entity.messages,
         createdAt: entity.createdAt,
     };
+    if (entity.conversation != null) checkpoint.conversation = structuredClone(entity.conversation);
     if (entity.finishReason !== null) checkpoint.finishReason = entity.finishReason;
 
     return checkpoint;

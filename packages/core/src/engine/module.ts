@@ -14,7 +14,20 @@ import { assertArtifactInput } from '../artifact/helpers.ts';
 import { attachmentIds, storeArtifact } from '../artifact/module.ts';
 import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
 import { assertChannelName, assertDefaultAddress, createChannelContext } from '../channel/helpers.ts';
-import type { IChannel } from '../channel/types.ts';
+import type { ChannelContext, IChannel } from '../channel/types.ts';
+import { Conversations, bindConversationIntake } from '../conversation/module.ts';
+import {
+    assertConversationIdentity,
+    assertConversationText,
+    conversationConcurrencyKey,
+    identityId,
+} from '../conversation/helpers.ts';
+import type {
+    ConversationBinding,
+    ConversationIdentity,
+    ConversationInspection,
+    ConversationScope,
+} from '../conversation/types.ts';
 import { systemClock } from '../clock/index.ts';
 import type { IClock } from '../clock/index.ts';
 import { contextKeyName, isContextKey } from '../context/helpers.ts';
@@ -107,6 +120,8 @@ export class Engine implements IContextProvider {
 
     protected readonly queue: RunQueue;
 
+    protected readonly conversations?: Conversations;
+
     protected readonly claimTtlMs: number;
 
     /** The default model of agents without one (EngineOptions.model). */
@@ -150,6 +165,7 @@ export class Engine implements IContextProvider {
 
     constructor(opts: EngineOptions) {
         this.store = opts.store;
+        this.conversations = opts.conversations === undefined ? undefined : new Conversations(opts.conversations);
         this.agents = new Map(opts.agents.map((a) => [a.name, a]));
         const channels = opts.channels ?? [];
         this.channels = new Map();
@@ -179,6 +195,45 @@ export class Engine implements IContextProvider {
             agentModel: (name: string) => this.agents.get(name)?.definition.model,
         } satisfies ModelContext);
         this.provided.set(HANDOFF_CONTEXT, this.createHandoffHost());
+        bindConversationIntake(this, async (channel, envelope, target) => {
+            if (this.channels.get(channel.name) !== channel) throw new ValidationError('Conversation intake needs the registered channel object.');
+            const capability = this.conversationCapability();
+            const copied = structuredClone(target);
+            const input = structuredClone(envelope);
+            if (this.agents.get(input.agent)?.definition.conversation !== true) throw new ValidationError('The agent has not enabled conversations.');
+            const identity: ConversationIdentity = {
+                agent: input.agent,
+                channel: channel.name,
+                account: copied?.account,
+                chat: copied?.chat,
+                audience: copied?.audience,
+            };
+            assertConversationIdentity(identity);
+            assertConversationText(copied?.text, capability.limits.maxItemBytes);
+            for (const field of ['id', 'idempotencyKey', 'concurrencyKey', 'address'] as const) {
+                if (input[field] !== undefined) assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
+            }
+            const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
+            await capability.allow('dispatch', identity, invoker);
+            // Validate caller keys before resolve can create any conversation rows.
+            assertTriggerKey('idempotency key', input.idempotencyKey);
+            assertTriggerKey('concurrency key', input.concurrencyKey);
+            const current = await capability.store.get(identity);
+            const proposed = current ?? {
+                id: identityId(identity),
+                generation: 0,
+                identity,
+            };
+            if (input.concurrencyKey !== undefined && input.concurrencyKey !== conversationConcurrencyKey(proposed)) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+            const scope = await capability.store.resolve(identity);
+            const key = conversationConcurrencyKey(scope);
+            if (input.concurrencyKey !== undefined && input.concurrencyKey !== key) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+            return this.createRun({
+                ...input,
+                channel: channel.name,
+                concurrencyKey: key,
+            }, undefined, { scope, text: copied.text });
+        });
         for (const agent of opts.agents) this.assertRegistrable(agent);
         // eslint-disable-next-line no-console
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));
@@ -203,8 +258,9 @@ export class Engine implements IContextProvider {
 
     async dispatch(envelope: DispatchEnvelope): Promise<{ runId: string; deduplicated: boolean }> {
         // a JS caller may pass a parent anyway: dropped, so nobody forges lineage
-        const rest: DispatchEnvelope & { parent?: unknown } = { ...envelope };
+        const rest: DispatchEnvelope & { parent?: unknown; conversation?: unknown } = { ...envelope };
         delete rest.parent;
+        delete rest.conversation;
         return this.createRun(rest);
     }
 
@@ -212,13 +268,21 @@ export class Engine implements IContextProvider {
      * dispatch()'s body; `parent` comes only from this argument (the
      * hand-off host), never from the envelope.
      */
-    protected async createRun(envelope: DispatchEnvelope, parent?: TriggerParent): Promise<{ runId: string; deduplicated: boolean }> {
+    protected async createRun(
+        envelope: DispatchEnvelope,
+        parent?: TriggerParent,
+        conversation?: ConversationBinding,
+    ): Promise<{ runId: string; deduplicated: boolean }> {
         if (!this.agents.has(envelope.agent)) throw new AgentNotFoundError(envelope.agent);
+        // Also strip forged fields from handoff and internal envelope spreads.
+        const safe: DispatchEnvelope & { conversation?: unknown; parent?: unknown } = { ...envelope };
+        delete safe.conversation;
+        delete safe.parent;
         const {
             attachments, 
             invoker, 
             ...rest 
-        } = envelope;
+        } = safe as DispatchEnvelope;
         // before any store write: an invalid attachment stores nothing
         if (attachments !== undefined && !Array.isArray(attachments)) {
             throw new ValidationError('The attachments must be an array.');
@@ -240,13 +304,21 @@ export class Engine implements IContextProvider {
 
         if (trigger.idempotencyKey !== undefined) {
             const claimed = await this.store.claimKey(
-                idempotencyScope(trigger),
+                idempotencyScope(conversation ? { ...trigger, channel: `${trigger.channel}:conversation:${conversation.scope.id}` } : trigger),
                 trigger.idempotencyKey,
                 runId,
                 IDEMPOTENCY_TTL_MS,
             );
             if (!claimed.created) {
-                if (await this.store.getRun(claimed.runId)) return { runId: claimed.runId, deduplicated: true };
+                const original = await this.store.getRun(claimed.runId);
+                if (original) {
+                    if (conversation && original.conversation?.scope.id !== conversation.scope.id) throw new ValidationError('The duplicate run belongs to another conversation.');
+                    return { runId: claimed.runId, deduplicated: true };
+                }
+                // shortcut: post-reset reservations cannot heal, persist generations when automatic recovery is required.
+                if (conversation && conversation.scope.generation > 0) {
+                    throw new InvalidRunStateError('The reserved conversation run is missing and its original generation cannot be proven after reset.');
+                }
                 // the key's run was never created (createRun failed after the claim, or is
                 // still in flight): create it under the reserved id; createRun decides the race
                 runId = claimed.runId;
@@ -274,10 +346,39 @@ export class Engine implements IContextProvider {
             createdAt: now,
             updatedAt: now,
         };
+        if (conversation) run.conversation = structuredClone(conversation);
         if (!await this.store.createRun(run)) return { runId, deduplicated: true };
         this.emit({ type: 'run.updated', run });
         if (this.started) void this.queue.pump();
         return { runId, deduplicated: false };
+    }
+
+    protected conversationCapability(): Conversations {
+        if (!this.conversations) throw new ValidationError('Conversation capability is disabled.');
+        return this.conversations;
+    }
+
+    /** Privileged in-process operator APIs; audit run/checkpoint copies survive deletion. */
+    inspectConversation(identity: ConversationIdentity, query?: { limit?: number; offset?: number }): Promise<ConversationInspection | undefined> {
+        return this.conversationCapability().inspect(structuredClone(identity), query);
+    }
+
+    async resetConversation(identity: ConversationIdentity, options: { keepNotes?: boolean } = {}): Promise<ConversationScope> {
+        const capability = this.conversationCapability();
+        const copied = structuredClone(identity);
+        await capability.repair(copied, this.store);
+        return capability.store.reset(copied, { keepNotes: options.keepNotes ?? false });
+    }
+
+    async deleteConversation(identity: ConversationIdentity): Promise<void> {
+        const capability = this.conversationCapability();
+        const copied = structuredClone(identity);
+        await capability.repair(copied, this.store);
+        await capability.store.delete(copied);
+    }
+
+    pruneConversations(): Promise<void> {
+        return this.conversationCapability().prune(this.store);
     }
 
     /**
@@ -331,6 +432,12 @@ export class Engine implements IContextProvider {
     /** The registered agents in registration order, as a new array. */
     listAgents(): Agent[] {
         return this.agents.values().toArray();
+    }
+
+    /** Gives a transport a context for the exact registered channel object. */
+    channelContext(channel: IChannel): ChannelContext {
+        if (this.channels.get(channel.name) !== channel) throw new ValidationError('The channel object is not registered.');
+        return createChannelContext(this, channel);
     }
 
     /** The registered channel of that name. */
@@ -599,7 +706,7 @@ export class Engine implements IContextProvider {
         });
         const settled = await Promise.race([this.queue.idle().then(() => false as const), timedOut]);
         timer?.clear();
-        if (!settled) return;
+        if (!settled) { await this.idle(); return; }
 
         while (this.executions.size > 0) {
             const pending = this.executions.values().toArray();
@@ -615,6 +722,7 @@ export class Engine implements IContextProvider {
     /** Resolves when nothing runs, nothing more can be started and no approval delivery is in flight. */
     async idle(): Promise<void> {
         await this.queue.idle();
+        await this.conversations?.idle();
         while (this.deliveries.size > 0) {
             await Promise.all(this.deliveries);
             await this.queue.idle();
@@ -686,6 +794,7 @@ export class Engine implements IContextProvider {
 
     /** Settles a run nobody executes (`expectStatus`) as cancelled, storing `reason` as its error. */
     protected async cancelStored(runId: string, expectStatus: Run['status'][], reason?: CancelReason): Promise<void> {
+        await this.conversations?.idle(runId);
         const now = this.clock.now();
         const updated = await this.store.updateRun(
             runId,
@@ -699,6 +808,7 @@ export class Engine implements IContextProvider {
             { expectStatus },
         );
         this.emit({ type: 'run.updated', run: updated });
+        await this.reconcileConversation(updated);
     }
 
     /**
@@ -854,6 +964,7 @@ export class Engine implements IContextProvider {
      * wait point, so tokens handed out earlier stay valid.
      */
     protected async pause(run: Run, request: ApprovalRequest, usage: Usage): Promise<void> {
+        await this.conversations?.idle(run.id);
         const now = this.clock.now();
         const { timeoutMs, ...asked } = request;
         const waiting: WaitPoint = run.waiting?.approvalId === request.approvalId ?
@@ -985,8 +1096,31 @@ export class Engine implements IContextProvider {
             if (released) this.emit({ type: 'run.updated', run: released });
             return;
         }
+        let conversation;
+        if (run.conversation) {
+            const capability = this.conversationCapability();
+            if (agent.definition.conversation !== true) throw new InvalidRunStateError('The agent has disabled conversations.');
+            const admitted = await capability.admit(structuredClone(run), this.store);
+            if (admitted.kind === 'busy') {
+                this.queue.defer(run.id);
+                const released = await this.ownedUpdate(run.id, {
+                    status: RunStatus.QUEUED,
+                    claim: undefined,
+                    startedAt: undefined,
+                });
+                if (released) this.emit({ type: 'run.updated', run: released });
+                return;
+            }
+            if (!await this.ownsRun(run.id)) return;
+            if (signal.aborted) {
+                await this.finish(run.id, { status: RunStatus.CANCELLED });
+                return;
+            }
+            conversation = { capability, snapshot: admitted.snapshot };
+        }
         await executeRun({
             engine: this,
+            conversation,
             run,
             agent,
             model: agent.definition.model ?? this.model,
@@ -1064,6 +1198,8 @@ export class Engine implements IContextProvider {
      * `cancelled`; after a lost lease nothing is written and undefined resolves.
      */
     protected async finish(id: string, patch: Partial<Run>): Promise<Run | undefined> {
+        // Another replica may repair a terminal owner immediately after this write.
+        await this.conversations?.idle(id);
         const execution = this.executions.get(id);
         const stop = execution?.stop;
         if (stop === 'lease-lost') return undefined;
@@ -1089,8 +1225,21 @@ export class Engine implements IContextProvider {
             };
         if (settled.usage === undefined) delete settled.usage;
         const updated = await this.ownedUpdate(id, settled);
-        if (updated) this.emit({ type: 'run.updated', run: updated });
+        if (updated) {
+            this.emit({ type: 'run.updated', run: updated });
+            await this.reconcileConversation(updated);
+        }
         return updated;
+    }
+
+    protected async reconcileConversation(run: Run): Promise<void> {
+        if (!run.conversation || !['completed', 'failed', 'cancelled'].includes(run.status)) return;
+        try {
+            await this.conversationCapability().reconcile(run.conversation.scope, run.id, this.store);
+            this.queue.retryDeferred();
+        } catch (error) {
+            this.onError(error, run);
+        }
     }
 
     /**
@@ -1147,6 +1296,7 @@ export class Engine implements IContextProvider {
             }
         }
         assertHandoffSubscription(agent);
+        if (agent.definition.conversation === true && !this.conversations) throw new InvalidAgentDefinitionError('The agent enables conversations but the engine has no conversation capability.');
     }
 
     protected registry(): RegistryContext {

@@ -319,7 +319,7 @@ describePostgres('storeModule on Postgres', () => {
         const error = await harness.setup().then(() => undefined, (e: unknown) => e);
         expect(error).toMatchObject({ code: APP_ERROR_CODE.STORE_NOT_MIGRATED });
         expect((error as Error).message).toBe(
-            'The store has 5 pending migration(s); run chamvi migrate or set CHAMVI_MIGRATE=true.',
+            `The store has ${STORE_MIGRATIONS.length} pending migration(s); run chamvi migrate or set CHAMVI_MIGRATE=true.`,
         );
         const ds = await openAdmin(url);
         try {

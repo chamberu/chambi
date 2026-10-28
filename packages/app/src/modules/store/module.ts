@@ -5,7 +5,12 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { ChamviError, InvalidAgentDefinitionError, MemoryStore } from '@chamvi/core';
+import {
+    ChamviError,
+    InvalidAgentDefinitionError,
+    MemoryConversationStore,
+    MemoryStore,
+} from '@chamvi/core';
 import type { IClock, IStore } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
@@ -15,6 +20,7 @@ import { throwIfStopped } from '../../module/helpers.ts';
 import type { ILogger } from '../../logger/types.ts';
 import type { AppContext } from '../../module/types.ts';
 import {
+    MEMORY_CONVERSATION_WARNING,
     MEMORY_STORE_WARNING,
     PURGE_HOOK_NAME,
     STORE_CONNECT_TIMEOUT_MS,
@@ -84,6 +90,19 @@ export class StoreModule implements IModule {
         }
 
         container.register(AppToken.STORE, { useValue: store });
+
+        if (context.conversations) {
+            let conversations = context.conversations.store;
+            if (!conversations && container.has(AppToken.DATA_SOURCE)) {
+                const { TypeormConversationStore } = await import('@chamvi/store-typeorm');
+                conversations = new TypeormConversationStore({ dataSource: container.resolve(AppToken.DATA_SOURCE), clock });
+            }
+            if (!conversations) {
+                conversations = new MemoryConversationStore({ clock });
+                logger.warn(MEMORY_CONVERSATION_WARNING);
+            }
+            container.register(AppToken.CONVERSATIONS, { useValue: conversations });
+        }
 
         if (context.mode === 'start' && !context.check && config.store.purgeIntervalMs > 0 && isPurgingStore(store)) {
             const purge = createPurgeTimer({

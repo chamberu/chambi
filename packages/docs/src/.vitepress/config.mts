@@ -129,6 +129,7 @@ export default defineConfig({
                         { text: 'Approvals & Hooks', link: '/guide/approvals' },
                         { text: 'Hand-offs', link: '/guide/handoffs' },
                         { text: 'Agent State', link: '/guide/state' },
+                        { text: 'Conversation Memory', link: '/guide/conversations' },
                         { text: 'Workspaces & Coding', link: '/guide/workspaces' },
                     ],
                 },

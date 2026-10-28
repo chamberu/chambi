@@ -7,3 +7,4 @@
 
 export * from './schema/index.ts';
 export * from './store/index.ts';
+export * from './conversation/index.ts';

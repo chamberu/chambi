@@ -23,6 +23,7 @@ export const AppToken = {
     LOGGER: token('LOGGER'),
     CLOCK: token('CLOCK'),
     STORE: token('STORE'),
+    CONVERSATIONS: token('CONVERSATIONS'),
     DATA_SOURCE: token('DATA_SOURCE'),
     ENGINE: token('ENGINE'),
     SHUTDOWN: token('SHUTDOWN'),

@@ -30,6 +30,17 @@ export class RunQueue {
 
     protected again = false;
 
+    /** Busy conversations retry on the next poll or local terminal release, avoiding a tight requeue loop. */
+    protected deferred = new Set<string>();
+
+    defer(runId: string): void {
+        this.deferred.add(runId);
+    }
+
+    retryDeferred(): void {
+        this.deferred.clear();
+    }
+
     protected pollGeneration = 0;
 
     protected poll: { clear(): void } | undefined;
@@ -50,7 +61,7 @@ export class RunQueue {
         const tick = () => {
             this.poll = this.opts.clock.setTimeout(() => {
                 const work: Promise<void> = Promise.resolve()
-                    .then(() => this.opts.onPoll?.())
+                    .then(() => { this.retryDeferred(); return this.opts.onPoll?.(); })
                     .catch((error: unknown) => this.opts.onError(error))
                     .then(() => this.pump())
                     .finally(() => {
@@ -82,6 +93,7 @@ export class RunQueue {
 
     resume(): void {
         this.halted = false;
+        this.retryDeferred();
     }
 
     /** Request a scheduling pass; coalesces overlapping requests. */
@@ -121,7 +133,7 @@ export class RunQueue {
         const mayStart = await this.opts.prepareStart?.();
         for (const run of queued) {
             if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
-            if (mayStart && !mayStart(run)) continue;
+            if (this.deferred.has(run.id) || (mayStart && !mayStart(run))) continue;
 
             const started = await admitRun(this.opts, run, (candidate) => this.tryStart(candidate), mayStart);
             if (started) this.launch(started);

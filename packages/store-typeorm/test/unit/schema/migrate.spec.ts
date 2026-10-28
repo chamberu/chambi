@@ -61,7 +61,7 @@ describePostgres('schema', () => {
         await migrateStore(ds);
 
         const migrations: { name: string }[] = await ds.query('SELECT name FROM migrations ORDER BY id');
-        expect(migrations.map((m) => m.name)).toEqual(['Init1792195200000', 'Artifacts1792368000000', 'IdempotencyScope1792454400000', 'KvKeyCollation1792540800000', 'AgentRevisions1792627200000']);
+        expect(migrations.map((m) => m.name)).toEqual(['Init1792195200000', 'Artifacts1792368000000', 'IdempotencyScope1792454400000', 'KvKeyCollation1792540800000', 'AgentRevisions1792627200000', 'Conversations1792713600000', 'ConversationBindings1792800000000']);
 
         const tables: { table_name: string }[] = await ds.query(
             'SELECT table_name FROM information_schema.tables WHERE table_name = ANY($1::text[])',
@@ -78,6 +78,8 @@ describePostgres('schema', () => {
             'IdempotencyScope1792454400000',
             'KvKeyCollation1792540800000',
             'AgentRevisions1792627200000',
+            'Conversations1792713600000',
+            'ConversationBindings1792800000000',
         ]);
         await migrateStore(ds);
         expect(await pendingMigrations(ds)).toEqual([]);
@@ -106,6 +108,12 @@ describePostgres('schema', () => {
         expect(await tablesIn('other')).toBe(Object.values(TableName).length);
         expect(await tablesIn('public')).toBe(0);
 
+        await ds.undoLastMigration({ transaction: 'each' });
+        expect(await tablesIn('other')).toBe(Object.values(TableName).length);
+        await ds.undoLastMigration({ transaction: 'each' });
+        const tableCount = Object.values(TableName).length - 5;
+        expect(await tablesIn('other')).toBe(tableCount);
+
         const scopeLength = async () => {
             const [row]: { length: number }[] = await ds.query(
                 'SELECT character_maximum_length AS length FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3',
@@ -121,7 +129,7 @@ describePostgres('schema', () => {
             return row?.collation;
         };
         await ds.undoLastMigration({ transaction: 'each' });
-        expect(await tablesIn('other')).toBe(Object.values(TableName).length - 1);
+        expect(await tablesIn('other')).toBe(tableCount - 1);
 
         expect(await keyCollation()).toBe('C');
         await ds.undoLastMigration({ transaction: 'each' });
@@ -130,10 +138,10 @@ describePostgres('schema', () => {
         expect(await scopeLength()).toBe(1024);
         await ds.undoLastMigration({ transaction: 'each' });
         expect(await scopeLength()).toBe(255);
-        expect(await tablesIn('other')).toBe(Object.values(TableName).length - 1);
+        expect(await tablesIn('other')).toBe(tableCount - 1);
 
         await ds.undoLastMigration({ transaction: 'each' });
-        expect(await tablesIn('other')).toBe(Object.values(TableName).length - 2);
+        expect(await tablesIn('other')).toBe(tableCount - 2);
         await ds.undoLastMigration({ transaction: 'each' });
         expect(await tablesIn('other')).toBe(0);
     });

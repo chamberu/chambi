@@ -5,6 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { Conversations } from '../../conversation/module.ts';
+import type { ConversationSnapshot } from '../../conversation/types.ts';
 import type { Agent } from '../../agent/types.ts';
 import type { ApprovalOption } from '../../approval/types.ts';
 import type { IClock } from '../../clock/index.ts';
@@ -18,6 +20,7 @@ import type { RunDelta } from '../types.ts';
 export type ExecuteContext = {
     /** The executing engine, handed to the execution's ToolContext as `engine`. */
     engine: Engine;
+    conversation?: { capability: Conversations; snapshot: ConversationSnapshot };
     run: Run;
     agent: Agent;
     /** The model to run: the agent's, else the engine default; undefined fails the run. */
