@@ -47,7 +47,7 @@ describe('HTTP subscription execution cap', () => {
         const agent = defineAgent({
             name: 'worker',
             instructions: 'Work once.',
-            channels: [http.on({ maxConcurrentRuns: 1 })],
+            channels: [http.on({ concurrencyMaxRuns: 1 })],
             model: new MockLanguageModelV4({
                 doStream: (options) => mockModel([{
                     parts: options.prompt.some((message) => message.role === 'tool') ?

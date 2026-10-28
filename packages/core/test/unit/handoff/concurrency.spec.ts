@@ -12,18 +12,18 @@ const invalid = [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, true, n
 
 describe('handoff subscription concurrency', () => {
     it('adds no cap when omitted', () => {
-        expect(handoff.on()).not.toHaveProperty('maxConcurrentRuns');
+        expect(handoff.on()).not.toHaveProperty('concurrencyMaxRuns');
     });
 
-    it.each([false, 1, 4] as const)('keeps cap %s on the subscription', (maxConcurrentRuns) => {
-        const subscription = handoff.on({ maxConcurrentRuns });
-        expect(subscription.maxConcurrentRuns).toBe(maxConcurrentRuns);
-        expect(subscription.options).not.toHaveProperty('maxConcurrentRuns');
+    it.each([false, 1, 4] as const)('keeps cap %s on the subscription', (concurrencyMaxRuns) => {
+        const subscription = handoff.on({ concurrencyMaxRuns });
+        expect(subscription.concurrencyMaxRuns).toBe(concurrencyMaxRuns);
+        expect(subscription.options).not.toHaveProperty('concurrencyMaxRuns');
     });
 
     it.each(invalid)('rejects invalid cap %s', (value) => {
-        const create = () => handoff.on({ maxConcurrentRuns: value as number });
+        const create = () => handoff.on({ concurrencyMaxRuns: value as number });
         expect(create).toThrow(InvalidAgentDefinitionError);
-        expect(create).toThrow(/maxConcurrentRuns/);
+        expect(create).toThrow(/concurrencyMaxRuns/);
     });
 });

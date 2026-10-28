@@ -12,10 +12,11 @@ import type { IStore } from '../../store/types.ts';
 
 export type RunQueueOptions = {
     store: IStore;
+    /** Synchronous live registry lookup; no loading, creation or I/O. Missing agents return undefined. */
     getAgent: (name: string) => Agent | undefined;
     clock: IClock;
     owner: string;
-    maxConcurrentRuns: number;
+    concurrencyMaxRuns: number;
     claimTtlMs: number;
     /** Called once a run is claimed and marked `running`. Must settle the run. */
     execute: (run: Run) => Promise<void>;

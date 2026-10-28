@@ -11,7 +11,7 @@ Checked the `feat/model-settings` worktree against chart base `79850ef` (0.1.2) 
 
 ## Channel concurrency compatibility check (2026-10-28)
 
-Scoped read-only check at commit `79850ef48f264eb2d6dcd879b18ff016838520c3`: `charts/agent-app/values.yaml`, `templates/deployment.yaml` and README HTTP/Secrets sections. This does not replace the broader verification above. Env pass-through remains compatible: `CHAMVI_MAX_CONCURRENT_RUNS` is local to each engine. Agent/subscription caps (`packages/core/src/engine/queue/admission.ts`) coordinate through the shared store; `httpModule({ channelRateLimits, trustProxy })` is code configuration, not a chart value or a new env variable. No template/schema migration is required.
+Scoped read-only check at commit `79850ef48f264eb2d6dcd879b18ff016838520c3`: `charts/agent-app/values.yaml`, `templates/deployment.yaml` and README HTTP/Secrets sections. This does not replace the broader verification above. Env pass-through remains compatible: `CHAMVI_MAX_CONCURRENT_RUNS` is local to each engine. Agent/subscription caps (`packages/core/src/engine/queue/admission.ts`) coordinate through the shared store; `httpModule({ channelRateLimits, trustProxy })` is code configuration, not a chart value or a new env variable. No template/schema migration is required. The TypeScript engine option is `concurrencyMaxRuns`; the chart continues to pass `CHAMVI_MAX_CONCURRENT_RUNS` unchanged.
 
 Documentation follow-up in chamvi/helm: explain known-source app `trustProxy` (Ingress annotations do not set it), separate channel request buckets or `github: false`, shared-store execution ceilings and unbounded queued backlog. No downstream edits, tests or publication performed in this check; a downstream documentation PR remains outstanding.
 

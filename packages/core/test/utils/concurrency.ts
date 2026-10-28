@@ -29,7 +29,7 @@ export function concurrencyHarness() {
         return defineAgent({
             name,
             instructions: 'Hold one tool call.',
-            maxConcurrentRuns: cap,
+            concurrencyMaxRuns: cap,
             channels,
             budget: { maxSteps: 1 },
             model: new MockLanguageModelV4({
@@ -88,7 +88,7 @@ export function concurrencyHarness() {
             agents,
             channels: [{ name: 'input' }],
             owner: `replica-${engines.length}`,
-            maxConcurrentRuns: 20,
+            concurrencyMaxRuns: 20,
             onError: (error) => { errors.push(error); },
             ...options,
         });
@@ -130,9 +130,9 @@ export function concurrencyHarness() {
     };
 }
 
-export const subscription = (id: string, maxConcurrentRuns?: number | false): ChannelSubscription => ({
+export const subscription = (id: string, concurrencyMaxRuns?: number | false): ChannelSubscription => ({
     channel: 'input',
     id,
     options: {},
-    maxConcurrentRuns,
+    concurrencyMaxRuns,
 });

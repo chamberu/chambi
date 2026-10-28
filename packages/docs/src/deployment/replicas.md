@@ -8,7 +8,7 @@ With a shared, durable store such as the [TypeORM store](/stores/typeorm) (`Memo
 
 - **One executor per run.** Run claims are leases (`claimTtlMs`, renewed every third of it). A replica that loses its lease stops writing.
 - **One run per concurrency key.** Checked under a store lock, across replicas.
-- **Shared numerical ceilings.** Agent and subscription `maxConcurrentRuns` count running runs under an agent admission lock. Waiting approvals release numerical capacity but keep their keys. All replicas must use compatible definitions and complete admission operations inside the lock TTL. `CHAMVI_MAX_CONCURRENT_RUNS` is still local to each engine, not a fleet cap. See [Concurrency](/guide/concurrency#shared-agent-and-subscription-ceilings).
+- **Shared numerical ceilings.** Agent and subscription `concurrencyMaxRuns` count running runs under an agent admission lock. Waiting approvals release numerical capacity but keep their keys. All replicas must use compatible definitions and complete admission operations inside the lock TTL. `CHAMVI_MAX_CONCURRENT_RUNS` is still local to each engine, not a fleet cap. See [Concurrency](/guide/concurrency#shared-agent-and-subscription-ceilings).
 - **One run per idempotency key.** `dispatch()` claims the key atomically; redeliveries to any replica return the same run.
 - **Crash recovery.** Every replica's poll requeues runs whose claim expired, and the next execution continues from the latest checkpoint.
 - **Graceful drain.** A terminating pod marks its unfinished runs `interrupted` and another replica picks them up.

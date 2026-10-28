@@ -113,7 +113,7 @@ With `required: true` or a `default` the overloads return a defined value.
 
 `httpModule({ channelRateLimits, trustProxy })` forwards the [channel request policies](/reference/http#channel-http-request-limits) to `createHttpApp()`. Configure a mounted channel by its exact name, with `{ max, windowMs? }` for a separate per-client bucket or `false` to disable only that channel's intake limiter. No environment variable is added for this setting. Trust only known proxy sources.
 
-`CHAMVI_MAX_CONCURRENT_RUNS` is the local engine ceiling. Agent and subscription `maxConcurrentRuns?: number | false` add nested shared-store ceilings; see [Concurrency](/guide/concurrency#shared-agent-and-subscription-ceilings).
+`CHAMVI_MAX_CONCURRENT_RUNS` is the local engine ceiling. Agent and subscription `concurrencyMaxRuns?: number | false` add nested shared-store ceilings; see [Concurrency](/guide/concurrency#shared-agent-and-subscription-ceilings).
 
 ## Built-in modules
 

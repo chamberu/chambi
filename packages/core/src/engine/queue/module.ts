@@ -114,13 +114,13 @@ export class RunQueue {
     }
 
     protected async pass(): Promise<void> {
-        if (this.halted || this.running.size >= this.opts.maxConcurrentRuns) return;
+        if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
         const { store } = this.opts;
         const { data: queued } = await store.listRuns({ status: [RunStatus.QUEUED] });
         if (queued.length === 0) return;
         const mayStart = await this.opts.prepareStart?.();
         for (const run of queued) {
-            if (this.halted || this.running.size >= this.opts.maxConcurrentRuns) return;
+            if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
             if (mayStart && !mayStart(run)) continue;
 
             const started = await admitRun(this.opts, run, (candidate) => this.tryStart(candidate), mayStart);

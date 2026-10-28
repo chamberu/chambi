@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { InvalidAgentDefinitionError, ValidationError, assertMaxConcurrentRuns } from '@chamvi/core';
+import { InvalidAgentDefinitionError, ValidationError, assertConcurrencyMaxRuns } from '@chamvi/core';
 import type { ChannelSubscription } from '@chamvi/core';
 import { isObject } from 'smob';
 import { GITHUB_CHANNEL_NAME } from '../channel/constants.ts';
@@ -35,7 +35,7 @@ export function createGithubSubscription(
     events: string | readonly string[],
     options: GithubSubscriptionOptions = {},
 ): ChannelSubscription<GithubEvent> {
-    assertMaxConcurrentRuns(options.maxConcurrentRuns, 'github.on() maxConcurrentRuns');
+    assertConcurrencyMaxRuns(options.concurrencyMaxRuns, 'github.on() concurrencyMaxRuns');
     let list: unknown[] = [];
     if (typeof events === 'string') list = [events];
     else if (Array.isArray(events)) list = [...events];
@@ -57,7 +57,7 @@ export function createGithubSubscription(
     const subscription: ChannelSubscription<GithubEvent> = {
         channel,
         id,
-        ...(options.maxConcurrentRuns !== undefined ? { maxConcurrentRuns: options.maxConcurrentRuns } : {}),
+        ...(options.concurrencyMaxRuns !== undefined ? { concurrencyMaxRuns: options.concurrencyMaxRuns } : {}),
         options: {
             events: list,
             ...(options.filter ? { filter: options.filter } : {}),

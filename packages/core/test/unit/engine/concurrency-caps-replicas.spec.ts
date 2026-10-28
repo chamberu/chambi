@@ -27,7 +27,7 @@ afterEach(async () => {
 describe('shared-store admission', () => {
     it.each(['count', 'claim', 'transition'] as const)('releases admission and can retry after a %s failure', async (failure) => {
         const h = setup();
-        const engine = h.engine([h.agent('worker', 1)], { maxConcurrentRuns: 1 });
+        const engine = h.engine([h.agent('worker', 1)], { concurrencyMaxRuns: 1 });
         const { runId } = await h.dispatch(engine);
         const error = new Error(`failed ${failure}`);
         let armed = true;
@@ -63,7 +63,7 @@ describe('shared-store admission', () => {
 
     it('frees its local reservation when a stale guarded transition is refused', async () => {
         const h = setup();
-        const engine = h.engine([h.agent('worker', 1)], { maxConcurrentRuns: 1 });
+        const engine = h.engine([h.agent('worker', 1)], { concurrencyMaxRuns: 1 });
         const stale = await h.dispatch(engine);
         const next = await h.dispatch(engine);
         const update = h.store.updateRun.bind(h.store);
@@ -109,7 +109,7 @@ describe('shared-store admission', () => {
         const failure = new Error('release failed');
         const reporterFailure = new Error('reporter failed');
         const engine = h.engine([h.agent('worker', 1)], {
-            maxConcurrentRuns: 1,
+            concurrencyMaxRuns: 1,
             onError: (error) => {
                 h.errors.push(error);
                 if (error === failure) throw reporterFailure;
@@ -212,7 +212,7 @@ describe('shared-store admission', () => {
         let attempts = 0;
         h.store.acquire = async (...args) => {
             const acquired = await acquire(...args);
-            if (args[0] === 'admission:worker' && acquired && ++attempts === 2) agent.definition.maxConcurrentRuns = 1;
+            if (args[0] === 'admission:worker' && acquired && ++attempts === 2) agent.definition.concurrencyMaxRuns = 1;
             return acquired;
         };
         await engine.start();

@@ -8,13 +8,17 @@ Several engines can share one store. They coordinate through the store alone: ru
 
 ## Local slots
 
-`maxConcurrentRuns` (default `4`) caps the runs one engine executes at once. A scheduling pass lists `queued` runs in FIFO order (by `createdAt`, then `id`) and starts them until the slots are full. Passes run after a dispatch, after a run settles, after a resume and on every poll.
+`concurrencyMaxRuns` (default `4`) caps the runs one engine executes at once. A scheduling pass lists `queued` runs in FIFO order (by `createdAt`, then `id`) and starts them until the slots are full. Passes run after a dispatch, after a run settles, after a resume and on every poll.
 
 A `waiting` run holds no slot. A long approval wait does not block other work.
 
+::: warning TypeScript option rename
+The engine option is now `concurrencyMaxRuns`, replacing `maxConcurrentRuns` (a breaking TypeScript API change). Update engine configuration objects when upgrading. The deployment environment variable remains `CHAMVI_MAX_CONCURRENT_RUNS`; its name, default and local-engine scope are unchanged.
+:::
+
 ## Shared agent and subscription ceilings
 
-Set `maxConcurrentRuns` on an agent and, optionally, on each `channel.on(...)` subscription:
+Set `concurrencyMaxRuns` on an agent and, optionally, on each `channel.on(...)` subscription:
 
 <<< @/snippets/concurrency.ts#caps
 
@@ -26,7 +30,7 @@ The scheduler checks queued work in FIFO order, skipping blocked runs so eligibl
 
 Numerical admission uses the store lock `admission:<agent>` around the count, claim and transition to `running`, also for uncapped sibling subscriptions. All replicas must use compatible agent definitions; ceilings are read from live definitions, not saved onto each run. Like the concurrency-key lock, the admission guarantee assumes its store operations finish inside the lock TTL (`claimTtlMs`), not an arbitrarily stalled database operation.
 
-`EngineOptions.maxConcurrentRuns` and the app's `CHAMVI_MAX_CONCURRENT_RUNS` remain **per engine**, not fleet-wide. For example, two engines with four local slots can execute eight runs in total, but an agent ceiling of three permits at most three running runs of that agent across their shared store.
+`EngineOptions.concurrencyMaxRuns` and the app's `CHAMVI_MAX_CONCURRENT_RUNS` remain **per engine**, not fleet-wide. For example, two engines with four local slots can execute eight runs in total, but an agent ceiling of three permits at most three running runs of that agent across their shared store.
 
 GitHub's default per-issue concurrency key and cron's `overlap` policy are separate controls: keys serialize related work, overlap decides whether a cron tick dispatches, and numerical caps bound execution capacity.
 

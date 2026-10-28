@@ -36,7 +36,7 @@ describe('public api', () => {
         'isArtifactMediaType',
         'artifactFilePart',
         'assertTriggerKey',
-        'assertMaxConcurrentRuns',
+        'assertConcurrencyMaxRuns',
         'normalizeEnvelope',
         'consoleChannel',
         'ChannelNotFoundError',

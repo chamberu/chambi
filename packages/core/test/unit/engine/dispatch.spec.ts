@@ -242,8 +242,8 @@ describe('Engine.dispatch', () => {
         await engine.idle();
     });
 
-    it('maxConcurrentRuns is respected and starts are FIFO', async () => {
-        const { engine } = make({ maxConcurrentRuns: 2 });
+    it('concurrencyMaxRuns is respected and starts are FIFO', async () => {
+        const { engine } = make({ concurrencyMaxRuns: 2 });
         await engine.start();
         const ids: string[] = [];
         for (let i = 0; i < 4; i++) ids.push((await engine.dispatch(env())).runId);

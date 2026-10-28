@@ -35,7 +35,7 @@ export type GithubEvent = {
 
 export type GithubSubscriptionOptions = {
     /** Shared-store execution cap within the agent; omitted or false adds no cap. */
-    maxConcurrentRuns?: number | false;
+    concurrencyMaxRuns?: number | false;
     /** Default `github:<events joined by ','>`. */
     id?: string;
     /** Runs after the event match; a delivery it refuses starts no run of this subscription. */

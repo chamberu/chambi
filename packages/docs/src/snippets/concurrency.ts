@@ -16,11 +16,11 @@ export function cappedAgent(model: LanguageModel) {
         name: 'triage',
         model,
         instructions: 'Inspect the issue or perform the scheduled sweep.',
-        maxConcurrentRuns: 3, // shared-store ceiling for this agent
+        concurrencyMaxRuns: 3, // shared-store ceiling for this agent
         channels: [
-            github.on('issues.opened', { maxConcurrentRuns: 2 }),
+            github.on('issues.opened', { concurrencyMaxRuns: 2 }),
             // No additional subscription ceiling; still inside the agent's three.
-            cron.on('0 * * * *', { maxConcurrentRuns: false }),
+            cron.on('0 * * * *', { concurrencyMaxRuns: false }),
         ],
     });
     // #endregion caps

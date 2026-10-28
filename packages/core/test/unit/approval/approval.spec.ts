@@ -486,7 +486,7 @@ describe('approvals', () => {
 
     it('a waiting run frees its concurrency slot', async () => {
         const model = mockModel([deployTurn(), text('other done')]);
-        const ctx = setup({ model, engine: { maxConcurrentRuns: 1 } });
+        const ctx = setup({ model, engine: { concurrencyMaxRuns: 1 } });
         await dispatchToWaiting(ctx);
         const { runId } = await ctx.engine.dispatch(env());
         await ctx.engine.idle();

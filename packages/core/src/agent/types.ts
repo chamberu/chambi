@@ -75,7 +75,7 @@ export type AgentDefinition<S extends StateSchema = StateSchema> = {
      */
     channels?: ChannelSubscription[];
     /** Shared-store execution cap across all channels; omitted or false adds no cap. */
-    maxConcurrentRuns?: number | false;
+    concurrencyMaxRuns?: number | false;
     /**
      * The agent's tools: a plain `ToolSet` (the default), or a factory for
      * dynamic sets, called once per execution with the same ToolContext the

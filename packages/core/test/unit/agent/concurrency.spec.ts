@@ -25,36 +25,36 @@ function definition(): AgentDefinition {
     };
 }
 
-function subscription(maxConcurrentRuns?: number | false): ChannelSubscription {
+function subscription(concurrencyMaxRuns?: number | false): ChannelSubscription {
     return {
         channel: 'events',
         id: 'updates',
         options: {},
-        maxConcurrentRuns,
+        concurrencyMaxRuns,
     };
 }
 
 describe('agent concurrency configuration', () => {
-    it.each([undefined, false, 1, 4] as const)('keeps an agent cap of %s', (maxConcurrentRuns) => {
-        const agent = defineAgent({ ...definition(), maxConcurrentRuns });
-        expect(agent.definition.maxConcurrentRuns).toBe(maxConcurrentRuns);
+    it.each([undefined, false, 1, 4] as const)('keeps an agent cap of %s', (concurrencyMaxRuns) => {
+        const agent = defineAgent({ ...definition(), concurrencyMaxRuns });
+        expect(agent.definition.concurrencyMaxRuns).toBe(concurrencyMaxRuns);
     });
 
-    it.each([undefined, false, 1, 4] as const)('accepts a subscription cap of %s', (maxConcurrentRuns) => {
-        const agent = defineAgent({ ...definition(), channels: [subscription(maxConcurrentRuns)] });
-        expect(agent.definition.channels?.[0]?.maxConcurrentRuns).toBe(maxConcurrentRuns);
+    it.each([undefined, false, 1, 4] as const)('accepts a subscription cap of %s', (concurrencyMaxRuns) => {
+        const agent = defineAgent({ ...definition(), channels: [subscription(concurrencyMaxRuns)] });
+        expect(agent.definition.channels?.[0]?.concurrencyMaxRuns).toBe(concurrencyMaxRuns);
     });
 
     it.each(invalid)('rejects an invalid agent cap %s', (value) => {
-        const create = () => defineAgent({ ...definition(), maxConcurrentRuns: value as number });
+        const create = () => defineAgent({ ...definition(), concurrencyMaxRuns: value as number });
         expect(create).toThrow(InvalidAgentDefinitionError);
-        expect(create).toThrow(/maxConcurrentRuns/);
+        expect(create).toThrow(/concurrencyMaxRuns/);
     });
 
     it.each(invalid)('rejects an invalid subscription cap %s', (value) => {
         const create = () => defineAgent({ ...definition(), channels: [subscription(value as number)] });
         expect(create).toThrow(InvalidAgentDefinitionError);
-        expect(create).toThrow(/maxConcurrentRuns/);
+        expect(create).toThrow(/concurrencyMaxRuns/);
     });
 
     describe.each(['agent', 'subscription'] as const)('hand-built %s caps', (level) => {
@@ -72,7 +72,7 @@ describe('agent concurrency configuration', () => {
                     ...definition(),
                     budget: {},
                     ...(level === 'agent' ?
-                        { maxConcurrentRuns: value as number } :
+                        { concurrencyMaxRuns: value as number } :
                         { channels: [subscription(value as number)] }),
                 },
             };
@@ -83,7 +83,7 @@ describe('agent concurrency configuration', () => {
                 channels,
             });
             expect(create).toThrow(InvalidAgentDefinitionError);
-            expect(create).toThrow(/maxConcurrentRuns/);
+            expect(create).toThrow(/concurrencyMaxRuns/);
 
             const engine = new Engine({
                 store,
@@ -91,9 +91,9 @@ describe('agent concurrency configuration', () => {
                 channels,
             });
             expect(() => engine.checkAgent(agent)).toThrow(InvalidAgentDefinitionError);
-            expect(() => engine.checkAgent(agent)).toThrow(/maxConcurrentRuns/);
+            expect(() => engine.checkAgent(agent)).toThrow(/concurrencyMaxRuns/);
             await expect(engine.putAgent(agent, { revision: 'new' })).rejects.toThrow(InvalidAgentDefinitionError);
-            await expect(engine.putAgent(agent, { revision: 'new' })).rejects.toThrow(/maxConcurrentRuns/);
+            await expect(engine.putAgent(agent, { revision: 'new' })).rejects.toThrow(/concurrencyMaxRuns/);
             expect(engine.getAgent('maintainer')).toBeUndefined();
             expect(accesses).toEqual([]);
         });

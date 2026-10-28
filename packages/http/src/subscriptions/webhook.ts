@@ -6,7 +6,7 @@
  */
 
 import type { ChannelSubscription } from '@chamvi/core';
-import { InvalidAgentDefinitionError, assertMaxConcurrentRuns } from '@chamvi/core';
+import { InvalidAgentDefinitionError, assertConcurrencyMaxRuns } from '@chamvi/core';
 import { WEBHOOK_CHANNEL_NAME } from '../channels/constants.ts';
 import type { WebhookSubscriber, WebhookSubscriptionOptions } from './types.ts';
 
@@ -20,7 +20,7 @@ export function createWebhookSubscription(
     path: string,
     options: WebhookSubscriptionOptions = {},
 ): ChannelSubscription {
-    assertMaxConcurrentRuns(options.maxConcurrentRuns, 'webhook.on() maxConcurrentRuns');
+    assertConcurrencyMaxRuns(options.concurrencyMaxRuns, 'webhook.on() concurrencyMaxRuns');
     if (typeof path !== 'string' || !path.startsWith('/')) {
         throw new InvalidAgentDefinitionError(`Webhook path "${path}" must start with "/".`);
     }
@@ -28,7 +28,7 @@ export function createWebhookSubscription(
     const subscription: ChannelSubscription = {
         channel,
         id: `webhook:${path}`,
-        ...(options.maxConcurrentRuns !== undefined ? { maxConcurrentRuns: options.maxConcurrentRuns } : {}),
+        ...(options.concurrencyMaxRuns !== undefined ? { concurrencyMaxRuns: options.concurrencyMaxRuns } : {}),
         options: { path, schema: options.schema },
     };
     if (options.idempotencyKey) subscription.idempotencyKey = options.idempotencyKey;

@@ -73,7 +73,7 @@ describe('nested execution caps', () => {
         await h.dispatch(engine);
         await engine.start();
         await h.settle();
-        agent.definition.maxConcurrentRuns = 1;
+        agent.definition.concurrencyMaxRuns = 1;
         const later = await h.dispatch(engine);
         await h.settle();
         expect((await h.store.listRuns({ status: ['running'] })).total).toBe(2);

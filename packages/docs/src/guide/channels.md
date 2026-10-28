@@ -47,7 +47,7 @@ The engine holds the channel instances:
 
 ## Subscriptions
 
-Every subscription builder accepts `maxConcurrentRuns?: number | false`: a positive safe integer adds a shared-store execution ceiling for that subscription; `false` or omission adds none. It never bypasses the agent's own `maxConcurrentRuns`. REST and MCP runs share the cap of `http.on()`. This is separate from concurrency keys, cron overlap and HTTP request rate limiting. See [Concurrency](/guide/concurrency#shared-agent-and-subscription-ceilings).
+Every subscription builder accepts `concurrencyMaxRuns?: number | false`: a positive safe integer adds a shared-store execution ceiling for that subscription; `false` or omission adds none. It never bypasses the agent's own `concurrencyMaxRuns`. REST and MCP runs share the cap of `http.on()`. This is separate from concurrency keys, cron overlap and HTTP request rate limiting. See [Concurrency](/guide/concurrency#shared-agent-and-subscription-ceilings).
 
 An agent subscribes to channels with `channels: ChannelSubscription[]`. Each channel package exports a builder named after its default channel; its `on()` makes subscriptions, and they are pure data, so an [agent folder](/guide/agent-folders) imports them without an instance:
 
@@ -139,6 +139,6 @@ If the store claimed the key but the run was never created (for example `createR
 
 ## Concurrency keys
 
-A run with a `concurrencyKey` starts only when no other run of the same agent with the same key is `running`, `waiting` or `interrupted`. Runs with different keys, and runs without a key, may run in parallel within the engine's local slots and any shared agent/subscription `maxConcurrentRuns` ceilings. See [Concurrency, Leases & Multi-Replica](/guide/concurrency).
+A run with a `concurrencyKey` starts only when no other run of the same agent with the same key is `running`, `waiting` or `interrupted`. Runs with different keys, and runs without a key, may run in parallel within the engine's local slots and any shared agent/subscription `concurrencyMaxRuns` ceilings. See [Concurrency, Leases & Multi-Replica](/guide/concurrency).
 
 Typical keys: one per repository, issue or pull request (`acme/app#42`), or one per mailbox.

@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { assertMaxConcurrentRuns } from '../channel/concurrency.ts';
+import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
 import type { StateSchema } from '../state/types.ts';
 import {
@@ -28,10 +28,10 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
         );
     }
 
-    assertMaxConcurrentRuns(def.maxConcurrentRuns, `Agent "${def.name}" maxConcurrentRuns`);
+    assertConcurrencyMaxRuns(def.concurrencyMaxRuns, `Agent "${def.name}" concurrencyMaxRuns`);
     const seen = new Set<string>();
     for (const subscription of def.channels ?? []) {
-        assertMaxConcurrentRuns(subscription.maxConcurrentRuns, `Agent "${def.name}" subscription "${subscription.id}" maxConcurrentRuns`);
+        assertConcurrencyMaxRuns(subscription.concurrencyMaxRuns, `Agent "${def.name}" subscription "${subscription.id}" concurrencyMaxRuns`);
         if (seen.has(subscription.id)) {
             throw new InvalidAgentDefinitionError(
                 `Agent "${def.name}" has duplicate subscription id "${subscription.id}".`,

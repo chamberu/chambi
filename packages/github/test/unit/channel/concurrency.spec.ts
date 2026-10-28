@@ -47,8 +47,8 @@ describe('GitHub burst admission', () => {
         const agent = defineAgent({
             name: 'triage',
             instructions: 'Inspect the issue.',
-            maxConcurrentRuns: 2,
-            channels: [github.on('issues.opened', { maxConcurrentRuns: 1 })],
+            concurrencyMaxRuns: 2,
+            channels: [github.on('issues.opened', { concurrencyMaxRuns: 1 })],
             model: new MockLanguageModelV4({
                 doStream: (options) => mockModel([{
                     parts: options.prompt.some((message) => message.role === 'tool') ?

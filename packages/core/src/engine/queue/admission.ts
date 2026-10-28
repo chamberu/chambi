@@ -12,8 +12,8 @@ import type { Run } from '../../run/types.ts';
 import type { RunQueueOptions } from './types.ts';
 
 function hasCaps(agent: Agent | undefined): boolean {
-    return typeof agent?.definition.maxConcurrentRuns === 'number' ||
-        (agent?.definition.channels ?? []).some((subscription) => typeof subscription.maxConcurrentRuns === 'number');
+    return typeof agent?.definition.concurrencyMaxRuns === 'number' ||
+        (agent?.definition.channels ?? []).some((subscription) => typeof subscription.concurrencyMaxRuns === 'number');
 }
 
 /** Count and transition share the agent lock, including starts of uncapped sibling subscriptions. */
@@ -33,9 +33,9 @@ export async function admitRun(
         const agent = opts.getAgent(candidate.agent);
         if (!agent && !candidate.cancelRequested) return undefined;
         if (!candidate.cancelRequested && agent) {
-            const agentCap = agent.definition.maxConcurrentRuns;
+            const agentCap = agent.definition.concurrencyMaxRuns;
             const subscriptionCap = agent.definition.channels
-                ?.find((subscription) => subscription.id === candidate.trigger.trigger)?.maxConcurrentRuns;
+                ?.find((subscription) => subscription.id === candidate.trigger.trigger)?.concurrencyMaxRuns;
             if (typeof agentCap === 'number' || typeof subscriptionCap === 'number') {
                 const { data: running } = await opts.store.listRuns({ agent: candidate.agent, status: [RunStatus.RUNNING] });
                 if (typeof agentCap === 'number' && running.length >= agentCap) return undefined;
