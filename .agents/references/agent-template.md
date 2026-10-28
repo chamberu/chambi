@@ -5,6 +5,10 @@
 - **Verified against:** commit `2635c76` (2026-10-25), `@chamvi/app`, `@chamvi/cli`, `@chamvi/ui` `^0.2.1`.
 - **How to maintain:** when a monorepo change touches a row below, update the template (a PR to chamvi/agent-template, then refresh its lockfile against the released packages) and correct the row here.
 
+## Model-settings follow-up (2026-10-28, unreleased)
+
+Checked the `feat/model-settings` worktree against base `272f04f`. App, CLI and UI dependencies now target published `^0.3.1`. `src/index.ts` supplies the app-wide model; `src/agents/example.ts` omits its own model so `CHAMVI_MODEL` can override the default. `test/unit/example.spec.ts` verifies inheritance and runs a scheduled job against an alternate fake provider selected through the environment. CI builds and runs `chamvi start --check` with placeholder credentials, without serving HTTP or calling a model. Deployment examples retain the existing published chart range and generic env/Secret mechanism rather than depending on unreleased chart values.
+
 ## Contract map (monorepo -> template)
 
 | Monorepo source | Template file | What the template relies on (and the test that pins it) |

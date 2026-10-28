@@ -5,6 +5,10 @@
 - **Verified against:** `agent-app` 0.1.1 (`root-0.1.1`, commit `312eba4`, 2026-10-25), with `@chamvi/*` 0.2.1.
 - **How to maintain:** when a monorepo change touches a row below, update the chart in the same breath (a PR to chamvi/helm) and correct the row here; pin the chart version.
 
+## Model-settings follow-up (2026-10-28, unreleased)
+
+Checked the `feat/model-settings` worktree against chart base `79850ef` (0.1.2) and chamvi 0.3.1. `values.yaml` adds `model` and named `providers`; `templates/_helpers.tpl` maps them to `CHAMVI_MODEL` and `CHAMVI_PROVIDER_<NAME>_*` on both Deployment and CronJobs. API keys and credential headers use Secret references only. `templates/_model-validations.tpl` checks settings without echoing rejected values; generated env names cannot collide with generic `env`. The readiness hook receives no model settings or credentials. Coverage lives in `tests/models_test.yaml` and `scripts/tests/test_models.py`. This is a proposed downstream change, not a published chart contract.
+
 ## Contract map (monorepo -> chart)
 
 | Monorepo source | Chart file | What the chart relies on |

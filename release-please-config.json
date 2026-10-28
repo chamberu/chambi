@@ -26,13 +26,9 @@
     },
     "plugins": [
         {
-            "type": "node-workspace",
-            "updateAllPackages": true,
-            "updatePeerDependencies": true
-        },
-        {
             "type": "linked-versions",
             "groupName": "main",
+            "merge": false,
             "components": [
                 "root",
                 "app",
@@ -52,6 +48,11 @@
                 "tool-web",
                 "ui"
             ]
+        },
+        {
+            "type": "node-workspace",
+            "updateAllPackages": true,
+            "updatePeerDependencies": true
         }
     ]
 }
