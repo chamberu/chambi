@@ -7,7 +7,7 @@
 
 import type { ToolSet } from 'ai';
 import type { Engine, IClock, ToolContext } from '@chamvi/core';
-import type { CredentialMode, IGitCredentials } from '../credentials/types.ts';
+import type { IGitCredentials } from '../credentials/types.ts';
 import type { ISandboxProvider, SandboxLimits } from '../provider/types.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 
@@ -51,13 +51,6 @@ export type WorkspaceManagerOptions = {
      * that answers wins, none answering is anonymous.
      */
     credentials?: IGitCredentials | IGitCredentials[];
-    /**
-     * How a credential reaches git. Default `workspace`: a credential helper
-     * and a 0600 file in the workspace's HOME, so plain git in `bash` works
-     * (the push policy then binds `git_push` only). `tools`: no credential in
-     * the workspace, only the checkout and the git tools authenticate.
-     */
-    credentialMode?: CredentialMode;
     /** A shallow checkout of this many commits for huge repositories; default the full history. */
     depth?: number;
     /** The commit identity, set as `GIT_AUTHOR_*` and `GIT_COMMITTER_*` in every workspace's environment. */
@@ -74,6 +67,7 @@ export type GitAuthor = {
     email: string;
 };
 
+/** Applies to git_push only; other tools and shell commands can bypass it. */
 export type PushPolicy = {
     /** `auto` (default) pushes; `approve` asks the owner through `approve()` before every push. */
     mode?: 'auto' | 'approve';
@@ -151,7 +145,7 @@ export interface IWorkspaceManager {
      * Returns the unsubscribe; after close() it subscribes nothing.
      */
     attach(engine: Pick<Engine, 'on'>): () => void;
-    /** `create_workspace` and `dispose_workspace`. */
+    /** Workspace lifecycle and structured Git tools (no bash tool). */
     tools(): ToolSet;
     /**
      * Disposes the manager's expired workspaces and, with `isSettled`, the

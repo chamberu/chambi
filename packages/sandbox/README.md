@@ -104,7 +104,6 @@ await workspaces.close();
 - `image` picks a container image (`python:3.13`, `rust:1`) and exists only when the manager has an allow-list (`allowImage(image)`; in `sandboxModule()` also `CHAMVI_SANDBOX_IMAGES`, a comma list of exact references, which wins) and never on the local provider, which runs no images; a requested image without one, a refused or a malformed reference is a `ValidationError`, before any create. The image needs `sh`, `git` and a GNU `timeout` that takes `-k`; the provider probes them before the checkout and names what is missing. Without it the workspace runs the manager's `image`, else the provider's (`sandbox-dev`, where `mise use -g node@22` installs any toolchain).
 - A run holds at most `maxWorkspacesPerRun` (3) workspaces at once.
 - A workspace id of another run is "not found", never that workspace: ids land in stored steps that other readers may see.
-- `git_fetch`, `git_pull` and `git_push` authenticate with the run's [git credentials](#git-credentials) and pass the repository URL on the command line, never trusting `remote.*.url`; `remote` names another repository (a fork), checked like `repo`. A rejected push or a merge conflict comes back in the result, not as an error.
 - No tool is an effect tool: a workspace can be removed, expire or be collected, while an effect record would survive in the store and skip the redone step on a fresh workspace.
 
 ## Lifecycle
@@ -178,8 +177,7 @@ const workspaces = createWorkspaceManager({
 ```
 
 - `staticGitCredentials([{ host, path?, username?, token }])`: GitHub (`x-access-token`), GitLab (`oauth2`) or any https host; `path` narrows to an owner or repository (case-insensitive), the longest match wins. `githubAppCredentials(app)` from `@chamvi/github` issues repository-scoped App tokens.
-- `credentialMode: 'workspace'` (default): a credential helper and a 0600 file in the workspace's `$HOME/.chamvi/`, refreshed before a command once a token expires within ten minutes, so plain git in `bash` works; every result, file read and error the manager hands out has the tokens this process issued replaced by `[redacted]` (each until `REDACT_GRACE_MS`, one hour, after it expired; the edit tools read the raw text through `readFileRaw`; they match oldString against the redacted text the model read (`redactedSpans`), refuse an edit that touches a `[redacted]` span and put every untouched token back byte for byte, so an oldString can neither probe a token nor write `[redacted]` back). The credentials file of a workspace found again is never read back (it is model-writable): the first install overwrites it. The token in the workspace is reachable by `bash`, so its scope and the forge's branch protection are the real controls. `'tools'`: no credential in the workspace (a file an earlier workspace-mode process left in a workspace found again is removed before its first exec), only the checkout and the git tools authenticate, each through a one-shot helper reading the token from stdin.
-- `push`: `mode` `'auto'` (default) or `'approve'` (asks through `approve()`, the run's source channel first), `allowForce` (default `false`, force is always `--force-with-lease`), `allowBranch(branch, ctx)` (default: every branch but the remote's default branch, read from the remote at push time). In `workspace` mode it binds `git_push` only, not a `git push` in `bash`.
+- Workspace credentials: a helper and 0600 file under HOME authenticate ordinary git in bash. Read credentials are installed before checkout; the manager refreshes repository write credentials (falling back to read) and host read credentials before exec. Results redact issued tokens, but sandbox code can read them. Enforce restrictions with token grants and forge rules.
 - `depth` makes the checkout shallow; `author` sets `GIT_AUTHOR_*` and `GIT_COMMITTER_*`.
 
 ## Limits and environment
@@ -201,7 +199,7 @@ No host environment reaches a workspace. Containers and pods get `SANDBOX_ENV` (
 - **Untrusted code**: the model decides what runs, and an issue body or a README it reads can steer it (prompt injection). Run untrusted repositories on Docker or Kubernetes, never local, and put `bash` behind an approval where a human should see each command: a `beforeToolExecution` hook on the agent that calls `approve()` for `toolName === 'bash'` (see [`@chamvi/coding`](../coding#usage)).
 - **Permissive inside, strict at the edge**: Docker and Kubernetes workspaces run as root with a writable root filesystem by default, so `apt` and every package manager work; the container is the boundary (no privileged mode, only the package-manager capabilities, `no-new-privileges`, no host mount but the cache). The providers' `user` and `readOnlyRoot` restore the hardened mode.
 - **Shared cache**: Docker gives each workspace an anonymous `/cache` of its own and Kubernetes an emptyDir by default. A cache is shared only when you configure one: `cache: { volume }` on Docker, a `cache: { claimName }` claim on Kubernetes, and locally `<root>/.cache` unless `cache: false`. Such a cache is a trust boundary shared by every run and agent that mounts it: a malicious package one run fetched can sit in another run's cache, so share one only between runs that may influence each other.
-- **Credentials**: repository URLs with credentials are refused, every configured credential helper is reset for chamvi's git calls, and no service account or host variable enters a workspace. Tokens never reach a URL, the environment, a result or an error: in `credentialMode: 'workspace'` a short-lived one sits in a 0600 file the model can read, redacted from everything it sees; `'tools'` keeps it out of the workspace.
+- **Credentials**: URLs with credentials are refused. Workspace-installed tokens are available to sandbox code; redaction is not isolation. Token scope, branch protection and required checks without App bypass enforce write authorization.
 - **Not a network boundary**: a container sandbox stops code from touching the host, not from reaching the network. On a Docker `bridge` network a workspace reaches the host gateway (the chamvi API, Postgres), other containers and cloud metadata (`169.254.169.254`); on Kubernetes every cluster service by DNS. Add an egress firewall or a NetworkPolicy (the Helm chart's is planned), and narrow `allowRepo`.
 
 ## Writing a provider
@@ -258,10 +256,9 @@ export default createApp({ agents: [coder], modules: [sandboxModule({ provider: 
 | `maxWorkspacesPerRun` | `number` | `3` | Workspaces one run may hold at once |
 | `gcIntervalMs` | `number` | `600_000` | Minimum interval between the collections `acquire` starts, and with `sandboxModule()` in start mode the period of its collection timer; `0` disables both |
 | `credentials` | `IGitCredentials \| IGitCredentials[]` | none | Git credential sources, the first answer wins |
-| `credentialMode` | `'workspace' \| 'tools'` | `'workspace'` | How a token reaches git |
 | `depth` | `number` | full history | A shallow checkout |
 | `author` | `{ name, email }` | none | The commit identity |
-| `push` | `PushPolicy` | auto, no force, not the default branch | What `git_push` may push |
+| `push` | `PushPolicy` | `{ mode: 'auto' }` | Approval, branch and force checks for `git_push` only |
 | `clock` | `IClock` | `systemClock` | Expiry, the collection interval, token refreshes |
 | `onError` | `(error) => void` | `console.error` | Background failures (disposal, garbage collection, credential refreshes) |
 
@@ -283,15 +280,23 @@ Misconfiguration throws core `InvalidAgentDefinitionError`.
 | `createOutputCollector` | function | A capped output stream collector |
 | `WORKSPACE_ROOT`, `WORKSPACE_HOME`, `OUTPUT_MAX_BYTES`, `FILE_MAX_BYTES`, `EXEC_TIMEOUT_MS`, `EXEC_TIMEOUT_MAX_MS`, `SANDBOX_ENV` | constant | Workspace rules |
 | `DEFAULT_LIMITS`, `DEFAULT_SANDBOX_IMAGE`, `TMP_SIZE`, `SANDBOX_LABELS`, `RUN_LABEL`, `WORKSPACE_LABEL`, `EXPIRES_AT_KEY` | constant | Provider defaults and labels |
-| `MAX_WORKSPACES_PER_RUN`, `GC_INTERVAL_MS`, `CLOSE_TIMEOUT_MS`, `CREDENTIAL_INSTALL_TIMEOUT_MS`, `PUSH_LOG_MAX_COMMITS` | constant | Manager defaults |
+| `MAX_WORKSPACES_PER_RUN`, `GC_INTERVAL_MS`, `CLOSE_TIMEOUT_MS`, `CREDENTIAL_INSTALL_TIMEOUT_MS` | constant | Manager defaults |
 | `REDACTED`, `CREDENTIAL_REFRESH_MS`, `CREDENTIAL_RETRY_MS`, `CREDENTIALS_FILE`, `REDACT_MIN_LENGTH`, `REDACT_GRACE_MS` | constant | Git credential handling |
 | `TIMEOUT_KILL_AFTER_SECONDS`, `EXEC_GRACE_MS`, `ALIVE_PROBE_TIMEOUT_MS` | constant | Remote timeout handling and the liveness probe bound |
 | `CACHE_DIR`, `CACHE_ENV`, `ROOT_CAPABILITIES`, `IMAGE_REQUIREMENTS`, `IMAGE_PROBE_TIMEOUT_MS` | constant | The cache mount and variables, the root capability set, the image probe |
 
-Types: `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult`, `ISandboxProvider`, `WorkspaceCreateOptions`, `SandboxLimits`, `IExecTransport`, `TransportExecOptions`, `TransportExecResult`, `RemoteWorkspaceInput`, `IWorkspaceManager`, `WorkspaceManagerOptions`, `AcquireInput`, `AcquireResult`, `CloseOptions`, `WorkspaceToolResult`, `DisposeWorkspaceResult`, `GitToolResult`, `GitFetchResult`, `GitPullResult`, `GitPushResult`, `GitAuthor`, `PushPolicy`, `IOutputCollector`, `NormalizeRepoOptions`, `CheckoutOptions`, `IGitCredentials`, `GitCredential`, `GitCredentialRequest`, `GitAccess`, `StaticGitCredential`, `CredentialMode`, `Redactor`.
+Types: `IWorkspace`, `WorkspaceInfo`, `ExecOptions`, `ExecResult`, `ISandboxProvider`, `WorkspaceCreateOptions`, `SandboxLimits`, `IExecTransport`, `TransportExecOptions`, `TransportExecResult`, `RemoteWorkspaceInput`, `IWorkspaceManager`, `WorkspaceManagerOptions`, `AcquireInput`, `AcquireResult`, `CloseOptions`, `WorkspaceToolResult`, `DisposeWorkspaceResult`, `GitAuthor`, `PushPolicy`, `GitFetchResult`, `GitPullResult`, `GitPushResult`, `IOutputCollector`, `NormalizeRepoOptions`, `CheckoutOptions`, `IGitCredentials`, `GitCredential`, `GitCredentialRequest`, `GitAccess`, `StaticGitCredential`, `Redactor`.
 
 `@chamvi/sandbox/module`: `sandboxModule`, `SandboxModule`, `SANDBOX_MODULE_NAME`, `SANDBOX_PROVIDER_NAMES`, types `SandboxModuleOptions`, `SandboxProviderName`.
 
 ## License
 
 Published under [Apache License 2.0](./LICENSE).
+
+### Bash-first migration
+
+Remove `credentialMode`, its `CredentialMode` type and `CHAMVI_GIT_CREDENTIAL_MODE`. Workspace-installed credentials are the only mode. The structured Git tools, their result types and `PushPolicy` remain available. Push checks govern `git_push` only; sandbox code with another execution path can bypass them.
+
+### Structured Git tools and policy scope
+
+`manager.tools()` includes `git_fetch`, `git_pull` and `git_push` without granting a bash tool. They retain structured results, per-target credential lookup, force-with-lease, branch checks and the optional durable approval flow through `push: { mode: 'approve', channel?, allowBranch?, allowForce? }`. These checks apply only to `git_push`: bash with write credentials can bypass them. Disabling bash narrows the offered capabilities, but writable Git configuration, hooks and other indirect execution still require a threat model; the tools are not a credential-secrecy boundary. Enforce hard restrictions through token scope and forge rules.

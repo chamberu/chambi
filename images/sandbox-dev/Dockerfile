@@ -1,7 +1,7 @@
 FROM debian:trixie-slim
 
 LABEL org.opencontainers.image.source="https://github.com/chamvi/chamvi" \
-      org.opencontainers.image.description="chamvi sandbox workspace: Debian, git, build tools, ripgrep, jq and mise for any toolchain" \
+      org.opencontainers.image.description="chamvi sandbox workspace: Debian, git, GitHub CLI, build tools, ripgrep, jq and mise for any toolchain" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -16,8 +16,12 @@ RUN apt-get update \
     && curl -fsSL https://mise.jdx.dev/gpg-key.pub -o /etc/apt/keyrings/mise-archive-keyring.asc \
     && echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.asc] https://mise.jdx.dev/deb stable main" \
         > /etc/apt/sources.list.d/mise.list \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && chmod 0644 /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends mise \
+    && apt-get install -y --no-install-recommends mise gh=2.103.3 \
     && rm -rf /var/lib/apt/lists/*
 
 # /workspace, /home/sandbox (the workspace's HOME, @chamvi/sandbox's

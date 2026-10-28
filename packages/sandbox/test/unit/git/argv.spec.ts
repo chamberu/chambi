@@ -40,9 +40,9 @@ describe('runGit', () => {
         });
         expect(workspace.calls[0]?.argv[0]).toBe('sh');
         expect(workspace.calls[0]?.options).toEqual({
-            stdin: 'u\nsecret-1\n', 
-            timeoutMs: EXEC_TIMEOUT_MS, 
-            signal: controller.signal, 
+            stdin: 'u\nsecret-1\n',
+            timeoutMs: EXEC_TIMEOUT_MS,
+            signal: controller.signal,
         });
     });
 });
@@ -84,14 +84,14 @@ describe('credentialKey', () => {
     it('writes one tab separated line per entry', () => {
         expect(credentialsFileContent([
             {
-                key: 'https://github.com/octo/demo', 
-                username: 'x-access-token', 
-                password: 'p1', 
+                key: 'https://github.com/octo/demo',
+                username: 'x-access-token',
+                password: 'p1',
             },
             {
-                key: 'https://github.com/', 
-                username: 'u', 
-                password: 'p2', 
+                key: 'https://github.com/',
+                username: 'u',
+                password: 'p2',
             },
         ])).toBe('https://github.com/octo/demo\tx-access-token\tp1\nhttps://github.com/\tu\tp2\n');
     });

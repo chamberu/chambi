@@ -46,14 +46,6 @@ export type StaticGitCredential = {
     token: string;
 };
 
-/**
- * How a token reaches git: `workspace` installs a credential helper and a
- * 0600 credentials file in the workspace, so plain git in `bash` works;
- * `tools` keeps every credential out of the workspace and only chamvi's git
- * tools authenticate.
- */
-export type CredentialMode = 'workspace' | 'tools';
-
 /** Replaces issued credentials with `REDACTED`. */
 /** A span of a text, `start` inclusive and `end` exclusive (UTF-16 code units). */
 export type RedactedSpan = {

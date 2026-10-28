@@ -6,6 +6,7 @@ The default workspace image of chamvi's container sandboxes (`@chamvi/sandbox-do
 
 - `debian:trixie-slim`
 - `git`, `ca-certificates`, `curl`, `jq`, `ripgrep`, `unzip`, `xz-utils`
+- GitHub CLI `gh` 2.103.3 from the official `cli.github.com` apt repository, for amd64 and arm64
 - `build-essential` (gcc, make, libc headers), so native packages compile
 - [mise](https://mise.jdx.dev) from its apt repository, with its shims (in the workspace's HOME `/home/sandbox`, per workspace, on disk) at the end of the `PATH`
 - `tini` as the entrypoint (pid 1 reaps orphaned processes and forwards signals) for a standalone container; the providers replace it (docker-init or the pod's pause container reaps instead)
@@ -39,6 +40,8 @@ The providers run the container as root with a writable root filesystem and only
 | `PATH` | `...:/home/sandbox/.local/share/mise/shims` | Installed tools are plain commands; the system's `sh`, `git` and `timeout` come first. |
 
 The providers add `SANDBOX_ENV` and the cache variables of `@chamvi/sandbox` (`CACHE_ENV`: `XDG_CACHE_HOME`, `npm_config_cache`, `PIP_CACHE_DIR`, `GOMODCACHE`, `GOCACHE`, `COMPOSER_CACHE_DIR`, all under `/cache`). The image holds no secrets, tokens or credentials, and the providers never pass the host's environment. Code in a workspace can read every value the operator configures in `env`, so put a credential there only on purpose.
+
+Git's workspace credential helper does not automatically authenticate `gh`. Configure GitHub CLI authentication separately when needed, with deliberately scoped credentials.
 
 ## Other images
 

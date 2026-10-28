@@ -89,10 +89,8 @@ export async function privateRepositories(provider: ISandboxProvider, app: IGith
             // the GitHub App's repository-scoped tokens, allowed to touch workflows
             githubAppCredentials(app, { permissions: { workflows: 'write' } }),
         ],
-        // default 'workspace': plain git in bash works, tokens redacted from every result
-        credentialMode: 'workspace',
+        // plain git in bash authenticates; issued tokens are redacted from results
         author: await app.botIdentity(),
-        push: { mode: 'approve', allowForce: true },
     });
     // #endregion credentials
 

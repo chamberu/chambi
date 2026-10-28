@@ -16,7 +16,7 @@ import type {
     IGitCredentials,
     WorkspaceManagerOptions,
 } from '@chamvi/sandbox';
-import { CLEAR_CREDENTIALS_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
+import { INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { createFakeProvider } from '../../utils/provider.ts';
 import type { ScriptedWorkspace } from '../../utils/workspace.ts';
@@ -90,7 +90,7 @@ describe('workspace manager credentials', () => {
             manager, 
             provider, 
             source, 
-        } = setup({ depth: 5, credentialMode: 'tools' });
+        } = setup({ depth: 5 });
         await manager.acquire('r1', { repo: 'octo/demo' });
         expect(provider.created[0]!.checkout).toEqual({
             depth: 5,
@@ -110,7 +110,7 @@ describe('workspace manager credentials', () => {
     });
 
     it('checks out anonymously when no source answers, and passes no checkout without credentials or depth', async () => {
-        const { manager, provider } = setup({ credentials: [{ get: async () => undefined }], credentialMode: 'tools' });
+        const { manager, provider } = setup({ credentials: [{ get: async () => undefined }] });
         await manager.acquire('r1', { repo: 'octo/demo' });
         expect(provider.created[0]!.checkout).toBeUndefined();
     });
@@ -123,7 +123,7 @@ describe('workspace manager credentials', () => {
         expect((error as Error).message).toContain('github.com/octo/demo');
     });
 
-    describe('credentialMode workspace', () => {
+    describe('workspace credentials', () => {
         it('installs the read credential when the write lookup fails, reporting the failure once', async () => {
             const reads: string[] = [];
             const {
@@ -385,43 +385,23 @@ describe('workspace manager credentials', () => {
         });
     });
 
-    it('installs nothing in credentialMode tools', async () => {
-        const { manager, provider } = setup({ credentialMode: 'tools' });
-        const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
-        await workspace.exec(['true']);
-        expect(installs(provider.workspaces.get(workspace.id)!)).toHaveLength(0);
-    });
-
-    it('removes a credentials file an earlier workspace-mode process left, once, before the first exec of a found workspace in credentialMode tools', async () => {
-        const { manager, provider } = setup();
-        const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
-        const raw = provider.workspaces.get(workspace.id)!;
-        expect(installs(raw)).toHaveLength(1);
-
-        // the restarted process runs in tools mode: it never issued that token and so never redacts it
-        const restarted = createWorkspaceManager({
-            provider,
-            clock: new ControllableClock(new Date(START)),
-            gcIntervalMs: 0,
-            credentials: tokenSource(new ControllableClock(new Date(START))),
-            credentialMode: 'tools',
+    it('clears the credential an authenticated checkout installed once no source answers', async () => {
+        let answering = true;
+        const { manager, provider } = setup({
+            credentials: {
+                async get(request) {
+                    if (!answering || request.path === '') return undefined;
+                    answering = false;
+                    return { username: 'x-access-token', password: 'read-token-1' };
+                },
+            },
         });
-        const found = await restarted.get('r1');
-        await found.exec(['true']);
-        await found.exec(['true']);
-        const clears = raw.calls.filter((call) => call.argv[0] === 'sh' && call.argv[2] === CLEAR_CREDENTIALS_SCRIPT);
-        expect(clears).toHaveLength(1);
-        expect(raw.calls.at(-3)!.argv[2]).toBe(CLEAR_CREDENTIALS_SCRIPT);
-        expect(raw.calls.at(-1)!.argv).toEqual(['true']);
-        expect(installs(raw)).toHaveLength(1);
-    });
-
-    it('removes nothing from a workspace it created in credentialMode tools', async () => {
-        const { manager, provider } = setup({ credentialMode: 'tools' });
         const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
-        await workspace.exec(['true']);
+        expect(provider.created[0]!.checkout?.credential).toEqual({ username: 'x-access-token', password: 'read-token-1' });
+        // the provider's checkout wrote the read credential: the first install empties the file
         const raw = provider.workspaces.get(workspace.id)!;
-        expect(raw.calls.some((call) => call.argv[2] === CLEAR_CREDENTIALS_SCRIPT)).toBe(false);
+        expect(installs(raw)).toHaveLength(1);
+        expect(installs(raw)[0]!.options.stdin).toBe('');
     });
 
     it('redacts every issued credential from exec results, file reads and errors', async () => {
@@ -475,11 +455,9 @@ describe('workspace manager credentials', () => {
         const bad: Array<Partial<WorkspaceManagerOptions>> = [
             { credentials: {} as IGitCredentials },
             { credentials: [null as unknown as IGitCredentials] },
-            { credentialMode: 'env' as 'tools' },
             { depth: 0 },
             { author: { name: '', email: 'a@b' } },
             { author: { name: 'a\nb', email: 'a@b' } },
-            { push: { mode: 'never' as 'auto' } },
         ];
         for (const options of bad) {
             expect(() => createWorkspaceManager({ provider, ...options })).toThrow(InvalidAgentDefinitionError);

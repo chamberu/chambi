@@ -74,7 +74,7 @@ export const GIT_AUTH_SCRIPT = [
 ].join('\n');
 
 /**
- * The credential helper of `credentialMode: 'workspace'`, installed as
+ * The workspace credential helper, installed as
  * `$HOME/.chamvi/git-credential`: answers `get` from
  * `$HOME/.chamvi/credentials` (`<origin>/<path>\t<username>\t<password>`
  * lines), the repository's line first, else its host's (`<origin>/`).
@@ -97,11 +97,7 @@ export const CREDENTIAL_HELPER_SCRIPT = [
 ].join('\n');
 
 /**
- * Removes the credentials file of `credentialMode: 'workspace'`: run once
- * by a `credentialMode: 'tools'` process before the first exec of a
- * workspace it found again, since an earlier workspace-mode process may
- * have left still valid tokens in it, which this process never issued and
- * so never redacts.
+ * Removes a workspace credential file. Kept as an internal cleanup script.
  */
 export const CLEAR_CREDENTIALS_SCRIPT = 'rm -f "$HOME/.chamvi/credentials" "$HOME/.chamvi/credentials.tmp"';
 

@@ -98,7 +98,6 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
     const sources = credentialSources(options.credentials);
     const credentials = sources.length === 0 ? undefined : createCredentialSupport({
         sources,
-        mode: options.credentialMode ?? 'workspace',
         clock,
         onError: (error) => onError(error),
     });
@@ -228,10 +227,12 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
 
         return (async () => {
             let workspace: IWorkspace;
+            let authenticated: boolean;
             try {
                 const credential = createOptions.repo === undefined || !credentials ?
                     undefined :
                     await credentials.lookup(createOptions.repo, 'read', runId, createOptions.signal);
+                authenticated = credential !== undefined;
                 if (credential || options.depth !== undefined) {
                     createOptions.checkout = {
                         ...(options.depth !== undefined && { depth: options.depth }),
@@ -254,7 +255,8 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
             }
             entry.workspace = workspace;
             entry.image ??= workspace.info.image;
-            await credentials?.refresh(workspace, { fresh: true });
+            // an authenticated checkout left its read credential in the file
+            await credentials?.refresh(workspace, { fresh: !authenticated });
             return workspace;
         })();
     };

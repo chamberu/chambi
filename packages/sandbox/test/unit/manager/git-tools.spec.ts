@@ -97,7 +97,6 @@ function setup(options: Partial<WorkspaceManagerOptions> = {}, remote: Partial<R
         provider,
         clock,
         gcIntervalMs: 0,
-        credentialMode: 'tools',
         credentials: {
             async get(request) {
                 requests.push(request);
@@ -165,9 +164,9 @@ describe('git tools', () => {
     describe('git_push', () => {
         it('pushes the current branch to the recorded URL with a write credential over stdin', async () => {
             const {
-                create, 
-                call, 
-                requests, 
+                create,
+                call,
+                requests,
             } = setup();
             const workspace = await create();
             const from = workspace.calls.length;
@@ -177,9 +176,9 @@ describe('git tools', () => {
             expect(gitArgs(push.argv)).toEqual(['push', '--porcelain', REPO, `${LOCAL}:refs/heads/feature`]);
             expect(push.options.stdin).toBe('x-access-token\nwrite-secret-token\n');
             expect(requests.at(-1)).toMatchObject({
-                access: 'write', 
-                path: 'octo/demo', 
-                runId: 'r1', 
+                access: 'write',
+                path: 'octo/demo',
+                runId: 'r1',
             });
             expect(gitCalls(workspace, from)).toContainEqual(['update-ref', 'refs/remotes/origin/feature', LOCAL]);
             expect(result).toMatchObject({
@@ -217,9 +216,9 @@ describe('git tools', () => {
 
         it('reads the default branch of origin from the remote at push time, not from the model-writable record', async () => {
             const {
-                create, 
-                call, 
-                provider, 
+                create,
+                call,
+                provider,
             } = setup({}, { head: 'main' });
             const workspace = await create();
             // after a find(), info.defaultBranch comes from `git config chamvi.defaultBranch`, which bash can change
@@ -363,9 +362,9 @@ describe('git tools', () => {
             expect(gitArgs(fetch.argv)).toEqual(['fetch', REPO, '+refs/heads/*:refs/remotes/origin/*']);
             expect(fetch.options.stdin).toBe('x-access-token\nread-secret-token\n');
             expect(result).toMatchObject({
-                remote: REPO, 
-                exitCode: 0, 
-                refspec: '+refs/heads/*:refs/remotes/origin/*', 
+                remote: REPO,
+                exitCode: 0,
+                refspec: '+refs/heads/*:refs/remotes/origin/*',
             });
         });
 
@@ -413,9 +412,9 @@ describe('git tools', () => {
                 ['merge', '--no-edit', 'refs/remotes/origin/feature'],
             ]);
             expect(result).toMatchObject({
-                branch: 'feature', 
-                rebase: false, 
-                exitCode: 0, 
+                branch: 'feature',
+                rebase: false,
+                exitCode: 0,
             });
         });
 

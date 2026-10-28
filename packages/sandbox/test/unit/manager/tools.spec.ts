@@ -35,6 +35,12 @@ function setup() {
 }
 
 describe('workspace tools', () => {
+    it('offers structured Git operations without granting a bash tool', () => {
+        const { tools } = setup();
+        expect(Object.keys(tools)).toEqual(expect.arrayContaining(['git_fetch', 'git_pull', 'git_push']));
+        expect(tools.bash).toBeUndefined();
+    });
+
     it('create_workspace returns the workspace', async () => {
         const { provider, tools } = setup();
         const result = await callTool<WorkspaceToolResult>(tools, 'create_workspace', { repo: 'octo/demo', ref: 'v1' }, toolContext('r1'));
@@ -81,9 +87,9 @@ describe('workspace tools', () => {
 
     it('dispose_workspace releases', async () => {
         const {
-            provider, 
-            manager, 
-            tools, 
+            provider,
+            manager,
+            tools,
         } = setup();
         const { workspace } = await callTool<WorkspaceToolResult>(tools, 'create_workspace', {}, toolContext('r1'));
         const result = await callTool(tools, 'dispose_workspace', { workspace }, toolContext('r1'));

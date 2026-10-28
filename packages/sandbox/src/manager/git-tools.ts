@@ -123,18 +123,18 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 throw new ValidationError(`${tool} needs a remote: workspace ${workspace.id} has no repository.`);
             }
             return {
-                workspace, 
-                url: own, 
-                name: 'origin', 
+                workspace,
+                url: own,
+                name: 'origin',
             };
         }
         const url = normalize(remote);
         // the same repository spelled with or without .git or a trailing slash is still origin
         const isOwn = own !== undefined && credentialKey(url) === credentialKey(own);
         return {
-            workspace, 
-            url, 
-            name: isOwn ? 'origin' : remoteName(url), 
+            workspace,
+            url,
+            name: isOwn ? 'origin' : remoteName(url),
         };
     };
 
@@ -198,9 +198,9 @@ export function createGitTools(context: GitToolsContext): ToolSet {
 
     return {
         git_fetch: defineTool<{
-            remote?: string; 
-            refspec?: string; 
-            workspace?: string 
+            remote?: string;
+            refspec?: string;
+            workspace?: string
         }, GitFetchResult>({
             description: 'Fetch from the workspace\'s repository (or another one) with the run\'s git credentials. ' +
                 'Default: every branch into origin/<branch>; a branch name fetches only that branch. ' +

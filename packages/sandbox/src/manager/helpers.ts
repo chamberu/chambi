@@ -98,9 +98,6 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
         throw new InvalidAgentDefinitionError('onError must be a function.');
     }
     credentialSources(options.credentials);
-    if (options.credentialMode !== undefined && options.credentialMode !== 'workspace' && options.credentialMode !== 'tools') {
-        throw new InvalidAgentDefinitionError('credentialMode must be "workspace" or "tools".');
-    }
     if (options.depth !== undefined && (!Number.isSafeInteger(options.depth) || options.depth < 1)) {
         throw new InvalidAgentDefinitionError('depth must be an integer of at least 1.');
     }

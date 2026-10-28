@@ -18,6 +18,10 @@ export type NormalizeRepoOptions = {
 export type CheckoutOptions = {
     /** A shallow fetch of this many commits; default the full history. */
     depth?: number;
-    /** Read access to the repository, handed to git over stdin only (`GIT_AUTH_SCRIPT`). */
+    /**
+     * Read access to an https repository: written over stdin only into the
+     * workspace credential helper's file (`INSTALL_CREDENTIALS_SCRIPT`)
+     * before the remote calls, so it stays there for later git calls.
+     */
     credential?: GitCredential;
 };

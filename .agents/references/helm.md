@@ -31,3 +31,7 @@ Checked the `feat/model-settings` worktree against chart base `79850ef` (0.1.2) 
 - CI (`.github/workflows/lint-test.yaml`): helm lint, yamllint, helm-unittest, a Python contract suite (`scripts/tests/`), values coverage, helm-docs/helm-schema drift, ct lint, ArtifactHub lint, a fixture app (`ci/app`, published `@chamvi/*` on `ghcr.io/chamvi/node:24`) and `ct install` on kind with Calico (kindnet's NetworkPolicy fails open on GitHub runners) plus `scripts/kind-smoke.sh` (CronJob run, egress policy enforcement).
 - Release: release-please (`simple` root linked to the `helm` chart), `tada5hi/hevi@v2` publishes the GitHub release, the `gh-pages` index and the OCI artifact on every master push (idempotent).
 - Its own map back to this repo: `.agents/references/chamvi.md` in chamvi/helm.
+
+## Bash-first review (2026-10-28)
+
+Reviewed local helm commit a8bf3b3: charts use generic env/envFrom and do not reference credential modes or dedicated Git tools. #59/#72 require no chart template change.

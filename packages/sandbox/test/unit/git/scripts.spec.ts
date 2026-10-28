@@ -60,9 +60,9 @@ function run(
     extra: Record<string, string> = {},
     cwd?: string,
 ): Promise<{
-    stdout: string; 
-    stderr: string; 
-    code: number 
+    stdout: string;
+    stderr: string;
+    code: number
 }> {
     return new Promise((resolve) => {
         const child = execFile(argv[0]!, argv.slice(1), { env: { ...env, ...extra }, ...(cwd !== undefined && { cwd }) }, (error, stdout, stderr) => {
@@ -246,20 +246,20 @@ describe('the workspace credential helper', () => {
         try {
             const content = credentialsFileContent([
                 {
-                    key: 'https://github.com/octo/demo', 
-                    username: 'x-access-token', 
-                    password: 'repo-secret', 
+                    key: 'https://github.com/octo/demo',
+                    username: 'x-access-token',
+                    password: 'repo-secret',
                 },
                 {
-                    key: 'https://github.com/', 
-                    username: 'oauth2', 
-                    password: 'host-secret', 
+                    key: 'https://github.com/',
+                    username: 'oauth2',
+                    password: 'host-secret',
                 },
             ]);
             const realGit = {
-                PATH: process.env.PATH ?? '', 
-                HOME: home, 
-                GIT_CONFIG_NOSYSTEM: '1', 
+                PATH: process.env.PATH ?? '',
+                HOME: home,
+                GIT_CONFIG_NOSYSTEM: '1',
             };
             const install = await run(['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(content))], content, realGit);
             expect(install.code).toBe(0);
@@ -274,9 +274,9 @@ describe('the workspace credential helper', () => {
 
             // a second install replaces the file
             const next = credentialsFileContent([{
-                key: 'https://github.com/octo/demo', 
-                username: 'x-access-token', 
-                password: 'fresh-secret', 
+                key: 'https://github.com/octo/demo',
+                username: 'x-access-token',
+                password: 'fresh-secret',
             }]);
             await run(['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(next))], next, realGit);
             await expect(fill('protocol=https\nhost=github.com\npath=octo/demo.git\n\n')).resolves.toMatchObject({ stdout: expect.stringContaining('password=fresh-secret') });
