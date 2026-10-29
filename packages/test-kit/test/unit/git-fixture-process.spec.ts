@@ -37,6 +37,28 @@ if (command === 'fixture-env') {
 } else if (command === 'fixture-boundary') {
     process.stdout.write(Buffer.alloc(1048576, 'a'));
     process.stderr.write(Buffer.alloc(1048576, 'b'));
+} else if (command === 'fixture-signal') {
+    require('node:fs').writeFileSync(${JSON.stringify(join(root, 'pid'))}, String(process.pid));
+    setTimeout(() => process.exit(0), 3000);
+} else if (command === 'fixture-resistant-stdout' || command === 'fixture-resistant-stderr') {
+    const fs = require('node:fs');
+    process.on('SIGINT', () => {});
+    process.on('SIGTERM', () => {
+        fs.writeFileSync(${JSON.stringify(join(root, 'terminated'))}, 'SIGTERM');
+        process.removeAllListeners('SIGTERM');
+        process.kill(process.pid, 'SIGTERM');
+    });
+    process.stdout.on('error', () => {});
+    process.stderr.on('error', () => {});
+    const stream = command.endsWith('stdout') ? process.stdout : process.stderr;
+    let chunks = 0;
+    const timer = setInterval(() => {
+        stream.write(Buffer.alloc(262144, 'x'));
+        if (++chunks === 16) {
+            clearInterval(timer);
+            fs.writeFileSync(${JSON.stringify(join(root, 'completed'))}, 'unbounded');
+        }
+    }, 10);
 } else if (command === 'fixture-stdout' || command === 'fixture-stderr') {
     const stream = command === 'fixture-stdout' ? process.stdout : process.stderr;
     stream.write(Buffer.alloc(1048577, 'x'));
@@ -52,11 +74,11 @@ if (command === 'fixture-env') {
     vi.stubEnv('GIT_CONFIG_COUNT', '1');
     vi.stubEnv('GIT_CONFIG_KEY_0', 'commit.gpgsign');
     vi.stubEnv('GIT_CONFIG_VALUE_0', 'true');
-    return createGitFixture({ 'a.txt': 'a' });
+    return { fixture: await createGitFixture({ 'a.txt': 'a' }), root };
 }
 
 it('replaces inherited environment and keeps the fixture config, identity and cwd', async () => {
-    const fixture = await fixtureWithProcess();
+    const { fixture } = await fixtureWithProcess();
     const cwd = process.cwd();
     try {
         const env = JSON.parse(await fixture.git('fixture-env'));
@@ -93,7 +115,7 @@ it('replaces inherited environment and keeps the fixture config, identity and cw
 });
 
 it('accepts the full output allowance independently for each stream and command', async () => {
-    const fixture = await fixtureWithProcess();
+    const { fixture } = await fixtureWithProcess();
     try {
         for (let index = 0; index < 2; index++) {
             await expect(fixture.git('fixture-boundary')).resolves.toBe('a'.repeat(1_048_576));
@@ -104,9 +126,45 @@ it('accepts the full output allowance independently for each stream and command'
 });
 
 it.each(['stdout', 'stderr'])('rejects %s above 1 MiB and leaves later commands usable', async (stream) => {
-    const fixture = await fixtureWithProcess();
+    const { fixture } = await fixtureWithProcess();
     try {
         await expect(fixture.git(`fixture-${stream}`)).rejects.toThrow();
+        await expect(fixture.git('rev-parse', 'HEAD')).resolves.toBe(`${fixture.commit}\n`);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+it('rejects a real Git command with a silent nonzero exit and permits later calls', async () => {
+    const fixture = await createGitFixture({ 'a.txt': 'a' });
+    try {
+        await fs.writeFile(join(fixture.path, 'a.txt'), 'changed');
+        await expect(fixture.git('diff', '--quiet')).rejects.toMatchObject({ code: 1, stderr: '' });
+        await expect(fixture.git('rev-parse', 'HEAD')).resolves.toBe(`${fixture.commit}\n`);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+it('rejects external SIGTERM without stderr and permits later calls', async () => {
+    const { fixture, root } = await fixtureWithProcess();
+    try {
+        const rejected = expect(fixture.git('fixture-signal')).rejects.toMatchObject({ signal: 'SIGTERM', stderr: '' });
+        await vi.waitFor(() => expect(fs.readFile(join(root, 'pid'), 'utf8')).resolves.toMatch(/^\d+$/u));
+        process.kill(Number(await fs.readFile(join(root, 'pid'), 'utf8')), 'SIGTERM');
+        await rejected;
+        await expect(fixture.git('rev-parse', 'HEAD')).resolves.toBe(`${fixture.commit}\n`);
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+it.each(['stdout', 'stderr'])('terminates a SIGINT-resistant %s flood at the output bound', async (stream) => {
+    const { fixture, root } = await fixtureWithProcess();
+    try {
+        await expect(fixture.git(`fixture-resistant-${stream}`)).rejects.toThrow();
+        expect(await fs.readFile(join(root, 'terminated'), 'utf8')).toBe('SIGTERM');
+        await expect(fs.stat(join(root, 'completed'))).rejects.toMatchObject({ code: 'ENOENT' });
         await expect(fixture.git('rev-parse', 'HEAD')).resolves.toBe(`${fixture.commit}\n`);
     } finally {
         await fixture.cleanup();

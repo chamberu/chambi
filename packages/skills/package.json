@@ -57,7 +57,6 @@
     },
     "license": "Apache-2.0",
     "dependencies": {
-        "simple-git": "^4.0.2",
         "skills": "git+https://github.com/tada5hi/skills-cli.git#6c80a94543b91a27df7445f40dfea7a61e0a5e9f"
     },
     "devDependencies": {
