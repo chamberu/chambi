@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { pid } from 'node:process';
 import type { Agent } from '../agent/types.ts';
@@ -175,7 +175,7 @@ export class Engine implements IContextProvider {
 
     protected readonly attestedSkills = new Map<string, string>();
 
-    protected readonly sources = new Map<ISkillSource, Promise<readonly Skill[]>>();
+    protected readonly sources = new WeakMap<ISkillSource, Promise<readonly Skill[]>>();
 
     protected readonly preparing = new Set<Promise<void>>();
 
@@ -571,17 +571,17 @@ export class Engine implements IContextProvider {
             signal.throwIfAborted();
             const agents = [...this.agents.values(), ...(options.agents ?? [])];
             const resolved = new Map<Agent, SkillCatalog>();
-            const attested = new Map(this.attestedSkills);
+            const attested = new Map<string, string>();
             const attest = (skills: readonly Skill[]) => {
                 for (const skill of skills) {
                     const key = JSON.stringify([skill.name, skill.version, skill.sha256]);
-                    const content = JSON.stringify(skill);
-                    const previous = attested.get(key);
-                    if (previous !== undefined && previous !== content) {
+                    const fingerprint = createHash('sha256').update(JSON.stringify(skill)).digest('hex');
+                    const previous = attested.get(key) ?? this.attestedSkills.get(key);
+                    if (previous !== undefined && previous !== fingerprint) {
                         invalidSkill(`conflicting content for ${skill.name}`);
                     }
 
-                    attested.set(key, content);
+                    attested.set(key, fingerprint);
                 }
             };
             // Globals must prepare even when no agents are registered yet.
@@ -605,14 +605,14 @@ export class Engine implements IContextProvider {
                 resolved.set(agent, createSkillCatalog(skills));
             }
             signal.throwIfAborted();
-            for (const [key, content] of attested) {
+            for (const [key, fingerprint] of attested) {
                 const previous = this.attestedSkills.get(key);
-                if (previous !== undefined && previous !== content) {
+                if (previous !== undefined && previous !== fingerprint) {
                     invalidSkill('conflicting content from concurrent preparation');
                 }
             }
-            for (const [key, content] of attested) {
-                this.attestedSkills.set(key, content);
+            for (const [key, fingerprint] of attested) {
+                this.attestedSkills.set(key, fingerprint);
             }
 
             for (const [agent, catalog] of resolved) {

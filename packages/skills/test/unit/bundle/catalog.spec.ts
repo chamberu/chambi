@@ -117,7 +117,7 @@ describe('approved skill catalog', () => {
     it('importing_the_root_does_not_scan_bundles', async () => {
         vi.resetModules();
         const scan = vi.spyOn(fs, 'opendirSync');
-        await import('@chamvi/app');
+        await import('@chamvi/skills');
         expect(scan).not.toHaveBeenCalled();
     });
 });

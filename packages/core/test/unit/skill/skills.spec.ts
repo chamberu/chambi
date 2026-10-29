@@ -281,7 +281,12 @@ describe('first class skills', () => {
             instructions: '',
             skills: [source],
         })]);
-        await Promise.all([e.prepare(), e.start()]); expect(load).toHaveBeenCalledOnce(); await e.stop();
+        await Promise.all([e.prepare(), e.start()]);
+        await e.stop();
+        await e.putAgent(agent([source]));
+        await e.start();
+        await e.stop();
+        expect(load).toHaveBeenCalledOnce();
     });
     it('stop joins standalone candidate preparation even when its provider ignores abort', async () => {
         const entered = Promise.withResolvers<void>(); const deferred = Promise.withResolvers<readonly Skill[]>();
