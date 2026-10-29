@@ -15,13 +15,21 @@ import {
 } from '@chamvi/core';
 import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { WorkspaceToolResult } from '@chamvi/sandbox';
+import { DISCOVERY_SCRIPT } from '../../../src/instructions/constants.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { callTool, toolContext } from '../../utils/context.ts';
 import { FAKE_COMMIT, createFakeProvider } from '../../utils/provider.ts';
 
 function setup() {
     const clock = new ControllableClock(new Date(1_000_000));
-    const provider = createFakeProvider({ clock });
+    const provider = createFakeProvider({
+        clock,
+        onExec: (argv) => {
+            expect(argv.slice(0, 5)).toEqual(['/bin/sh', '-c', DISCOVERY_SCRIPT, 'sh', 'inspect']);
+            const paths = argv.slice(5);
+            return { stdout: `chamvi-instructions/1 inspect ${paths.length}\n${paths.map((path, index) => `${index} ${path === '.' ? 'dir' : 'absent'}\n`).join('')}chamvi-instructions/1 end\n` };
+        },
+    });
     const manager = createWorkspaceManager({
         provider,
         clock,
@@ -55,6 +63,13 @@ describe('workspace tools', () => {
             image: null,
             expiresAt: new Date(1_000_000 + 604_800_000).toISOString(),
             reused: false,
+            instructions: {
+                commit: FAKE_COMMIT,
+                paths: ['.'],
+                sources: [],
+                diagnostics: [],
+                complete: true,
+            },
         });
     });
 
@@ -68,6 +83,7 @@ describe('workspace tools', () => {
             commit: null,
             defaultBranch: null,
             reused: false,
+            instructions: null,
         });
         const again = await callTool<WorkspaceToolResult>(tools, 'create_workspace', {}, toolContext('r1'));
         expect(again.workspace).toBe(result.workspace);
@@ -148,7 +164,7 @@ describe('workspace tools', () => {
 
     it('are chamvi tools and not effect tools', () => {
         const { tools } = setup();
-        expect(Object.keys(tools).sort()).toEqual(['create_workspace', 'dispose_workspace', 'git_fetch', 'git_pull', 'git_push']);
+        expect(Object.keys(tools).sort()).toEqual(['create_workspace', 'dispose_workspace', 'git_fetch', 'git_pull', 'git_push', 'read_repository_instructions']);
         for (const tool of Object.values(tools)) {
             expect(tool.contextSchema).toBe(toolContextSchema);
             expect(EFFECT in tool).toBe(false);

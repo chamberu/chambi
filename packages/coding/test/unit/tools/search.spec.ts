@@ -5,6 +5,10 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
     afterAll,
     afterEach,
@@ -16,6 +20,7 @@ import {
 } from 'vitest';
 import { ValidationError } from '@chamvi/core';
 import type { GitFixture } from '@chamvi/test-kit';
+import { GREP_SCRIPT } from '../../../src/tools/constants.ts';
 import { createFixture, setupCoding } from '../../utils/setup.ts';
 import type { CodingSetup } from '../../utils/setup.ts';
 
@@ -31,11 +36,34 @@ type Grep = {
 
 let fixture: GitFixture;
 let s: CodingSetup;
+let searchPath: string;
+let restoreExec: () => void;
 
-beforeAll(async () => { fixture = await createFixture(); });
-afterAll(async () => { await fixture.cleanup(); });
-beforeEach(async () => { s = await setupCoding(fixture); });
-afterEach(async () => { await s.cleanup(); });
+beforeAll(async () => {
+    fixture = await createFixture();
+    searchPath = await mkdtemp(join(tmpdir(), 'chamvi-search-path-'));
+    // Pin the fallback engines under test; Docker tests cover ripgrep.
+    await Promise.all(['sh', 'git', 'grep', 'cut', 'tr', 'cat', 'find'].map(async (name) => {
+        const executable = execFileSync('/bin/sh', ['-c', 'command -v "$1"', 'sh', name], { encoding: 'utf8' }).trim();
+        await symlink(executable, join(searchPath, name));
+    }));
+});
+afterAll(async () => {
+    await fixture.cleanup();
+    await rm(searchPath, { recursive: true, force: true });
+});
+beforeEach(async () => {
+    s = await setupCoding(fixture);
+    const originalExec = s.workspace.exec;
+    const exec = originalExec.bind(s.workspace);
+    restoreExec = () => { s.workspace.exec = originalExec; };
+    s.workspace.exec = (argv, options) => exec(argv[2] === GREP_SCRIPT ? ['env', `PATH=${searchPath}`, ...argv] : argv, options);
+});
+afterEach(async () => {
+    restoreExec();
+    await s.cleanup();
+});
+
 
 describe('grep', () => {
     it('finds a line', async () => {
@@ -150,7 +178,6 @@ describe('grep', () => {
 
 describe('grep: engines and ignored files', () => {
     it('names the engine it searched with', async () => {
-        // the host PATH of the local provider has no ripgrep in CI or here
         await expect(s.call('grep', { pattern: 'const b' })).resolves.toMatchObject({ engine: 'git-grep' });
     });
 

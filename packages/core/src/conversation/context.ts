@@ -49,4 +49,3 @@ export function dispatchConversation(engine: Engine, channel: Pick<IChannel, 'na
     if (!dispatch) return Promise.reject(new ValidationError('Conversation intake is unavailable.'));
     return dispatch(channel, envelope, target);
 }
-

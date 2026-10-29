@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { createHash } from 'node:crypto';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,14 +16,20 @@ import {
     it,
     vi,
 } from 'vitest';
-import { Engine, MemoryStore, defineAgent } from '@chamvi/core';
+import {
+    Engine,
+    MemoryStore,
+    approve,
+    defineAgent,
+} from '@chamvi/core';
 import { codingTools } from '@chamvi/coding';
 import { createWorkspaceManager } from '@chamvi/sandbox';
-import type { ExecResult } from '@chamvi/sandbox';
+import type { ExecResult, IWorkspaceManager, RepositoryInstructions } from '@chamvi/sandbox';
+import { createGitFixture } from '@chamvi/test-kit';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import { mockModel } from '../utils/model.ts';
 import type { MockResponse } from '../utils/model.ts';
-import { createFixture } from '../utils/setup.ts';
+import { FIXTURE_FILES, createFixture } from '../utils/setup.ts';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -99,5 +106,132 @@ describe('coding flow (local)', () => {
             // every workspace folder is gone; the shared package cache stays for the next run
             expect((await readdir(root)).filter((name) => name !== '.cache')).toEqual([]);
         }, { timeout: 5_000 });
+    });
+});
+
+describe('repository guidance through Engine checkpoints', () => {
+    it('delivers scoped context, retains it after restart, then refreshes a new read', async () => {
+        const rootContent = 'root guidance\n@missing-guide.md\n';
+        const nestedContent = 'nested guidance\n';
+        const updatedContent = 'updated nested guidance\n';
+        const fixture = await createGitFixture({
+            ...FIXTURE_FILES,
+            'AGENTS.md': rootContent,
+            'src/CLAUDE.md': nestedContent,
+            'other/AGENTS.md': 'unrelated guidance\n',
+        });
+        cleanups.push(() => fixture.cleanup());
+        const root = await mkdtemp(join(tmpdir(), 'chamvi-instruction-flow-'));
+        cleanups.push(() => rm(root, { recursive: true, force: true }));
+        const makeManager = () => createWorkspaceManager({
+            provider: createLocalSandbox({ root }),
+            allowFileRepos: true,
+            gcIntervalMs: 0,
+        });
+        const firstManager = makeManager();
+        cleanups.push(() => firstManager.close());
+        const model = mockModel([
+            call('create_workspace', { repo: fixture.url }),
+            call('read_file', { path: 'src/a.ts' }),
+            call('bash', { command: 'true' }),
+            call('read_file', { path: 'src/a.ts' }),
+            { parts: [{ type: 'text', text: 'guidance received' }] },
+        ]);
+        const agentFor = (manager: IWorkspaceManager) => defineAgent({
+            name: 'instruction-coder',
+            instructions: 'Read the repository guidance.',
+            model,
+            tools: { ...manager.tools(), ...codingTools(manager) },
+            hooks: {
+                async beforeToolExecution(info, context) {
+                    if (info.toolName === 'bash') await approve(context, { title: 'Continue after review?' });
+                    return info.input;
+                },
+            },
+        });
+        const store = new MemoryStore();
+        const first = new Engine({ store, agents: [agentFor(firstManager)] });
+        cleanups.push(() => first.stop());
+        firstManager.attach(first);
+        await first.start();
+        const { runId } = await first.dispatch({
+            agent: 'instruction-coder',
+            trigger: 'http',
+            channel: 'http',
+            payload: {},
+        });
+        await first.idle();
+        const paused = await store.getRun(runId);
+        expect(paused?.status).toBe('waiting');
+
+        const beforeRestart = await store.listSteps(runId);
+        const created = beforeRestart.find((step) => step.kind === 'tool' && step.name === 'create_workspace');
+        const initialRead = beforeRestart.find((step) => step.kind === 'tool' && step.name === 'read_file');
+        const rootInstructions = (created?.output as { instructions: RepositoryInstructions }).instructions;
+        const nestedInstructions = (initialRead?.output as { instructions: RepositoryInstructions }).instructions;
+        const rootSource = {
+            path: 'AGENTS.md',
+            content: rootContent,
+            sha256: createHash('sha256').update(rootContent).digest('hex'),
+            scopes: ['.'],
+            includedBy: [],
+        };
+        const nestedSource = {
+            path: 'src/CLAUDE.md',
+            content: nestedContent,
+            sha256: createHash('sha256').update(nestedContent).digest('hex'),
+            scopes: ['src'],
+            includedBy: [],
+        };
+        expect(rootInstructions.sources).toEqual([rootSource]);
+        expect(nestedInstructions.sources).toEqual([rootSource, nestedSource]);
+        expect(nestedInstructions.diagnostics).toEqual([
+            expect.objectContaining({ path: 'missing-guide.md', code: 'missing-include' }),
+        ]);
+        expect(nestedInstructions.complete).toBe(false);
+
+        const resultsAt = (turn: number) => model.doStreamCalls[turn]!.prompt
+            .filter((message) => message.role === 'tool')
+            .flatMap((message) => message.content)
+            .filter((part) => part.type === 'tool-result')
+            .map((part) => ({ name: part.toolName, output: part.output }));
+        expect(resultsAt(2)).toEqual(expect.arrayContaining([
+            { name: 'create_workspace', output: { type: 'json', value: created!.output } },
+            { name: 'read_file', output: { type: 'json', value: initialRead!.output } },
+        ]));
+
+        await first.stop();
+        const workspace = await firstManager.get(runId);
+        await workspace.writeFile('src/CLAUDE.md', updatedContent);
+        await firstManager.close();
+        const secondManager = makeManager();
+        cleanups.push(() => secondManager.close());
+        const second = new Engine({ store, agents: [agentFor(secondManager)] });
+        cleanups.push(() => second.stop());
+        secondManager.attach(second);
+        await second.start();
+        await second.approve(runId, { approvalId: paused!.waiting!.approvalId, approved: true });
+        await second.idle();
+
+        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'guidance received' });
+        expect(resultsAt(3)).toEqual(expect.arrayContaining([
+            { name: 'create_workspace', output: { type: 'json', value: created!.output } },
+            { name: 'read_file', output: { type: 'json', value: initialRead!.output } },
+        ]));
+        const steps = await store.listSteps(runId);
+        const reads = steps.filter((step) => step.kind === 'tool' && step.name === 'read_file');
+        expect(reads).toHaveLength(2);
+        expect(reads[0]!.output).toEqual(initialRead!.output);
+        const refreshed = (reads[1]!.output as { instructions: RepositoryInstructions }).instructions;
+        expect(refreshed.sources).toEqual([
+            rootSource,
+            {
+                ...nestedSource,
+                content: updatedContent,
+                sha256: createHash('sha256').update(updatedContent).digest('hex'),
+            },
+        ]);
+        expect(refreshed.diagnostics).toEqual(nestedInstructions.diagnostics);
+        expect(resultsAt(4)).toContainEqual({ name: 'read_file', output: { type: 'json', value: reads[1]!.output } });
     });
 });

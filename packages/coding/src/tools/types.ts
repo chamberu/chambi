@@ -5,12 +5,14 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { IWorkspaceManager } from '@chamvi/sandbox';
+import type { IWorkspaceManager, RepositoryInstructions } from '@chamvi/sandbox';
 
 /** What the coding tools need of a workspace manager: the run's workspaces by id. */
 export type CodingWorkspaces = Pick<IWorkspaceManager, 'get'>;
 
 export type CodingToolsOptions = {
+    /** Attach current path-scoped repository guidance to text reads. Default true. */
+    repositoryInstructions?: boolean;
     /**
      * Bytes one output log of `bash` may grow to (per stream). A call whose
      * log passes it is killed (`outputCapped: true`) and the log cut back to
@@ -27,6 +29,8 @@ export type ReadFileResult = {
     startLine: number;
     endLine: number;
     totalLines: number;
+    /** Current repository guidance for this path; absent for logs or when disabled. */
+    instructions?: RepositoryInstructions;
     /** True when `content` was cut at `READ_MAX_CHARS`. */
     truncated: boolean;
 };
