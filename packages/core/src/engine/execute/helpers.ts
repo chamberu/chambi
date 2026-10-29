@@ -18,6 +18,7 @@ import type {
 } from 'ai';
 import { NoSuchToolError, TypeValidationError, asSchema } from 'ai';
 import { isObject } from 'smob';
+import { assertSkillToolCollision } from '../../skill/helpers.ts';
 import { assertNoNeedsApproval, assertToolsContext } from '../../agent/asserts.ts';
 import { toFilePart } from '../../artifact/helpers.ts';
 import { createRunArtifacts } from '../../artifact/module.ts';
@@ -149,7 +150,7 @@ export function assembleTools(
         toolsContext: agentToolsContext,
         hooks,
     } = ctx.agent.definition;
-    if (!userTools && !schema) {
+    if (!userTools && !schema && !ctx.skills?.skills.length) {
         if (agentToolsContext) assertToolsContext(ctx.agent.name, {}, agentToolsContext);
         return { tools: {}, toolsContext: {} };
     }
@@ -165,6 +166,9 @@ export function assembleTools(
         ...(schema ? createStateTools(schema) : {}),
         ...(typeof userTools === 'function' ? userTools(toolContext) : userTools),
     };
+
+    assertSkillToolCollision(ctx.skills?.skills ?? [], tools);
+    Object.assign(tools, ctx.skills?.tools);
 
     // a factory's set is only known here: refused like defineAgent refuses a plain one
     assertNoNeedsApproval(ctx.agent.name, tools);

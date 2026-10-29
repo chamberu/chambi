@@ -43,6 +43,25 @@ import { assertHandoffSubscription } from '../handoff/helpers.ts';
 import { MODEL_CONTEXT } from '../model/constants.ts';
 import { checkAgentModel, checkDefaultModel } from '../model/module.ts';
 import type { IModelResolver, ModelContext, ModelRef } from '../model/types.ts';
+import {
+    assertSkillContents,
+    assertSkillResultIdentities,
+    assertSkillToolCollision,
+    composeSkillIdentities,
+    copySkill,
+    copySkillInputs,
+    invalidSkill,
+    isSkillSource,
+    skillHeaders,
+    sourceIdentity,
+} from '../skill/helpers.ts';
+import { createSkillCatalog } from '../skill/module.ts';
+import type {
+    ISkillSource,
+    Skill,
+    SkillCatalog,
+    SkillInput,
+} from '../skill/types.ts';
 import type { IStore } from '../store/types.ts';
 import { idempotencyScope, toInvoker } from '../trigger/helpers.ts';
 import { assertTriggerKey } from '../trigger/key.ts';
@@ -148,7 +167,28 @@ export class Engine implements IContextProvider {
     /** Values tools reach through inject(ctx, key), by reference. */
     protected readonly provided = new Map<ContextKey<unknown>, unknown>();
 
+    protected readonly skills: readonly SkillInput[];
+
+    protected readonly agentSkills = new WeakMap<Agent, readonly SkillInput[]>();
+
+    protected readonly preparedSkills = new WeakMap<Agent, SkillCatalog>();
+
+    protected readonly attestedSkills = new Map<string, string>();
+
+    protected readonly sources = new Map<ISkillSource, Promise<readonly Skill[]>>();
+
+    protected readonly preparing = new Set<Promise<void>>();
+
+    protected preparationController = new AbortController();
+
+    protected startup?: { controller: AbortController; done: Promise<void> };
+
+    protected stopping?: Promise<void>;
+
     constructor(opts: EngineOptions) {
+        this.skills = copySkillInputs(opts.skills);
+        composeSkillIdentities(skillHeaders(this.skills));
+        assertSkillContents(this.skills.flatMap((input) => isSkillSource(input) ? [] : [input]));
         this.store = opts.store;
         this.agents = new Map(opts.agents.map((a) => [a.name, a]));
         const channels = opts.channels ?? [];
@@ -375,6 +415,9 @@ export class Engine implements IContextProvider {
         } = {},
     ): Promise<'added' | 'replaced' | 'unchanged'> {
         this.assertRegistrable(agent);
+        await this.prepare({ agents: [agent] });
+        const preparationSignal = this.preparationController.signal;
+        preparationSignal.throwIfAborted();
         const { name } = agent;
         const {
             revision, 
@@ -407,6 +450,7 @@ export class Engine implements IContextProvider {
                 runIds: cancelled,
             });
         }
+        preparationSignal.throwIfAborted();
         const kind = this.agents.has(name) ? 'replaced' : 'added';
         this.agents.set(name, agent);
         this.revisions.set(name, revision);
@@ -475,47 +519,227 @@ export class Engine implements IContextProvider {
         return this.draining;
     }
 
+    /** Resolve each provider once per engine, owning its actual settlement even if cancellation is ignored. */
+    protected resolveSkillSource(source: ISkillSource, signal: AbortSignal): Promise<readonly Skill[]> {
+        const key = sourceIdentity(source);
+        let pending = this.sources.get(key);
+        if (!pending) {
+            pending = (async () => {
+                signal.throwIfAborted();
+                const result = await source.load({ signal });
+                signal.throwIfAborted();
+                if (!Array.isArray(result) || result.length !== source.skills.length) {
+                    invalidSkill('source result does not match declared skills');
+                }
+
+                const skills = Object.freeze(result.map(copySkill));
+                assertSkillResultIdentities(source.skills, skills);
+                createSkillCatalog(skills);
+                return skills;
+            })();
+            this.sources.set(key, pending);
+            const owned = pending;
+            void pending.catch(() => {
+                if (this.sources.get(key) === owned) {
+                    this.sources.delete(key);
+                }
+            });
+        }
+        return pending.then((skills) => {
+            signal.throwIfAborted();
+            assertSkillResultIdentities(source.skills, skills);
+            return skills;
+        });
+    }
+
+    /** Prepare registered agents and optional candidates without registering or writing to the store. */
+    prepare(options: { signal?: AbortSignal; agents?: readonly Agent[] } = {}): Promise<void> {
+        if (this.stopping) {
+            return this.stopping.then(() => this.prepare(options));
+        }
+
+        if (this.preparationController.signal.aborted) {
+            this.preparationController = new AbortController();
+        }
+
+        const signal = AbortSignal.any([this.preparationController.signal, ...(options.signal ? [options.signal] : [])]);
+        const run = async () => {
+            signal.throwIfAborted();
+            const agents = [...this.agents.values(), ...(options.agents ?? [])];
+            const resolved = new Map<Agent, SkillCatalog>();
+            const attested = new Map(this.attestedSkills);
+            const attest = (skills: readonly Skill[]) => {
+                for (const skill of skills) {
+                    const key = JSON.stringify([skill.name, skill.version, skill.sha256]);
+                    const content = JSON.stringify(skill);
+                    const previous = attested.get(key);
+                    if (previous !== undefined && previous !== content) {
+                        invalidSkill(`conflicting content for ${skill.name}`);
+                    }
+
+                    attested.set(key, content);
+                }
+            };
+            // Globals must prepare even when no agents are registered yet.
+            const globals: Skill[] = [];
+            for (const input of this.skills) {
+                globals.push(...(isSkillSource(input) ? await this.resolveSkillSource(input, signal) : [input]));
+            }
+
+            attest(globals);
+            for (const agent of agents) {
+                this.skillInputs(agent);
+                if (this.preparedSkills.has(agent)) {
+                    continue;
+                }
+
+                const skills = [...globals];
+                for (const input of this.agentSkills.get(agent) ?? []) {
+                    skills.push(...(isSkillSource(input) ? await this.resolveSkillSource(input, signal) : [input]));
+                }
+                attest(skills);
+                resolved.set(agent, createSkillCatalog(skills));
+            }
+            signal.throwIfAborted();
+            for (const [key, content] of attested) {
+                const previous = this.attestedSkills.get(key);
+                if (previous !== undefined && previous !== content) {
+                    invalidSkill('conflicting content from concurrent preparation');
+                }
+            }
+            for (const [key, content] of attested) {
+                this.attestedSkills.set(key, content);
+            }
+
+            for (const [agent, catalog] of resolved) {
+                this.preparedSkills.set(agent, catalog);
+            }
+        };
+        // Register ownership before run() can invoke external provider code.
+        const done = Promise.resolve().then(run);
+        this.preparing.add(done);
+        void done.then(() => this.preparing.delete(done), () => this.preparing.delete(done));
+        return done;
+    }
+
     /**
      * Recovers abandoned runs, starts every channel (in registration order,
      * unless `channels: false`), then starts executing queued runs and
      * polling. A throwing channel start rejects after the channels already
      * started were stopped and polling stopped.
      */
-    async start(options: EngineStartOptions = {}): Promise<void> {
-        this.draining = false;
-        this.started = true;
-        this.queue.resume();
-        this.queue.startPolling();
-        // like a failing pass, a failing recovery is reported; the next poll retries it
-        await this.recover().catch((error: unknown) => this.onError(error));
-        if (options.channels ?? true) await this.startChannels();
-        await this.queue.pump();
+    start(options: EngineStartOptions = {}): Promise<void> {
+        if (this.stopping) {
+            return this.stopping.then(() => this.start(options));
+        }
+
+        if (this.startup && !this.startup.controller.signal.aborted) {
+            const attempt = this.startup;
+            if (options.signal) {
+                const { signal } = options;
+                const abort = () => attempt.controller.abort(signal.reason);
+                if (signal.aborted) {
+                    abort();
+                } else {
+                    signal.addEventListener('abort', abort, { once: true });
+                }
+
+                const remove = () => signal.removeEventListener('abort', abort);
+                void attempt.done.then(remove, remove);
+            }
+            return attempt.done;
+        }
+        if (this.startup) {
+            return this.startup.done.catch(() => {}).then(() => this.start(options));
+        }
+
+        if (options.signal?.aborted) {
+            return Promise.reject(options.signal.reason);
+        }
+
+        if (this.started) {
+            return Promise.resolve();
+        }
+
+        const controller = new AbortController();
+        const signal = AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]);
+        const attempt = { controller, done: Promise.resolve() };
+        attempt.done = Promise.resolve().then(async () => {
+            try {
+                signal.throwIfAborted();
+                await this.prepare({ signal });
+                signal.throwIfAborted();
+                this.draining = false;
+                this.started = true;
+                this.queue.resume();
+                // Verification failures above propagate; ordinary recovery keeps its existing reporting behavior.
+                await this.recover().catch((error: unknown) => this.onError(error));
+                signal.throwIfAborted();
+                if (options.channels ?? true) {
+                    await this.startChannels(signal);
+                }
+
+                signal.throwIfAborted();
+                this.queue.startPolling();
+                await this.queue.pump();
+            } catch (error) {
+                this.started = false;
+                this.queue.stopPolling();
+                await this.stopChannels();
+                throw error;
+            } finally {
+                if (this.startup === attempt) {
+                    this.startup = undefined;
+                }
+            }
+        });
+        this.startup = attempt;
+        return attempt.done;
     }
 
-    /**
-     * Stops the poll for newly runnable work at once, and the channels
-     * started last (their stop errors go to onError); resolves once every
-     * channel stopped (e.g. the cron ticks in flight finished). Dispatch and
-     * running runs are unaffected.
-     */
+    /** Abort admission immediately, then join actual provider and channel work before returning. */
     stop(): Promise<void> {
+        if (this.stopping) {
+            return this.stopping;
+        }
+
         this.started = false;
         this.queue.stopPolling();
-        return this.stopChannels();
+        this.preparationController.abort();
+        this.startup?.controller.abort();
+        const startup = this.startup?.done;
+        const done = (async () => {
+            if (startup) {
+                await startup.catch(() => {});
+            }
+
+            while (this.preparing.size) {
+                await Promise.allSettled([...this.preparing]);
+            }
+
+            await this.stopChannels();
+        })();
+        this.stopping = done;
+        void done.then(() => {
+            if (this.stopping === done) {
+                this.stopping = undefined;
+            }
+        });
+        return done;
     }
 
-    protected async startChannels(): Promise<void> {
-        // a channel left over from an earlier start must stop before it starts again
+    protected async startChannels(signal: AbortSignal): Promise<void> {
         await this.stopChannels();
+        signal.throwIfAborted();
         for (const channel of this.channels.values()) {
-            if (!channel.start) continue;
-            try {
-                await channel.start(createChannelContext(this, channel));
-            } catch (error) {
-                await this.stop();
-                throw error;
+            if (!channel.start) {
+                continue;
             }
+
+            await channel.start(createChannelContext(this, channel));
+            // Record even a late success: startup's internal cleanup must own its stop.
             this.startedChannels.push(channel);
+            signal.throwIfAborted();
         }
     }
 
@@ -974,7 +1198,8 @@ export class Engine implements IContextProvider {
             return;
         }
         const agent = this.agents.get(run.agent);
-        if (!agent || !await this.isCurrent(run.agent)) {
+        const skills = agent ? this.preparedSkills.get(agent) : undefined;
+        if (!agent || !skills || !await this.isCurrent(run.agent)) {
             // removed or replaced since the claim: left for a replica that runs the agent's current revision
             // guarded by status and owner (`expectStatus: [RUNNING]`, `expectOwner`): a taken-over run is left alone
             const released = await this.ownedUpdate(run.id, {
@@ -989,6 +1214,7 @@ export class Engine implements IContextProvider {
             engine: this,
             run,
             agent,
+            skills,
             model: agent.definition.model ?? this.model,
             models: this.models,
             store: this.store,
@@ -1021,8 +1247,23 @@ export class Engine implements IContextProvider {
             new Map((await this.store.listAgentRevisions()).map((marker) => [marker.agent, marker.hash])) :
             new Map<string, string>();
         return (run) => {
-            if (run.cancelRequested) return true;
-            if (!this.agents.has(run.agent) || this.syncing.has(run.agent)) return false;
+            if (!this.started) {
+                return false;
+            }
+
+            if (run.cancelRequested) {
+                return true;
+            }
+
+            const agent = this.agents.get(run.agent);
+            if (!agent || !this.preparedSkills.has(agent)) {
+                return false;
+            }
+
+            if (!this.agents.has(run.agent) || this.syncing.has(run.agent)) {
+                return false;
+            }
+
             const revision = this.revisions.get(run.agent);
             return revision === undefined || revision === markers.get(run.agent);
         };
@@ -1137,6 +1378,7 @@ export class Engine implements IContextProvider {
 
     /** Refuses an agent the engine cannot run: one subscribing to a channel it does not have. */
     protected assertRegistrable(agent: Agent): void {
+        this.skillInputs(agent);
         // first: putAgent refuses before syncing, the lock and any store write
         checkAgentModel(agent, { model: this.model, models: this.models });
         assertConcurrencyMaxRuns(agent.definition.concurrencyMaxRuns, `Agent "${agent.name}" concurrencyMaxRuns`);
@@ -1147,6 +1389,19 @@ export class Engine implements IContextProvider {
             }
         }
         assertHandoffSubscription(agent);
+    }
+
+    protected skillInputs(agent: Agent): readonly SkillInput[] {
+        let extras = this.agentSkills.get(agent);
+        if (!extras) {
+            extras = copySkillInputs(agent.definition.skills);
+            this.agentSkills.set(agent, extras);
+        }
+        const inputs = [...this.skills, ...extras];
+        const headers = composeSkillIdentities(skillHeaders(inputs));
+        assertSkillContents(inputs.flatMap((input) => isSkillSource(input) ? [] : [input]));
+        assertSkillToolCollision(headers, typeof agent.definition.tools === 'function' ? {} : agent.definition.tools ?? {});
+        return extras;
     }
 
     protected registry(): RegistryContext {

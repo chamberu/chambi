@@ -24,6 +24,22 @@ afterEach(() => {
 });
 
 describe('approved skill catalog', () => {
+    it('exposes a singular verified immutable snapshot without retaining filesystem readers', () => {
+        const approved = approvedSkill('audit', { files: { 'ref.txt': 'REFERENCE' } });
+        const snapshot = app.loadSkillBundle(approved);
+        fs.rmSync(approved.directory, { recursive: true });
+        expect(snapshot).toMatchObject({
+            name: 'audit',
+            version: approved.version,
+            sha256: approved.sha256,
+            body: 'PRIVATE-BODY\n',
+            references: { 'ref.txt': 'REFERENCE' },
+        });
+        expect(Object.isFrozen(snapshot)).toBe(true);
+        expect(Object.isFrozen(snapshot.references)).toBe(true);
+        expect(snapshot).not.toHaveProperty('readReference');
+    });
+
     it('renders_only_metadata_in_name_order', () => {
         const zulu = approvedSkill('zulu', { files: { 'ref.txt': 'PRIVATE-REFERENCE' } });
         const alpha = approvedSkill('alpha', { description: 'Review "quoted" code \u2028 safely' });

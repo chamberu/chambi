@@ -9,7 +9,4 @@ export { hashSkillBundle } from './bundle.ts';
 export * from './module.ts';
 export type {
     ApprovedSkill,
-    LoadedSkill,
-    SkillCatalog,
-    SkillMetadata,
 } from './types.ts';

@@ -5,22 +5,23 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { ValidationError, defineTool } from '@chamvi/core';
+import { ValidationError } from '../errors/index.ts';
+import { defineTool } from '../tool/define.ts';
 import { jsonSchema } from 'ai';
 import type { ToolSet } from 'ai';
 import { isObject } from 'smob';
 import { SKILL_NAME_PATTERN } from './constants.ts';
-import type { LoadedSkill, SkillBundle, SkillInput } from './types.ts';
+import type { LoadSkillInput, LoadedSkill, Skill } from './types.ts';
 
-export function createSkillTools(bundles: readonly SkillBundle[]): ToolSet {
+export function createSkillTools(bundles: readonly Skill[]): ToolSet {
     if (!bundles.length) {
         return Object.freeze({});
     }
 
-    const approved = new Map(bundles.map((bundle) => [bundle.metadata.name, bundle]));
-    const load = defineTool<SkillInput, LoadedSkill>({
+    const approved = new Map(bundles.map((bundle) => [bundle.name, bundle]));
+    const load = defineTool<LoadSkillInput, LoadedSkill>({
         description: 'Read an approved skill body or one exact supporting reference. References are never followed automatically.',
-        inputSchema: jsonSchema<SkillInput>({
+        inputSchema: jsonSchema<LoadSkillInput>({
             type: 'object',
             properties: {
                 name: { type: 'string', pattern: SKILL_NAME_PATTERN.source },
@@ -62,7 +63,7 @@ export function createSkillTools(bundles: readonly SkillBundle[]): ToolSet {
                     throw new ValidationError('Invalid approved skill reference.');
                 }
 
-                const text = bundle.readReference(input.reference);
+                const text = bundle.references[input.reference];
                 if (text === undefined) {
                     throw new ValidationError('Unknown approved skill reference.');
                 }
@@ -71,12 +72,12 @@ export function createSkillTools(bundles: readonly SkillBundle[]): ToolSet {
             }
 
             return {
-                name: bundle.metadata.name,
-                version: bundle.metadata.version,
-                sha256: bundle.metadata.sha256,
+                name: bundle.name,
+                version: bundle.version,
+                sha256: bundle.sha256,
                 reference,
                 content,
-                references: [...bundle.references],
+                references: Object.keys(bundle.references),
             };
         },
     });

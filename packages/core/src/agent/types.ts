@@ -10,6 +10,7 @@ import type { ChannelSubscription } from '../channel/types.ts';
 import type { ModelRef } from '../model/types.ts';
 import type { Budget, RunContext } from '../run/types.ts';
 import type { StateSchema } from '../state/types.ts';
+import type { SkillInput } from '../skill/types.ts';
 import type { ToolContext } from '../tool/types.ts';
 
 /** The factory's argument: the same ToolContext the run's chamvi tools get. */
@@ -68,6 +69,7 @@ export type AgentDefinition<S extends StateSchema = StateSchema> = {
      */
     model?: ModelRef;
     instructions: string;
+    readonly skills?: readonly SkillInput[];
     /**
      * The channels that start the agent's runs (e.g. `cron.on('0 8 * * 1-5')`);
      * every subscription names a channel registered on the engine, ids are

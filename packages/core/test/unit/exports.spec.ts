@@ -16,6 +16,7 @@ import * as core from '@chamvi/core';
 describe('public api', () => {
     it.each([
         'defineAgent',
+        'createSkillCatalog',
         'Engine',
         'MemoryStore',
         'defineEffectTool',
@@ -52,6 +53,14 @@ describe('public api', () => {
     ])('exports %s', (name) => {
         expect(core).toHaveProperty(name);
         expect(core[name as keyof typeof core]).toBeTypeOf('function');
+    });
+
+    it('exports passive skill contracts', () => {
+        expectTypeOf<core.Skill>().toExtend<core.SkillIdentity>();
+        expectTypeOf<core.AgentDefinition['skills']>().toEqualTypeOf<readonly core.SkillInput[] | undefined>();
+        expectTypeOf<core.EngineOptions['skills']>().toEqualTypeOf<readonly core.SkillInput[] | undefined>();
+        expectTypeOf<core.ISkillSource['load']>().returns.toEqualTypeOf<Promise<readonly core.Skill[]>>();
+        expectTypeOf<core.Engine['prepare']>().parameter(0).toEqualTypeOf<{ signal?: AbortSignal; agents?: readonly core.Agent[] } | undefined>();
     });
 
     it('keeps the artifact uri prefix internal', () => {
@@ -143,7 +152,7 @@ describe('public api', () => {
         expectTypeOf<core.IChannel>().toHaveProperty('name').toEqualTypeOf<string>();
         expectTypeOf<core.TriggerEnvelope>().toHaveProperty('channel').toEqualTypeOf<string>();
         expectTypeOf<core.Run>().toHaveProperty('address').toEqualTypeOf<string | undefined>();
-        expectTypeOf<core.EngineStartOptions>().toEqualTypeOf<{ channels?: boolean }>();
+        expectTypeOf<core.EngineStartOptions>().toEqualTypeOf<{ channels?: boolean; signal?: AbortSignal }>();
         expectTypeOf<core.EmitMessage>().toEqualTypeOf<{
             title?: string; 
             body: string; 

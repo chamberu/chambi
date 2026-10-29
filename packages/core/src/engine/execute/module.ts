@@ -392,7 +392,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
 
     const loop = new ToolLoopAgent({
         model,
-        instructions: agent.definition.instructions,
+        instructions: ctx.skills?.instructions ? `${agent.definition.instructions}\n\n${ctx.skills.instructions}` : agent.definition.instructions,
         tools,
         activeTools,
         // the AI SDK types toolsContext from a concrete tool set; a ToolSet infers none

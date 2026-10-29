@@ -46,6 +46,7 @@ describe('public api', () => {
         'envOneOf',
         'hashSkillBundle',
         'loadSkillBundles',
+        'loadSkillBundle',
         'loadAgent',
         'loadAgents',
         'hashAgentFolder',
