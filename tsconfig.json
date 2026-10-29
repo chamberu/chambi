@@ -19,6 +19,7 @@
             "@chamvi/sandbox-docker": ["./packages/sandbox-docker/src/index.ts"],
             "@chamvi/sandbox-k8s": ["./packages/sandbox-k8s/src/index.ts"],
             "@chamvi/sandbox-local": ["./packages/sandbox-local/src/index.ts"],
+            "@chamvi/skills": ["./packages/skills/src/index.ts"],
             "@chamvi/store-typeorm": ["./packages/store-typeorm/src/index.ts"],
             "@chamvi/test-kit": ["./packages/test-kit/src/index.ts"],
             "@chamvi/tool-web": ["./packages/tool-web/src/index.ts"],

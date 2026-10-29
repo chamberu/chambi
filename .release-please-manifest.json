@@ -3,6 +3,7 @@
     "packages/core": "0.3.1",
     "packages/test-kit": "0.3.1",
     "packages/channel-cron": "0.3.1",
+    "packages/skills": "0.3.1",
     "packages/store-typeorm": "0.3.1",
     "packages/http": "0.3.1",
     "packages/github": "0.3.1",

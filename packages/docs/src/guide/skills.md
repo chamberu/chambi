@@ -15,6 +15,14 @@ The digest in this example is illustrative; replace it with the reviewed digest.
 
 `loadSkillBundles()` synchronously verifies every descriptor before returning any catalog. Invalid configuration, unsupported content, unstable files or a pin mismatch throw `InvalidAgentDefinitionError` with source-relative diagnostics that omit file bodies. `catalog.skills` exposes name, description, version, digest and `ignoredFields`; catalog instructions include only the first four, sorted by name, with escaped metadata and no bodies, references or absolute host paths. An empty approved list returns empty metadata, instructions and tools.
 
+## Prepare a pinned external source
+
+Use optional [`@chamvi/skills`](/reference/skills) in an explicit setup/build task to prepare a selected Git source. The application owns the source URL, full commit, role choices and separately reviewed bundle pins. A common profile can select `ponytail` and `codebase-design`; a maintainer profile can add `generate-commit-message`, `investigate-pr-comments`, `create-pull-request` and `release-please-version-bump`. Combine the selected names and pins before creating one catalog, rather than merging independent `load_skill` tools.
+
+Pass a `verify` callback that checks `hashSkillBundle(skill.path)` against each recorded pin. Every callback runs on staged copies before managed output is replaced. Keep role descriptors/pins in tracked agent configuration so a reviewed upgrade changes that agent's revision. Copy the prepared corpus explicitly into the runtime image and use `loadSkillBundles()` on those deployed bytes; do not download or install sources on agent import/startup.
+
+Preparation copies text and supporting assets. It never enables tools, executes scripts or mounts files into sandboxes. Sources containing scripts or other unsupported assets require a separately reviewed passive adaptation before runtime loading. The source backend remains private to Chamvi; consumer configuration and API stay unchanged when it moves to an official SDK release.
+
 ## Bundle format and bounds
 
 Each absolute directory must contain root `SKILL.md` with initial YAML frontmatter:
@@ -77,7 +85,7 @@ External bundle directories are not automatically watched and do not automatical
 
 Skills supply ordinary tool-result content under the agent's role instructions and operator policy. They do not add tools, permissions, network access, scripts, subagents or authorization to publish findings. Existing configured tools may act on this text, so passive loading provides no sandbox. Credential separation, sandbox isolation and private disclosure remain separate requirements for a security agent.
 
-This is separate from scoped repository instructions: repository instructions and issue text cannot approve a bundle or turn an arbitrary workspace file into a skill. There is no workspace auto-discovery, marketplace installation, source URL fetch or dynamic tool registration.
+This is separate from scoped repository instructions: repository instructions and issue text cannot approve a bundle or turn an arbitrary workspace file into a skill. The runtime performs no workspace auto-discovery, marketplace installation, source URL fetch or dynamic tool registration.
 
 Complex third-party skills require an explicitly reviewed adaptation to this passive subset. Cloudflare's security audit methodology, for example, does not become a compatible automated workflow merely by loading its text: script validation, isolation and independent subagents require separately supported capabilities. Future delegation and untrusted-content controls do not gain new APIs here.
 

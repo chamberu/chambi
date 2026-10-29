@@ -185,6 +185,7 @@ export default defineConfig({
                         { text: '@chamvi/github', link: '/reference/github' },
                         { text: '@chamvi/http', link: '/reference/http' },
                         { text: '@chamvi/sandbox', link: '/reference/sandbox' },
+                        { text: '@chamvi/skills', link: '/reference/skills' },
                         { text: '@chamvi/test-kit', link: '/reference/test-kit' },
                         { text: '@chamvi/tool-web', link: '/reference/tool-web' },
                         { text: '@chamvi/ui', link: '/reference/ui' },
