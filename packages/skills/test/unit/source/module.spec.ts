@@ -31,10 +31,11 @@ vi.mock('skills', async (original) => {
 });
 const fixtures: GitFixture[] = [];
 const roots: string[] = [];
-async function setup() {
+async function setup(files: Record<string, string> = {}) {
     const fixture = await createGitFixture({
         'skills/audit/SKILL.md': '---\nname: audit\ndescription: Review\n---\nAUDIT\n',
         'skills/design/SKILL.md': '---\nname: design\ndescription: Design\n---\nDESIGN\n',
+        ...files,
     });
     fixtures.push(fixture);
     const root = await fs.mkdtemp(join(tmpdir(), 'chamvi-source-'));
@@ -42,7 +43,7 @@ async function setup() {
     const approved = ['audit', 'design'].map((name) => ({
         name,
         version: '1.0.0',
-        sha256: hashSkillBundle(join(fixture.path, 'skills', name)),
+        hash: hashSkillBundle(join(fixture.path, 'skills', name)),
     }));
     return {
         root,
@@ -73,7 +74,7 @@ it('constructs without I/O and snapshots configuration and approved headers befo
     options.source = 'ext::sh -c wrong';
     options.revision = 'main';
     options.directory = join(root, 'wrong');
-    options.approved[0]!.sha256 = '0'.repeat(64);
+    options.approved[0]!.hash = '0'.repeat(64);
     options.approved.splice(1, 1);
     expect(source.skills).toEqual(expected);
     expect(Object.isFrozen(source.skills)).toBe(true);
@@ -82,15 +83,28 @@ it('constructs without I/O and snapshots configuration and approved headers befo
     expect(result.map(({
         name,
         version,
-        sha256,
+        hash,
     }) => ({
         name,
         version,
-        sha256,
+        hash,
     }))).toEqual(expected);
     expect(result.map((skill) => skill.body)).toEqual(['AUDIT\n', 'DESIGN\n']);
     expect(sdk.cloneRepo).toHaveBeenCalledTimes(1);
     expect(await fs.readdir(root)).toEqual(['corpus']);
+});
+it('prepares arbitrary UTF-8 source files as verified passive references', async () => {
+    const references = {
+        'scripts/check.sh': '#!/bin/sh\nexit 99\n',
+        'src/audit.ts': 'export const instruction = "review";\n',
+        'assets/diagram.svg': '<svg><text>Review</text></svg>\n',
+        Dockerfile: 'FROM scratch\n',
+    };
+    const { options } = await setup(Object.fromEntries(Object.entries(references).map(([path, content]) => [`skills/audit/${path}`, content])));
+    const source = skills.gitSkills(options);
+    const result = await source.load({ signal: new AbortController().signal });
+    expect(result[0]?.references).toEqual(references);
+    expect(result[0]?.hash).toBe(options.approved[0]?.hash);
 });
 it.each([
     { source: '' },
@@ -103,14 +117,14 @@ it.each([
         approved: [{
             name: 'audit',
             version: 'main',
-            sha256: '0'.repeat(64),
+            hash: '0'.repeat(64),
         }],
     },
     {
         approved: [{
             name: '../audit',
             version: '1',
-            sha256: '0'.repeat(64),
+            hash: '0'.repeat(64),
         }],
     },
 ])('rejects invalid factory configuration synchronously: %j', async (invalid) => {
@@ -146,7 +160,7 @@ it('retains staged verified snapshots and publishes only after cleanup succeeds'
 it('preserves an existing corpus when one grouped pin fails', async () => {
     const { root, options } = await setup();
     await skills.gitSkills(options).load({ signal: new AbortController().signal });
-    options.approved[1]!.sha256 = '0'.repeat(64);
+    options.approved[1]!.hash = '0'.repeat(64);
     await expect(skills.gitSkills(options).load({ signal: new AbortController().signal })).rejects.toThrow(InvalidAgentDefinitionError);
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('AUDIT');
     expect(await fs.readdir(root)).toEqual(['corpus']);

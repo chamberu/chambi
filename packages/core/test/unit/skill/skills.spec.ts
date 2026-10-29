@@ -25,7 +25,7 @@ import { mockModel } from '../../utils/mock-model.ts';
 const skill = (name = 'common', body = 'SECRET BODY'): Skill => ({
     name,
     version: '1.0.0',
-    sha256: 'a'.repeat(64),
+    hash: 'a'.repeat(64),
     description: 'Useful <metadata>',
     ignoredFields: [],
     body,
@@ -61,12 +61,12 @@ describe('first class skills', () => {
             skills: [{
                 name: 'extra',
                 version: '1',
-                sha256: 'b'.repeat(64),
+                hash: 'b'.repeat(64),
             }],
             load: vi.fn(async () => [{
                 ...skill('extra'),
                 version: '1',
-                sha256: 'b'.repeat(64),
+                hash: 'b'.repeat(64),
             }]),
         };
         const model = mockModel([{
@@ -322,7 +322,7 @@ describe('first class skills', () => {
             trigger: 'test',
             payload: {},
         }); await entered.promise;
-        await e.putAgent(agent([{ ...skill('common', 'NEW'), sha256: 'b'.repeat(64) }]), { revision: 'same' }); deferred.resolve(); await e.idle();
+        await e.putAgent(agent([{ ...skill('common', 'NEW'), hash: 'b'.repeat(64) }]), { revision: 'same' }); deferred.resolve(); await e.idle();
         expect((await store.listSteps(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'OLD' }); await e.stop();
     });
     it('scopes global and extra loads and keeps instructions passive for agents with no user tools', async () => {
@@ -437,6 +437,10 @@ describe('first class skills', () => {
         expect(() => engine([skill()], [agent([skill('common', 'DIFFERENT')])])).toThrow(/conflicting content/i);
         expect(() => agent([skill('common', '\ud800')])).toThrow(/skill/i);
         expect(() => agent([{ ...skill(), references: { 'bad.txt': '\ud800' } }])).toThrow(/skill/i);
+    });
+    it.each(['body', 'reference'])('rejects NUL-bearing custom skill %s content', (part) => {
+        const value = part === 'body' ? skill('common', 'text\0binary') : { ...skill(), references: { 'scripts/check.sh': 'text\0binary' } };
+        expect(() => agent([value])).toThrow(/skill/i);
     });
     it('verification rejects before recovery, channels or a model call', async () => {
         const store = new MemoryStore(); const reads = vi.spyOn(store, 'listRuns'); const start = vi.fn();

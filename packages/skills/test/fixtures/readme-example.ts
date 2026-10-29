@@ -1,4 +1,4 @@
-import { InvalidAgentDefinitionError } from '@chamvi/app';
+import { InvalidAgentDefinitionError } from '@chamvi/core';
 import { hashSkillBundle, loadSkillBundles, prepareSkills } from '@chamvi/skills';
 import type { PrepareSkillsOptions, PreparedSkill } from '@chamvi/skills';
 
@@ -16,6 +16,6 @@ export async function prepareCatalog(options: Omit<PrepareSkillsOptions, 'verify
         name: skill.name,
         directory: skill.path,
         version: options.revision,
-        sha256: pins[skill.name]!,
+        hash: pins[skill.name]!,
     })));
 }

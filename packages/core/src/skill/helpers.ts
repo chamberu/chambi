@@ -31,7 +31,7 @@ export function compareSkillPaths(a: string, b: string): number {
 }
 
 export function sameSkill(a: SkillIdentity, b: SkillIdentity): boolean {
-    return a.name === b.name && a.version === b.version && a.sha256 === b.sha256;
+    return a.name === b.name && a.version === b.version && a.hash === b.hash;
 }
 
 export function copySkillIdentity(value: SkillIdentity): SkillIdentity {
@@ -51,14 +51,14 @@ export function copySkillIdentity(value: SkillIdentity): SkillIdentity {
         invalidSkill('version must be an exact release identifier');
     }
 
-    if (typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256)) {
-        invalidSkill('sha256 must be a lowercase full digest');
+    if (typeof value.hash !== 'string' || !/^[a-f0-9]{64}$/.test(value.hash)) {
+        invalidSkill('hash must be a lowercase full digest');
     }
 
     return Object.freeze({
         name: value.name,
         version: value.version,
-        sha256: value.sha256,
+        hash: value.hash,
     });
 }
 
@@ -84,6 +84,10 @@ export function copySkill(value: Skill): Skill {
         invalidSkill('body exceeds 64 KiB or is not text');
     }
 
+    if (value.body.includes('\0')) {
+        invalidSkill('body contains NUL');
+    }
+
     if (!isObject(value.references) || Object.keys(value.references).length > 63) {
         invalidSkill('invalid references');
     }
@@ -100,14 +104,13 @@ export function copySkill(value: Skill): Skill {
             invalidSkill('invalid reference path');
         }
 
-        const filename = segments.at(-1)!;
-        if (!/\.(md|txt|json|yaml|yml)$/.test(filename) && !['LICENSE', 'NOTICE'].includes(filename)) {
-            invalidSkill('invalid reference path');
-        }
-
         const content = value.references[path];
         if (typeof content !== 'string' || !content.isWellFormed() || Buffer.byteLength(content) > 128 * 1024) {
             invalidSkill('reference exceeds 128 KiB or is not text');
+        }
+
+        if (content.includes('\0')) {
+            invalidSkill('reference contains NUL');
         }
 
         bytes += Buffer.byteLength(content);

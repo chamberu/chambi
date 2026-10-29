@@ -32,7 +32,7 @@ export function gitSkills(options: GitSkillsOptions): ISkillSource {
         return Object.freeze({
             name: pin.name,
             version: pin.version,
-            sha256: pin.sha256,
+            hash: pin.hash,
         });
     }));
     const configuration = copyPreparationOptions({ ...options, names: approved.map((pin) => pin.name) });

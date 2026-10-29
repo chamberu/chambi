@@ -10,7 +10,7 @@ import type { ToolSet } from 'ai';
 export type SkillIdentity = Readonly<{
     name: string;
     version: string;
-    sha256: string
+    hash: string
 }>;
 export type SkillMetadata = SkillIdentity & Readonly<{ description: string; ignoredFields: readonly string[] }>;
 export type Skill = SkillMetadata & Readonly<{ body: string; references: Readonly<Record<string, string>> }>;
@@ -27,7 +27,7 @@ export type SkillCatalog = Readonly<{
 export type LoadedSkill = {
     name: string;
     version: string;
-    sha256: string;
+    hash: string;
     reference: string | null;
     content: string;
     references: string[];

@@ -18,7 +18,7 @@ import { mockModel } from '../../utils/mock-model.ts';
 const skill = (overrides: Partial<Skill> = {}): Skill => ({
     name: 'common',
     version: '1.0.0',
-    sha256: 'a'.repeat(64),
+    hash: 'a'.repeat(64),
     description: 'Useful metadata',
     ignoredFields: [],
     body: 'body',
@@ -145,13 +145,13 @@ describe('skill preparation retention', () => {
                     body: 'body',
                     ignoredFields: ['allowed-tools', 'model'],
                     description: 'Useful metadata',
-                    sha256: 'a'.repeat(64),
+                    hash: 'a'.repeat(64),
                     version: '1.0.0',
                     name: 'common',
                 }],
             }])],
         });
-        for (const overrides of [{ name: 'other' }, { version: '2' }, { sha256: 'b'.repeat(64) }]) {
+        for (const overrides of [{ name: 'other' }, { version: '2' }, { hash: 'b'.repeat(64) }]) {
             await e.prepare({
                 agents: [candidate([skill({
                     ignoredFields: ['model', 'allowed-tools'],

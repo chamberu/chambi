@@ -19,6 +19,7 @@ import {
     vi,
 } from 'vitest';
 import { hashSkillBundle, readSkillBundle } from '../../../src/bundle/bundle.ts';
+import { loadSkillBundles } from '../../../src/bundle/module.ts';
 
 const directories: string[] = [];
 const frontmatter = 'name: audit\ndescription: Review code\n';
@@ -39,7 +40,7 @@ function descriptor(directory: string) {
         name: 'audit',
         version: '1.0.0',
         directory,
-        sha256: hashSkillBundle(directory),
+        hash: hashSkillBundle(directory),
     };
 }
 
@@ -108,13 +109,58 @@ describe('passive skill bundles', () => {
             .update(`8:SKILL.md${Buffer.byteLength(skill())}:${skill()}`)
             .update(`${Buffer.byteLength(path)}:${path}${Buffer.byteLength(content)}:${content}`)
             .digest('hex');
-        expect(approved.sha256).toBe(expected);
+        expect(approved.hash).toBe(expected);
         const loaded = readSkillBundle(approved);
         expect(loaded.references).toEqual([path]);
         expect(loaded.readReference(path)).toBe(content);
         fs.appendFileSync(join(directory, path), '\n');
         expect(loaded.readReference(path)).toBe(content);
         expect(() => readSkillBundle(approved)).toThrow(InvalidAgentDefinitionError);
+    });
+
+    it.each(['scripts/check.sh', 'src/audit.ts', 'assets/diagram.svg', 'Dockerfile', 'reference.bin'])('loads arbitrary UTF-8 reference %s as pinned passive text', async (path) => {
+        const directory = bundle();
+        const marker = join(directory, 'executed');
+        const content = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed'); // Grüße\n`;
+        fs.mkdirSync(dirname(join(directory, path)), { recursive: true });
+        fs.writeFileSync(join(directory, path), content);
+        const approved = descriptor(directory);
+        const expected = createHash('sha256')
+            .update('chamvi-skill-bundle-v1\n')
+            .update(`8:SKILL.md${Buffer.byteLength(skill())}:${skill()}`)
+            .update(`${Buffer.byteLength(path)}:${path}${Buffer.byteLength(content)}:${content}`)
+            .digest('hex');
+        // Dockerfile sorts before SKILL.md; all other tested paths sort after it.
+        const sortedExpected = path === 'Dockerfile' ? createHash('sha256')
+            .update('chamvi-skill-bundle-v1\n')
+            .update(`${Buffer.byteLength(path)}:${path}${Buffer.byteLength(content)}:${content}`)
+            .update(`8:SKILL.md${Buffer.byteLength(skill())}:${skill()}`)
+            .digest('hex') : expected;
+        expect(approved.hash).toBe(sortedExpected);
+        const catalog = loadSkillBundles([approved]);
+        expect(catalog.instructions).not.toContain(content);
+        const result = await catalog.tools.load_skill!.execute!({ name: 'audit', reference: path }, {
+            toolCallId: 'reference',
+            messages: [],
+            context: undefined,
+        });
+        expect(result).toMatchObject({
+            hash: approved.hash,
+            reference: path,
+            content,
+        });
+        expect(fs.existsSync(marker)).toBe(false);
+        fs.appendFileSync(join(directory, path), 'changed');
+        expect(hashSkillBundle(directory)).not.toBe(approved.hash);
+        expect(() => loadSkillBundles([approved])).toThrow(InvalidAgentDefinitionError);
+    });
+
+    it.each([
+        ['assets/image.png', Buffer.from([0x89, 0x50, 0x4e, 0x47])],
+        ['scripts/check.sh', Buffer.from('text\0binary')],
+        ['reference', Buffer.from([0xc3, 0x28])],
+    ])('rejects binary reference bytes regardless of extension: %s', (path, content) => {
+        expect(() => hashSkillBundle(bundle({ [path]: content }))).toThrow(InvalidAgentDefinitionError);
     });
 
     it.each([
@@ -134,8 +180,8 @@ describe('passive skill bundles', () => {
     it('requires_matching_name_and_pin', () => {
         const approved = descriptor(bundle());
         expect(readSkillBundle(approved).metadata.name).toBe('audit');
-        for (const sha256 of ['', 'a'.repeat(63), 'A'.repeat(64), 'z'.repeat(64), '0'.repeat(64)]) {
-            expect(() => readSkillBundle({ ...approved, sha256 })).toThrow(InvalidAgentDefinitionError);
+        for (const hash of ['', 'a'.repeat(63), 'A'.repeat(64), 'z'.repeat(64), '0'.repeat(64)]) {
+            expect(() => readSkillBundle({ ...approved, hash })).toThrow(InvalidAgentDefinitionError);
         }
         expect(() => readSkillBundle({ ...approved, name: 'other' })).toThrow(InvalidAgentDefinitionError);
         expect(() => readSkillBundle({ ...approved, name: 'Audit' })).toThrow(InvalidAgentDefinitionError);
@@ -179,11 +225,11 @@ describe('passive skill bundles', () => {
         const directory = bundle({ 'SKILL.md': skill(`${frontmatter}model: provider/model\nallowed-tools: [shell]\nextra: {nested: value}\n`) });
         const loaded = readSkillBundle(descriptor(directory));
         expect(loaded.metadata.ignoredFields).toEqual(['allowed-tools', 'extra', 'model']);
-        expect(Object.keys(loaded.metadata).sort()).toEqual(['description', 'ignoredFields', 'name', 'sha256', 'version']);
+        expect(Object.keys(loaded.metadata).sort()).toEqual(['description', 'hash', 'ignoredFields', 'name', 'version']);
         expect(loaded.body).toBe('Audit the code.\n');
     });
 
-    it.each(['.hidden.txt', '.hidden/a.md', 'references/.hidden', 'script.js', 'script.ts', 'image.png', 'x\\y.txt'])('rejects hidden or unsupported path %j', (path) => {
+    it.each(['.hidden.txt', '.hidden/a.md', 'references/.hidden', 'x\\y.txt'])('rejects hidden or invalid path %j', (path) => {
         expect(() => hashSkillBundle(bundle({ [path]: 'text' }))).toThrow(InvalidAgentDefinitionError);
     });
 

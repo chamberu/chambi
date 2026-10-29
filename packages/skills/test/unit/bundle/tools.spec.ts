@@ -37,7 +37,7 @@ describe('load_skill', () => {
         expect(reference).toEqual({
             name: 'audit',
             version: '1.0.0',
-            sha256: approved.sha256,
+            hash: approved.hash,
             reference: 'references/README.md',
             content: 'PRIVATE-REFERENCE',
             references: ['references/README.md', 'z.txt'],
@@ -46,7 +46,7 @@ describe('load_skill', () => {
         expect(body).toEqual({
             name: 'audit',
             version: '1.0.0',
-            sha256: approved.sha256,
+            hash: approved.hash,
             reference: null,
             content: 'PRIVATE-BODY\n',
             references: ['references/README.md', 'z.txt'],

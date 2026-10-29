@@ -13,7 +13,7 @@ export type ApprovedSkill = {
     name: string;
     version: string;
     directory: string;
-    sha256: string;
+    hash: string;
 };
 
 /** Internal snapshot; the supporting content map stays inside its reader closure. */

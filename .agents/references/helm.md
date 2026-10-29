@@ -67,3 +67,5 @@ changes were needed. `make generate`, `make test` and post-commit `make drift` p
 42 Python cases (40 passed, 2 existing `AGENT_APP_CI_IMAGE`-gated skips), five renders and 59 referenced values paths.
 Logs: `/tmp/chamvi-first-class-helm-{test,drift}.log`. Generation emitted only the existing amd64-on-arm64 image
 warning. No live cluster, published-app fixture image, push or publication was performed.
+
+PR94 review follow-up: chart docs use the requested `hash` skill descriptor property (SHA-256 remains the algorithm), in downstream commit `4f2dba2`. Source/generated README agree; contract checks passed 40 cases with 2 existing image-gated skips. Image digest fields remain unchanged.

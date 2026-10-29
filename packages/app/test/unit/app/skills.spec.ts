@@ -37,7 +37,7 @@ import { closeServer, freePort, listenOn } from '../../utils/port.ts';
 const skill: Skill = {
     name: 'review',
     version: '1',
-    sha256: 'a'.repeat(64),
+    hash: 'a'.repeat(64),
     description: 'Review code',
     ignoredFields: [],
     body: 'Reviewed instructions',

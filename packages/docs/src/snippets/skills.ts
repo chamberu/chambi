@@ -15,7 +15,7 @@ const common = gitSkills({
     approved: [{
         name: 'ponytail',
         version: '1.0.0',
-        sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        hash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     }],
 });
 
@@ -27,7 +27,7 @@ const security = defineAgent({
         name: 'security-audit',
         version: '1.0.0',
         directory: '/opt/approved-skills/security-audit/1.0.0',
-        sha256: 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+        hash: 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
     })],
     channels: [http.on()],
 });

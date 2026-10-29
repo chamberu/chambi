@@ -31,7 +31,7 @@ type ApprovedSkill = {
     name: string;
     version: string;
     directory: string; // absolute runtime path
-    sha256: string; // independently reviewed lowercase full digest
+    hash: string; // independently reviewed lowercase SHA-256 digest
 };
 
 function hashSkillBundle(directory: string): string;

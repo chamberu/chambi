@@ -37,3 +37,5 @@ exact checkpointed bodies). Integration delivery reused this evidence because it
 failure before recovery, followed by approval replay that retains the saved original body and loads the upgraded
 reference. Existing manual-catalog tests remain intact. The issue 97 boundary/acceptance update is drafted locally
 at `/tmp/chamvi-first-class-issue97.md` for controller publication after review; agents-dev is untouched.
+
+PR94 review correction: the manual consumer now imports `InvalidAgentDefinitionError` from `@chamvi/core`, matching the documented core-only installation. The review also renamed the public skill digest property to `hash`, retaining SHA-256 and the same digest framing. Those imports and that requested property rename are the only fixture changes; the current fixture SHA-256 is `695bcdabf35016a023694c273bfbf9aada8ea618beedcd1dbedb2b6acb94c672`. The earlier delivery hashes above remain historical evidence.

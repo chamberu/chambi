@@ -34,7 +34,7 @@ export function approvedSkill(name = 'audit', options: {
         name,
         directory,
         version: '1.0.0',
-        sha256: hashSkillBundle(directory),
+        hash: hashSkillBundle(directory),
     };
 }
 

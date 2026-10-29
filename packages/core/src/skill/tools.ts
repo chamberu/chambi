@@ -74,7 +74,7 @@ export function createSkillTools(bundles: readonly Skill[]): ToolSet {
             return {
                 name: bundle.name,
                 version: bundle.version,
-                sha256: bundle.sha256,
+                hash: bundle.hash,
                 reference,
                 content,
                 references: Object.keys(bundle.references),

@@ -32,7 +32,7 @@ describe('approved skill catalog', () => {
         expect(snapshot).toMatchObject({
             name: 'audit',
             version: approved.version,
-            sha256: approved.sha256,
+            hash: approved.hash,
             body: 'PRIVATE-BODY\n',
             references: { 'ref.txt': 'REFERENCE' },
         });
@@ -49,7 +49,7 @@ describe('approved skill catalog', () => {
         for (const approved of [alpha, zulu]) {
             expect(catalog.instructions).toContain(JSON.stringify(approved.name));
             expect(catalog.instructions).toContain(approved.version);
-            expect(catalog.instructions).toContain(approved.sha256);
+            expect(catalog.instructions).toContain(approved.hash);
             expect(catalog.instructions).not.toContain(approved.directory);
         }
         expect(catalog.instructions.indexOf('"alpha"')).toBeLessThan(catalog.instructions.indexOf('"zulu"'));

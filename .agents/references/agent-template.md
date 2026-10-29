@@ -63,3 +63,5 @@ dependency lockfile, Dockerfile, manifests and embedded agent example stay uncha
 (no reinstall was needed). Logs: `/tmp/chamvi-first-class-template-{lint-fix,build,test,typecheck,lint}.log`.
 Tests include the real CLI/app/HTTP and deployment documentation contracts with fake models. No live cluster,
 Docker image build/smoke, push or publication was performed; remote skills are not enabled in the default smoke fixture.
+
+PR94 review follow-up: README and deployment guidance use the requested `hash` skill descriptor property (SHA-256 remains the algorithm), in downstream commit `72ec9a8`. README/deployment checks passed 12 tests; runtime dependencies and image digest fields remain unchanged.

@@ -41,7 +41,7 @@ export function validateApprovedSkill(descriptor: ApprovedSkill): void {
         invalidSkill('.', 'invalid approved skill name');
     }
 
-    const { version, sha256 } = descriptor;
+    const { version, hash } = descriptor;
     if (typeof version !== 'string' || !version.trim() || version.length > 128) {
         invalidSkill('.', 'version must be an exact release identifier');
     }
@@ -54,8 +54,8 @@ export function validateApprovedSkill(descriptor: ApprovedSkill): void {
         invalidSkill('.', 'version must be an exact release identifier');
     }
 
-    if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256)) {
-        invalidSkill('.', 'sha256 must be a lowercase full digest');
+    if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) {
+        invalidSkill('.', 'hash must be a lowercase full digest');
     }
 
     validateSkillDirectory(descriptor.directory);

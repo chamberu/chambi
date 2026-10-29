@@ -138,7 +138,7 @@ describe('approved skills through the engine', () => {
         expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done' });
         expect(errors).toEqual([]);
         expect(model.doStreamCalls).toHaveLength(3);
-        expect(prompt(model, 0)).toContain(approved.sha256);
+        expect(prompt(model, 0)).toContain(approved.hash);
         expect(prompt(model, 0)).toContain('Review code');
         expect(prompt(model, 0)).not.toContain('BODY:');
         expect(prompt(model, 0)).not.toContain('REFERENCE:');
@@ -150,7 +150,7 @@ describe('approved skills through the engine', () => {
         const body = {
             name: 'audit',
             version: '1.0.0',
-            sha256: approved.sha256,
+            hash: approved.hash,
             reference: null,
             content: 'BODY: inspect trust boundaries.\n',
             references: ['references/checks.md'],
@@ -230,14 +230,14 @@ describe('approved skills through the engine', () => {
             {
                 name: 'audit',
                 version: '1.0.0',
-                sha256: approved.sha256,
+                hash: approved.hash,
                 reference: null,
                 content: 'PERSISTED BODY\n',
             },
             {
                 name: 'audit',
                 version: '1.0.0',
-                sha256: approved.sha256,
+                hash: approved.hash,
                 reference: 'references/checks.md',
                 content: 'NEWLY DISCLOSED REFERENCE\n',
             },
@@ -336,7 +336,7 @@ describe('approved skills through the engine', () => {
                 input: { name: 'audit' },
                 output: {
                     name: 'audit',
-                    sha256: approved.sha256,
+                    hash: approved.hash,
                     content: 'APPROVED BODY\n',
                 },
             },
@@ -386,8 +386,8 @@ describe('approved skills through the engine', () => {
             const checkpoint = JSON.stringify(await store.latestCheckpoint(runId));
             expect(prompt(model, 2)).toContain(`${label} BODY`);
             expect(prompt(model, 2)).toContain(`${label} REFERENCE`);
-            expect(prompt(model, 2)).toContain(own.sha256);
-            expect(prompt(model, 2)).not.toContain(other.sha256);
+            expect(prompt(model, 2)).toContain(own.hash);
+            expect(prompt(model, 2)).not.toContain(other.hash);
             expect(prompt(model, 2)).not.toContain(`${otherLabel} BODY`);
             expect(prompt(model, 2)).not.toContain(`${otherLabel} REFERENCE`);
             expect(checkpoint).toContain(`${label} BODY`);
@@ -395,9 +395,9 @@ describe('approved skills through the engine', () => {
             expect(checkpoint).not.toContain(otherLabel);
             const tools = (await store.listSteps(runId)).filter((step) => step.kind === 'tool');
             expect(tools.map((step) => step.output)).toMatchObject([
-                { sha256: own.sha256, content: `${label} BODY\n` },
+                { hash: own.hash, content: `${label} BODY\n` },
                 {
-                    sha256: own.sha256,
+                    hash: own.hash,
                     reference: 'reference.txt',
                     content: `${label} REFERENCE\n`,
                 },

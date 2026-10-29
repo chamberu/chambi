@@ -574,7 +574,7 @@ export class Engine implements IContextProvider {
             const attested = new Map<string, string>();
             const attest = (skills: readonly Skill[]) => {
                 for (const skill of skills) {
-                    const key = JSON.stringify([skill.name, skill.version, skill.sha256]);
+                    const key = JSON.stringify([skill.name, skill.version, skill.hash]);
                     const fingerprint = createHash('sha256').update(JSON.stringify(skill)).digest('hex');
                     const previous = attested.get(key) ?? this.attestedSkills.get(key);
                     if (previous !== undefined && previous !== fingerprint) {

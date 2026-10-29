@@ -39,7 +39,7 @@ it('installs Git defaults and agent extras at startup and scopes real load_skill
     const pin = (name: string) => ({
         name,
         version: '1.0.0',
-        sha256: hashSkillBundle(join(fixture.path, 'skills', name)),
+        hash: hashSkillBundle(join(fixture.path, 'skills', name)),
     });
     const source = (name: string) => gitSkills({
         source: fixture.url,
@@ -119,7 +119,7 @@ it('rejects changed Git bytes under an old content pin before recovery and prese
     const oldPin = {
         name: 'audit',
         version: '1.0.0',
-        sha256: hashSkillBundle(join(fixture.path, 'skills/audit')),
+        hash: hashSkillBundle(join(fixture.path, 'skills/audit')),
     };
     const firstModel = mockModel([load('audit'), load('audit', 'references/checks.md')]);
     const resumedModel = mockModel([done]);
@@ -196,7 +196,7 @@ it('rejects changed Git bytes under an old content pin before recovery and prese
         const newPin = {
             ...oldPin,
             version: '2.0.0',
-            sha256: hashSkillBundle(join(fixture.path, 'skills/audit')),
+            hash: hashSkillBundle(join(fixture.path, 'skills/audit')),
         };
         const restarted = new Engine({
             store,

@@ -25,7 +25,7 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
         'skills/audit/references/checks.md': 'PRIVATE REFERENCE\n',
     });
     const directory = join(fixture.path, 'prepared');
-    const sha256 = hashSkillBundle(join(fixture.path, 'skills/audit'));
+    const hash = hashSkillBundle(join(fixture.path, 'skills/audit'));
     const clock = new ControllableClock();
     const store = new MemoryStore({ clock });
     let turn = 0;
@@ -97,7 +97,7 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
     };
     let engine: Engine | undefined;
     try {
-        const catalog = await prepareCatalog(options, { audit: sha256 });
+        const catalog = await prepareCatalog(options, { audit: hash });
         const agent = defineAgent({
             name: 'reviewer',
             instructions: catalog.instructions,
@@ -119,20 +119,20 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
         await engine.idle();
         expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done' });
         const initial = JSON.stringify(model.doStreamCalls[0]!.prompt);
-        expect(initial).toContain(sha256);
+        expect(initial).toContain(hash);
         expect(initial).toContain('Review code');
         expect(initial).not.toContain('PRIVATE');
         expect(initial).not.toContain(directory);
         const tools = (await store.listSteps(runId)).filter((step) => step.kind === 'tool');
         expect(tools.map((step) => step.output)).toMatchObject([
             {
-                sha256,
+                hash,
                 version: fixture.commit,
                 reference: null,
                 content: 'PRIVATE BODY\n',
             },
             {
-                sha256,
+                hash,
                 version: fixture.commit,
                 reference: 'references/checks.md',
                 content: 'PRIVATE REFERENCE\n',
@@ -140,9 +140,9 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
         ]);
         expect(JSON.stringify(await store.latestCheckpoint(runId))).toContain('PRIVATE REFERENCE');
         await expect(prepareCatalog(options, { audit: '0'.repeat(64) })).rejects.toThrow();
-        expect(hashSkillBundle(join(directory, 'audit'))).toBe(sha256);
+        expect(hashSkillBundle(join(directory, 'audit'))).toBe(hash);
     } finally {
-        engine?.stop();
+        await engine?.stop();
         await engine?.idle();
         await fixture.cleanup();
     }

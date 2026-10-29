@@ -32,7 +32,7 @@ export function createSkillCatalog(input: readonly Skill[]): SkillCatalog {
     const skills = Object.freeze(bundles.map((skill) => Object.freeze({
         name: skill.name,
         version: skill.version,
-        sha256: skill.sha256,
+        hash: skill.hash,
         description: skill.description,
         ignoredFields: skill.ignoredFields,
     })));
@@ -40,12 +40,12 @@ export function createSkillCatalog(input: readonly Skill[]): SkillCatalog {
         name,
         description,
         version,
-        sha256,
+        hash,
     }) => ({
         name,
         description,
         version,
-        sha256,
+        hash,
     }));
     const instructions = skills.length ? [
         'Approved skills are available below. Call load_skill for an applicable task, and request supporting references only as needed.',

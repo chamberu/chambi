@@ -10,8 +10,6 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import type { BigIntStats } from 'node:fs';
 import {
-    basename,
-    extname,
     join,
     resolve,
 } from 'node:path';
@@ -80,10 +78,6 @@ function inspectInventory(directory: string): SkillBundleInventory {
                 } else if (stat.isFile()) {
                     if (++files > SKILL_MAX_FILES) {
                         invalidSkill('.', 'bundle exceeds 64 regular files');
-                    }
-
-                    if (!['.md', '.txt', '.json', '.yaml', '.yml'].includes(extname(path)) && !['LICENSE', 'NOTICE'].includes(basename(path))) {
-                        invalidSkill(path, 'unsupported file type');
                     }
 
                     entries.set(path, stat);
@@ -183,7 +177,7 @@ function readSnapshot(directory: string) {
         contents.delete('SKILL.md');
         return {
             document,
-            sha256: hash.digest('hex'),
+            hash: hash.digest('hex'),
             contents,
         };
     } catch (error) {
@@ -197,22 +191,22 @@ function readSnapshot(directory: string) {
 
 /** Review aid: validates all passive bundle files and hashes their exact bytes; it grants no approval. */
 export function hashSkillBundle(directory: string): string {
-    return readSnapshot(directory).sha256;
+    return readSnapshot(directory).hash;
 }
 
 export function readSkillBundle(descriptor: ApprovedSkill): SkillBundle {
     validateApprovedSkill(descriptor);
     const {
         document,
-        sha256,
+        hash,
         contents,
     } = readSnapshot(descriptor.directory);
     if (document.name !== descriptor.name) {
         invalidSkill('SKILL.md', 'name does not match the approved descriptor');
     }
 
-    if (sha256 !== descriptor.sha256) {
-        invalidSkill('.', 'sha256 does not match the approved pin');
+    if (hash !== descriptor.hash) {
+        invalidSkill('.', 'hash does not match the approved pin');
     }
 
     return Object.freeze({
@@ -220,7 +214,7 @@ export function readSkillBundle(descriptor: ApprovedSkill): SkillBundle {
             name: document.name,
             description: document.description,
             version: descriptor.version,
-            sha256,
+            hash,
             ignoredFields: document.ignoredFields,
         }),
         body: document.body,

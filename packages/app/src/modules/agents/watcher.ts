@@ -11,7 +11,12 @@ import type { AgentIssue } from '@chamvi/http';
 import { formerAgentFolderHash, messageOf, relativize } from '../../loader/helpers.ts';
 import { hashAgentFolder, listAgentFolders, loadAgent } from '../../loader/module.ts';
 import type { LoadedAgent } from '../../loader/types.ts';
-import { BOOT_LOAD_ATTEMPTS, EMPTY_ROOT_MESSAGE, JOB_CONFLICT_HINT } from './constants.ts';
+import {
+    BOOT_LOAD_ATTEMPTS,
+    EMPTY_ROOT_MESSAGE,
+    JOB_CONFLICT_HINT,
+    SKILL_PREPARATION_RETRY_MAX_MS,
+} from './constants.ts';
 import { isDirectory, isEmptyDirectory } from './helpers.ts';
 import type { AgentsWatcherOptions, IAgentsWatcher } from './types.ts';
 
@@ -24,7 +29,8 @@ import type { AgentsWatcherOptions, IAgentsWatcher } from './types.ts';
  * (stable for one interval), and registered only when the load read exactly
  * that content. A folder absent on two consecutive polls is removed from the
  * engine. A failed load or check keeps the registered agent and writes no
- * revision marker. Every poll compares the stored markers with the applied
+ * revision marker. Failed skill preparation retries with bounded backoff.
+ * Every poll compares the stored markers with the applied
  * hashes and records an agent whose marker another process moved as an issue.
  * The role decides what reaches the store (see `AgentsWatcherOptions.role`).
  */
@@ -46,6 +52,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
     const attempted = new Map<string, string>();
     const seen = new Map<string, string>();
     const missing = new Set<string>();
+    const preparationRetries = new Map<string, { delay: number; at: number }>();
     // agents whose marker another process moved (an issue until it matches again)
     const drifted = new Set<string>();
     // job role: agents whose stored marker differs while they have unsettled runs, by issue message
@@ -95,6 +102,8 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
      */
     const apply = async (name: string, hash: string): Promise<'done' | 'unstable'> => {
         attempted.set(name, hash);
+        const previousRetry = preparationRetries.get(name);
+        preparationRetries.delete(name);
         if (codeNames.has(name)) {
             record(name, `${name}: a code agent has this name; the folder is not loaded.`);
             return 'done';
@@ -128,8 +137,19 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
             return 'done';
         }
 
-        // Verification is fatal during boot; polling reports failures and retains the old agent.
-        await engine.prepare({ agents: [loaded.agent], signal });
+        // Boot fails closed. Polling keeps the last valid agent and retries transient or verification failures.
+        try {
+            await engine.prepare({ agents: [loaded.agent], signal });
+        } catch (error) {
+            if (!started || stopped || signal?.aborted) {
+                throw error;
+            }
+
+            const delay = Math.min((previousRetry?.delay ?? pollMs) * 2, Math.max(pollMs, SKILL_PREPARATION_RETRY_MAX_MS));
+            preparationRetries.set(name, { delay, at: clock.now().getTime() + delay });
+            record(name, relativize(messageOf(error), root));
+            return 'done';
+        }
 
         try {
             // a marker from before HASH_IGNORE_PATTERNS holds the same content: moved, never a cancel
@@ -211,10 +231,23 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
             }
             const previous = seen.get(name);
             seen.set(name, hash);
-            if (hash === attempted.get(name) || hash !== previous) continue;
+            if (hash !== previous) {
+                if (preparationRetries.delete(name)) {
+                    attempted.delete(name);
+                }
+                continue;
+            }
+
+            const retry = preparationRetries.get(name);
+            if (hash === attempted.get(name)) {
+                if (!retry || clock.now().getTime() < retry.at) {
+                    continue;
+                }
+            }
             if (hash === applied.get(name)) {
                 // back to the registered content: nothing to reload (the marker check re-reads a moved marker)
                 attempted.set(name, hash);
+                preparationRetries.delete(name);
                 issues.delete(name);
                 drifted.delete(name);
                 continue;
@@ -251,6 +284,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
             seen.delete(name);
             attempted.delete(name);
             applied.delete(name);
+            preparationRetries.delete(name);
             issues.delete(name);
         }
 
