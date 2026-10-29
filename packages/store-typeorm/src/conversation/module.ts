@@ -24,7 +24,7 @@ import type {
     ResolvedConversationLimits,
 } from '@chamvi/core';
 import { In, LessThanOrEqual, Not } from 'typeorm';
-import type { EntityManager } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 import {
     ConversationEntity,
     ConversationItemEntity,
@@ -44,7 +44,7 @@ import {
     identityId,
     isSameEmit,
     userItemId,
-} from './helpers.ts';
+} from './helpers/index.ts';
 import type { TypeormConversationStoreOptions } from './types.ts';
 
 const ENDED_TURN = {
@@ -134,9 +134,25 @@ export class TypeormConversationStore implements IConversationStore {
         this.clock = options.clock ?? systemClock;
     }
 
+    protected get conversations(): Repository<ConversationEntity> {
+        return this.dataSource.getRepository(ConversationEntity);
+    }
+
+    protected get items(): Repository<ConversationItemEntity> {
+        return this.dataSource.getRepository(ConversationItemEntity);
+    }
+
+    protected get notes(): Repository<ConversationNoteEntity> {
+        return this.dataSource.getRepository(ConversationNoteEntity);
+    }
+
+    protected get operations(): Repository<ConversationOperationEntity> {
+        return this.dataSource.getRepository(ConversationOperationEntity);
+    }
+
     async resolve(identity: ConversationIdentity): Promise<ConversationScope> {
         const id = identityId(identity);
-        await this.dataSource.getRepository(ConversationEntity).createQueryBuilder().insert()
+        await this.conversations.createQueryBuilder().insert()
             .values(asValues<ConversationEntity>({
                 id,
                 agent: identity.agent,
@@ -147,17 +163,18 @@ export class TypeormConversationStore implements IConversationStore {
                 generation: 0,
                 activeRunId: null,
             })).orIgnore().execute();
-        return scopeOf(await this.dataSource.getRepository(ConversationEntity).findOneByOrFail({ id }));
+        return scopeOf(await this.conversations.findOneByOrFail({ id }));
     }
 
     async get(identity: ConversationIdentity): Promise<ConversationScope | undefined> {
-        const row = await this.dataSource.getRepository(ConversationEntity).findOneBy({ id: identityId(identity) });
+        const row = await this.conversations.findOneBy({ id: identityId(identity) });
         return row ? scopeOf(row) : undefined;
     }
 
     protected async locked<T>(id: string, fn: (manager: EntityManager, row: ConversationEntity | null) => Promise<T>): Promise<T> {
+        // withDatabaseLock is session-advisory; this row lock must share the writes' transaction.
         return this.dataSource.transaction(async (manager) => {
-            const row = await manager.getRepository(ConversationEntity).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+            const row = await manager.withRepository(this.conversations).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
             return fn(manager, row);
         });
     }
@@ -177,7 +194,7 @@ export class TypeormConversationStore implements IConversationStore {
 
     async activeRun(scope: ConversationScope): Promise<string | undefined> {
         assertConversationScope(scope);
-        const row = await this.dataSource.getRepository(ConversationEntity).findOneBy({ id: scope.id, generation: scope.generation });
+        const row = await this.conversations.findOneBy({ id: scope.id, generation: scope.generation });
         return row?.activeRunId ?? undefined;
     }
 
@@ -208,7 +225,7 @@ export class TypeormConversationStore implements IConversationStore {
             }
             await this.trim(manager, row, limits);
             const items = await manager.find(ConversationItemEntity, { where, order: { seq: 'ASC' } });
-            const notes = await this.notes(manager, scope);
+            const notes = await this.readNotes(manager, scope);
             const now = this.clock.now();
             const snapshot: ConversationSnapshot = {
                 scope: scopeOf(row),
@@ -224,7 +241,7 @@ export class TypeormConversationStore implements IConversationStore {
                 createdAt: now,
                 status: 'sent',
             };
-            await manager.getRepository(ConversationItemEntity).insert(asValues<ConversationItemEntity>({
+            await manager.withRepository(this.items).insert(asValues<ConversationItemEntity>({
                 ...where,
                 ...itemValues(item),
             }));
@@ -274,7 +291,7 @@ export class TypeormConversationStore implements IConversationStore {
                 return;
             }
             const createdAt = this.clock.now();
-            await manager.getRepository(ConversationItemEntity).insert(asValues<ConversationItemEntity>({
+            await manager.withRepository(this.items).insert(asValues<ConversationItemEntity>({
                 ...where,
                 ...itemValues(item),
                 createdAt,
@@ -320,7 +337,7 @@ export class TypeormConversationStore implements IConversationStore {
     async listItems(scope: ConversationScope, query: { limit: number; offset: number }): Promise<{ data: ConversationItem[]; total: number }> {
         assertConversationScope(scope);
         assertPage(query);
-        const [rows, total] = await this.dataSource.getRepository(ConversationItemEntity).findAndCount({
+        const [rows, total] = await this.items.findAndCount({
             where: { scopeId: scope.id, generation: scope.generation },
             order: { seq: 'ASC' },
             skip: query.offset,
@@ -329,10 +346,10 @@ export class TypeormConversationStore implements IConversationStore {
         return { data: rows.map(itemOf), total };
     }
 
-    protected async notes(manager: EntityManager, scope: ConversationScope): Promise<ConversationNote[]> {
+    protected async readNotes(manager: EntityManager, scope: ConversationScope): Promise<ConversationNote[]> {
         const current = await manager.findOneBy(ConversationEntity, { id: scope.id, generation: scope.generation });
         if (!current) return [];
-        const rows = await manager.getRepository(ConversationNoteEntity).createQueryBuilder('note')
+        const rows = await manager.withRepository(this.notes).createQueryBuilder('note')
             .where('note.scopeId = :id AND note.generation = :generation', scope)
             .andWhere('(note.expiresAt IS NULL OR note.expiresAt > :now)', { now: this.clock.now() }).orderBy('note.key', 'ASC').getMany();
         return rows.map(noteOf);
@@ -341,14 +358,14 @@ export class TypeormConversationStore implements IConversationStore {
     async listNotes(scope: ConversationScope, query: { limit: number; offset: number }): Promise<{ data: ConversationNote[]; total: number }> {
         assertConversationScope(scope);
         assertPage(query);
-        const notes = await this.notes(this.dataSource.manager, scope);
+        const notes = await this.readNotes(this.dataSource.manager, scope);
         return { data: notes.slice(query.offset, query.offset + query.limit), total: notes.length };
     }
 
     async getNote(scope: ConversationScope, key: string): Promise<ConversationNote | undefined> {
         assertConversationScope(scope);
         if (typeof key !== 'string') return undefined;
-        return (await this.notes(this.dataSource.manager, scope)).find((note) => note.key === key);
+        return (await this.readNotes(this.dataSource.manager, scope)).find((note) => note.key === key);
     }
 
     async applyNote(scope: ConversationScope, operation: ConversationNoteOperation): Promise<ConversationNoteResult> {
@@ -388,7 +405,7 @@ export class TypeormConversationStore implements IConversationStore {
                     updatedAt: now,
                 };
                 if (operation.expiresAt !== undefined) note.expiresAt = operation.expiresAt;
-                await manager.getRepository(ConversationNoteEntity).upsert(asValues<ConversationNoteEntity>({
+                await manager.withRepository(this.notes).upsert(asValues<ConversationNoteEntity>({
                     ...where,
                     ...noteValues(note),
                 }), ['scopeId', 'generation', 'key']);
@@ -405,7 +422,7 @@ export class TypeormConversationStore implements IConversationStore {
                     removed: prior !== null,
                 };
             }
-            await manager.getRepository(ConversationOperationEntity).insert(asValues<ConversationOperationEntity>({
+            await manager.withRepository(this.operations).insert(asValues<ConversationOperationEntity>({
                 ...where,
                 id: operation.id,
                 runId: operation.source.runId,
@@ -424,13 +441,13 @@ export class TypeormConversationStore implements IConversationStore {
         const scope = await this.resolve(identity);
         return this.locked(scope.id, async (manager, row) => {
             if (!row || row.activeRunId !== null) throw new InvalidRunStateError('The conversation has an active turn and cannot be reset.');
-            const notes = options.keepNotes ? await this.notes(manager, scopeOf(row)) : [];
+            const notes = options.keepNotes ? await this.readNotes(manager, scopeOf(row)) : [];
             row.generation += 1;
             await manager.update(ConversationEntity, { id: row.id }, { generation: row.generation, ...ENDED_TURN });
             await manager.delete(ConversationNoteEntity, { scopeId: row.id });
             if (!options.keepNotes) await manager.delete(ConversationOperationEntity, { scopeId: row.id });
             for (const note of notes) {
-                await manager.getRepository(ConversationNoteEntity).insert(asValues<ConversationNoteEntity>({
+                await manager.withRepository(this.notes).insert(asValues<ConversationNoteEntity>({
                     scopeId: row.id,
                     generation: row.generation,
                     ...noteValues(note),
@@ -490,13 +507,13 @@ export class TypeormConversationStore implements IConversationStore {
         let failure: { error: unknown } | undefined;
         let after = '';
         for (;;) {
-            const page = await this.dataSource.getRepository(ConversationEntity).createQueryBuilder('scope').where('scope.id > :after', { after }).orderBy('scope.id', 'ASC').take(100).getMany();
+            const page = await this.conversations.createQueryBuilder('scope').where('scope.id > :after', { after }).orderBy('scope.id', 'ASC').take(100).getMany();
             if (page.length === 0) break;
             for (const scope of page) {
                 await this.locked(scope.id, async (manager, row) => {
                     if (!row) return;
                     await this.trim(manager, row, limits);
-                    const generations = await manager.getRepository(ConversationItemEntity).createQueryBuilder('item')
+                    const generations = await manager.withRepository(this.items).createQueryBuilder('item')
                         .select('item.generation', 'generation')
                         .where('item.scopeId = :id', { id: row.id })
                         .distinct(true).getRawMany<{ generation: number }>();
@@ -510,7 +527,7 @@ export class TypeormConversationStore implements IConversationStore {
                     const candidates = await this.locked(scope.id, async (manager, row) => {
                         if (!row) return [];
                         const before = new Date(this.clock.now().getTime() - limits.retentionMs);
-                        const query = manager.getRepository(ConversationOperationEntity).createQueryBuilder('operation')
+                        const query = manager.withRepository(this.operations).createQueryBuilder('operation')
                             .where({
                                 scopeId: row.id,
                                 createdAt: LessThanOrEqual(before),

@@ -17,6 +17,7 @@ import type { Checkpoint } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { TypeormStore } from '@chamvi/store-typeorm';
 import { createTestDataSource, describePostgres, truncateStore } from '../../utils/database.ts';
+import { seedRun } from '../../utils/conversation.ts';
 
 describePostgres('TypeormStore values', () => {
     let dataSource: DataSource;
@@ -36,6 +37,7 @@ describePostgres('TypeormStore values', () => {
     });
 
     it('jsonb values round-trip arrays, null and strings', async () => {
+        await seedRun(dataSource, 'r1');
         await store.kvSet('a', 'arr', [1, 2]);
         await expect(store.kvGet('a', 'arr')).resolves.toEqual([1, 2]);
         await store.kvSet('a', 'n', null);
@@ -93,6 +95,7 @@ describePostgres('TypeormStore values', () => {
     });
 
     it('listSteps orders by index, then insertion', async () => {
+        await seedRun(dataSource, 'r1');
         const at = new Date(1_000);
         for (const [index, name] of [[2, 'two'], [0, 'zero'], [1, 'one-a'], [1, 'one-b']] as const) {
             await store.appendStep({
@@ -135,6 +138,22 @@ describePostgres('TypeormStore values', () => {
             .resolves.toEqual([{ id: '1', doc: clean }]);
 
         const at = new Date(1_000);
+        await store.createRun({
+            id: 'r1',
+            agent: 'a',
+            status: 'queued',
+            trigger: {
+                id: 't1',
+                agent: 'a',
+                trigger: 'http',
+                channel: 'http',
+                payload: raw,
+                receivedAt: at,
+            },
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: at,
+            updatedAt: at,
+        });
         await store.appendStep({
             runId: 'r1',
             index: 0,
@@ -160,22 +179,6 @@ describePostgres('TypeormStore values', () => {
         });
         expect((await store.latestCheckpoint('r1'))?.messages).toEqual([{ role: 'user', content: clean.nul }]);
 
-        await store.createRun({
-            id: 'r1',
-            agent: 'a',
-            status: 'queued',
-            trigger: {
-                id: 't1',
-                agent: 'a',
-                trigger: 'http',
-                channel: 'http',
-                payload: raw,
-                receivedAt: at,
-            },
-            usage: { inputTokens: 0, outputTokens: 0 },
-            createdAt: at,
-            updatedAt: at,
-        });
         await store.updateRun('r1', { output: raw });
         const run = await store.getRun('r1');
         expect(run?.trigger.payload).toEqual(clean);

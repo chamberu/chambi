@@ -15,6 +15,7 @@ import {
 import type { ConversationItem } from '@chamvi/core';
 import { TableName } from './constants.ts';
 import { ConversationEntity } from './conversation.ts';
+import { RunEntity } from './run.ts';
 
 @Index(['scopeId', 'generation', 'id'], { unique: true })
 @Index(['scopeId', 'generation', 'createdAt', 'seq'])
@@ -39,6 +40,7 @@ export class ConversationItemEntity {
         type: 'text',
         collation: 'C',
     })
+    @ForeignKey(() => RunEntity, 'id')
     runId!: string;
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
@@ -53,6 +55,7 @@ export class ConversationItemEntity {
         type: 'text',
         nullable: true,
     })
+    // Journaled before the receipt exists; uncertain sends may never produce one.
     effectKey!: string | null;
     @Column({
         name: 'target_channel',

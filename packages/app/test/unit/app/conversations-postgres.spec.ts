@@ -6,9 +6,15 @@
  */
 
 import { DataSource } from 'typeorm';
-import { afterEach, expect, it } from 'vitest';
-import { MemoryConversationStore, defineAgent } from '@chamvi/core';
-import type { ConversationScope, IChannel } from '@chamvi/core';
+import {
+    afterEach,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+import { jsonSchema } from 'ai';
+import { defineAgent, defineTool, memoryTools } from '@chamvi/core';
+import type { IChannel } from '@chamvi/core';
 import { STORE_ENTITIES, STORE_MIGRATIONS, TypeormConversationStore } from '@chamvi/store-typeorm';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
@@ -22,7 +28,7 @@ import { buildModuleHarness } from '@chamvi/app/testing';
 import { TOKENS, deferred } from '../../utils/app.ts';
 import { createTestDatabaseUrl, describePostgres } from '../../utils/database.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { textModel } from '../../utils/model.ts';
+import { mockModel, textModel } from '../../utils/model.ts';
 
 const identity = {
     agent: 'helper',
@@ -83,17 +89,84 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
         expect(rows.map((row) => row.tablename)).toEqual(['chamvi_conversation_items', 'chamvi_conversation_notes', 'chamvi_conversation_operations', 'chamvi_conversations']);
     });
 
+    it('persists a real conversation run, note, reply and checkpoint under foreign keys', async () => {
+        const sent: string[] = [];
+        const chat: IChannel = { name: 'chat', out: async (message) => { sent.push(message.body); } };
+        const reply = defineTool({
+            inputSchema: jsonSchema<{ text: string }>({
+                type: 'object',
+                properties: { text: { type: 'string' } },
+                required: ['text'],
+            }),
+            execute: async ({ text }, { context }) => context.channels.findOneOrFail(chat.name).emit({ body: text }),
+        });
+        const harness = buildModuleHarness({
+            env: { DATABASE_URL: await createTestDatabaseUrl() },
+            agents: [defineAgent({
+                name: 'helper',
+                instructions: 'help',
+                conversation: true,
+                model: mockModel([
+                    {
+                        parts: [{
+                            type: 'tool-call',
+                            toolName: 'memory_set',
+                            input: { key: 'style', text: 'short answers' },
+                        }],
+                    },
+                    {
+                        parts: [{
+                            type: 'tool-call',
+                            toolName: 'reply',
+                            input: { text: 'saved' },
+                        }],
+                    },
+                    { parts: [{ type: 'text', text: 'done' }] },
+                ]),
+                tools: { ...memoryTools(), reply },
+                channels: [{
+                    channel: chat.name,
+                    id: 'message',
+                    options: {},
+                }],
+            })],
+            modules: [configModule({ logger: createRecordingLogger() }), storeModule(), engineModule(), {
+                name: 'test:chat',
+                async setup(container) { container.registerMany(AppToken.CHANNELS, { useValue: chat }); },
+            }],
+        });
+        harness.context.conversations = { authorize: () => true };
+        cleanup.push(() => harness.stop());
+        await harness.setup();
+        const engine = harness.container.resolve(AppToken.ENGINE);
+        const result = await engine.channelContext(chat).dispatchConversation({
+            agent: 'helper',
+            trigger: 'message',
+            address: 'example',
+            payload: {},
+        }, {
+            account: 'main',
+            chat: 'example',
+            audience: 'direct',
+            text: 'remember my style',
+        });
+        await engine.idle();
+        const runs = harness.container.resolve(AppToken.STORE);
+        const conversations = harness.container.resolve(AppToken.CONVERSATIONS);
+        expect((await runs.getRun(result.runId))?.status).toBe('completed');
+        expect(sent).toEqual(['saved']);
+        const scope = (await conversations.get(identity))!;
+        expect((await conversations.getNote(scope, 'style'))?.text).toBe('short answers');
+        expect((await conversations.listItems(scope, { limit: 10, offset: 0 })).data.map((item) => item.text)).toEqual(['remember my style', 'saved']);
+        expect((await runs.latestCheckpoint(result.runId))?.conversation).toEqual({ scopeId: scope.id, generation: scope.generation });
+        const ds = harness.container.resolve(AppToken.DATA_SOURCE);
+        expect(await ds.query('SELECT run_id FROM chamvi_conversation_operations')).toEqual([{ run_id: result.runId }]);
+        expect(await conversations.activeRun(scope)).toBeUndefined();
+    });
+
     it('stop_awaits_memory_writes_before_datasource_close', async () => {
         const entered = deferred();
         const release = deferred();
-        class DelayedConversations extends MemoryConversationStore {
-            override async endTurn(scope: ConversationScope, runId: string, ids: string[]) {
-                entered.resolve();
-                await release.promise;
-                await super.endTurn(scope, runId, ids);
-            }
-        }
-        const conversations = new DelayedConversations();
         const chat: IChannel = { name: 'chat' };
         const clock = new ControllableClock();
         const harness = buildModuleHarness({
@@ -114,10 +187,17 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
                 async setup(container) { container.registerMany(AppToken.CHANNELS, { useValue: chat }); },
             }],
         });
-        harness.context.conversations = { authorize: () => true, store: conversations };
+        harness.context.conversations = { authorize: () => true };
         cleanup.push(async () => { release.resolve(); await harness.stop(); });
         await harness.setup();
         const dataSource = harness.container.resolve(AppToken.DATA_SOURCE);
+        const conversations = harness.container.resolve(AppToken.CONVERSATIONS);
+        const endTurn = conversations.endTurn.bind(conversations);
+        vi.spyOn(conversations, 'endTurn').mockImplementation(async (...args) => {
+            entered.resolve();
+            await release.promise;
+            await endTurn(...args);
+        });
         const engine = harness.container.resolve(AppToken.ENGINE);
         await engine.channelContext(chat).dispatchConversation({
             agent: 'helper',

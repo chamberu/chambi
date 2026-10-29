@@ -21,6 +21,8 @@ import {
     defineTool,
 } from '@chamvi/core';
 import { jsonSchema } from 'ai';
+import type { IClock } from '@chamvi/core';
+import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 
 const identity = {
@@ -44,6 +46,7 @@ const envelope = {
 const engines: Engine[] = [];
 afterEach(async () => { const pending = engines.map((engine) => engine.stop()); engines.length = 0; await Promise.all(pending); });
 function setup(options: {
+    clock?: IClock;
     store?: MemoryStore;
     conversations?: MemoryConversationStore;
     model?: ReturnType<typeof mockModel>;
@@ -52,8 +55,8 @@ function setup(options: {
     maxSteps?: number;
     agentConcurrencyMaxRuns?: number
 } = {}) {
-    const store = options.store ?? new MemoryStore();
-    const conversations = options.conversations ?? new MemoryConversationStore();
+    const store = options.store ?? new MemoryStore({ clock: options.clock });
+    const conversations = options.conversations ?? new MemoryConversationStore({ clock: options.clock });
     const model = options.model ?? mockModel([{ parts: [{ type: 'text', text: 'answer' }] }]);
     const channel = { name: 'chat' };
     const agent = defineAgent({
@@ -68,6 +71,7 @@ function setup(options: {
     const errors: unknown[] = [];
     const engine = new Engine({
         store,
+        clock: options.clock,
         agents: [agent],
         channels: [channel],
         conversations: { store: conversations, authorize: options.authorize ?? (() => true) },
@@ -129,6 +133,52 @@ describe('conversation execution admission', () => {
         await s.engine.cancel(first);
     });
 
+    it('cancelling a waiting owner immediately retries a deferred shared-memory turn without polling', async () => {
+        const clock = new ControllableClock();
+        const action = defineTool({
+            inputSchema: jsonSchema<{}>({ type: 'object' }),
+            execute: async (_input, { context }) => approve(context, { title: 'continue?' }),
+        });
+        const s = setup({
+            clock,
+            agentConcurrencyMaxRuns: 1,
+            tools: { action },
+            model: mockModel([
+                {
+                    parts: [{
+                        type: 'tool-call',
+                        toolName: 'action',
+                        input: {},
+                    }],
+                },
+                { parts: [{ type: 'text', text: 'next turn completed' }] },
+            ]),
+        });
+        await s.engine.putAgent(defineAgent({
+            name: 'peer',
+            model: s.model,
+            conversation: { key: 'helper' },
+            instructions: 'help',
+        }));
+        const first = await run(s);
+        expect((await s.store.getRun(first))?.status).toBe('waiting');
+        const begin = vi.spyOn(s.conversations, 'beginTurn');
+        const next = await s.ctx.dispatchConversation({ ...envelope, agent: 'peer' }, target);
+        await s.engine.idle();
+        expect((await s.store.getRun(next.runId))?.status).toBe('queued');
+        await expect(begin.mock.results[0]?.value).resolves.toMatchObject({ kind: 'busy', runId: first });
+        expect(s.model.doStreamCalls).toHaveLength(1);
+
+        await s.engine.cancel(first);
+        await s.engine.idle();
+
+        expect((await s.store.getRun(first))?.status).toBe('cancelled');
+        expect((await s.store.getRun(next.runId))?.status).toBe('completed');
+        expect(s.model.doStreamCalls).toHaveLength(2);
+        expect(clock.now()).toEqual(new Date(0));
+        expect(s.errors).toEqual([]);
+    });
+
     it('capture_uses_selected_history_at_execution_not_intake', async () => {
         const s = setup();
         const result = await s.ctx.dispatchConversation(envelope, target);
@@ -149,7 +199,6 @@ describe('conversation execution admission', () => {
         expect(cp?.conversation).toEqual({
             scopeId: scope.id,
             generation: scope.generation,
-            snapshotRunId: result.runId,
         });
     });
     it('operator reset reconciles a settled owner without admitting a fabricated turn', async () => {

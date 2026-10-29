@@ -5,9 +5,15 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { Column, Entity, PrimaryColumn } from 'typeorm';
+import {
+    Column,
+    Entity,
+    ForeignKey,
+    PrimaryColumn,
+} from 'typeorm';
 import type { ConversationSnapshot } from '@chamvi/core';
 import { OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
+import { RunEntity } from './run.ts';
 
 @Entity({ name: TableName.CONVERSATIONS })
 export class ConversationEntity {
@@ -34,6 +40,7 @@ export class ConversationEntity {
         type: 'text',
         nullable: true,
     })
+    @ForeignKey(() => RunEntity, 'id')
     activeRunId!: string | null;
     @Column({
         name: 'snapshot_messages',

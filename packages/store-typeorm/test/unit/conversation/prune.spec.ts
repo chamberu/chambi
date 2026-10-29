@@ -9,7 +9,7 @@ import type { DataSource } from 'typeorm';
 import { afterEach, expect, it } from 'vitest';
 import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormConversationStore } from '@chamvi/store-typeorm';
+import { SeededConversationStore } from '../../utils/conversation.ts';
 import { ConversationOperationEntity } from '../../../src/entities/index.ts';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 
@@ -23,7 +23,7 @@ describePostgres('conversation operation retention', () => {
     it('prunes settled records beyond a full page of recoverable records', async () => {
         dataSource = await createTestDataSource();
         const clock = new ControllableClock(new Date('2026-10-28T00:00:00.000Z'));
-        const store = new TypeormConversationStore({ dataSource, clock });
+        const store = new SeededConversationStore({ dataSource, clock });
         const scope = await store.resolve({
             agent: 'helper',
             channel: 'chat',

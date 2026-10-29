@@ -16,6 +16,7 @@ import { migrateStore, pendingMigrations } from '@chamvi/store-typeorm';
 import { TableName } from '../../../src/entities/constants.ts';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import type { TestDataSourceOptions } from '../../utils/database.ts';
+import { seedRun } from '../../utils/conversation.ts';
 
 describePostgres('schema', () => {
     const dataSources: DataSource[] = [];
@@ -57,8 +58,8 @@ describePostgres('schema', () => {
             }
             for (const name of names.slice(1)) {
                 const table = tables.find((entry) => entry.name === name)!;
-                expect(table.foreignKeys).toHaveLength(1);
-                expect(table.foreignKeys[0]).toMatchObject({
+                expect(table.foreignKeys).toHaveLength(2);
+                expect(table.foreignKeys.find((key) => key.columnNames.includes('scope_id'))).toMatchObject({
                     columnNames: ['scope_id'],
                     referencedTableName: TableName.CONVERSATIONS,
                     referencedColumnNames: ['id'],
@@ -82,6 +83,7 @@ describePostgres('schema', () => {
             audience: 'direct',
         };
         const scope = await store.resolve(identity);
+        await seedRun(ds, 'run');
         await store.beginTurn(scope, 'run', 'hello', DEFAULT_CONVERSATION_LIMITS);
         await store.applyNote(scope, {
             kind: 'set',
@@ -136,7 +138,7 @@ describePostgres('schema', () => {
         await migrateStore(ds);
 
         const migrations: { name: string }[] = await ds.query('SELECT name FROM migrations ORDER BY id');
-        expect(migrations.map((m) => m.name)).toEqual(['Init1792195200000', 'Artifacts1792368000000', 'IdempotencyScope1792454400000', 'KvKeyCollation1792540800000', 'AgentRevisions1792627200000', 'Conversations1792713600000', 'ConversationBindings1792800000000']);
+        expect(migrations.map((m) => m.name)).toEqual(['Init1792195200000', 'Artifacts1792368000000', 'IdempotencyScope1792454400000', 'KvKeyCollation1792540800000', 'AgentRevisions1792627200000', 'Conversations1792713600000']);
 
         const tables: { table_name: string }[] = await ds.query(
             'SELECT table_name FROM information_schema.tables WHERE table_name = ANY($1::text[])',
@@ -154,7 +156,6 @@ describePostgres('schema', () => {
             'KvKeyCollation1792540800000',
             'AgentRevisions1792627200000',
             'Conversations1792713600000',
-            'ConversationBindings1792800000000',
         ]);
         await migrateStore(ds);
         expect(await pendingMigrations(ds)).toEqual([]);
@@ -183,8 +184,6 @@ describePostgres('schema', () => {
         expect(await tablesIn('other')).toBe(Object.values(TableName).length);
         expect(await tablesIn('public')).toBe(0);
 
-        await ds.undoLastMigration({ transaction: 'each' });
-        expect(await tablesIn('other')).toBe(Object.values(TableName).length);
         await ds.undoLastMigration({ transaction: 'each' });
         const tableCount = Object.values(TableName).length - 4;
         expect(await tablesIn('other')).toBe(tableCount);

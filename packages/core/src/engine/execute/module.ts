@@ -260,7 +260,6 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                     conversation: {
                         scopeId: ctx.conversation.snapshot.scope.id,
                         generation: ctx.conversation.snapshot.scope.generation,
-                        snapshotRunId: run.id,
                     },
                 } : {}),
                 createdAt: finishedAt,
@@ -319,7 +318,6 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                         conversation: {
                             scopeId: ctx.conversation.snapshot.scope.id,
                             generation: ctx.conversation.snapshot.scope.generation,
-                            snapshotRunId: run.id,
                         },
                     } : {}),
                     createdAt: finishedAt,

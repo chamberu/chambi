@@ -85,11 +85,11 @@ export async function nextMessage(engine: Engine, chat: IChannel) {
 }
 // #endregion intake
 
-export async function manageConversation(engine: Engine) {
+export async function manageConversation(engine: Engine, chat: IChannel) {
     // #region management
     const identity = {
         agent: 'helper',
-        channel: 'chat',
+        channel: chat.name,
         account: 'main',
         chat: 'example-chat',
         audience: 'direct',

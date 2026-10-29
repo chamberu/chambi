@@ -25,7 +25,6 @@ import {
 import {
     AgentRevisions1792627200000,
     Artifacts1792368000000,
-    ConversationBindings1792800000000,
     Conversations1792713600000,
     IdempotencyScope1792454400000,
     Init1792195200000,
@@ -56,7 +55,6 @@ export const STORE_MIGRATIONS = [
     KvKeyCollation1792540800000,
     AgentRevisions1792627200000,
     Conversations1792713600000,
-    ConversationBindings1792800000000,
 ];
 
 export const MIGRATION_LOCK_NAME = 'chamvi:migrations';

@@ -15,7 +15,8 @@ import {
 import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
 import type { ConversationIdentity } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormConversationStore, TypeormStore  } from '@chamvi/store-typeorm';
+import { TypeormStore } from '@chamvi/store-typeorm';
+import { SeededConversationStore } from '../../utils/conversation.ts';
 import { ConversationEntity, ConversationOperationEntity } from '../../../src/entities/index.ts';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 
@@ -32,16 +33,16 @@ const IDENTITY: ConversationIdentity = {
 describePostgres('conversation transactions across connections', () => {
     let dataSource: DataSource;
     let peer: DataSource;
-    let first: TypeormConversationStore;
-    let second: TypeormConversationStore;
+    let first: SeededConversationStore;
+    let second: SeededConversationStore;
 
     beforeEach(async () => {
         dataSource = await createTestDataSource();
         peer = new DataSource(dataSource.options);
         await peer.initialize();
         const clock = new ControllableClock(new Date('2026-10-28T00:00:00.000Z'));
-        first = new TypeormConversationStore({ dataSource, clock });
-        second = new TypeormConversationStore({ dataSource: peer, clock });
+        first = new SeededConversationStore({ dataSource, clock });
+        second = new SeededConversationStore({ dataSource: peer, clock });
     });
 
     afterEach(async () => {

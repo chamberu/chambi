@@ -23,7 +23,7 @@ describe('public api', () => {
         expect(pkg.STORE_ENTITIES).toBeInstanceOf(Array);
         expect(pkg.STORE_ENTITIES).toHaveLength(14);
         expect(pkg.STORE_MIGRATIONS).toBeInstanceOf(Array);
-        expect(pkg.STORE_MIGRATIONS).toHaveLength(7);
+        expect(pkg.STORE_MIGRATIONS).toHaveLength(6);
         expect(pkg.MIGRATION_LOCK_NAME).toBe('chamvi:migrations');
     });
 });

@@ -154,3 +154,7 @@ Types: `TypeormStoreOptions`, `PurgeResult`.
 ## License
 
 Published under [Apache License 2.0](./LICENSE).
+
+Conversation memory uses the same PostgreSQL DataSource as runs. Foreign keys connect its active owner, transcript items, note sources and note-operation receipts to their runs. Run and checkpoint scope bindings reference the local conversation row. Checkpoints and steps require their parent run to exist. Existing orphan rows will block migration validation; migrations do not silently delete them.
+
+Idempotency reservations and staged artifacts can precede their run row. A pending emit can also precede its effect receipt, and an uncertain send may never have one. These reserved identifiers intentionally have no immediate foreign key.

@@ -90,6 +90,8 @@ export function describeStoreContract(
         it('latestCheckpoint returns highest stepIndex', async () => {
             const { store } = await setup();
             expect(await store.latestCheckpoint('r1')).toBeUndefined();
+            await store.createRun(makeRun('r1'));
+            await store.createRun(makeRun('r2'));
             const at = new Date(1_000);
             await store.saveCheckpoint({
                 runId: 'r1', 
@@ -120,6 +122,7 @@ export function describeStoreContract(
 
         it('saveCheckpoint with an equal stepIndex replaces the latest', async () => {
             const { store } = await setup();
+            await store.createRun(makeRun('r1'));
             const at = new Date(1_000);
             await store.saveCheckpoint({
                 runId: 'r1',

@@ -56,12 +56,16 @@ export interface IRunStore {
 }
 
 export interface IStepStore {
+    /** The parent run must already exist. */
     appendStep(step: Step): Promise<void>;
     listSteps(runId: string): Promise<Step[]>;
 }
 
 export interface ICheckpointStore {
-    /** Keeps the highest stepIndex; an equal stepIndex replaces (approval responses are appended that way). */
+    /**
+     * Keeps the highest stepIndex; an equal stepIndex replaces (approval responses are appended that way).
+     * The parent run must already exist.
+     */
     saveCheckpoint(cp: Checkpoint): Promise<void>;
     latestCheckpoint(runId: string): Promise<Checkpoint | undefined>;
 }

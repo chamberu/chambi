@@ -14,7 +14,8 @@ import {
 } from 'vitest';
 import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormConversationStore, TypeormStore } from '@chamvi/store-typeorm';
+import { TypeormStore } from '@chamvi/store-typeorm';
+import { SeededConversationStore, seedRun } from '../../utils/conversation.ts';
 import { ConversationItemEntity, ConversationOperationEntity } from '../../../src/entities/index.ts';
 import { asValues } from '../../../src/store/helpers.ts';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
@@ -39,7 +40,7 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
     async function setup() {
         dataSource = await createTestDataSource({ max: 1 });
         const clock = new ControllableClock(new Date('2026-10-28T00:00:00.000Z'));
-        const store = new TypeormConversationStore({ dataSource, clock });
+        const store = new SeededConversationStore({ dataSource, clock });
         const runs = new TypeormStore({ dataSource, clock });
         const scope = await store.resolve({
             agent: 'helper',
@@ -97,7 +98,6 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
         const s = await setup();
         await s.seed('completed', 'completed');
         await s.seed('recoverable', 'waiting');
-        await s.seed('missing');
         s.clock.advance(10_000);
         await s.store.prune(s.limits, {
             isSettled: async (runId) => {
@@ -147,6 +147,7 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
                 if (change === 'active owner') {
                     await withinPoolDeadline(s.store.beginTurn(s.scope, runId, 'resumed input', s.limits));
                 } else if (change === 'changed candidate') {
+                    await seedRun(dataSource, 'recoverable');
                     await withinPoolDeadline(s.operations.update({ scopeId: s.scope.id, id: runId }, { runId: 'recoverable', inputHash: 'replacement' }));
                 } else {
                     await withinPoolDeadline(s.operations.update({ scopeId: s.scope.id, id: runId }, { createdAt: s.clock.now() }));

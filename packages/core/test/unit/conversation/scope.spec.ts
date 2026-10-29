@@ -212,7 +212,6 @@ describe('conversation scope', () => {
             .toEqualTypeOf<{
                 scopeId: string;
                 generation: number;
-                snapshotRunId: string
             } | undefined>();
     });
 });

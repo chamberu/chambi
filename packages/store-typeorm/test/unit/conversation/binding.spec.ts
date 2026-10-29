@@ -7,8 +7,9 @@
 
 import type { DataSource } from 'typeorm';
 import { afterEach, expect, it } from 'vitest';
-import { TypeormStore } from '@chamvi/store-typeorm';
+import { TypeormConversationStore, TypeormStore } from '@chamvi/store-typeorm';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
+import { seedRun } from '../../utils/conversation.ts';
 
 describePostgres('conversation audit binding persistence', () => {
     let dataSource: DataSource;
@@ -17,17 +18,15 @@ describePostgres('conversation audit binding persistence', () => {
         dataSource = await createTestDataSource();
         const store = new TypeormStore({ dataSource });
         const now = new Date();
-        const scope = {
-            id: 'a'.repeat(64),
-            generation: 7,
-            identity: {
-                agent: 'helper',
-                channel: 'chat',
-                account: 'main',
-                chat: 'opaque-é',
-                audience: 'direct',
-            },
+        const identity = {
+            agent: 'helper',
+            channel: 'chat',
+            account: 'main',
+            chat: 'opaque-é',
+            audience: 'direct',
         };
+        const resolved = await new TypeormConversationStore({ dataSource }).resolve(identity);
+        const scope = { ...resolved, generation: 7 };
         const conversation = { scope, text: 'accepted unicode 🐈' };
         await store.createRun({
             id: 'run',
@@ -50,7 +49,6 @@ describePostgres('conversation audit binding persistence', () => {
         const provenance = {
             scopeId: scope.id,
             generation: scope.generation,
-            snapshotRunId: 'run',
         };
         await store.saveCheckpoint({
             runId: 'run',
@@ -62,5 +60,43 @@ describePostgres('conversation audit binding persistence', () => {
         expect((await store.latestCheckpoint('run'))?.conversation).toEqual(provenance);
         await store.updateRun('run', { conversation: undefined });
         expect(await store.getRun('run')).not.toHaveProperty('conversation');
+    });
+
+    it('updates and clears checkpoint provenance only when replacing the latest checkpoint', async () => {
+        dataSource = await createTestDataSource();
+        const store = new TypeormStore({ dataSource });
+        await seedRun(dataSource, 'run');
+        const scope = await new TypeormConversationStore({ dataSource }).resolve({
+            agent: 'helper',
+            channel: 'chat',
+            account: 'main',
+            chat: 'replacement',
+            audience: 'direct',
+        });
+        const checkpoint = {
+            runId: 'run',
+            stepIndex: 0,
+            messages: [],
+            createdAt: new Date(),
+        };
+        await store.saveCheckpoint(checkpoint);
+        const conversation = { scopeId: scope.id, generation: 1 };
+        await store.saveCheckpoint({
+            ...checkpoint,
+            stepIndex: 1,
+            conversation,
+        });
+        expect((await store.latestCheckpoint('run'))?.conversation).toEqual(conversation);
+        const replaced = { ...conversation, generation: 2 };
+        await store.saveCheckpoint({
+            ...checkpoint,
+            stepIndex: 1,
+            conversation: replaced,
+        });
+        expect((await store.latestCheckpoint('run'))?.conversation).toEqual(replaced);
+        await store.saveCheckpoint(checkpoint);
+        expect((await store.latestCheckpoint('run'))?.conversation).toEqual(replaced);
+        await store.saveCheckpoint({ ...checkpoint, stepIndex: 2 });
+        expect(await store.latestCheckpoint('run')).not.toHaveProperty('conversation');
     });
 });

@@ -8,7 +8,7 @@
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll } from 'vitest';
 import { describeConversationStoreContract } from '@chamvi/test-kit';
-import { TypeormConversationStore } from '@chamvi/store-typeorm';
+import { SeededConversationStore } from '../../utils/conversation.ts';
 import { createTestDataSource, describePostgres, truncateStore } from '../../utils/database.ts';
 
 // The shared contract catches persistence, copying, expiry and replay divergence
@@ -26,6 +26,6 @@ describePostgres('postgres conversations', () => {
 
     describeConversationStoreContract(async (clock) => {
         await truncateStore(dataSource);
-        return new TypeormConversationStore({ dataSource, clock });
+        return new SeededConversationStore({ dataSource, clock });
     });
 });

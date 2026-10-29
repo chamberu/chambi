@@ -40,7 +40,7 @@ Each run gets an immutable snapshot before its first model step. A resumed run k
 
 ## Limits and retention
 
-All limits count UTF-8 bytes, not tokens. They do not guarantee that a model context window can fit the selected input. Selection keeps whole records, chooses recent records first and renders them chronologically; oversized records can be omitted, with an omission count in the snapshot.
+`maxItems` and `maxStoredItems` count items; `retentionMs` counts milliseconds. The byte limits (`maxHistoryBytes`, `maxNotesBytes` and `maxItemBytes`) count UTF-8 bytes, not tokens. These limits do not guarantee that a model context window can fit the selected input. Selection keeps whole records, chooses recent records first and renders them chronologically; oversized records can be omitted, with an omission count in the snapshot.
 
 | Limit | Default | Maximum |
 |---|---:|---:|
@@ -69,9 +69,9 @@ Deletion is not erasure of every copy. Runs retain trigger/payload and conversat
 
 Normal app migrations install conversation tables even when recall is disabled. `chamvi start --check` validates configuration and connects read-only: it creates no conversation identity and runs no migrations. Existing migration flags keep their ordinary behavior.
 
-Pass `conversations: { authorize, store: customStore }` to use an `IConversationStore`. A custom store owns its schema, connection and shutdown lifecycle. The app does not initialize, migrate or close it. A replacement store module must register `AppToken.CONVERSATIONS` when the capability is enabled. With the built-in store module, an injected DataSource remains caller-owned, just as it does for run storage.
+Pass `conversations: { authorize, store: customStore }` to use an `IConversationStore`. A custom store owns its schema, connection and shutdown lifecycle. The built-in TypeORM run and conversation stores must use the same DataSource; mixing them with another backend is unsupported. The app does not initialize, migrate or close it. A replacement store module must register `AppToken.CONVERSATIONS` when the capability is enabled. With the built-in store module, an injected DataSource remains caller-owned, just as it does for run storage.
 
-The existing app drain waits for engine executions and conversation journal/reconciliation writes before closing its owned DataSource. Run admission and conversation writes use separate stores and transactions: no cross-store atomicity is promised. Runs are created before conversation ownership is claimed, and restart reconciliation repairs terminal ownership safely.
+The existing app drain waits for engine executions and conversation journal/reconciliation writes before closing its owned DataSource. With the built-in PostgreSQL stores, run and conversation records must share the same database. Their foreign keys enforce this relationship. Admission and conversation writes still use separate transactions; no cross-transaction atomicity is promised. Runs are created before conversation ownership is claimed, and restart reconciliation repairs terminal ownership safely.
 
 ## PostgreSQL records
 
@@ -84,4 +84,4 @@ Fixed fields use ordinary columns. Conversation-owned records reference their pa
 | Note | Current explicitly saved text |
 | Note operation | Metadata receipt committed atomically with a note edit, preventing duplicate edits on retry |
 
-The active snapshot exists before a checkpoint can be written. Waiting and interrupted runs retain it; terminal settlement clears it. An ended run cannot request historical snapshot replay. The note receipt must commit in the same transaction as its edit. Existing checkpoints and effects cannot provide those guarantees across independently configured stores. Run and checkpoint bindings retain scalar provenance without foreign keys to the conversation store, which may use another backend.
+The active snapshot exists before a checkpoint can be written. Waiting and interrupted runs retain it; terminal settlement clears it. An ended run cannot request historical snapshot replay. The note receipt must commit in the same transaction as its edit. Existing checkpoints are written after model steps, and generic effects are not committed atomically with note edits. Run and checkpoint bindings retain scalar scope provenance with foreign keys to the local conversation row. The checkpoint's existing run ID identifies its source run; no duplicate snapshot run ID is stored.

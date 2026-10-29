@@ -8,10 +8,13 @@
 import {
     Column,
     Entity,
+    ForeignKey,
     PrimaryColumn,
 } from 'typeorm';
 import type { Checkpoint } from '@chamvi/core';
 import { JSON_VALUE_TRANSFORMER, TableName } from './constants.ts';
+import { RunEntity } from './run.ts';
+import { ConversationEntity } from './conversation.ts';
 
 @Entity({ name: TableName.CHECKPOINTS })
 export class CheckpointEntity {
@@ -20,6 +23,7 @@ export class CheckpointEntity {
         type: 'varchar',
         length: 128,
     })
+    @ForeignKey(() => RunEntity, 'id')
     runId!: string;
 
     @Column({
@@ -28,6 +32,7 @@ export class CheckpointEntity {
         length: 64,
         nullable: true,
     })
+    @ForeignKey(() => ConversationEntity, 'id')
     conversationScopeId!: string | null;
     @Column({
         name: 'conversation_generation',
@@ -35,12 +40,7 @@ export class CheckpointEntity {
         nullable: true,
     })
     conversationGeneration!: number | null;
-    @Column({
-        name: 'conversation_snapshot_run_id',
-        type: 'text',
-        nullable: true,
-    })
-    conversationSnapshotRunId!: string | null;
+
 
     @Column({ name: 'step_index', type: 'integer' })
     stepIndex!: number;

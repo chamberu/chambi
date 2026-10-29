@@ -265,7 +265,7 @@ export class TypeormStore implements IStore {
             .insert()
             .values(toCheckpointValues(cp))
             .orUpdate(
-                ['step_index', 'messages', 'finish_reason', 'created_at'],
+                ['step_index', 'messages', 'finish_reason', 'created_at', 'conversation_scope_id', 'conversation_generation'],
                 ['run_id'],
                 { overwriteCondition: { where: { stepIndex: LessThanOrEqual(cp.stepIndex) } } },
             )

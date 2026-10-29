@@ -29,6 +29,7 @@ export class ArtifactEntity {
         type: 'varchar',
         length: 128,
     })
+    // Attachments are staged before createRun, so this reserved ID cannot have an immediate foreign key.
     runId!: string;
 
     @Column({

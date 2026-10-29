@@ -8,11 +8,13 @@
 import {
     Column,
     Entity,
+    ForeignKey,
     Index,
     PrimaryColumn,
 } from 'typeorm';
 import type { Run, RunStatusLiteral, Usage } from '@chamvi/core';
 import { OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
+import { ConversationEntity } from './conversation.ts';
 
 @Index(['agent', 'status', 'concurrencyKey'])
 @Index(['status', 'createdAt', 'id'])
@@ -123,6 +125,7 @@ export class RunEntity {
         length: 64,
         nullable: true,
     })
+    @ForeignKey(() => ConversationEntity, 'id')
     conversationScopeId!: string | null;
     @Column({
         name: 'conversation_generation',

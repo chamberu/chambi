@@ -34,6 +34,7 @@ export class IdempotencyKeyEntity {
         type: 'varchar', 
         length: 128, 
     })
+    // The reservation precedes createRun and can outlive a failed creation.
     runId!: string;
 
     @Index()

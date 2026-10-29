@@ -113,7 +113,6 @@ export function toCheckpointValues(cp: Checkpoint): QueryDeepPartialEntity<Check
         finishReason: cp.finishReason ?? null,
         conversationScopeId: cp.conversation?.scopeId ?? null,
         conversationGeneration: cp.conversation?.generation ?? null,
-        conversationSnapshotRunId: cp.conversation?.snapshotRunId ?? null,
         createdAt: cp.createdAt,
     };
 
@@ -238,7 +237,6 @@ export function toCheckpoint(entity: CheckpointEntity): Checkpoint {
         checkpoint.conversation = {
             scopeId: entity.conversationScopeId,
             generation: entity.conversationGeneration!,
-            snapshotRunId: entity.conversationSnapshotRunId!,
         };
     }
     if (entity.finishReason !== null) checkpoint.finishReason = entity.finishReason;

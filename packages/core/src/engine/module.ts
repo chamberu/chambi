@@ -1248,6 +1248,7 @@ export class Engine implements IContextProvider {
         try {
             await this.conversationCapability().reconcile(run.conversation.scope, run.id, this.store);
             this.queue.retryDeferred();
+            if (this.started) void this.queue.pump();
         } catch (error) {
             this.onError(error, run);
         }

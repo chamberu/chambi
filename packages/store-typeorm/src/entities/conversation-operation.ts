@@ -15,6 +15,7 @@ import {
 import type { ConversationNoteResult } from '@chamvi/core';
 import { TableName } from './constants.ts';
 import { ConversationEntity } from './conversation.ts';
+import { RunEntity } from './run.ts';
 
 @Index(['scopeId', 'createdAt', 'id'])
 @Entity({ name: TableName.CONVERSATION_OPERATIONS })
@@ -36,12 +37,14 @@ export class ConversationOperationEntity {
         type: 'text',
         collation: 'C',
     })
+    @ForeignKey(() => RunEntity, 'id')
     runId!: string;
     @Column({ name: 'input_hash', type: 'text' })
     inputHash!: string;
     @Column({ type: 'text' })
     kind!: ConversationNoteResult['kind'];
     @Column({ type: 'text', collation: 'C' })
+    // Receipts survive note deletion, so this is result metadata rather than a note foreign key.
     key!: string;
     @Column({ type: 'boolean', nullable: true })
     removed!: boolean | null;

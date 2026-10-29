@@ -8,11 +8,13 @@
 import {
     Column,
     Entity,
+    ForeignKey,
     Index,
     PrimaryGeneratedColumn,
 } from 'typeorm';
 import type { Step } from '@chamvi/core';
 import { OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
+import { RunEntity } from './run.ts';
 
 @Index(['runId', 'index'])
 @Entity({ name: TableName.STEPS })
@@ -25,6 +27,7 @@ export class StepEntity {
         type: 'varchar', 
         length: 128, 
     })
+    @ForeignKey(() => RunEntity, 'id')
     runId!: string;
 
     @Column({ name: 'step_index', type: 'integer' })

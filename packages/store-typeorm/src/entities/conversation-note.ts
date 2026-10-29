@@ -14,6 +14,7 @@ import {
 } from 'typeorm';
 import { TableName } from './constants.ts';
 import { ConversationEntity } from './conversation.ts';
+import { RunEntity } from './run.ts';
 
 @Index(['expiresAt'])
 @Entity({ name: TableName.CONVERSATION_NOTES })
@@ -37,6 +38,7 @@ export class ConversationNoteEntity {
         type: 'text',
         collation: 'C',
     })
+    @ForeignKey(() => RunEntity, 'id')
     runId!: string;
     @Column({ name: 'tool_call_id', type: 'text' })
     toolCallId!: string;

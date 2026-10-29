@@ -110,7 +110,6 @@ export type Checkpoint = {
     conversation?: {
         scopeId: string;
         generation: number;
-        snapshotRunId: string;
     };
     createdAt: Date;
 };
