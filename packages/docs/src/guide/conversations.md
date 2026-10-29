@@ -61,7 +61,7 @@ These in-process APIs require possession of the engine. They are not model tools
 
 <<< @/snippets/conversations.ts#management
 
-Inspection of an unknown identity returns `undefined` and creates nothing. Reset advances the generation, invalidates queued old work and optionally keeps notes; it retains old transcript data until retention. Delete removes conversation-owned items, notes, snapshots and operation records while retaining a generation tombstone that prevents stale work from restoring them. Both refuse an active turn; terminal owner reconciliation must finish first.
+Inspection of an unknown identity returns `undefined` and creates nothing. Reset advances the generation, invalidates queued old work and optionally keeps notes; it retains old transcript data until retention. Delete removes conversation-owned items, notes and operation records, and clears its active snapshot while retaining a generation tombstone that prevents stale work from restoring them. Both refuse an active turn; terminal owner reconciliation must finish first.
 
 Deletion is not erasure of every copy. Runs retain trigger/payload and conversation input, and checkpoints, effects, provider logs and backups have their own lifecycles. Removing a note clears its live body, but prior immutable snapshots and audit copies can still contain it.
 
@@ -75,14 +75,13 @@ The existing app drain waits for engine executions and conversation journal/reco
 
 ## PostgreSQL records
 
-Fixed fields use ordinary columns. Conversation-owned records reference their parent conversation with foreign keys. Only the frozen AI SDK messages need JSONB.
+Fixed fields use ordinary columns. Conversation-owned records reference their parent conversation with foreign keys. Only the frozen AI SDK messages need JSONB. The active snapshot lives on its conversation row and is cleared atomically when the turn ends.
 
 | Record | Purpose |
 |---|---|
-| Conversation | Identity, reset generation and current turn owner |
+| Conversation | Identity, reset generation, current turn owner and its frozen context |
 | Item | Accepted input or a reply with its delivery status |
 | Note | Current explicitly saved text |
-| Turn | Context frozen before the first model call, reused after a crash |
 | Note operation | Metadata receipt committed atomically with a note edit, preventing duplicate edits on retry |
 
-The turn record exists before a checkpoint can be written. The note receipt must commit in the same transaction as its edit. Existing checkpoints and effects cannot provide those guarantees across independently configured stores. Run and checkpoint bindings retain scalar provenance without foreign keys to the conversation store, which may use another backend.
+The active snapshot exists before a checkpoint can be written. Waiting and interrupted runs retain it; terminal settlement clears it. An ended run cannot request historical snapshot replay. The note receipt must commit in the same transaction as its edit. Existing checkpoints and effects cannot provide those guarantees across independently configured stores. Run and checkpoint bindings retain scalar provenance without foreign keys to the conversation store, which may use another backend.

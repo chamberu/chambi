@@ -30,7 +30,6 @@ import {
     ConversationItemEntity,
     ConversationNoteEntity,
     ConversationOperationEntity,
-    ConversationTurnEntity,
 } from '../entities/index.ts';
 import { asValues } from '../store/helpers.ts';
 import {
@@ -47,6 +46,15 @@ import {
     userItemId,
 } from './helpers.ts';
 import type { TypeormConversationStoreOptions } from './types.ts';
+
+const ENDED_TURN = {
+    activeRunId: null,
+    snapshotMessages: null,
+    snapshotItemIds: null,
+    snapshotNoteKeys: null,
+    snapshotCreatedAt: null,
+    snapshotOmitted: null,
+};
 
 function scopeOf(row: ConversationEntity): ConversationScope {
     return {
@@ -181,21 +189,22 @@ export class TypeormConversationStore implements IConversationStore {
             if (!row || row.generation !== scope.generation) return { kind: 'stale' };
             if (row.activeRunId !== null && row.activeRunId !== runId) return { kind: 'busy', runId: row.activeRunId };
             const where = { scopeId: scope.id, generation: scope.generation };
-            const existing = await manager.findOneBy(ConversationTurnEntity, { ...where, runId });
-            if (existing) {
-                await manager.update(ConversationEntity, { id: row.id }, { activeRunId: runId });
+            if (row.activeRunId === runId && row.snapshotCreatedAt !== null) {
                 return {
                     kind: 'ready',
                     snapshot: {
                         scope: scopeOf(row),
                         runId,
-                        createdAt: existing.createdAt,
-                        messages: existing.messages,
-                        itemIds: existing.itemIds,
-                        noteKeys: existing.noteKeys,
-                        omitted: existing.omitted,
+                        createdAt: row.snapshotCreatedAt,
+                        messages: row.snapshotMessages!,
+                        itemIds: row.snapshotItemIds!,
+                        noteKeys: row.snapshotNoteKeys!,
+                        omitted: row.snapshotOmitted!,
                     },
                 };
+            }
+            if (await manager.existsBy(ConversationItemEntity, { ...where, id: userItemId(runId) })) {
+                throw new InvalidRunStateError('The conversation turn has already ended.');
             }
             await this.trim(manager, row, limits);
             const items = await manager.find(ConversationItemEntity, { where, order: { seq: 'ASC' } });
@@ -219,15 +228,13 @@ export class TypeormConversationStore implements IConversationStore {
                 ...where,
                 ...itemValues(item),
             }));
-            await manager.update(ConversationEntity, { id: row.id }, { activeRunId: runId });
-            await manager.getRepository(ConversationTurnEntity).insert(asValues<ConversationTurnEntity>({
-                ...where,
-                runId,
-                createdAt: now,
-                messages: snapshot.messages,
-                itemIds: snapshot.itemIds,
-                noteKeys: snapshot.noteKeys,
-                omitted: snapshot.omitted,
+            await manager.update(ConversationEntity, { id: row.id }, asValues<ConversationEntity>({
+                activeRunId: runId,
+                snapshotCreatedAt: now,
+                snapshotMessages: snapshot.messages,
+                snapshotItemIds: snapshot.itemIds,
+                snapshotNoteKeys: snapshot.noteKeys,
+                snapshotOmitted: snapshot.omitted,
             }));
             await this.trimCount(manager, row.id, row.generation, row.activeRunId, limits.maxStoredItems);
             return { kind: 'ready', snapshot };
@@ -246,7 +253,7 @@ export class TypeormConversationStore implements IConversationStore {
             for (const entry of pending) {
                 await manager.update(ConversationItemEntity, { seq: entry.seq }, { status: confirmedEmitIds.includes(entry.id) ? 'sent' : 'unknown' });
             }
-            await manager.update(ConversationEntity, { id: row.id }, { activeRunId: null });
+            await manager.update(ConversationEntity, { id: row.id }, ENDED_TURN);
         });
     }
 
@@ -419,8 +426,7 @@ export class TypeormConversationStore implements IConversationStore {
             if (!row || row.activeRunId !== null) throw new InvalidRunStateError('The conversation has an active turn and cannot be reset.');
             const notes = options.keepNotes ? await this.notes(manager, scopeOf(row)) : [];
             row.generation += 1;
-            await manager.update(ConversationEntity, { id: row.id }, { generation: row.generation });
-            await manager.delete(ConversationTurnEntity, { scopeId: row.id });
+            await manager.update(ConversationEntity, { id: row.id }, { generation: row.generation, ...ENDED_TURN });
             await manager.delete(ConversationNoteEntity, { scopeId: row.id });
             if (!options.keepNotes) await manager.delete(ConversationOperationEntity, { scopeId: row.id });
             for (const note of notes) {
@@ -439,8 +445,8 @@ export class TypeormConversationStore implements IConversationStore {
         await this.locked(id, async (manager, row) => {
             if (!row) return;
             if (row.activeRunId !== null) throw new InvalidRunStateError('The conversation has an active turn and cannot be deleted.');
-            await manager.update(ConversationEntity, { id }, { generation: row.generation + 1 });
-            for (const entity of [ConversationItemEntity, ConversationTurnEntity, ConversationNoteEntity, ConversationOperationEntity]) {
+            await manager.update(ConversationEntity, { id }, { generation: row.generation + 1, ...ENDED_TURN });
+            for (const entity of [ConversationItemEntity, ConversationNoteEntity, ConversationOperationEntity]) {
                 await manager.delete(entity, { scopeId: id });
             }
         });
@@ -497,12 +503,6 @@ export class TypeormConversationStore implements IConversationStore {
                     for (const { generation } of generations) {
                         await this.trimCount(manager, row.id, generation, row.activeRunId, limits.maxStoredItems);
                     }
-                    const before = new Date(this.clock.now().getTime() - limits.retentionMs);
-                    await manager.delete(ConversationTurnEntity, {
-                        scopeId: row.id,
-                        createdAt: LessThanOrEqual(before),
-                        ...(row.activeRunId === null ? {} : { runId: Not(row.activeRunId) }),
-                    });
                 });
                 if (!isSettled) continue;
                 let afterOperation: { generation: number; id: string } | undefined;

@@ -66,17 +66,14 @@ describe('MemoryConversationStore', () => {
         expect(CONVERSATION_NOTE_TEXT_MAX_BYTES).toBe(2048);
     });
 
-    it('lets a run reclaim an idle scope with its own snapshot without a second input', async () => {
-        const clock = new ControllableClock();
-        const store = new MemoryConversationStore({ clock });
+    it('releases its snapshot at terminal settlement and refuses a retained ended input', async () => {
+        const store = new MemoryConversationStore({ clock: new ControllableClock() });
         const scope = await store.resolve(identity());
-        const first = await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
+        await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
         await store.endTurn(scope, 'run-a', []);
-        clock.advance(1000);
-        // engine-invalid (a settled run never begins again), but it adds nothing and never bypasses an owner
-        expect(await store.beginTurn(scope, 'run-a', 'hello', LIMITS)).toEqual(first);
+        await expect(store.beginTurn(scope, 'run-a', 'hello', LIMITS)).rejects.toMatchObject({ code: 'invalid_run_state' });
         expect((await store.listItems(scope, { limit: 10, offset: 0 })).total).toBe(1);
-        expect(await store.beginTurn(scope, 'run-b', 'next', LIMITS)).toEqual({ kind: 'busy', runId: 'run-a' });
+        expect((await store.beginTurn(scope, 'run-b', 'next', LIMITS)).kind).toBe('ready');
     });
 
     it('refuses a malformed scope or run id before any state change', async () => {

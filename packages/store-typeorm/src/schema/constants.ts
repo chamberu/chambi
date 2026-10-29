@@ -14,7 +14,6 @@ import {
     ConversationNoteEntity,
 
     ConversationOperationEntity,
-    ConversationTurnEntity,
     DocEntity,
     EffectEntity,
     IdempotencyKeyEntity,
@@ -45,7 +44,6 @@ export const STORE_ENTITIES = [
     ArtifactEntity,
     AgentRevisionEntity,
     ConversationEntity,
-    ConversationTurnEntity,
     ConversationItemEntity,
     ConversationNoteEntity,
     ConversationOperationEntity,

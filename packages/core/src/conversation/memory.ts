@@ -62,8 +62,8 @@ type ScopeRecord = {
     items: StoredItem[];
     /** The current generation's notes. */
     notes: Map<string, ConversationNote>;
-    /** The current generation's snapshots by run id. */
-    snapshots: Map<string, ConversationSnapshot>;
+    /** Frozen context for the active owner only. */
+    snapshot?: ConversationSnapshot;
     /** Operation tombstones by `<generation>:<operation id>`. */
     operations: Map<string, StoredOperation>;
 };
@@ -122,10 +122,13 @@ export class MemoryConversationStore implements IConversationStore {
             return { kind: 'busy', runId: record.activeRunId };
         }
 
-        const existing = record.snapshots.get(runId);
-        if (existing) {
-            record.activeRunId = runId;
+        const existing = record.snapshot;
+        if (record.activeRunId === runId && existing) {
             return { kind: 'ready', snapshot: copy(existing) };
+        }
+
+        if (this.findItem(record, userItemId(runId))) {
+            throw new InvalidRunStateError('The conversation turn has already ended.');
         }
 
         const now = this.clock.now();
@@ -135,20 +138,17 @@ export class MemoryConversationStore implements IConversationStore {
         const notes = record.notes.values().toArray().filter((note) => isNoteActive(note, now));
         const content = buildSnapshotContent(sent, notes, limits);
 
-        const id = userItemId(runId);
-        if (!this.findItem(record, id)) {
-            record.items.push({
-                generation: record.generation,
-                item: {
-                    id,
-                    role: 'user',
-                    text,
-                    runId,
-                    createdAt: now,
-                    status: 'sent',
-                },
-            });
-        }
+        record.items.push({
+            generation: record.generation,
+            item: {
+                id: userItemId(runId),
+                role: 'user',
+                text,
+                runId,
+                createdAt: now,
+                status: 'sent',
+            },
+        });
         this.trimCount(record, record.generation, limits.maxStoredItems);
 
         const snapshot: ConversationSnapshot = {
@@ -157,7 +157,7 @@ export class MemoryConversationStore implements IConversationStore {
             ...content,
             createdAt: now,
         };
-        record.snapshots.set(runId, copy(snapshot));
+        record.snapshot = copy(snapshot);
         record.activeRunId = runId;
         return { kind: 'ready', snapshot };
     }
@@ -179,6 +179,7 @@ export class MemoryConversationStore implements IConversationStore {
             item.status = confirmed.has(item.id) ? 'sent' : 'unknown';
         }
         record.activeRunId = undefined;
+        record.snapshot = undefined;
     }
 
     async prepareEmit(scope: ConversationScope, item: ConversationItem): Promise<void> {
@@ -344,7 +345,7 @@ export class MemoryConversationStore implements IConversationStore {
             throw new InvalidRunStateError('The conversation has an active turn and cannot be reset.');
         }
         record.generation += 1;
-        record.snapshots.clear();
+        record.snapshot = undefined;
         if (!options.keepNotes) {
             record.notes.clear();
             record.operations.clear();
@@ -363,7 +364,7 @@ export class MemoryConversationStore implements IConversationStore {
         record.generation += 1;
         record.items = [];
         record.notes.clear();
-        record.snapshots.clear();
+        record.snapshot = undefined;
         record.operations.clear();
     }
 
@@ -384,11 +385,6 @@ export class MemoryConversationStore implements IConversationStore {
                 this.trimCount(record, generation, limits.maxStoredItems);
             }
             this.dropExpiredNotes(record, now);
-            for (const [runId, snapshot] of record.snapshots) {
-                if (runId !== record.activeRunId && isExpired(snapshot.createdAt, limits.retentionMs, now)) {
-                    record.snapshots.delete(runId);
-                }
-            }
             for (const [key, operation] of record.operations) {
                 if (operation.runId === record.activeRunId) continue;
                 if (!isExpired(operation.createdAt, limits.retentionMs, now)) continue;
@@ -445,7 +441,6 @@ export class MemoryConversationStore implements IConversationStore {
                 generation: 0,
                 items: [],
                 notes: new Map(),
-                snapshots: new Map(),
                 operations: new Map(),
             };
             this.records.set(id, record);

@@ -10,7 +10,6 @@ import { toJsonParameter } from './helpers.ts';
 
 export const TableName = {
     CONVERSATIONS: 'chamvi_conversations',
-    CONVERSATION_TURNS: 'chamvi_conversation_turns',
     CONVERSATION_ITEMS: 'chamvi_conversation_items',
     CONVERSATION_NOTES: 'chamvi_conversation_notes',
     CONVERSATION_OPERATIONS: 'chamvi_conversation_operations',

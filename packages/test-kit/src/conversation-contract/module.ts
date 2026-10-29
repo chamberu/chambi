@@ -145,6 +145,15 @@ export function describeConversationStoreContract(
             expect(items.total).toBe(4);
         });
 
+        it('ended_turn_does_not_reclaim_its_retained_input', async () => {
+            const { store, scope } = await setup();
+            await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
+            await store.endTurn(scope, 'run-a', []);
+            await expect(store.beginTurn(scope, 'run-a', 'hello', LIMITS)).rejects.toMatchObject({ code: 'invalid_run_state' });
+            expect((await store.listItems(scope, { limit: 10, offset: 0 })).total).toBe(1);
+            expect((await store.beginTurn(scope, 'run-b', 'next', LIMITS)).kind).toBe('ready');
+        });
+
         it('busy_does_not_append_input', async () => {
             const { store, scope } = await setup();
             await store.beginTurn(scope, 'run-a', 'first', LIMITS);

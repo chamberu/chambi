@@ -80,7 +80,7 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
         await admin.initialize();
         cleanup.push(() => admin.destroy());
         const rows: Array<{ tablename: string }> = await admin.query("SELECT tablename FROM pg_tables WHERE tablename LIKE 'chamvi_conversation%' ORDER BY tablename");
-        expect(rows.map((row) => row.tablename)).toEqual(['chamvi_conversation_items', 'chamvi_conversation_notes', 'chamvi_conversation_operations', 'chamvi_conversation_turns', 'chamvi_conversations']);
+        expect(rows.map((row) => row.tablename)).toEqual(['chamvi_conversation_items', 'chamvi_conversation_notes', 'chamvi_conversation_operations', 'chamvi_conversations']);
     });
 
     it('stop_awaits_memory_writes_before_datasource_close', async () => {

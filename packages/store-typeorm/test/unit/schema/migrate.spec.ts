@@ -42,14 +42,14 @@ describePostgres('schema', () => {
         try {
             const names = [
                 TableName.CONVERSATIONS,
-                TableName.CONVERSATION_TURNS,
                 TableName.CONVERSATION_ITEMS,
                 TableName.CONVERSATION_NOTES,
                 TableName.CONVERSATION_OPERATIONS,
             ];
             const tables = await runner.getTables(names);
+            expect(await runner.hasTable('chamvi_conversation_turns')).toBe(false);
             expect(tables.flatMap((table) => table.columns.filter((column) => column.type === 'jsonb')
-                .map((column) => `${table.name}.${column.name}`))).toEqual([`${TableName.CONVERSATION_TURNS}.messages`]);
+                .map((column) => `${table.name}.${column.name}`))).toEqual([`${TableName.CONVERSATIONS}.snapshot_messages`]);
             for (const name of [TableName.RUNS, TableName.CHECKPOINTS]) {
                 const table = await runner.getTable(name);
                 expect(table?.findColumnByName('conversation')).toBeUndefined();
@@ -99,7 +99,6 @@ describePostgres('schema', () => {
             TableName.CONVERSATION_ITEMS,
             TableName.CONVERSATION_NOTES,
             TableName.CONVERSATION_OPERATIONS,
-            TableName.CONVERSATION_TURNS,
         ];
         for (const table of ownedTables) {
             await expect(ds.query(`UPDATE "${table}" SET scope_id = $1`, ['b'.repeat(64)]))
@@ -187,7 +186,7 @@ describePostgres('schema', () => {
         await ds.undoLastMigration({ transaction: 'each' });
         expect(await tablesIn('other')).toBe(Object.values(TableName).length);
         await ds.undoLastMigration({ transaction: 'each' });
-        const tableCount = Object.values(TableName).length - 5;
+        const tableCount = Object.values(TableName).length - 4;
         expect(await tablesIn('other')).toBe(tableCount);
 
         const scopeLength = async () => {

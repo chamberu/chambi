@@ -197,6 +197,7 @@ export interface IConversationStore {
     resolve(identity: ConversationIdentity): Promise<ConversationScope>;
     /** The identity's current scope, or undefined; read only. */
     get(identity: ConversationIdentity): Promise<ConversationScope | undefined>;
+    /** Admit only a nonterminal run; retries reuse its snapshot while it owns the turn. */
     beginTurn(
         scope: ConversationScope,
         runId: string,
@@ -205,6 +206,7 @@ export interface IConversationStore {
     ): Promise<BeginTurnResult>;
     /** Read-only owner lookup for terminal repair, never reserves a turn. */
     activeRun(scope: ConversationScope): Promise<string | undefined>;
+    /** Terminal settlement only: clears the owner and snapshot. Never resume this run afterward. */
     endTurn(scope: ConversationScope, runId: string, confirmedEmitIds: string[]): Promise<void>;
     prepareEmit(scope: ConversationScope, item: ConversationItem): Promise<void>;
     confirmEmit(scope: ConversationScope, itemId: string): Promise<void>;

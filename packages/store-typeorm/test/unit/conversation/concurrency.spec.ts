@@ -16,7 +16,7 @@ import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
 import type { ConversationIdentity } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { TypeormConversationStore, TypeormStore  } from '@chamvi/store-typeorm';
-import { ConversationOperationEntity, ConversationTurnEntity } from '../../../src/entities/index.ts';
+import { ConversationEntity, ConversationOperationEntity } from '../../../src/entities/index.ts';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 
 const IDENTITY: ConversationIdentity = {
@@ -69,6 +69,33 @@ describePostgres('conversation transactions across connections', () => {
         expect(items.data[0]?.id).toBe(`user:${winner.snapshot.runId}`);
     });
 
+    it('keeps one active snapshot across connections and clears it with the owner', async () => {
+        const scope = await first.resolve(IDENTITY);
+        const initial = await first.beginTurn(scope, 'run', 'input', DEFAULT_CONVERSATION_LIMITS);
+        expect(await second.beginTurn(scope, 'run', 'input', DEFAULT_CONVERSATION_LIMITS)).toEqual(initial);
+        const [active] = await dataSource.query('SELECT * FROM chamvi_conversations WHERE id = $1', [scope.id]);
+        expect(active).toMatchObject({
+            active_run_id: 'run',
+            snapshot_messages: [],
+            snapshot_item_ids: [],
+            snapshot_note_keys: [],
+            snapshot_omitted: 0,
+        });
+        expect(active.snapshot_created_at).toBeInstanceOf(Date);
+        await first.endTurn(scope, 'other', []);
+        expect(await second.activeRun(scope)).toBe('run');
+        await first.endTurn(scope, 'run', []);
+        const [ended] = await dataSource.query('SELECT * FROM chamvi_conversations WHERE id = $1', [scope.id]);
+        expect(ended).toMatchObject({
+            active_run_id: null,
+            snapshot_messages: null,
+            snapshot_item_ids: null,
+            snapshot_note_keys: null,
+            snapshot_created_at: null,
+            snapshot_omitted: null,
+        });
+    });
+
     it('reset_versus_begin_serialized', async () => {
         const scope = await first.resolve(IDENTITY);
         const results = await Promise.allSettled([
@@ -105,11 +132,16 @@ describePostgres('conversation transactions across connections', () => {
 
     it('snapshot_input_owner_rollback_together', async () => {
         const scope = await first.resolve(IDENTITY);
-        // A database constraint fails the final snapshot write after input/owner writes.
-        await dataSource.query('ALTER TABLE chamvi_conversation_turns ADD CONSTRAINT fail_snapshot CHECK (run_id <> \'reject\')');
+        // A database constraint fails the atomic owner/snapshot write after the input insert.
+        await dataSource.query('ALTER TABLE chamvi_conversations ADD CONSTRAINT fail_snapshot CHECK (active_run_id <> \'reject\')');
         await expect(first.beginTurn(scope, 'reject', 'input', DEFAULT_CONVERSATION_LIMITS)).rejects.toThrow();
         expect((await first.listItems(scope, { limit: 100, offset: 0 })).total).toBe(0);
-        expect(await dataSource.getRepository(ConversationTurnEntity).count()).toBe(0);
+        expect(await dataSource.getRepository(ConversationEntity).findOneByOrFail({ id: scope.id }))
+            .toMatchObject({
+                activeRunId: null,
+                snapshotMessages: null,
+                snapshotCreatedAt: null,
+            });
         expect((await second.beginTurn(scope, 'allowed', 'input', DEFAULT_CONVERSATION_LIMITS)).kind).toBe('ready');
     });
 
@@ -188,7 +220,12 @@ describePostgres('conversation transactions across connections', () => {
         await second.delete(IDENTITY);
         expect((await first.listItems(scope, { limit: 100, offset: 0 })).total).toBe(0);
         expect((await first.listNotes(scope, { limit: 100, offset: 0 })).total).toBe(0);
-        expect(await dataSource.getRepository(ConversationTurnEntity).count()).toBe(0);
+        expect(await dataSource.getRepository(ConversationEntity).findOneByOrFail({ id: scope.id }))
+            .toMatchObject({
+                activeRunId: null,
+                snapshotMessages: null,
+                snapshotCreatedAt: null,
+            });
         expect(await dataSource.getRepository(ConversationOperationEntity).count()).toBe(0);
         expect(await audit.getRun('retained')).toBeDefined();
     });
