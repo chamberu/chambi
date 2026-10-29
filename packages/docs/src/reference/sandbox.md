@@ -31,6 +31,69 @@ On a miss (`get` without a held workspace that fits, `acquire` of a repository i
 
 <<< ../../../sandbox/src/manager/types.ts{ts}
 
+### Repository instructions
+
+```ts
+function readRepositoryInstructions(
+    workspace: IWorkspace,
+    paths?: readonly string[],
+    options?: ReadRepositoryInstructionsOptions,
+): Promise<RepositoryInstructions>;
+
+type ReadRepositoryInstructionsOptions = { signal?: AbortSignal; clock?: IClock };
+type RepositoryInstructionSource = {
+    path: string;
+    sha256: string;
+    content: string;
+    scopes: string[];
+    includedBy: string[];
+};
+type RepositoryInstructionDiagnosticCode = 'missing-include' | 'unreadable' | 'invalid-utf8'
+    | 'outside-workspace' | 'unsupported-file' | 'cycle' | 'limit';
+type RepositoryInstructionDiagnostic = {
+    path: string;
+    code: RepositoryInstructionDiagnosticCode;
+    message: string;
+};
+type RepositoryInstructions = {
+    commit: string | null;
+    paths: string[];
+    sources: RepositoryInstructionSource[];
+    diagnostics: RepositoryInstructionDiagnostic[];
+    complete: boolean;
+};
+```
+
+`clock` defaults to `systemClock` and measures the request deadline; `signal` cancels collection. The function works through `IWorkspace.exec`, without host filesystem reads or repository program execution. The manager's `read_repository_instructions({ paths?, workspace? })` resolves the calling run's workspace and forwards its cancellation signal. Paths default to `['.']`, follow workspace path normalization (relative or `/workspace/...`), and existing directories include themselves; files and missing targets use their parent.
+
+`create_workspace` adds `instructions: RepositoryInstructions | null` to `WorkspaceToolResult`. Repository-backed creates, including reuse or adoption, collect root guidance afresh. Repo-less creates return `null`. With `createWorkspaceManager({ provider, repositoryInstructions: false })`, `create_workspace` returns `instructions: null` and the explicit tool is omitted; the default is `true`. `sandboxModule({ repositoryInstructions: false })` forwards this manager option. There is no corresponding environment variable. The separate [`codingTools` option](/reference/coding#repository-instructions) controls text-read attachments independently.
+
+Entrypoint discovery visits root and requested ancestors only, ordered by directory depth then JavaScript string order; explicit includes may reference permitted files elsewhere in the workspace. Each directory reads `AGENTS.md` before `CLAUDE.md`, each immediately followed by its included files in depth-first textual order. Only standalone `@relative/path` lines count, with surrounding whitespace allowed and none within the path. Ordinary links, inline `@` text and fenced code are ignored. Fences use at least three backticks or tildes; a closing fence uses the same character with at least the opening length. Includes resolve relative to their source, allowing `..` only inside the workspace and refusing absolute paths, home paths, URLs, NUL and escapes.
+
+Sources are deduplicated by canonical workspace-relative path; `scopes` retains every applicable entrypoint directory (`.` for root) and `includedBy` every including parent. Included guides inherit their entrypoint's scope. `sha256` hashes exact original bytes, before credential redaction; `content` is strictly decoded UTF-8 and redacted before include parsing. Outward paths and diagnostics are redacted too. The collector preserves provenance rather than resolving contradictory prose. `commit` is `workspace.info.commit ?? null`, the recorded checkout commit, not necessarily current HEAD; hashes identify the bytes actually read. There is no transactionally frozen snapshot and no cache across calls.
+
+| Exported bound | Value |
+|---|---|
+| `INSTRUCTION_FILES` | `['AGENTS.md', 'CLAUDE.md']` |
+| `INSTRUCTION_SOURCE_MAX_BYTES` | 32 768 (32 KiB), each source whole or omitted |
+| `INSTRUCTION_TOTAL_MAX_BYTES` | 131 072 (128 KiB), total source bytes |
+| `INSTRUCTION_SOURCES_MAX` | 32 distinct sources |
+| `INSTRUCTION_INCLUDE_DEPTH_MAX` | 8 include edges from an entrypoint |
+| `INSTRUCTION_PATHS_MAX` | 32 requested paths |
+| `INSTRUCTION_DIRECTORIES_MAX` | 64 distinct ancestor directories, root included |
+| `INSTRUCTION_REFERENCES_MAX` | 512 attempted inspections and include references |
+| `INSTRUCTION_DIAGNOSTICS_MAX` | 64 entries, including a closing limit diagnostic |
+| `INSTRUCTION_DIAGNOSTICS_MAX_BYTES` | 8192 UTF-8 bytes of diagnostic paths and messages together |
+| `INSTRUCTION_PATH_MAX_BYTES` | 4096 UTF-8 bytes per path |
+| `INSTRUCTION_REQUEST_TIMEOUT_MS` | 30 000 (30 s) per request |
+| `INSTRUCTION_EXEC_TIMEOUT_MS` | 5000 (5 s) per exec |
+
+Missing optional entrypoints are normal. Missing explicit includes, unreadable files, invalid UTF-8, refused paths, cycles and bound exhaustion add diagnostics; any diagnostic makes `complete: false`. Sources are never silently truncated. Invalid input shapes throw `ValidationError`; cancellation, workspace lookup failures, transport errors, exec timeouts, missing inspection capabilities and malformed or truncated protocol responses reject through the existing error path, never a successful empty result. The overall request deadline produces a `limit` diagnostic with the sources collected so far.
+
+Fixed discovery scripts run in the physical workspace cwd and resolve utilities on `/usr/bin:/bin`, excluding repository executables. Each read is bounded to 32 KiB + 1 byte with framed base64 output, checked against the 65 536-byte transport cap, exit status, timeout, truncation flags, lengths and completion marker. Missing utilities produce an explicit failure; there is no interpreter or image-contract expansion. Every observed symlink component (including aliases within the workspace), special file and `.git` component is refused. Checks are best-effort against the observed filesystem; concurrent changes can race them. Strict race-free confinement is deferred to [#92](https://github.com/chamvi/chamvi/issues/92).
+
+Delivered context is ordinary tool output retained in model messages, steps and checkpoints across approval pauses and recovery. The next create, explicit context call or applicable file read collects current guidance, including changed files in a reused or recovered workspace, without replacing older messages. These tools are not effect tools. See [Repository instructions](/guide/workspaces#repository-instructions) for the pre-edit workflow and authorization boundaries.
+
 ### Git credentials
 
 ```ts

@@ -110,6 +110,7 @@ describe('bash', () => {
             offset: 2500, 
             limit: 2, 
         });
+        expect(middle).not.toHaveProperty('instructions');
         expect(middle).toMatchObject({
             content: 'line 2499 ............\nline 2500 ............',
             startLine: 2500,

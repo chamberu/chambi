@@ -20,6 +20,7 @@ import { assertDeployment, assertImageOption } from '../provider/module.ts';
 import { WORKSPACE_ROOT } from '../workspace/constants.ts';
 import { GC_INTERVAL_MAX_MS } from './constants.ts';
 import type { IGitCredentials } from '../credentials/types.ts';
+import type { RepositoryInstructions } from '../instructions/types.ts';
 import type { IWorkspace } from '../workspace/types.ts';
 import type { ISandboxProvider } from '../provider/types.ts';
 import type {
@@ -82,6 +83,9 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
     }
     if (options.allowImage !== undefined && typeof options.allowImage !== 'function') {
         throw new InvalidAgentDefinitionError('allowImage must be a function.');
+    }
+    if (options.repositoryInstructions !== undefined && typeof options.repositoryInstructions !== 'boolean') {
+        throw new InvalidAgentDefinitionError('repositoryInstructions must be a boolean.');
     }
     if (options.maxWorkspacesPerRun !== undefined && (!Number.isSafeInteger(options.maxWorkspacesPerRun) || options.maxWorkspacesPerRun < 1)) {
         throw new InvalidAgentDefinitionError(`maxWorkspacesPerRun must be an integer of at least 1, got ${JSON.stringify(options.maxWorkspacesPerRun)}.`);
@@ -193,9 +197,17 @@ export function optionalObjectSchema<T>(properties: Record<string, JSONSchema7>)
     });
 }
 
-export function toToolResult(workspace: IWorkspace, reused: boolean): WorkspaceToolResult {
+/** Redact strings after collection too, including metadata and nested instruction context. */
+export function redactToolResult<T>(workspace: IWorkspace, result: T): T {
+    if (!workspace.redact) return result;
+    return JSON.parse(JSON.stringify(result, (_key, value: unknown) => (
+        typeof value === 'string' ? workspace.redact!(value) : value
+    ))) as T;
+}
+
+export function toToolResult(workspace: IWorkspace, reused: boolean, instructions: RepositoryInstructions | null): WorkspaceToolResult {
     const { info } = workspace;
-    return {
+    return redactToolResult(workspace, {
         workspace: workspace.id,
         root: WORKSPACE_ROOT,
         repo: info.repo ?? null,
@@ -205,5 +217,6 @@ export function toToolResult(workspace: IWorkspace, reused: boolean): WorkspaceT
         image: info.image ?? null,
         expiresAt: info.expiresAt.toISOString(),
         reused,
-    };
+        instructions,
+    });
 }

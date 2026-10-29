@@ -22,6 +22,7 @@
 - [Installation](#installation)
 - [Usage](#usage)
 - [Tools](#tools)
+- [Repository instructions](#repository-instructions)
 - [Workspaces](#workspaces)
 - [Not effect tools](#not-effect-tools)
 - [Security](#security)
@@ -74,11 +75,11 @@ The tools are plain tools you did not write, so the gate lives in the agent's `b
 
 ## Tools
 
-`codingTools(workspaces, { outputLogMaxBytes? })` returns a plain AI SDK `ToolSet`. Paths are relative to the workspace root or start with `/workspace/`; anything that leaves the root is a tool error.
+`codingTools(workspaces, { outputLogMaxBytes?, repositoryInstructions? })` returns a plain AI SDK `ToolSet`. Paths are relative to the workspace root or start with `/workspace/`; anything that leaves the root is a tool error.
 
 | Tool | Input | Result |
 |---|---|---|
-| `read_file` | `{ path, offset?, limit?, encoding?, workspace? }` | `{ path, content, startLine, endLine, totalLines, truncated }`: at most 2000 lines and 65 536 characters of a text file up to 16 MiB; `{ path, encoding: 'base64', content, bytes }` with `encoding: 'base64'` (at most 1 MiB); `{ path, type: 'image', mediaType, bytes, artifactId }` for a png, jpeg, gif or webp up to 5 MiB, stored as a run artifact, which the model gets as an image (steps and checkpoints keep the id only). Also reads the output logs of `bash` |
+| `read_file` | `{ path, offset?, limit?, encoding?, workspace? }` | `{ path, content, startLine, endLine, totalLines, truncated, instructions? }`: at most 2000 lines and 65 536 characters of a text file up to 16 MiB; `{ path, encoding: 'base64', content, bytes }` with `encoding: 'base64'` (at most 1 MiB); `{ path, type: 'image', mediaType, bytes, artifactId }` for a png, jpeg, gif or webp up to 5 MiB, stored as a run artifact, which the model gets as an image (steps and checkpoints keep the id only). Also reads the output logs of `bash` |
 | `write_file` | `{ path, content, encoding?, workspace? }` | `{ path, bytes }`: replaces the file (text, or bytes with `encoding: 'base64'`), creates missing directories |
 | `edit_file` | `{ path, oldString, newString, replaceAll?, workspace? }` | `{ path, replacements }`: `oldString` must match exactly once unless `replaceAll`. Calls of `edit_file` and `write_file` on one file run one after the other, so several edits of a file in one step all apply |
 | `multi_edit` | `{ path, edits: [{ oldString, newString, replaceAll? }], workspace? }` | `{ path, edits, replacements }`: the edits in order on the file's content, nothing written when one fails |
@@ -91,6 +92,14 @@ The tools are plain tools you did not write, so the gate lives in the agent's `b
 | `git_diff` | `{ staged?, path?, workspace? }` | `{ status, diff, truncated }`: `git status --short` and the unified diff (of the index with `staged`) |
 
 `git_diff`, `list_files` and `grep` (with git grep) read paths literally, so a path like `:!src` names a file and is never pathspec magic. `bash` keeps its state through an `EXIT` trap: a command that sets its own `EXIT` trap replaces it, so that call's working directory and exports are not kept. On a manager with git credentials the edit tools read the raw file (`IWorkspace.readFileRaw`): they match oldString against the redacted text the model read (`redactedSpans`), refuse an edit that touches a `[redacted]` span and put every untouched token back byte for byte, so an oldString can neither probe a token nor write `[redacted]` back; their errors never echo file text. A model mistake (an unknown file, an `oldString` that is missing or ambiguous, a bad path) comes back as a tool error it can correct; a broken sandbox is a `SandboxError` tool error, never a failed run.
+
+## Repository instructions
+
+Ordinary UTF-8 workspace `read_file` results include `instructions?: RepositoryInstructions` from `@chamvi/sandbox` by default, scoped to the file's root and ancestors. Image, base64 and HOME log reads have no instruction field. `codingTools(workspaces, { repositoryInstructions: false })` omits it from text reads too. This option is independent of the manager's default-on `repositoryInstructions`: disabling the manager's root collection and explicit tool does not disable coding attachments, and disabling coding attachments leaves the manager's delivery enabled. Set both to `false` to disable both forms of delivery.
+
+The [sandbox collector](../sandbox#repository-instructions) reads root-first `AGENTS.md`, then `CLAUDE.md` per directory and expands standalone `@relative/path` includes depth-first outside backtick/tilde fences. Each source records `path`, `sha256`, redacted `content`, inherited `scopes` and `includedBy`; `complete: false` and bounded `diagnostics` report skipped guidance. Source files are whole or omitted (32 KiB each, 128 KiB total; other bounds in the sandbox README). Resolve incomplete guidance that could affect the task. Each read collects current worktree guidance; earlier tool outputs retain the context delivered then in steps and checkpoints across pauses and restarts.
+
+Before direct edits or shell commands in a new subtree, obtain its guidance with `read_file` or the manager's `read_repository_instructions({ paths: ['packages/api/src/new.ts'], workspace })`. The latter also works for a file that does not exist yet. Repository text and system prompts confer no operator authorization, permissions, credentials, skill installation or publication rights. Write/edit tools and arbitrary `bash` do not enforce instruction scope; bash bypasses file-tool-only enforcement. Discovery refuses observed symlinks, special files, `.git` paths and escapes on a best-effort basis; it is not race-free confinement ([#92](https://github.com/chamvi/chamvi/issues/92)).
 
 ## Workspaces
 

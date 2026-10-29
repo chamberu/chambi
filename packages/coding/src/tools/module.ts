@@ -36,13 +36,16 @@ export function codingTools(workspaces: CodingWorkspaces, options: CodingToolsOp
     if (!isObject(options)) {
         throw new InvalidAgentDefinitionError('codingTools() options must be an object.');
     }
+    if (options.repositoryInstructions !== undefined && typeof options.repositoryInstructions !== 'boolean') {
+        throw new InvalidAgentDefinitionError('codingTools() repositoryInstructions must be a boolean.');
+    }
     const outputLogMaxBytes = options.outputLogMaxBytes ?? OUTPUT_LOG_MAX_BYTES;
     if (!Number.isSafeInteger(outputLogMaxBytes) || outputLogMaxBytes < 1) {
         throw new InvalidAgentDefinitionError('codingTools() outputLogMaxBytes must be a positive integer.');
     }
     const queue = createKeyedQueue();
     return {
-        read_file: readFileTool(workspaces),
+        read_file: readFileTool(workspaces, options.repositoryInstructions ?? true),
         write_file: writeFileTool(workspaces, queue),
         edit_file: editFileTool(workspaces, queue),
         multi_edit: multiEditTool(workspaces, queue),
