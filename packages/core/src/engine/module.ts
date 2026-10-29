@@ -162,6 +162,8 @@ export class Engine implements IContextProvider {
 
     protected skillRuntime?: ISkillRuntime;
 
+    protected readonly agentSkillInputs = new WeakMap<Agent, readonly SkillInput[]>();
+
     protected readonly preparedSkills = new WeakMap<Agent, SkillContribution>();
 
     protected readonly preparing = new Set<Promise<void>>();
@@ -524,7 +526,12 @@ export class Engine implements IContextProvider {
         const run = async () => {
             signal.throwIfAborted();
             const agents = [...new Set([...this.agents.values(), ...(options.agents ?? [])])];
+            const runtimeBeforeChecks = this.skillRuntime;
             for (const agent of agents) this.checkAgentSkills(agent);
+            // A first runtime selected late in the pass must also receive earlier empty captures.
+            if (this.skillRuntime !== runtimeBeforeChecks) {
+                for (const agent of agents) this.checkAgentSkills(agent);
+            }
             const unprepared = agents.filter((agent) => !this.preparedSkills.has(agent));
             if (this.skillRuntime) {
                 const pending = await this.skillRuntime.prepare(unprepared, { signal });
@@ -1328,10 +1335,15 @@ export class Engine implements IContextProvider {
     }
 
     protected checkAgentSkills(agent: Agent): void {
-        const provider = selectSkillProvider(agent.definition.skills ?? [], this.skillProvider);
+        const captured = this.agentSkillInputs.get(agent);
+        const supplied = captured ?? agent.definition.skills ?? [];
+        const provider = selectSkillProvider(supplied, this.skillProvider);
+        const tools = typeof agent.definition.tools === 'function' ? {} : agent.definition.tools ?? {};
+        const inputs = captured ?? provider?.snapshot(supplied, tools) ?? Object.freeze([]);
         const runtime = this.skillRuntime ?? provider?.create(this.skills);
-        runtime?.checkAgent(agent);
-        // A rejected candidate must not select the first runtime for this engine.
+        runtime?.checkAgent(agent, inputs);
+        // A rejected candidate must neither select the first runtime nor capture failed inputs.
+        if (!captured) this.agentSkillInputs.set(agent, inputs);
         this.skillProvider = provider;
         this.skillRuntime = runtime;
     }

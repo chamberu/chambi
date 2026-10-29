@@ -15,7 +15,7 @@ import type {
 export function fakeSkillRuntime(options: {
     protocol?: string;
     prepare?: (signal: AbortSignal) => Promise<void>;
-    check?: (agent: Agent) => void;
+    check?: (agent: Agent, inputs: readonly SkillInput[]) => void;
     commit?: () => void;
     contribution?: SkillContribution;
 } = {}) {
@@ -35,12 +35,12 @@ export function fakeSkillRuntime(options: {
         protocol: options.protocol ?? 'test/runtime-v1',
         snapshot(inputs: readonly SkillInput[]) {
             calls.snapshots++;
-            return Object.freeze([...inputs]);
+            return Object.freeze(inputs.map((input) => Object.freeze({ ...input })));
         },
         create() {
             calls.creates++;
             return {
-                checkAgent(agent) { calls.checks++; options.check?.(agent); },
+                checkAgent(agent, inputs) { calls.checks++; options.check?.(agent, inputs); },
                 async prepare(agents, { signal }) {
                     calls.prepares++;
                     await options.prepare?.(signal);

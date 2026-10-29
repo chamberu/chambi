@@ -7,7 +7,7 @@
 
 import { defineTool } from '@chamvi/core';
 import { jsonSchema } from 'ai';
-import { fakeSkillRuntime } from '../../../core/test/utils/skill-runtime.ts';
+import { fakeSkillRuntime } from '@chamvi/test-kit';
 
 export function preparationInput(prepare?: (signal: AbortSignal) => Promise<void>) {
     return fakeSkillRuntime({

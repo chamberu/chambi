@@ -224,4 +224,51 @@ describe('skill runtime integration', () => {
         });
         await e.stop();
     });
+    it.each(['constructor', 'checkAgent', 'prepare'] as const)('keeps captured input descriptors after %s and array/definition replacement', async (capture) => {
+        const original = fakeSkillRuntime();
+        const replacement = fakeSkillRuntime({ protocol: 'replacement/v2' });
+        const input = { runtime: original.runtime };
+        const inputs = [input];
+        const a = agent(original.input);
+        Object.assign(a.definition, { skills: inputs });
+        const model = mockModel([{ parts: [{ type: 'text', text: 'original' }] }]);
+        const e = new Engine({
+            store: new MemoryStore(),
+            model,
+            agents: capture === 'constructor' ? [a] : [],
+        });
+        if (capture === 'checkAgent') e.checkAgent(a);
+        if (capture === 'prepare') await e.prepare({ agents: [a] });
+        input.runtime = replacement.runtime;
+        inputs.push(replacement.input);
+        Object.assign(a.definition, { skills: [replacement.input] });
+        await expect(e.prepare({ agents: [a] })).resolves.toBeUndefined();
+        await expect(e.putAgent(a)).resolves.toBe(capture === 'constructor' ? 'unchanged' : 'added');
+        await e.start(); await e.stop(); await e.start();
+        const run = await e.dispatch({
+            agent: 'test',
+            channel: 'test',
+            trigger: 'test',
+            payload: {},
+        });
+        await e.idle(); await e.stop();
+        expect((await e.getRun(run.runId))?.status).toBe('completed');
+        expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain('prepared contribution');
+        expect(original.calls.creates).toBe(1); expect(replacement.calls.creates).toBe(0);
+    });
+    it('retains an empty capture when another candidate selects the first runtime in the same preparation', async () => {
+        const empty = agent();
+        const original = fakeSkillRuntime();
+        const incompatible = fakeSkillRuntime({ protocol: 'mutated/v2' });
+        const e = engine([empty]);
+        Object.assign(empty.definition, { skills: [incompatible.input] });
+        const candidate = defineAgent({
+            name: 'late',
+            instructions: '',
+            skills: [original.input],
+        });
+        await expect(e.prepare({ agents: [candidate] })).resolves.toBeUndefined();
+        await expect(e.start()).resolves.toBeUndefined(); await e.stop();
+        expect(original.calls.creates).toBe(1); expect(incompatible.calls.creates).toBe(0);
+    });
 });

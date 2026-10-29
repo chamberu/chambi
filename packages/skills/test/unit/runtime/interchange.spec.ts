@@ -75,16 +75,96 @@ describe('runtime structural interchange', () => {
     it('stages attestations until commit, rejects cancellation and prevents transaction reuse', async () => {
         const runtime = new InspectedRuntime([]);
         const controller = new AbortController();
-        const pending = await runtime.prepare([candidate([ready()])], { signal: controller.signal });
+        const first = candidate([ready()]);
+        runtime.checkAgent(first, first.definition.skills ?? []);
+        const pending = await runtime.prepare([first], { signal: controller.signal });
         expect(runtime.attestations.size).toBe(0);
         controller.abort();
         expect(() => pending.commit()).toThrow();
         expect(runtime.attestations.size).toBe(0);
-        const successful = await runtime.prepare([candidate([ready()])], { signal: new AbortController().signal });
+        const second = candidate([ready()]);
+        runtime.checkAgent(second, second.definition.skills ?? []);
+        const successful = await runtime.prepare([second], { signal: new AbortController().signal });
         const contributions = successful.commit();
         expect(runtime.attestations.size).toBe(1);
         expect(Object.isFrozen(contributions)).toBe(true);
         expect(Object.isFrozen(contributions[0]?.contribution)).toBe(true);
         expect(() => successful.commit()).toThrow(/already committed/i);
+    });
+    it.each(['constructor', 'checkAgent', 'prepare'] as const)('retains real content captured by %s after protocol and body replacement', async (capture) => {
+        const original = ready();
+        const a = candidate([original]);
+        const model = mockModel([{
+            parts: [{
+                type: 'tool-call',
+                toolName: 'load_skill',
+                input: { name: 'shared' },
+            }],
+        }, { parts: [{ type: 'text', text: 'done' }] }]);
+        const e = new Engine({
+            store: new MemoryStore(),
+            model,
+            agents: capture === 'constructor' ? [a] : [],
+        });
+        if (capture === 'checkAgent') e.checkAgent(a);
+        if (capture === 'prepare') await e.prepare({ agents: [a] });
+        Object.assign(a.definition, {
+            skills: [{
+                ...original,
+                body: 'replacement body',
+                runtime: { ...original.runtime, protocol: 'changed/v2' },
+            }],
+        });
+        await expect(e.prepare({ agents: [a] })).resolves.toBeUndefined();
+        await e.putAgent(a); await e.start(); await e.stop(); await e.start();
+        const run = await e.dispatch({
+            agent: 'test',
+            channel: 'test',
+            trigger: 'test',
+            payload: {},
+        });
+        await e.idle(); await e.stop();
+        expect((await e.store.listSteps(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'content' });
+    });
+    it('keeps an initially empty Agent scope when the first runtime is selected later in the same prepare pass', async () => {
+        const empty = candidate([]);
+        const original = ready();
+        const model = mockModel([{ parts: [{ type: 'text', text: 'empty' }] }]);
+        const e = new Engine({
+            store: new MemoryStore(),
+            model,
+            agents: [empty],
+        });
+        Object.assign(empty.definition, { skills: [original] });
+        const late = defineAgent({
+            name: 'late',
+            instructions: '',
+            skills: [original],
+        });
+        await e.prepare({ agents: [late] }); await e.start(); await e.stop(); await e.start();
+        const run = await e.dispatch({
+            agent: 'test',
+            channel: 'test',
+            trigger: 'test',
+            payload: {},
+        });
+        await e.idle(); await e.stop();
+        expect((await e.getRun(run.runId))?.status).toBe('completed');
+        expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).not.toContain('approved_skills');
+        expect(model.doStreamCalls[0]?.tools ?? []).toEqual([]);
+    });
+
+    it('retries corrected inputs on the same Agent after a synchronous composition rejection', () => {
+        const original = ready();
+        const e = new Engine({
+            store: new MemoryStore(),
+            model: mockModel([]),
+            skills: [original],
+            agents: [],
+        });
+        const a = candidate([defineSkill({ ...original, version: '2' })]);
+        expect(() => e.checkAgent(a)).toThrow(/conflicting identity/i);
+        Object.assign(a.definition, { skills: [defineSkill({ ...original, name: 'corrected' })] });
+        expect(() => e.checkAgent(a)).not.toThrow();
     });
 });

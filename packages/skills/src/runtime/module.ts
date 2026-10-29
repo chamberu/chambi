@@ -40,16 +40,14 @@ export class SkillRuntime implements ISkillRuntime {
         this.globals = copySkillInputs(globals);
     }
 
-    checkAgent(agent: Agent): void {
-        let extras = this.agentSkills.get(agent);
-        if (!extras) {
-            extras = copySkillInputs(agent.definition.skills);
-            this.agentSkills.set(agent, extras);
-        }
-        const inputs = [...this.globals, ...extras];
-        const headers = composeSkillIdentities(skillHeaders(inputs));
-        assertSkillContents(inputs.flatMap((input) => isSkillSource(input) ? [] : [input]));
+    checkAgent(agent: Agent, inputs: readonly SkillInput[]): void {
+        const captured = this.agentSkills.get(agent);
+        const extras = captured ?? copySkillInputs(inputs);
+        const scope = [...this.globals, ...extras];
+        const headers = composeSkillIdentities(skillHeaders(scope));
+        assertSkillContents(scope.flatMap((input) => isSkillSource(input) ? [] : [input]));
         assertSkillToolCollision(headers, typeof agent.definition.tools === 'function' ? {} : agent.definition.tools ?? {});
+        if (!captured) this.agentSkills.set(agent, extras);
     }
 
     protected resolveSource(source: RuntimeSkillSource, signal: AbortSignal): Promise<readonly Skill[]> {
@@ -100,9 +98,10 @@ export class SkillRuntime implements ISkillRuntime {
         }
         attest(globals);
         for (const agent of agents) {
-            this.checkAgent(agent);
+            const extras = this.agentSkills.get(agent);
+            if (!extras) invalidSkill('agent inputs must be checked before preparation');
             const skills = [...globals];
-            for (const input of this.agentSkills.get(agent) ?? []) {
+            for (const input of extras) {
                 skills.push(...(isSkillSource(input) ? await this.resolveSource(input, signal) : [input]));
             }
             attest(skills);

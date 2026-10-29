@@ -19,6 +19,7 @@ describe('public api', () => {
         'textModel',
         'approvalModel',
         'failingModel',
+        'fakeSkillRuntime',
     ])('exports %s', (name) => {
         expect(kit).toHaveProperty(name);
         expect(kit[name as keyof typeof kit]).toBeTypeOf('function');

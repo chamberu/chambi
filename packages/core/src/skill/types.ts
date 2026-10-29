@@ -19,8 +19,8 @@ export interface ISkillRuntimeProvider {
     create(globals: readonly SkillInput[]): ISkillRuntime;
 }
 export interface ISkillRuntime {
-    /** Snapshot local inputs and validate their composition with globals. */
-    checkAgent(agent: Agent): void;
+    /** Snapshot captured local inputs and validate their composition with globals. */
+    checkAgent(agent: Agent, inputs: readonly SkillInput[]): void;
     /** Resolve globals even with no agents; settle all owned work before returning. */
     prepare(agents: readonly Agent[], options: { signal: AbortSignal }): Promise<ISkillPreparation>;
 }

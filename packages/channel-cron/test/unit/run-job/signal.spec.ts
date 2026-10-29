@@ -17,11 +17,10 @@ import {
     MemoryStore,
     defineAgent,
 } from '@chamvi/core';
-import { fakeSkillRuntime } from '../../../../core/test/utils/skill-runtime.ts';
 import type { SkillInput } from '@chamvi/core';
 import type { RunJobResult } from '@chamvi/channel-cron';
 import { cron, cronChannel, runJob } from '@chamvi/channel-cron';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, fakeSkillRuntime } from '@chamvi/test-kit';
 
 const T = new Date('2026-03-01T08:00:00.000Z');
 const POLL_MS = 1_000;
