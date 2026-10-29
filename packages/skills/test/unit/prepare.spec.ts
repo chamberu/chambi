@@ -210,6 +210,13 @@ describe('prepareSkills', () => {
         expect(JSON.stringify(warnings.mock.calls)).not.toContain('PRIVATE-YAML-SECRET');
     });
 
+    it('does not emit unknown-tag YAML diagnostics containing source text', async () => {
+        const { options } = await setup({ 'skills/audit/SKILL.md': '---\nname: audit\ndescription: !unknown PRIVATE-TAG-SECRET\n---\nBODY\n' });
+        const warnings = vi.spyOn(process, 'emitWarning').mockImplementation(() => {});
+        await skills.prepareSkills(options);
+        expect(warnings.mock.calls.map(([warning]) => String(warning)).join('\n')).not.toContain('PRIVATE-TAG-SECRET');
+    });
+
     it('redacts source credentials and verifier failures', async () => {
         const { options } = await setup();
         let message = '';
