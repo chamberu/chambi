@@ -124,7 +124,28 @@ export class RunQueue {
             if (mayStart && !mayStart(run)) continue;
 
             const started = await admitRun(this.opts, run, (candidate) => this.tryStart(candidate), mayStart);
-            if (started) this.launch(started);
+            if (!started) {
+                continue;
+            }
+
+            // Admission crosses store awaits; a stop or canceled startup may invalidate it before launch.
+            if (this.halted || (mayStart && !mayStart(started))) {
+                try {
+                    const queued = await store.updateRun(started.id, {
+                        status: RunStatus.QUEUED,
+                        claim: undefined,
+                        startedAt: undefined,
+                        updatedAt: this.opts.clock.now(),
+                    }, { expectStatus: [RunStatus.RUNNING], expectOwner: this.opts.owner });
+                    this.opts.onRunUpdated(queued);
+                } finally {
+                    this.running.delete(started.id);
+                }
+
+                continue;
+            }
+
+            this.launch(started);
         }
     }
 

@@ -181,7 +181,11 @@ export class Engine implements IContextProvider {
 
     protected preparationController = new AbortController();
 
-    protected startup?: { controller: AbortController; done: Promise<void> };
+    protected startup?: {
+        controller: AbortController;
+        signal: AbortSignal;
+        done: Promise<void>
+    };
 
     protected stopping?: Promise<void>;
 
@@ -663,7 +667,11 @@ export class Engine implements IContextProvider {
 
         const controller = new AbortController();
         const signal = AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]);
-        const attempt = { controller, done: Promise.resolve() };
+        const attempt = {
+            controller,
+            signal,
+            done: Promise.resolve(),
+        };
         attempt.done = Promise.resolve().then(async () => {
             try {
                 signal.throwIfAborted();
@@ -682,9 +690,10 @@ export class Engine implements IContextProvider {
                 signal.throwIfAborted();
                 this.queue.startPolling();
                 await this.queue.pump();
+                signal.throwIfAborted();
             } catch (error) {
                 this.started = false;
-                this.queue.stopPolling();
+                await this.queue.halt();
                 await this.stopChannels();
                 throw error;
             } finally {
@@ -704,7 +713,7 @@ export class Engine implements IContextProvider {
         }
 
         this.started = false;
-        this.queue.stopPolling();
+        const admission = this.queue.halt();
         this.preparationController.abort();
         this.startup?.controller.abort();
         const startup = this.startup?.done;
@@ -717,6 +726,7 @@ export class Engine implements IContextProvider {
                 await Promise.allSettled([...this.preparing]);
             }
 
+            await admission;
             await this.stopChannels();
         })();
         this.stopping = done;
@@ -1247,7 +1257,7 @@ export class Engine implements IContextProvider {
             new Map((await this.store.listAgentRevisions()).map((marker) => [marker.agent, marker.hash])) :
             new Map<string, string>();
         return (run) => {
-            if (!this.started) {
+            if (!this.started || this.startup?.signal.aborted) {
                 return false;
             }
 

@@ -455,4 +455,180 @@ describe('first class skills', () => {
         deferred.resolve([skill()]); await preparing; await draining;
         expect(e.isDraining).toBe(true);
     });
+    it('preserves startup cancellation during the final queue pump and cleans channels', async () => {
+        const store = new MemoryStore();
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const listRuns = store.listRuns.bind(store);
+        store.listRuns = async (options) => {
+            if (options?.status?.length === 1 && options.status[0] === 'queued') {
+                entered.resolve();
+                await release.promise;
+            }
+
+            return listRuns(options);
+        };
+        const controller = new AbortController();
+        const reason = new Error('startup canceled during pump');
+        const stop = vi.fn();
+        const e = new Engine({
+            store,
+            agents: [],
+            channels: [{
+                name: 'test',
+                start: async () => {},
+                stop,
+            }],
+        });
+        const starting = e.start({ signal: controller.signal });
+        const outcome = starting.catch((error: unknown) => error);
+        await entered.promise;
+        controller.abort(reason);
+        release.resolve();
+        const result = await outcome;
+        const stoppedByStartup = stop.mock.calls.length;
+        await e.stop();
+        expect(result).toBe(reason);
+        expect(stoppedByStartup).toBe(1);
+        expect(stop).toHaveBeenCalledOnce();
+    });
+    it('canceled startup refuses queued admission after a deferred store read', async () => {
+        const store = new MemoryStore();
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const listRuns = store.listRuns.bind(store);
+        store.listRuns = async (options) => {
+            if (options?.status?.length === 1 && options.status[0] === 'queued') {
+                entered.resolve();
+                await release.promise;
+            }
+
+            return listRuns(options);
+        };
+        const model = mockModel([{ parts: [{ type: 'text', text: 'must remain queued' }] }]);
+        const e = new Engine({
+            store,
+            agents: [agent([skill()])],
+            model,
+        });
+        const run = await e.dispatch({
+            agent: 'test',
+            channel: 'test',
+            trigger: 'test',
+            payload: {},
+        });
+        const controller = new AbortController();
+        const reason = new Error('startup canceled before admission');
+        const outcome = e.start({ signal: controller.signal }).catch((error: unknown) => error);
+        await entered.promise;
+        controller.abort(reason);
+        release.resolve();
+        const result = await outcome;
+        await e.stop();
+        await e.idle();
+        expect(result).toBe(reason);
+        expect(model.doStreamCalls).toHaveLength(0);
+        expect((await e.getRun(run.runId))?.status).toBe('queued');
+    });
+    it('stop joins deferred admission without launching it, and restart can run the released claim', async () => {
+        const store = new MemoryStore();
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const claimRun = store.claimRun.bind(store);
+        let hold = true;
+        store.claimRun = async (...args) => {
+            if (hold) {
+                hold = false;
+                entered.resolve();
+                await release.promise;
+            }
+
+            return claimRun(...args);
+        };
+        const model = mockModel([{ parts: [{ type: 'text', text: 'after restart' }] }]);
+        const e = new Engine({
+            store,
+            agents: [agent([skill()])],
+            model,
+        });
+        await e.start();
+        const run = await e.dispatch({
+            agent: 'test',
+            channel: 'test',
+            trigger: 'test',
+            payload: {},
+        });
+        await entered.promise;
+        let stopped = false;
+        const stopping = e.stop().then(() => { stopped = true; });
+        await flush();
+        const stoppedBeforeAdmissionSettled = stopped;
+        release.resolve();
+        await stopping;
+        await e.idle();
+        expect(stoppedBeforeAdmissionSettled).toBe(false);
+        expect(model.doStreamCalls).toHaveLength(0);
+        expect(await e.getRun(run.runId)).toMatchObject({
+            status: 'queued',
+            claim: undefined,
+            startedAt: undefined,
+        });
+        await e.start();
+        await e.idle();
+        expect(model.doStreamCalls).toHaveLength(1);
+        expect((await e.getRun(run.runId))?.status).toBe('completed');
+        await e.stop();
+    });
+
+    it('stop leaves already executing tool calls running and does not wait for them', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let signal: AbortSignal | undefined;
+        const model = mockModel([{
+            parts: [{
+                type: 'tool-call',
+                toolName: 'wait',
+                input: {},
+            }],
+        }, { parts: [{ type: 'text', text: 'finished normally' }] }]);
+        const e = new Engine({
+            store: new MemoryStore(),
+            model,
+            agents: [defineAgent({
+                name: 'test',
+                instructions: '',
+                skills: [skill()],
+                tools: {
+                    wait: defineTool({
+                        inputSchema: jsonSchema({ type: 'object' }),
+                        execute: async (_input, { context }) => {
+                            signal = context.run.signal;
+                            entered.resolve();
+                            await release.promise;
+                            return 'finished';
+                        },
+                    }),
+                },
+            })],
+        });
+        await e.start();
+        const run = await e.dispatch({
+            agent: 'test',
+            channel: 'test',
+            trigger: 'test',
+            payload: {},
+        });
+        await entered.promise;
+        let stopped = false;
+        const stopping = e.stop().then(() => { stopped = true; });
+        await flush();
+        const stoppedDuringExecution = stopped;
+        const abortedByStop = signal?.aborted;
+        release.resolve();
+        await stopping;
+        await e.idle();
+        expect(stoppedDuringExecution).toBe(true);
+        expect(abortedByStop).toBe(false);
+        expect((await e.getRun(run.runId))?.status).toBe('completed');
+    });
 });
