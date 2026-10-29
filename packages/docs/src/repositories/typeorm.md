@@ -27,6 +27,8 @@ On shutdown, drain the engine before destroying the data source:
 
 `migrateStore(dataSource)` runs the pending migrations under the Postgres advisory lock `chamvi:migrations` (`MIGRATION_LOCK_NAME`). Call it on every boot: replicas that start at once wait for each other, and each migration is applied and recorded once. Each call uses one pooled connection, the one holding the lock, for the migrations as well. chamvi is pre-1.0, so a new version may ship a new migration. The migrations so far: `1792195200000-init.ts`, `1792368000000-artifacts.ts`, `1792454400000-idempotency-scope.ts`, `1792540800000-kv-key-collation.ts` and `1792627200000-agent-revisions.ts` (`AgentRevisions1792627200000`, the table `chamvi_agent_revisions`), followed by `1792713600000-conversations.ts` (conversation identities, items, notes and operation receipts, plus run/checkpoint bindings and their foreign keys).
 
+The conversations migration preserves legacy checkpoints and steps whose run does not exist. Earlier store methods allowed those rows, so their run foreign keys are added as PostgreSQL `NOT VALID`: no rows are deleted and no placeholder runs are created. New inserts and changes to `run_id` must reference an existing run; the other foreign keys are validated normally. Those two constraints remain unvalidated until the legacy data is reconciled explicitly, and do not need validation for new-write enforcement.
+
 `pendingMigrations(dataSource)` resolves the names of the migrations not run yet, in order, without writing anything (it never creates TypeORM's `migrations` table); `chamvi start --check` uses it to refuse a database a start with `CHAMVI_MIGRATE=false` could not run on (with the default `true` a start migrates, so the check passes).
 
 ## Tables

@@ -31,9 +31,10 @@ export class Conversations1792713600000 implements MigrationInterface {
         await queryRunner.query('ALTER TABLE "chamvi_checkpoints" ADD "conversation_generation" integer');
         await queryRunner.query('ALTER TABLE "chamvi_conversations" ADD CONSTRAINT "FK_ef8111d766fe466a3b307675e08" FOREIGN KEY ("active_run_id") REFERENCES "chamvi_runs"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
         await queryRunner.query('ALTER TABLE "chamvi_runs" ADD CONSTRAINT "FK_f52e3d9f9a700e00b7021682252" FOREIGN KEY ("conversation_scope_id") REFERENCES "chamvi_conversations"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
-        await queryRunner.query('ALTER TABLE "chamvi_checkpoints" ADD CONSTRAINT "FK_4aac9035497a94deb8cdb39062e" FOREIGN KEY ("run_id") REFERENCES "chamvi_runs"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
+        // Older stores allowed checkpoints and steps without runs. Keep those rows while enforcing new references.
+        await queryRunner.query('ALTER TABLE "chamvi_checkpoints" ADD CONSTRAINT "FK_4aac9035497a94deb8cdb39062e" FOREIGN KEY ("run_id") REFERENCES "chamvi_runs"("id") ON DELETE NO ACTION ON UPDATE NO ACTION NOT VALID');
         await queryRunner.query('ALTER TABLE "chamvi_checkpoints" ADD CONSTRAINT "FK_a7fd19281c5f361dc8473323752" FOREIGN KEY ("conversation_scope_id") REFERENCES "chamvi_conversations"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
-        await queryRunner.query('ALTER TABLE "chamvi_steps" ADD CONSTRAINT "FK_ec83b59c000dc26e022836e98b7" FOREIGN KEY ("run_id") REFERENCES "chamvi_runs"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
+        await queryRunner.query('ALTER TABLE "chamvi_steps" ADD CONSTRAINT "FK_ec83b59c000dc26e022836e98b7" FOREIGN KEY ("run_id") REFERENCES "chamvi_runs"("id") ON DELETE NO ACTION ON UPDATE NO ACTION NOT VALID');
         await queryRunner.query('ALTER TABLE "chamvi_conversation_items" ADD CONSTRAINT "FK_8252e57feb07d3d5c100772ca68" FOREIGN KEY ("scope_id") REFERENCES "chamvi_conversations"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
         await queryRunner.query('ALTER TABLE "chamvi_conversation_items" ADD CONSTRAINT "FK_e3edf09ee4749bad2d7b394c830" FOREIGN KEY ("run_id") REFERENCES "chamvi_runs"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
         await queryRunner.query('ALTER TABLE "chamvi_conversation_notes" ADD CONSTRAINT "FK_c2faa5ef0df1ac2535bb888e088" FOREIGN KEY ("scope_id") REFERENCES "chamvi_conversations"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');

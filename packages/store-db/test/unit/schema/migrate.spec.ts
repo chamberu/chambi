@@ -5,14 +5,14 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { DataSource } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { assertSchemaMatchesMetadata } from 'typeorm-extension';
 import {
     afterEach,
     expect,
     it,
 } from 'vitest';
-import { migrateStore, pendingMigrations } from '@chamvi/store-db';
+import { STORE_MIGRATIONS, migrateStore, pendingMigrations } from '@chamvi/store-db';
 import { TableName } from '../../../src/entities/constants.ts';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import type { TestDataSourceOptions } from '../../utils/database.ts';
@@ -34,6 +34,46 @@ describePostgres('schema', () => {
 
     it('the migration creates the schema the entities describe', async () => {
         const ds = await create();
+        await expect(assertSchemaMatchesMetadata(ds)).resolves.toBeUndefined();
+    });
+
+    it('upgrades legacy orphan checkpoints and steps without losing data while enforcing new run references', async () => {
+        const ds = await create({ migrate: false });
+        const prior = new DataSource({
+            ...ds.options,
+            migrations: STORE_MIGRATIONS.filter((migration) => migration.name !== 'Conversations1792713600000'),
+        });
+        await prior.initialize();
+        dataSources.push(prior);
+        await migrateStore(prior);
+        expect(await pendingMigrations(ds)).toEqual(['Conversations1792713600000']);
+
+        const insertCheckpoint = (runId: string) => ds.query(
+            'INSERT INTO chamvi_checkpoints (run_id, step_index, messages, finish_reason, created_at) VALUES ($1, 3, $2, $3, $4)',
+            [runId, JSON.stringify([{ role: 'user', content: 'legacy checkpoint' }]), 'stop', new Date('2026-10-28T00:00:00.000Z')],
+        );
+        const insertStep = (runId: string) => ds.query(
+            'INSERT INTO chamvi_steps (run_id, step_index, kind, name, input, output, started_at, finished_at) VALUES ($1, 2, $2, $3, $4, $5, $6, $6)',
+            [runId, 'tool', 'legacy tool', JSON.stringify({ input: 'kept' }), JSON.stringify({ output: 'kept' }), new Date('2026-10-28T00:00:00.000Z')],
+        );
+        await insertCheckpoint('legacy-checkpoint-only');
+        await insertStep('legacy-step-only');
+        const checkpointQuery = 'SELECT run_id, step_index, messages, finish_reason, created_at FROM chamvi_checkpoints';
+        const checkpoints = await ds.query(checkpointQuery);
+        const steps = await ds.query('SELECT * FROM chamvi_steps');
+
+        await migrateStore(ds);
+
+        expect(await pendingMigrations(ds)).toEqual([]);
+        expect(await ds.query(checkpointQuery)).toEqual(checkpoints);
+        expect(await ds.query('SELECT * FROM chamvi_steps')).toEqual(steps);
+        expect(await ds.query('SELECT * FROM chamvi_runs')).toEqual([]);
+        await expect(insertCheckpoint('new-missing-run')).rejects.toMatchObject({ driverError: { code: '23503' } });
+        await expect(insertStep('new-missing-run')).rejects.toMatchObject({ driverError: { code: '23503' } });
+        await expect(ds.query('UPDATE chamvi_checkpoints SET run_id = $1', ['another-missing-run']))
+            .rejects.toMatchObject({ driverError: { code: '23503' } });
+        await expect(ds.query('UPDATE chamvi_steps SET run_id = $1', ['another-missing-run']))
+            .rejects.toMatchObject({ driverError: { code: '23503' } });
         await expect(assertSchemaMatchesMetadata(ds)).resolves.toBeUndefined();
     });
 
