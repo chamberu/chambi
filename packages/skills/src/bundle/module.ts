@@ -5,18 +5,20 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { createSkillCatalog } from '@chamvi/core';
-import type { Skill, SkillCatalog } from '@chamvi/core';
+import { createSkillCatalog } from '../catalog/module.ts';
+import type { SkillInput } from '@chamvi/core';
+import { defineSkill } from '../runtime/adapters.ts';
+import type { Skill, SkillCatalog } from '../catalog/types.ts';
 import { readSkillBundle } from './bundle.ts';
 import { SKILL_MAX_BUNDLES } from './constants.ts';
 import { invalidSkill, validateApprovedSkill } from './helpers.ts';
 import type { ApprovedSkill } from './types.ts';
 
 /** Explicitly verify a filesystem bundle and detach all content from its reader. */
-export function loadSkillBundle(approved: ApprovedSkill): Skill {
+export function loadSkillBundle(approved: ApprovedSkill): Skill & SkillInput {
     validateApprovedSkill(approved);
     const bundle = readSkillBundle(approved);
-    return Object.freeze({
+    return defineSkill({
         ...bundle.metadata,
         body: bundle.body,
         references: Object.freeze(Object.fromEntries(bundle.references.map((path) => [path, bundle.readReference(path)!]))),

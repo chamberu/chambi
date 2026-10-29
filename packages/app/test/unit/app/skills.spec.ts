@@ -11,7 +11,7 @@ import {
     MemoryStore,
     defineAgent,
 } from '@chamvi/core';
-import type { ISkillSource, Skill } from '@chamvi/core';
+import { preparationInput } from '../../utils/skill-runtime.ts';
 import { mockModel, textModel } from '@chamvi/test-kit';
 import { cron } from '@chamvi/channel-cron';
 import { customProvider } from 'ai';
@@ -34,15 +34,6 @@ import { agentFile } from '../../utils/agents-dir.ts';
 import { createTempDir, writeTree } from '../../utils/folder.ts';
 import { closeServer, freePort, listenOn } from '../../utils/port.ts';
 
-const skill: Skill = {
-    name: 'review',
-    version: '1',
-    hash: 'a'.repeat(64),
-    description: 'Review code',
-    ignoredFields: [],
-    body: 'Reviewed instructions',
-    references: {},
-};
 const apps: IApp[] = [];
 const folders: Awaited<ReturnType<typeof createTempDir>>[] = [];
 
@@ -124,12 +115,9 @@ async function folder() {
 
 describe('app skills lifecycle', () => {
     it('code verification failure prevents hooks, channels and HTTP', async () => {
-        const source: ISkillSource = {
-            skills: [skill],
-            async load() {
-                return [];
-            },
-        };
+        const source = preparationInput(async () => {
+            throw new InvalidAgentDefinitionError('preparation failed');
+        });
         const ctx = build({ skills: [source] });
         const { env, port } = await environment();
         await expect(ctx.app.start({ env })).rejects.toBeInstanceOf(InvalidAgentDefinitionError);
@@ -142,14 +130,10 @@ describe('app skills lifecycle', () => {
     it('runJob prepares before engineCreated and model execution', async () => {
         const entered = deferred();
         const release = deferred();
-        const source: ISkillSource = {
-            skills: [skill],
-            async load() {
-                entered.resolve();
-                await release.promise;
-                return [skill];
-            },
-        };
+        const source = preparationInput(async () => {
+            entered.resolve();
+            await release.promise;
+        });
         const model = textModel();
         const ctx = build({
             skills: [source],
@@ -174,14 +158,10 @@ describe('app skills lifecycle', () => {
     it('waits for verification before engineCreated, channels, HTTP and model work', async () => {
         const entered = deferred();
         const release = deferred();
-        const source: ISkillSource = {
-            skills: [skill],
-            async load() {
-                entered.resolve();
-                await release.promise;
-                return [skill];
-            },
-        };
+        const source = preparationInput(async () => {
+            entered.resolve();
+            await release.promise;
+        });
         const ctx = build({ skills: [source] });
         const { env, port } = await environment();
         const waiting = new Engine({ store: ctx.store, agents: [...ctx.app.agents] });
@@ -204,13 +184,13 @@ describe('app skills lifecycle', () => {
         await engine.idle();
         expect((await engine.getRun(runId))?.status).toBe('completed');
         expect(JSON.stringify(ctx.model.doStreamCalls[0]?.prompt)).toContain('review');
-        expect(ctx.model.doStreamCalls[0]?.tools?.map((tool) => tool.name)).toContain('load_skill');
+        expect(ctx.model.doStreamCalls[0]?.tools?.map((tool) => tool.name)).toContain('contributed');
     });
 
     it('adds app defaults to folder agents as well as code agents', async () => {
         const root = await folder();
         await writeTree(root, { 'folder/agent.ts': agentFile('Folder work', 'test/model', 'folder') });
-        const ctx = build({ skills: [skill] });
+        const ctx = build({ skills: [preparationInput()] });
         const { env } = await environment({ CHAMVI_AGENTS_DIR: root });
         await ctx.app.start({ env });
         const engine = ctx.engine()!;
@@ -227,19 +207,16 @@ describe('app skills lifecycle', () => {
         expect(ctx.model.doStreamCalls).toHaveLength(2);
         for (const call of ctx.model.doStreamCalls) {
             expect(JSON.stringify(call.prompt)).toContain('review');
-            expect(call.tools?.map((tool) => tool.name)).toContain('load_skill');
+            expect(call.tools?.map((tool) => tool.name)).toContain('contributed');
         }
     });
 
     it.each(['check', 'migrate'] as const)('%s never loads sources', async (mode) => {
         let calls = 0;
-        const source: ISkillSource = {
-            skills: [skill],
-            async load() {
-                calls++;
-                throw new Error('must stay static');
-            },
-        };
+        const source = preparationInput(async () => {
+            calls++;
+            throw new Error('must stay static');
+        });
         const ctx = build({
             skills: [source],
             agents: [defineAgent({
@@ -299,15 +276,11 @@ describe('app skills lifecycle', () => {
         const entered = deferred();
         const release = deferred();
         let sourceSignal: AbortSignal | undefined;
-        const source: ISkillSource = {
-            skills: [skill],
-            async load({ signal }) {
-                sourceSignal = signal;
-                entered.resolve();
-                await release.promise;
-                return [skill];
-            },
-        };
+        const source = preparationInput(async (signal) => {
+            sourceSignal = signal;
+            entered.resolve();
+            await release.promise;
+        });
         const ctx = build({ skills: [source] });
         const { env, port } = await environment();
         const starting = ctx.app.start({ env });

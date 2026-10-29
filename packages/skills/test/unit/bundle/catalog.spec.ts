@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
-import type { SkillCatalog } from '@chamvi/core';
+import type { SkillCatalog } from '@chamvi/skills';
 import {
     afterEach,
     describe,

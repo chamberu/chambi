@@ -14,7 +14,7 @@ import {
     it,
 } from 'vitest';
 import { ValidationError } from '@chamvi/core';
-import type { LoadedSkill, SkillCatalog } from '@chamvi/core';
+import type { LoadedSkill, SkillCatalog } from '@chamvi/skills';
 import * as app from '@chamvi/skills';
 import { approvedSkill, cleanupSkills } from '../../utils/skills.ts';
 

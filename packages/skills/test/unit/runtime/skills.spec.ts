@@ -19,10 +19,12 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { ISkillSource, Skill } from '@chamvi/core';
-import { mockModel } from '../../utils/mock-model.ts';
+import type { SkillInput } from '@chamvi/core';
+import type { Skill } from '@chamvi/skills';
+import { defineSkill, defineSkillSource } from '@chamvi/skills';
+import { mockModel } from '@chamvi/test-kit';
 
-const skill = (name = 'common', body = 'SECRET BODY'): Skill => ({
+const skill = (name = 'common', body = 'SECRET BODY'): Skill & SkillInput => defineSkill({
     name,
     version: '1.0.0',
     hash: 'a'.repeat(64),
@@ -47,12 +49,12 @@ const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
 describe('first class skills', () => {
     it('deduplicates exact headers and rejects per-agent conflicts and effective limit synchronously', () => {
         expect(() => engine([skill()], [agent([skill()])])).not.toThrow();
-        expect(() => engine([skill()], [agent([{ ...skill(), version: '2' }])])).toThrow(/skill/i);
+        expect(() => engine([skill()], [agent([defineSkill({ ...skill(), version: '2' })])])).toThrow(/skill/i);
         expect(() => engine(Array.from({ length: 17 }, (_, i) => skill(`skill-${i}`)))).toThrow(/16/);
         expect(() => engine([], [agent([skill()]), defineAgent({
             name: 'other',
             instructions: '',
-            skills: [{ ...skill(), version: '2' }],
+            skills: [defineSkill({ ...skill(), version: '2' })],
         })])).not.toThrow();
     });
     it('copies ready contents and headers before caller mutations', async () => {
@@ -63,11 +65,11 @@ describe('first class skills', () => {
                 version: '1',
                 hash: 'b'.repeat(64),
             }],
-            load: vi.fn(async () => [{
+            load: vi.fn(async () => [defineSkill({
                 ...skill('extra'),
                 version: '1',
                 hash: 'b'.repeat(64),
-            }]),
+            })]),
         };
         const model = mockModel([{
             parts: [{
@@ -85,7 +87,7 @@ describe('first class skills', () => {
         const e = new Engine({
             store: new MemoryStore(),
             model,
-            skills: [ready, source],
+            skills: [ready, defineSkillSource(source)],
             agents: [agent()],
         });
         ready.references['references/a.md'] = 'changed';
@@ -109,7 +111,7 @@ describe('first class skills', () => {
     it('rejects missing, extra and mismatched provider results and retries failed work', async () => {
         for (const results of [[], [skill('extra')], [skill(), skill('extra')]]) {
             const load = vi.fn(async () => results);
-            const e = engine([{ skills: [skill()], load }]);
+            const e = engine([defineSkillSource({ skills: [skill()], load })]);
             await expect(e.prepare()).rejects.toThrow(/skill/i);
             await expect(e.prepare()).rejects.toThrow(/skill/i);
             expect(load).toHaveBeenCalledTimes(2);
@@ -117,7 +119,7 @@ describe('first class skills', () => {
     });
     it('memoizes shared providers per engine without changing the shared agent', async () => {
         const load = vi.fn(async () => [skill()]);
-        const shared = agent([{ skills: [skill()], load }]);
+        const shared = agent([defineSkillSource({ skills: [skill()], load })]);
         const a = engine([], [shared]); const b = engine([], [shared]);
         await Promise.all([a.prepare(), a.prepare(), b.prepare()]);
         expect(load).toHaveBeenCalledTimes(2);
@@ -127,7 +129,7 @@ describe('first class skills', () => {
     it('gates queued execution and channels on verification and coalesces start', async () => {
         const deferred = Promise.withResolvers<readonly Skill[]>();
         const entered = Promise.withResolvers<void>();
-        const source: ISkillSource = { skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } };
+        const source = defineSkillSource({ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } });
         const model = mockModel([{
             parts: [{
                 type: 'tool-call',
@@ -172,7 +174,7 @@ describe('first class skills', () => {
         const entered = Promise.withResolvers<void>();
         let signal: AbortSignal | undefined;
         const load = vi.fn(async (options: { signal: AbortSignal }) => { signal = options.signal; entered.resolve(); return deferred.promise; });
-        const e = engine([{ skills: [skill()], load }]);
+        const e = engine([defineSkillSource({ skills: [skill()], load })]);
         const starting = e.start().catch((error: unknown) => error);
         await entered.promise;
         let stopped = false;
@@ -209,7 +211,7 @@ describe('first class skills', () => {
             trigger: 'test',
             payload: {},
         });
-        const candidate = agent([{ skills: [skill()], load: async () => [] }]);
+        const candidate = agent([defineSkillSource({ skills: [skill()], load: async () => [] })]);
         await expect(e.putAgent(candidate, { revision: 'new' })).rejects.toThrow(/skill/i);
         expect(e.getAgent('test')).toBe(old);
         expect(await e.store.getAgentRevision('test')).toBeUndefined();
@@ -256,7 +258,7 @@ describe('first class skills', () => {
     });
     it('a concurrent start caller can cancel the shared attempt with its original reason', async () => {
         const deferred = Promise.withResolvers<readonly Skill[]>(); const entered = Promise.withResolvers<void>();
-        const e = engine([{ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } }]);
+        const e = engine([defineSkillSource({ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } })]);
         const one = e.start().catch((error: unknown) => error); await entered.promise;
         const controller = new AbortController(); const reason = new Error('caller cancelled');
         const two = e.start({ signal: controller.signal }).catch((error: unknown) => error);
@@ -264,18 +266,18 @@ describe('first class skills', () => {
         expect(await one).toBe(reason); expect(await two).toBe(reason); await e.stop();
     });
     it('rejects conflicting content under the same identity from otherwise isolated providers', async () => {
-        const a = agent([{ skills: [skill()], load: async () => [skill()] }]);
+        const a = agent([defineSkillSource({ skills: [skill()], load: async () => [skill()] })]);
         const b = defineAgent({
             name: 'other',
             instructions: '',
-            skills: [{ skills: [skill()], load: async () => [skill('common', 'different content')] }],
+            skills: [defineSkillSource({ skills: [skill()], load: async () => [skill('common', 'different content')] })],
         });
         const e = engine([], [a, b]);
         await expect(e.prepare()).rejects.toThrow(/conflicting content/i);
         await e.stop();
     });
     it('loads a repeated original source once across globals and separate agent snapshots', async () => {
-        const load = vi.fn(async () => [skill()]); const source = { skills: [skill()], load };
+        const load = vi.fn(async () => [skill()]); const source = defineSkillSource({ skills: [skill()], load });
         const e = engine([source], [agent([source]), defineAgent({
             name: 'other',
             instructions: '',
@@ -291,7 +293,7 @@ describe('first class skills', () => {
     it('stop joins standalone candidate preparation even when its provider ignores abort', async () => {
         const entered = Promise.withResolvers<void>(); const deferred = Promise.withResolvers<readonly Skill[]>();
         const e = engine();
-        const candidate = agent([{ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } }]);
+        const candidate = agent([defineSkillSource({ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } })]);
         const preparing = e.prepare({ agents: [candidate] }).catch((error: unknown) => error);
         await entered.promise; let stopped = false; const stopping = e.stop().then(() => { stopped = true; });
         await flush(); expect(stopped).toBe(false); deferred.resolve([skill()]); await stopping;
@@ -322,7 +324,7 @@ describe('first class skills', () => {
             trigger: 'test',
             payload: {},
         }); await entered.promise;
-        await e.putAgent(agent([{ ...skill('common', 'NEW'), hash: 'b'.repeat(64) }]), { revision: 'same' }); deferred.resolve(); await e.idle();
+        await e.putAgent(agent([defineSkill({ ...skill('common', 'NEW'), hash: 'b'.repeat(64) })]), { revision: 'same' }); deferred.resolve(); await e.idle();
         expect((await store.listSteps(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'OLD' }); await e.stop();
     });
     it('scopes global and extra loads and keeps instructions passive for agents with no user tools', async () => {
@@ -436,11 +438,13 @@ describe('first class skills', () => {
         expect(() => engine([skill(), skill('common', 'DIFFERENT')], [])).toThrow(/conflicting content/i);
         expect(() => engine([skill()], [agent([skill('common', 'DIFFERENT')])])).toThrow(/conflicting content/i);
         expect(() => agent([skill('common', '\ud800')])).toThrow(/skill/i);
-        expect(() => agent([{ ...skill(), references: { 'bad.txt': '\ud800' } }])).toThrow(/skill/i);
+        expect(() => agent([defineSkill({ ...skill(), references: { 'bad.txt': '\ud800' } })])).toThrow(/skill/i);
     });
     it.each(['body', 'reference'])('rejects NUL-bearing custom skill %s content', (part) => {
-        const value = part === 'body' ? skill('common', 'text\0binary') : { ...skill(), references: { 'scripts/check.sh': 'text\0binary' } };
-        expect(() => agent([value])).toThrow(/skill/i);
+        expect(() => {
+            const value = part === 'body' ? skill('common', 'text\0binary') : defineSkill({ ...skill(), references: { 'scripts/check.sh': 'text\0binary' } });
+            agent([value]);
+        }).toThrow(/skill/i);
     });
     it('verification rejects before recovery, channels or a model call', async () => {
         const store = new MemoryStore(); const reads = vi.spyOn(store, 'listRuns'); const start = vi.fn();
@@ -450,7 +454,7 @@ describe('first class skills', () => {
             model,
             agents: [agent()],
             channels: [{ name: 'test', start }],
-            skills: [{ skills: [skill()], load: async () => { throw error; } }],
+            skills: [defineSkillSource({ skills: [skill()], load: async () => { throw error; } })],
         });
         await expect(e.start()).rejects.toBe(error);
         expect(reads).not.toHaveBeenCalled(); expect(start).not.toHaveBeenCalled(); expect(model.doStreamCalls).toHaveLength(0);
@@ -458,7 +462,7 @@ describe('first class skills', () => {
     });
     it('drain joins canceled preparation before it completes', async () => {
         const entered = Promise.withResolvers<void>(); const deferred = Promise.withResolvers<readonly Skill[]>();
-        const e = engine([{ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } }]);
+        const e = engine([defineSkillSource({ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } })]);
         const preparing = e.prepare().catch((error: unknown) => error); await entered.promise;
         let drained = false; const draining = e.drain().then(() => { drained = true; }); await flush(); expect(drained).toBe(false);
         deferred.resolve([skill()]); await preparing; await draining;

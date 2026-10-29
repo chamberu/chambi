@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { SkillIdentity } from '@chamvi/core';
+import type { SkillIdentity } from '../catalog/types.ts';
 
 export type GitSkillsOptions = {
     source: string;

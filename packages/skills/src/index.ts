@@ -8,3 +8,5 @@
 export * from './bundle/index.ts';
 export * from './prepare/index.ts';
 export * from './source/index.ts';
+export * from './catalog/index.ts';
+export * from './runtime/index.ts';

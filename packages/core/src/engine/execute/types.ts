@@ -11,7 +11,7 @@ import type { IClock } from '../../clock/index.ts';
 import type { ContextKey } from '../../context/types.ts';
 import type { IModelResolver, ModelRef } from '../../model/types.ts';
 import type { Run, Step, Usage } from '../../run/types.ts';
-import type { SkillCatalog } from '../../skill/types.ts';
+import type { SkillContribution } from '../../skill/types.ts';
 import type { IStore } from '../../store/types.ts';
 import type { Engine } from '../module.ts';
 import type { RunDelta } from '../types.ts';
@@ -21,7 +21,7 @@ export type ExecuteContext = {
     engine: Engine;
     run: Run;
     agent: Agent;
-    skills?: SkillCatalog;
+    skills?: SkillContribution;
     /** The model to run: the agent's, else the engine default; undefined fails the run. */
     model: ModelRef | undefined;
     /** Resolves a string model at execution start; without one a string goes to the AI SDK as is. */

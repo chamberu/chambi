@@ -29,11 +29,19 @@ afterEach(async () => {
     await root.remove();
 });
 
+function runtimeInput(prepare: string) {
+    return `{ async prepare(signal) { ${prepare} }, runtime: { protocol: 'test/runtime-v1', snapshot(inputs) { return inputs; }, create() { return {
+        checkAgent() {}, async prepare(agents, { signal }) {
+            for (const agent of agents) for (const input of agent.definition.skills ?? []) await input.prepare(signal);
+            return { commit() { return agents.map(agent => ({ agent, contribution: Object.freeze({ instructions: '', tools: {}, checkTools() {} }) })); } };
+        }
+    }; } } }`;
+}
+
 function sourceAgent(instructions = 'v1', channel = '') {
     return `export default { name: 'greeter', definition: { model: 'test/model', instructions: '${instructions}',
         ${channel}
-        skills: [{ skills: [{ name: 'review', version: '1', hash: '${'a'.repeat(64)}' }],
-            async load() { return []; } }],
+        skills: [${runtimeInput("throw new Error('skill preparation failed');")}],
     } };`;
 }
 
@@ -46,20 +54,13 @@ function build(check = false) {
 
 function controlledSourceAgent(instructions = 'v2', failure = 'mismatch') {
     const path = JSON.stringify(join(root.path, 'provider.json'));
+    const prepare = `const state = JSON.parse(await readFile(${path}, 'utf8'));
+        state.attempts++;
+        await writeFile(${path}, JSON.stringify(state));
+        if (!state.ready) throw new Error('${failure}' === 'transient' ? 'source temporarily unavailable' : 'skill preparation failed');`;
     return `import { readFile, writeFile } from 'node:fs/promises';
         export default { name: 'greeter', definition: { model: 'test/model', instructions: '${instructions}',
-            skills: [{ skills: [{ name: 'review', version: '1', hash: '${'a'.repeat(64)}' }],
-                async load() {
-                    const state = JSON.parse(await readFile(${path}, 'utf8'));
-                    state.attempts++;
-                    await writeFile(${path}, JSON.stringify(state));
-                    if (!state.ready) {
-                        if ('${failure}' === 'transient') throw new Error('source temporarily unavailable');
-                        return [];
-                    }
-                    return [{ name: 'review', version: '1', hash: '${'a'.repeat(64)}',
-                        description: 'Review', ignoredFields: [], body: 'Reviewed body', references: {} }];
-                } }],
+            skills: [${runtimeInput(prepare)}],
         } };`;
 }
 

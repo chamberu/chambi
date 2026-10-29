@@ -5,6 +5,10 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export const SKILL_NAME_PATTERN = /^[a-z][a-z0-9-]{0,63}$/;
-export const SKILL_CONTROL_PATTERN = /\p{Cc}/u;
-export const SKILL_MAX_BUNDLES = 16;
+import type { SkillContribution } from './types.ts';
+
+export const EMPTY_SKILL_CONTRIBUTION: SkillContribution = Object.freeze({
+    instructions: '',
+    tools: Object.freeze({}),
+    checkTools: () => {},
+});

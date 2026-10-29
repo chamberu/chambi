@@ -16,7 +16,6 @@ import * as core from '@chamvi/core';
 describe('public api', () => {
     it.each([
         'defineAgent',
-        'createSkillCatalog',
         'Engine',
         'MemoryStore',
         'defineEffectTool',
@@ -56,10 +55,11 @@ describe('public api', () => {
     });
 
     it('exports passive skill contracts', () => {
-        expectTypeOf<core.Skill>().toExtend<core.SkillIdentity>();
         expectTypeOf<core.AgentDefinition['skills']>().toEqualTypeOf<readonly core.SkillInput[] | undefined>();
         expectTypeOf<core.EngineOptions['skills']>().toEqualTypeOf<readonly core.SkillInput[] | undefined>();
-        expectTypeOf<core.ISkillSource['load']>().returns.toEqualTypeOf<Promise<readonly core.Skill[]>>();
+        expectTypeOf<core.SkillInput['runtime']>().toEqualTypeOf<core.ISkillRuntimeProvider>();
+        expectTypeOf<ReturnType<core.ISkillRuntimeProvider['create']>>().toEqualTypeOf<core.ISkillRuntime>();
+        expect(core).not.toHaveProperty('createSkillCatalog');
         expectTypeOf<core.Engine['prepare']>().parameter(0).toEqualTypeOf<{ signal?: AbortSignal; agents?: readonly core.Agent[] } | undefined>();
     });
 

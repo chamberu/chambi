@@ -5,8 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { ValidationError } from '../errors/index.ts';
-import { defineTool } from '../tool/define.ts';
+import { ValidationError, defineTool  } from '@chamvi/core';
 import { jsonSchema } from 'ai';
 import type { ToolSet } from 'ai';
 import { isObject } from 'smob';

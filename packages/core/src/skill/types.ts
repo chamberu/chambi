@@ -6,30 +6,35 @@
  */
 
 import type { ToolSet } from 'ai';
+import type { Agent } from '../agent/types.ts';
 
-export type SkillIdentity = Readonly<{
-    name: string;
-    version: string;
-    hash: string
+export type SkillInput = Readonly<{
+    runtime: ISkillRuntimeProvider;
 }>;
-export type SkillMetadata = SkillIdentity & Readonly<{ description: string; ignoredFields: readonly string[] }>;
-export type Skill = SkillMetadata & Readonly<{ body: string; references: Readonly<Record<string, string>> }>;
-export interface ISkillSource {
-    readonly skills: readonly SkillIdentity[];
-    load(options: { signal: AbortSignal }): Promise<readonly Skill[]>;
+export interface ISkillRuntimeProvider {
+    readonly protocol: string;
+    /** Validate and copy inputs synchronously, without I/O or caller mutation. */
+    snapshot(inputs: readonly SkillInput[], tools: ToolSet): readonly SkillInput[];
+    /** Create fresh per-engine state without I/O. */
+    create(globals: readonly SkillInput[]): ISkillRuntime;
 }
-export type SkillInput = Skill | ISkillSource;
-export type SkillCatalog = Readonly<{
-    skills: readonly SkillMetadata[];
-    instructions: string;
-    tools: ToolSet
+export interface ISkillRuntime {
+    /** Snapshot local inputs and validate their composition with globals. */
+    checkAgent(agent: Agent): void;
+    /** Resolve globals even with no agents; settle all owned work before returning. */
+    prepare(agents: readonly Agent[], options: { signal: AbortSignal }): Promise<ISkillPreparation>;
+}
+export interface ISkillPreparation {
+    /** Single use: recheck conflicts and publish all attestations synchronously. */
+    commit(): readonly PreparedAgentSkills[];
+}
+export type PreparedAgentSkills = Readonly<{
+    agent: Agent;
+    contribution: SkillContribution;
 }>;
-export type LoadedSkill = {
-    name: string;
-    version: string;
-    hash: string;
-    reference: string | null;
-    content: string;
-    references: string[];
-};
-export type LoadSkillInput = { name: string; reference?: string };
+export type SkillContribution = Readonly<{
+    instructions: string;
+    tools: ToolSet;
+    /** Check ordinary user/state tools before contributed tools are merged. */
+    checkTools(tools: ToolSet): void;
+}>;

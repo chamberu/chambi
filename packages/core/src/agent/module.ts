@@ -7,14 +7,7 @@
 
 import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
-import {
-    assertSkillContents,
-    assertSkillToolCollision,
-    composeSkillIdentities,
-    copySkillInputs,
-    isSkillSource,
-    skillHeaders,
-} from '../skill/helpers.ts';
+import { snapshotSkillInputs } from '../skill/helpers.ts';
 import type { StateSchema } from '../state/types.ts';
 import {
     DEFAULT_MAX_STEPS,
@@ -48,10 +41,7 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
         seen.add(subscription.id);
     }
 
-    const skills = copySkillInputs(def.skills);
-    const headers = composeSkillIdentities(skillHeaders(skills));
-    assertSkillContents(skills.flatMap((input) => isSkillSource(input) ? [] : [input]));
-    assertSkillToolCollision(headers, typeof def.tools === 'function' ? {} : def.tools ?? {});
+    const skills = snapshotSkillInputs(def.skills, typeof def.tools === 'function' ? {} : def.tools ?? {});
 
     // a factory's set is only known per execution, the engine checks it there
     if (typeof def.tools !== 'function') {

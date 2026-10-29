@@ -17,6 +17,7 @@ import {
     MemoryStore,
     defineAgent,
 } from '@chamvi/core';
+import { fakeSkillRuntime } from '../../../../core/test/utils/skill-runtime.ts';
 import type { SkillInput } from '@chamvi/core';
 import type { RunJobResult } from '@chamvi/channel-cron';
 import { cron, cronChannel, runJob } from '@chamvi/channel-cron';
@@ -92,15 +93,13 @@ describe('runJob with a signal', () => {
     it('caller cancellation during skill preparation preserves queued status and skips model execution', async () => {
         const entered = Promise.withResolvers<AbortSignal>();
         const release = Promise.withResolvers<void>();
-        const ctx = setup([{
-            skills: [],
-            async load({ signal }) {
+        const ctx = setup([fakeSkillRuntime({
+            prepare: async (signal) => {
                 entered.resolve(signal);
                 await release.promise;
                 signal.throwIfAborted();
-                return [];
             },
-        }]);
+        }).input]);
         const controller = new AbortController();
         const job = runJob({
             engine: ctx.engine,
@@ -118,14 +117,13 @@ describe('runJob with a signal', () => {
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const failure = new Error('independent verification error');
-        const ctx = setup([{
-            skills: [],
-            async load() {
+        const ctx = setup([fakeSkillRuntime({
+            prepare: async () => {
                 entered.resolve();
                 await release.promise;
                 throw failure;
             },
-        }]);
+        }).input]);
         const controller = new AbortController();
         const job = runJob({
             engine: ctx.engine,

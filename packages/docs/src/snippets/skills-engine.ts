@@ -6,11 +6,12 @@
  */
 
 import { Engine, MemoryStore, defineAgent } from '@chamvi/core';
-import type { ISkillSource, Skill } from '@chamvi/core';
+import type { SkillInput } from '@chamvi/core';
+import type { ISkillSource, Skill } from '@chamvi/skills';
 import type { LanguageModel } from 'ai';
 
 // The same provider and ready snapshots also work without an app.
-export function createReviewEngine(model: LanguageModel, common: ISkillSource, securityExtra: Skill): Engine {
+export function createReviewEngine(model: LanguageModel, common: ISkillSource & SkillInput, securityExtra: Skill & SkillInput): Engine {
     return new Engine({
         store: new MemoryStore(),
         model,

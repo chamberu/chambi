@@ -5,7 +5,9 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { ISkillSource, Skill } from '@chamvi/core';
+import type { SkillInput } from '@chamvi/core';
+import type { ISkillSource, Skill } from '../catalog/types.ts';
+import { defineSkillSource } from '../runtime/adapters.ts';
 import { loadSkillBundle } from '../bundle/module.ts';
 import { validateApprovedSkill } from '../bundle/helpers.ts';
 import { SKILL_MAX_BUNDLES } from '../bundle/constants.ts';
@@ -14,7 +16,7 @@ import { copyPreparationOptions, invalid } from '../prepare/helpers.ts';
 import type { GitSkillsOptions } from './types.ts';
 
 /** Describe reviewed Git content without filesystem or network access. */
-export function gitSkills(options: GitSkillsOptions): ISkillSource {
+export function gitSkills(options: GitSkillsOptions): ISkillSource & SkillInput {
     if (!options || !Array.isArray(options.approved)) {
         invalid();
     }
@@ -42,7 +44,7 @@ export function gitSkills(options: GitSkillsOptions): ISkillSource {
         requestedDirectory: directory,
         names,
     } = configuration;
-    return Object.freeze({
+    return defineSkillSource({
         skills: approved,
         async load({ signal }: { signal: AbortSignal }): Promise<readonly Skill[]> {
             const snapshots: Skill[] = [];

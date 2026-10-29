@@ -7,7 +7,7 @@
 
 import type { BigIntStats } from 'node:fs';
 
-import type { SkillMetadata } from '@chamvi/core';
+import type { SkillMetadata } from '../catalog/types.ts';
 
 export type ApprovedSkill = {
     name: string;

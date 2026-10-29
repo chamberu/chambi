@@ -6,15 +6,26 @@
  */
 
 import { readFileSync } from 'node:fs';
-import type { ISkillSource, Skill } from '@chamvi/core';
+import type { SkillInput } from '@chamvi/core';
+import type {
+    ApprovedSkill,
+    ISkillSource,
+    LoadedSkill,
+    Skill,
+    SkillCatalog,
+    SkillIdentity,
+    SkillMetadata,
+} from '@chamvi/skills';
 import * as skills from '@chamvi/skills';
-import type { ApprovedSkill } from '@chamvi/skills';
 import { expect, expectTypeOf, it } from 'vitest';
 
 it('exports the Chamvi source, preparation and verified bundle API from main', () => {
-    expect(Object.keys(skills).sort()).toEqual(['gitSkills', 'hashSkillBundle', 'loadSkillBundle', 'loadSkillBundles', 'prepareSkills']);
-    expectTypeOf<ReturnType<typeof skills.gitSkills>>().toEqualTypeOf<ISkillSource>();
-    expectTypeOf<ReturnType<typeof skills.loadSkillBundle>>().toEqualTypeOf<Skill>();
+    expect(Object.keys(skills).sort()).toEqual(['createSkillCatalog', 'defineSkill', 'defineSkillSource', 'gitSkills', 'hashSkillBundle', 'loadSkillBundle', 'loadSkillBundles', 'prepareSkills']);
+    expectTypeOf<ReturnType<typeof skills.gitSkills>>().toEqualTypeOf<ISkillSource & SkillInput>();
+    expectTypeOf<ReturnType<typeof skills.loadSkillBundle>>().toEqualTypeOf<Skill & SkillInput>();
+    expectTypeOf<Skill>().toExtend<SkillIdentity>();
+    expectTypeOf<SkillCatalog['skills']>().toEqualTypeOf<readonly SkillMetadata[]>();
+    expectTypeOf<LoadedSkill['references']>().toEqualTypeOf<string[]>();
     expectTypeOf<Parameters<typeof skills.loadSkillBundles>[0]>().toEqualTypeOf<readonly ApprovedSkill[]>();
 });
 

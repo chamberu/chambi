@@ -12,10 +12,14 @@ import {
     vi,
 } from 'vitest';
 import { Engine, MemoryStore, defineAgent } from '@chamvi/core';
-import type { Skill } from '@chamvi/core';
-import { mockModel } from '../../utils/mock-model.ts';
+import { SkillRuntime } from '../../../src/runtime/module.ts';
+import { skillRuntimeProvider } from '../../../src/runtime/provider.ts';
+import type { ISkillRuntimeProvider, SkillInput } from '@chamvi/core';
+import type { Skill } from '@chamvi/skills';
+import { defineSkill, defineSkillSource } from '@chamvi/skills';
+import { mockModel } from '@chamvi/test-kit';
 
-const skill = (overrides: Partial<Skill> = {}): Skill => ({
+const skill = (overrides: Partial<Skill> = {}): Skill & SkillInput => defineSkill({
     name: 'common',
     version: '1.0.0',
     hash: 'a'.repeat(64),
@@ -31,28 +35,33 @@ const candidate = (skills: Parameters<typeof defineAgent>[0]['skills']) => defin
     skills,
 });
 
-// Deterministic reachability/size checks avoid relying on garbage collection timing.
-class InspectedEngine extends Engine {
-    get providerCache() {
-        return this.sources;
-    }
-
-    get attestations() {
-        return this.attestedSkills;
-    }
+// Inspect the optional runtime, without reintroducing domain state on core's Engine.
+class InspectedRuntime extends SkillRuntime {
+    get providerCache() { return this.sources; }
+    get attestations() { return this.attestedSkills; }
 }
-const engine = () => new InspectedEngine({
-    store: new MemoryStore(),
-    agents: [],
-    model: mockModel([]),
-});
+function engine() {
+    const runtime = new InspectedRuntime([]);
+    const provider: ISkillRuntimeProvider = {
+        ...skillRuntimeProvider,
+        snapshot: (inputs) => inputs,
+        create: () => runtime,
+    };
+    const e = new Engine({
+        store: new MemoryStore(),
+        agents: [],
+        model: mockModel([]),
+        skills: [{ ...defineSkillSource({ skills: [], load: async () => [] }), runtime: provider }],
+    });
+    return Object.assign(e, { providerCache: runtime.providerCache, attestations: runtime.attestations });
+}
 
 describe('skill preparation retention', () => {
     it('keeps retired providers weakly and historical contents as bounded fingerprints', async () => {
         const e = engine();
         for (let i = 0; i < 8; i++) {
             const ready = skill({ version: `${i}`, body: 'x'.repeat(64_000) });
-            await e.putAgent(candidate([{ skills: [ready], load: async () => [ready] }]));
+            await e.putAgent(candidate([defineSkillSource({ skills: [ready], load: async () => [ready] })]));
         }
         await e.removeAgent('test');
         await e.stop();
@@ -75,13 +84,13 @@ describe('skill preparation retention', () => {
     it('reuses a reachable original provider after discarded candidates, agent removal and restart', async () => {
         const e = engine();
         let calls = 0;
-        const source = {
+        const source = defineSkillSource({
             skills: [skill()],
             load: async () => {
                 calls++;
                 return [skill()];
             },
-        };
+        });
         await e.prepare({ agents: [candidate([source])] });
         await e.putAgent(candidate([source]));
         await e.removeAgent('test');
@@ -121,10 +130,10 @@ describe('skill preparation retention', () => {
         const e = engine();
         await e.prepare({ agents: [candidate([skill()])] });
         await expect(e.prepare({
-            agents: [candidate([{
+            agents: [candidate([defineSkillSource({
                 skills: [skill()],
                 load: async () => [skill(overrides)],
-            }])],
+            })])],
         })).rejects.toThrow(/conflicting content/i);
         await e.stop();
     });
@@ -138,7 +147,7 @@ describe('skill preparation retention', () => {
             })])],
         });
         await e.prepare({
-            agents: [candidate([{
+            agents: [candidate([defineSkillSource({
                 skills: [skill()],
                 load: async () => [{
                     references: { 'references/a.md': 'a', 'references/b.md': 'b' },
@@ -149,7 +158,7 @@ describe('skill preparation retention', () => {
                     version: '1.0.0',
                     name: 'common',
                 }],
-            }])],
+            })])],
         });
         for (const overrides of [{ name: 'other' }, { version: '2' }, { hash: 'b'.repeat(64) }]) {
             await e.prepare({
@@ -171,13 +180,13 @@ describe('skill preparation retention', () => {
         const release = Promise.withResolvers<readonly Skill[]>();
         const extra = skill({ name: 'extra' });
         const firstCandidate = candidate([skill()]);
-        const slowCandidate = candidate([{
+        const slowCandidate = candidate([defineSkillSource({
             skills: [extra],
             load: async () => {
                 entered.resolve();
                 return release.promise;
             },
-        }]);
+        })]);
         const slow = e.prepare({ agents: [firstCandidate, slowCandidate] }).catch((error: unknown) => error);
         await entered.promise;
         await e.prepare({ agents: [candidate([skill({ body: 'published first' })])] });
