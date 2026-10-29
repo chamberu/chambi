@@ -6,7 +6,8 @@
  */
 
 import type { ToolSet } from 'ai';
-import { defineAgent, http, loadSkillBundles } from '@chamvi/app';
+import { defineAgent, http } from '@chamvi/app';
+import { loadSkillBundles } from '@chamvi/skills';
 
 const catalog = loadSkillBundles([{
     name: 'security-audit',

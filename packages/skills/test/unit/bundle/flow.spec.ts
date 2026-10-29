@@ -14,9 +14,10 @@ import {
     ToolDeniedError,
     approve,
     defineAgent,
-    loadSkillBundles,
 } from '@chamvi/app';
-import type { Agent, AgentDefinition, ApprovedSkill } from '@chamvi/app';
+import type { Agent, AgentDefinition } from '@chamvi/app';
+import { loadSkillBundles } from '@chamvi/skills';
+import type { ApprovedSkill } from '@chamvi/skills';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
     afterEach,

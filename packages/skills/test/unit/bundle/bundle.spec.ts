@@ -18,7 +18,7 @@ import {
     it,
     vi,
 } from 'vitest';
-import { hashSkillBundle, readSkillBundle } from '../../../src/skills/bundle.ts';
+import { hashSkillBundle, readSkillBundle } from '../../../src/bundle/bundle.ts';
 
 const directories: string[] = [];
 const frontmatter = 'name: audit\ndescription: Review code\n';

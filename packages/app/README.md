@@ -88,7 +88,7 @@ export default createApp({
 
 ## Approved local skills
 
-`hashSkillBundle(directory)` validates and hashes a local passive instruction/reference bundle. After reviewing all its text, pin the exact `{ name, version, directory, sha256 }` in agent configuration and call `loadSkillBundles(approved)`. Append the returned `catalog.instructions` to the agent's instructions and compose `catalog.tools` with its tools, checking for an existing `load_skill` name. Compute the expected digest separately during review, never dynamically at startup.
+Import `hashSkillBundle` and `loadSkillBundles` from the optional `@chamvi/skills` package. `hashSkillBundle(directory)` validates and hashes a local passive instruction/reference bundle. After reviewing all its text, pin the exact `{ name, version, directory, sha256 }` in agent configuration and call `loadSkillBundles(approved)`. Append the returned `catalog.instructions` to the agent's instructions and compose `catalog.tools` with its tools, checking for an existing `load_skill` name. Compute the expected digest separately during review, never dynamically at startup.
 
 The catalog initially reveals approved metadata only. `load_skill({ name })` returns the body; `load_skill({ name, reference: 'references/checklist.md' })` returns one exact approved supporting file. Both are ordinary tool results, subject to existing policy, hooks and durable approvals, and stored in run checkpoints. Unknown frontmatter settings such as `allowed-tools` are ignored; their names appear in `catalog.skills[*].ignoredFields`.
 

@@ -10,8 +10,8 @@ import {
     Engine,
     MemoryStore,
     defineAgent,
-    hashSkillBundle,
 } from '@chamvi/app';
+import { hashSkillBundle } from '@chamvi/skills';
 import { ControllableClock, createGitFixture } from '@chamvi/test-kit';
 import type { LanguageModelV4StreamPart } from '@ai-sdk/provider';
 import { simulateReadableStream } from 'ai';

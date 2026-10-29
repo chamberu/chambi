@@ -76,8 +76,7 @@
         "locter": "^4.1.1",
         "orkos": "^1.1.1",
         "routup": "^6.1.0",
-        "smob": "^1.6.2",
-        "yaml": "~2.9.1"
+        "smob": "^1.6.2"
     },
     "devDependencies": {
         "@ai-sdk/anthropic": "^4.0.87",

@@ -14,26 +14,19 @@ import {
     resolve,
 } from 'node:path';
 import { promisify } from 'node:util';
-import { InvalidAgentDefinitionError } from '@chamvi/core';
 import {
     cleanupTempDir,
     cloneRepo,
     discoverSkills,
     filterSkills,
     installSkillForAgent,
-    parseSource,
 } from 'skills';
 import type { PrepareSkillsOptions, PreparedSkill } from './types.ts';
+import { copyPreparationOptions, invalid } from './helpers.ts';
 
 const run = promisify(execFile);
 const marker = '.chamvi-skills';
 const ownership = 'chamvi-skills-v1\n';
-// eslint-disable-next-line no-control-regex
-const controls = /[\x00-\x1f\x7f]/u;
-
-function invalid(): never {
-    throw new InvalidAgentDefinitionError('Cannot prepare skills: invalid configuration, source, verification or managed directory.');
-}
 
 async function inspectTarget(directory: string): Promise<boolean> {
     const stat = await fs.lstat(directory).catch((error: NodeJS.ErrnoException) => {
@@ -64,83 +57,52 @@ async function inspectTarget(directory: string): Promise<boolean> {
 
 /** Prepare a dedicated corpus during setup/build; the caller owns source selection and content approval. */
 export async function prepareSkills(options: PrepareSkillsOptions): Promise<readonly PreparedSkill[]> {
-    if (!options) {
-        invalid();
-    }
-
-    if (typeof options.source !== 'string' || !options.source.trim() || controls.test(options.source)) {
-        invalid();
-    }
-
-    if (typeof options.revision !== 'string' || !/^[a-f0-9]{40}$/iu.test(options.revision)) {
-        invalid();
-    }
-
-    if (!Array.isArray(options.names) || !options.names.length) {
-        invalid();
-    }
-
-    if (typeof options.directory !== 'string' || !options.directory.trim() || controls.test(options.directory)) {
-        invalid();
-    }
-
-    if (options.verify !== undefined && typeof options.verify !== 'function') {
-        invalid();
-    }
-
-    const { source, verify } = options;
-    const revision = options.revision.toLowerCase();
-    const names = [...options.names];
-    for (const name of names) {
-        if (typeof name !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/u.test(name)) {
-            invalid();
-        }
-    }
-
-    if (new Set(names).size !== names.length) {
-        invalid();
-    }
-
-    const requestedDirectory = resolve(options.directory);
-    if (dirname(requestedDirectory) === requestedDirectory) {
-        invalid();
-    }
+    const {
+        revision,
+        names,
+        requestedDirectory,
+        verify,
+        signal,
+        parsed,
+    } = copyPreparationOptions(options);
+    signal?.throwIfAborted();
 
     let clone: string | undefined;
     let stage: string | undefined;
     let lock: string | undefined;
     let previous: string | undefined;
+    let result: readonly PreparedSkill[];
     try {
-        const parsed = parseSource(source);
-        if (!['local', 'git', 'github', 'gitlab'].includes(parsed.type)) {
-            invalid();
-        }
-
-        if (parsed.ref || parsed.skillFilter || /^ext::/iu.test(parsed.url)) {
-            invalid();
-        }
-
         await fs.mkdir(dirname(requestedDirectory), { recursive: true });
+        signal?.throwIfAborted();
         const parent = await fs.realpath(dirname(requestedDirectory));
+        signal?.throwIfAborted();
         const directory = join(parent, basename(requestedDirectory));
         const guard = join(parent, `.${basename(directory)}.chamvi-skills-lock`);
         // shortcut: a crashed preparer leaves its guard, remove it manually after confirming no preparer is running.
         await fs.mkdir(guard);
         lock = guard;
+        signal?.throwIfAborted();
         await inspectTarget(directory);
+        signal?.throwIfAborted();
         stage = await fs.mkdtemp(join(parent, '.chamvi-skills-'));
+        signal?.throwIfAborted();
         clone = await cloneRepo(parsed.url, revision);
-        const { stdout } = await run('git', ['-C', clone, 'rev-parse', '--verify', 'HEAD'], { timeout: 30_000 });
+        // The SDK clone has no signal; join it before cleanup and never copy canceled work.
+        signal?.throwIfAborted();
+        const { stdout } = await run('git', ['-C', clone, 'rev-parse', '--verify', 'HEAD'], { timeout: 30_000, signal });
         if (stdout.trim().toLowerCase() !== revision) {
             invalid();
         }
 
+        signal?.throwIfAborted();
         // Reject committed links before discovery or copying can follow them.
-        const tree = await run('git', ['-C', clone, 'ls-tree', '-r', '-z', 'HEAD'], { timeout: 30_000 });
+        const tree = await run('git', ['-C', clone, 'ls-tree', '-r', '-z', 'HEAD'], { timeout: 30_000, signal });
         if (tree.stdout.split('\0').some((entry) => entry.startsWith('120000 '))) {
             invalid();
         }
 
+        signal?.throwIfAborted();
         const discovered = await discoverSkills(clone, parsed.subpath, {
             includeDuplicateNames: true,
             includeInternal: true,
@@ -148,9 +110,11 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
             // Source diagnostics can contain private YAML excerpts.
             onWarning: () => {},
         });
+        signal?.throwIfAborted();
         const selected = filterSkills(discovered, names);
         const staged: PreparedSkill[] = [];
         for (const name of names) {
+            signal?.throwIfAborted();
             const matches = selected.filter((skill) => skill.name === name);
             if (matches.length !== 1) {
                 invalid();
@@ -162,6 +126,7 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
                 mode: 'copy',
                 global: false,
             });
+            signal?.throwIfAborted();
             const path = resolve(installed.path);
             if (!installed.success || path !== join(stage, '.agents', 'skills', name)) {
                 invalid();
@@ -180,11 +145,15 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
                 invalid();
             }
 
+            signal?.throwIfAborted();
             staged.push(prepared);
         }
         const corpus = join(stage, '.agents', 'skills');
         await fs.writeFile(join(corpus, marker), ownership, { flag: 'wx' });
-        if (await inspectTarget(directory)) {
+        const exists = await inspectTarget(directory);
+        signal?.throwIfAborted();
+        // Complete promotion and rollback without cancellation interrupting ownership.
+        if (exists) {
             const backup = join(stage, 'previous');
             await fs.rename(directory, backup);
             previous = backup;
@@ -199,8 +168,18 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
             throw error;
         }
         previous = undefined;
-        return Object.freeze(staged.map((skill) => Object.freeze({ ...skill, path: join(requestedDirectory, skill.name) })));
-    } catch {
+        result = Object.freeze(staged.map((skill) => Object.freeze({ ...skill, path: join(requestedDirectory, skill.name) })));
+    } catch (error) {
+        if (signal?.aborted && error === signal.reason) {
+            throw error;
+        }
+
+        if (signal?.aborted && error instanceof Error) {
+            if ('code' in error && error.code === 'ABORT_ERR' && error.cause === signal.reason) {
+                throw signal.reason;
+            }
+        }
+
         return invalid();
     } finally {
         // Keep a backup if restoring the previous corpus itself failed.
@@ -214,4 +193,7 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
             invalid();
         }
     }
+
+    signal?.throwIfAborted();
+    return result;
 }

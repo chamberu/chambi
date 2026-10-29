@@ -9,8 +9,8 @@ npm install @chamvi/skills @chamvi/core
 Call `prepareSkills({ source, revision, names, directory, verify? })` in an explicit setup/build task. The source is a local Git repository, Git URL or repository shorthand; revision is a full 40-character commit. The result is an ordered readonly list of `{ name, description, path }`, with absolute paths. Source configuration, role choices and independently reviewed content pins belong to your application.
 
 ```ts
-import { InvalidAgentDefinitionError, hashSkillBundle, loadSkillBundles } from '@chamvi/app';
-import { prepareSkills } from '@chamvi/skills';
+import { InvalidAgentDefinitionError } from '@chamvi/app';
+import { hashSkillBundle, loadSkillBundles, prepareSkills } from '@chamvi/skills';
 import type { PrepareSkillsOptions, PreparedSkill } from '@chamvi/skills';
 
 // Call in an explicit setup/build task, with separately reviewed pins from app configuration.

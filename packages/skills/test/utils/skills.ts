@@ -8,8 +8,8 @@
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { ApprovedSkill } from '../../src/skills/types.ts';
-import { hashSkillBundle } from '../../src/skills/bundle.ts';
+import type { ApprovedSkill } from '../../src/bundle/types.ts';
+import { hashSkillBundle } from '../../src/bundle/bundle.ts';
 
 const directories: string[] = [];
 

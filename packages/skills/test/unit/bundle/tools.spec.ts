@@ -14,15 +14,16 @@ import {
     it,
 } from 'vitest';
 import { ValidationError } from '@chamvi/core';
-import * as app from '@chamvi/app';
+import type { LoadedSkill, SkillCatalog } from '@chamvi/core';
+import * as app from '@chamvi/skills';
 import { approvedSkill, cleanupSkills } from '../../utils/skills.ts';
 
-function load(catalog: app.SkillCatalog, input: unknown) {
+function load(catalog: SkillCatalog, input: unknown) {
     return catalog.tools.load_skill!.execute!(input as never, {
         context: undefined,
         toolCallId: 'load',
         messages: [],
-    }) as Promise<app.LoadedSkill>;
+    }) as Promise<LoadedSkill>;
 }
 
 afterEach(cleanupSkills);

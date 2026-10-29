@@ -10,7 +10,7 @@ npm install @chamvi/app ai typeorm pg
 
 | Entry | Exports | Needs |
 |---|---|---|
-| `@chamvi/app` | `createApp`, `isApp`, the built-in modules, the module contract (tokens, `ModuleName`, `AppContext`, `ILifecycleHook`, the `IModule` and `IContainer` types), env readers, `approvalUrlOf`, `readConfig`, `createLogger`, `BUILTIN_PROVIDERS`, `hashSkillBundle`, `loadSkillBundles`, the skill, model and check types (`ProviderConfig`, `SecretValue`, `AppCheckOptions`, `AppCheckResult`, ...) | |
+| `@chamvi/app` | `createApp`, `isApp`, the built-in modules, the module contract (tokens, `ModuleName`, `AppContext`, `ILifecycleHook`, the `IModule` and `IContainer` types), env readers, `approvalUrlOf`, `readConfig`, `createLogger`, `BUILTIN_PROVIDERS`, the model and check types (`ProviderConfig`, `SecretValue`, `AppCheckOptions`, `AppCheckResult`, ...) | |
 | `@chamvi/app/authup` | `authupModule`, `oidcModule` | `@authup/server-adapter-kit`, `@authup/core-http-kit` |
 | `@chamvi/app/testing` | `buildModuleHarness`, `createModuleHarness` | |
 
@@ -205,9 +205,10 @@ The real module lifecycle without `start()` and a port, over exactly `options.mo
 
 ## Approved local skills
 
-Synchronous, opt-in helpers from `@chamvi/app`. See [Approved Local Skills](/guide/skills) for review, digest framing, file bounds and deployment.
+Synchronous, opt-in helpers from the optional `@chamvi/skills` package. See [Approved Local Skills](/guide/skills) for review, digest framing, file bounds and deployment.
 
 ```ts
+// Filesystem helpers are imported from @chamvi/skills.
 function hashSkillBundle(directory: string): string;
 function loadSkillBundles(approved: readonly ApprovedSkill[]): SkillCatalog;
 

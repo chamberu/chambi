@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import { join } from 'node:path';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
+import type { SkillCatalog } from '@chamvi/core';
 import {
     afterEach,
     describe,
@@ -15,7 +16,7 @@ import {
     it,
     vi,
 } from 'vitest';
-import * as app from '@chamvi/app';
+import * as app from '@chamvi/skills';
 import { approvedSkill, cleanupSkills } from '../../utils/skills.ts';
 
 afterEach(() => {
@@ -82,7 +83,7 @@ describe('approved skill catalog', () => {
         const good = approvedSkill();
         const invalid = approvedSkill('other');
         fs.appendFileSync(join(invalid.directory, 'SKILL.md'), 'PRIVATE-CHANGED');
-        let result: app.SkillCatalog | undefined;
+        let result: SkillCatalog | undefined;
         expect(() => { result = app.loadSkillBundles([good, invalid]); }).toThrow(InvalidAgentDefinitionError);
         expect(result).toBeUndefined();
         try {

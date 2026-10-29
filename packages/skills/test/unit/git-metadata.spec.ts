@@ -203,3 +203,20 @@ it.each(['stdout', 'stderr'])('terminates a SIGINT-resistant %s flood before dis
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
     expect((await fs.readdir(root)).sort()).toEqual(['bin', 'corpus', 'started', 'terminated']);
 });
+
+it.each(['rev-parse', 'ls-tree'])('aborts native metadata %s and joins termination before cleanup', async (command) => {
+    const { root, options } = await setup(command, 'signal');
+    const controller = new AbortController();
+    const reason = new Error('cancel native metadata');
+    const rejected = expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toBe(reason);
+    await vi.waitFor(() => expect(fs.readFile(join(root, 'pid'), 'utf8')).resolves.toMatch(/^\d+$/u), { timeout: 5_000 });
+    const pid = Number(await fs.readFile(join(root, 'pid'), 'utf8'));
+    controller.abort(reason);
+    await rejected;
+    expect(() => process.kill(pid, 0)).toThrow();
+    expect(discoverSkills).not.toHaveBeenCalled();
+    const started = JSON.parse(await fs.readFile(join(root, 'started'), 'utf8'));
+    await expect(fs.stat(started.directory)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
+    expect((await fs.readdir(root)).sort()).toEqual(['bin', 'corpus', 'pid', 'started']);
+});

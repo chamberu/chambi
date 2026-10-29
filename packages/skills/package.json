@@ -57,7 +57,9 @@
     },
     "license": "Apache-2.0",
     "dependencies": {
-        "skills": "git+https://github.com/tada5hi/skills-cli.git#6c80a94543b91a27df7445f40dfea7a61e0a5e9f"
+        "skills": "git+https://github.com/tada5hi/skills-cli.git#6c80a94543b91a27df7445f40dfea7a61e0a5e9f",
+        "smob": "^1.6.2",
+        "yaml": "~2.9.1"
     },
     "devDependencies": {
         "@chamvi/app": "^0.3.1",

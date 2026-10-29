@@ -20,7 +20,6 @@ import type {
     AppCheckOptions,
     AppCheckResult,
     AppStartOptions,
-    ApprovedSkill,
     IApp,
     LoadedSkill,
     SkillCatalog,
@@ -44,9 +43,6 @@ describe('public api', () => {
         'envList',
         'envJson',
         'envOneOf',
-        'hashSkillBundle',
-        'loadSkillBundles',
-        'loadSkillBundle',
         'loadAgent',
         'loadAgents',
         'hashAgentFolder',
@@ -174,12 +170,11 @@ describe('public api', () => {
 
     it('exports the approved skill types', () => {
         expectTypeOf<SkillCatalog['skills']>().toEqualTypeOf<readonly SkillMetadata[]>();
-        expectTypeOf<Parameters<typeof app.loadSkillBundles>[0]>().toEqualTypeOf<readonly ApprovedSkill[]>();
         expectTypeOf<LoadedSkill['references']>().toEqualTypeOf<string[]>();
         expectTypeOf<SkillCatalog['tools']>().toEqualTypeOf<ToolSet>();
     });
 
-    it.each(['readSkillBundle', 'parseSkillDocument', 'SKILL_MAX_BUNDLES'])('keeps skill internal %s private', (name) => {
+    it.each(['hashSkillBundle', 'loadSkillBundle', 'loadSkillBundles', 'gitSkills', 'readSkillBundle', 'parseSkillDocument', 'SKILL_MAX_BUNDLES'])('keeps skill internal %s private', (name) => {
         expect(app).not.toHaveProperty(name);
     });
 

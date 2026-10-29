@@ -12,6 +12,7 @@ export type PreparedSkill = {
 };
 
 export type PrepareSkillsOptions = {
+    signal?: AbortSignal;
     source: string;
     revision: string;
     names: readonly string[];
