@@ -155,7 +155,7 @@ function createChannelHandle(
         const key = message.key ?? effectKey;
         const captured = { ...message };
         const work = (async () => {
-            const source = capture && target === capture.run.trigger.address ? capture : undefined;
+            const source = capture && target === fallback ? capture : undefined;
             if (source) {
                 assertConversationText(captured.body, source.capability.limits.maxItemBytes);
                 await source.capability.repository.prepareEmit(source.binding.scope, {

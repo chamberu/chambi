@@ -211,6 +211,96 @@ describe('scoped memory tools', () => {
         await run(s);
         expect((await s.conversations.findOneNote((await s.conversations.findOne(identity))!, 'private'))?.text).toBe('saved');
     });
+    it.each(['memory_set', 'memory_remove'])('%s cannot mutate notes after drain and recovery by a peer', async (toolName) => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const settled = Promise.withResolvers<void>();
+        const peerEntered = Promise.withResolvers<void>();
+        const peerRelease = Promise.withResolvers<void>();
+        const conversations = new MemoryConversationRepository();
+        const repositories = { ...createMemoryRepositories(), conversations };
+        const channel = { name: 'chat' };
+        const old = new Engine({
+            owner: 'old',
+            repositories,
+            channels: [channel],
+            agents: [defineAgent({
+                name: 'helper',
+                instructions: 'help',
+                conversation: true,
+                model: mockModel([call(toolName, toolName === 'memory_set' ? { key: 'preference', text: 'stale' } : { key: 'preference' }, 'stale')]),
+                tools: () => {
+                    const tools = memoryTools();
+                    const execute = tools[toolName]!.execute!;
+                    tools[toolName] = {
+                        ...tools[toolName]!,
+                        execute: async (input, options) => {
+                            try { return await execute(input, options); } finally { settled.resolve(); }
+                        },
+                    };
+                    return tools;
+                },
+            })],
+            conversations: {
+                authorize: async ({ operation }) => {
+                    if (operation === 'notes') {
+                        entered.resolve();
+                        await release.promise;
+                    }
+                    return true;
+                },
+            },
+        });
+        const peer = new Engine({
+            owner: 'peer',
+            repositories,
+            channels: [channel],
+            agents: [defineAgent({
+                name: 'helper',
+                instructions: 'help',
+                conversation: true,
+                model: mockModel([
+                    call('memory_set', { key: 'preference', text: 'current' }, 'current'),
+                    { parts: [{ type: 'text', text: 'done' }] },
+                ]),
+                tools: memoryTools(),
+                hooks: {
+                    afterToolExecution: async () => {
+                        peerEntered.resolve();
+                        await peerRelease.promise;
+                    },
+                },
+            })],
+            conversations: { authorize: () => true },
+        });
+        engines.push(old, peer);
+        try {
+            const { runId } = await old.channelContext(channel).dispatchConversation(envelope, target);
+            await old.start();
+            await entered.promise;
+            await old.drain({ timeoutMs: 1 });
+            expect((await repositories.runs.findOne(runId))?.status).toBe('interrupted');
+
+            await peer.start();
+            await peerEntered.promise;
+            const recovered = (await repositories.runs.findOne(runId))!;
+            expect(recovered).toMatchObject({ status: 'running', claim: { owner: 'peer' } });
+            const { scope } = recovered.conversation!;
+            expect(await conversations.findOneNote(scope, 'preference')).toMatchObject({ text: 'current' });
+
+            release.resolve();
+            await settled.promise;
+            expect(await conversations.findOneNote(scope, 'preference')).toMatchObject({ text: 'current' });
+
+            peerRelease.resolve();
+            await peer.idle();
+            expect((await repositories.runs.findOne(runId))?.status).toBe('completed');
+        } finally {
+            release.resolve();
+            peerRelease.resolve();
+            await peer.idle();
+        }
+    });
     it('set_remove_replay_once and forgotten_body_absent_from_ledger', async () => {
         const conversations = new InspectableConversationRepository();
         const s = setup({

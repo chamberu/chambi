@@ -47,10 +47,15 @@ afterEach(async () => {
 function setup(
     action: (context: ToolContext) => Promise<unknown> = async (ctx) => ctx.channels.findOneOrFail().emit({ body: 'actual reply' }),
     clock?: ControllableClock,
+    defaultAddress?: string,
 ) {
     const store = createMemoryRepositories({ clock }); const conversations = new MemoryConversationRepository({ clock });
     const out = vi.fn<NonNullable<IChannel['out']>>(async () => {}); const other = vi.fn<NonNullable<IChannel['out']>>(async () => {});
-    const channel = { name: 'chat', out }; const alternate = {
+    const channel = {
+        name: 'chat',
+        ...(defaultAddress === undefined ? {} : { defaultAddress }),
+        out,
+    }; const alternate = {
         name: 'other',
         defaultAddress: 'elsewhere',
         out: other,
@@ -105,6 +110,41 @@ async function items(s: ReturnType<typeof setup>) {
 }
 
 describe('source emit journal', () => {
+    it.each([undefined, 'source'])('recalls replies to the source defaultAddress (explicit target: %s) without an intake address', async (address) => {
+        const s = setup(async (ctx) => {
+            const source = ctx.channels.findOneOrFail();
+            await source.emit({ body: 'actual reply' }, address);
+            await source.emit({ body: 'off-source reply' }, 'elsewhere');
+            await ctx.channels.findOneOrFail('other').emit({ body: 'other-channel reply' }, 'source');
+        }, undefined, 'source');
+        const envelope = {
+            agent: 'helper',
+            trigger: 'message',
+            payload: target.text,
+        };
+        const first = await s.ctx.dispatchConversation(envelope, target);
+        await s.engine.start(); await s.engine.idle();
+        expect((await s.repositories.runs.findOne(first.runId))?.status).toBe('completed');
+        expect(s.out.mock.calls.map(([message, to]) => [message.body, to])).toEqual([
+            ['actual reply', 'source'],
+            ['off-source reply', 'elsewhere'],
+        ]);
+        expect(s.other.mock.calls.map(([message, to]) => [message.body, to])).toEqual([['other-channel reply', 'source']]);
+        expect((await items(s)).filter((item) => item.role === 'assistant')).toMatchObject([{
+            text: 'actual reply',
+            status: 'sent',
+            target: { channel: 'chat', address: 'source' },
+        }]);
+        const next = await s.ctx.dispatchConversation({ ...envelope, payload: 'follow-up' }, { ...target, text: 'follow-up' });
+        await s.engine.idle();
+        expect((await s.repositories.runs.findOne(next.runId))?.status).toBe('completed');
+        const prompt = JSON.stringify(s.model.doStreamCalls[2]?.prompt);
+        expect(prompt).toContain('actual reply');
+        expect(prompt).not.toContain('off-source reply');
+        expect(prompt).not.toContain('other-channel reply');
+        expect(prompt).not.toContain('model output is not a reply');
+        expect(s.errors).toEqual([]);
+    });
     it('malformed custom keys cannot alias UTF-8 effect keys and invent a sent reply', async () => {
         let rejected = false;
         const s = setup(async (ctx) => {

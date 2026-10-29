@@ -48,6 +48,7 @@ async function writeNote(kind: 'set' | 'remove', input: unknown, ctx: ToolContex
     assertKey(input.key);
     const frame = currentToolCall();
     if (!frame) throw new ValidationError('A memory write must run inside a tool call.');
+    ctx.run.signal.throwIfAborted();
     // The wrapper frame's run id may come from mutable tool context; use the bound original.
     const source = {
         runId: bound.run.id,
