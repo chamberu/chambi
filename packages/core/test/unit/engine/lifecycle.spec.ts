@@ -23,6 +23,7 @@ import {
     InvalidRunStateError,
     LeaseLostError,
     defineAgent,
+    defineTool,
 } from '@chamvi/core';
 import type {
     EngineOptions,
@@ -178,6 +179,90 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
 }
 
 describe('graceful drain', () => {
+    it.each([false, true])('bounds detached approval delivery by the drain deadline (active run: %s)', async (active) => {
+        const clock = new ControllableClock();
+        const store = createMemoryRepositories({ clock });
+        const entered = Promise.withResolvers<void>();
+        const delivered = Promise.withResolvers<void>();
+        let signal: AbortSignal | undefined;
+        const ask = defineTool({
+            inputSchema: z.object({}),
+            execute: async (_input, { context }) => context.channels.findOneOrFail().approve({ title: 'Approve?' }),
+        });
+        const agent = defineAgent({
+            name: 'a',
+            instructions: 'Test',
+            model: mockModel([{
+                parts: [{
+                    type: 'tool-call',
+                    toolName: 'ask',
+                    input: {},
+                }],
+            }]),
+            tools: { ask },
+        });
+        const engine = new Engine({
+            agents: [agent, defineAgent({
+                name: 'worker',
+                instructions: 'Test',
+                model: new MockLanguageModelV4({ doStream: async () => new Promise(() => {}) }),
+            })],
+            repositories: store,
+            clock,
+            claimTtlMs: 60_000,
+            onError: () => {},
+            channels: [{
+                name: 'chat',
+                out: async (_message, _address, context) => {
+                    signal = context.signal;
+                    entered.resolve();
+                    await delivered.promise;
+                },
+            }],
+        });
+        engines.push(engine);
+        await engine.start();
+        const { runId } = await engine.dispatch({
+            agent: 'a',
+            trigger: 'message',
+            channel: 'chat',
+            address: 'source',
+            payload: {},
+        });
+        await engine.tick();
+        await entered.promise;
+        expect((await store.runs.findOne(runId))?.status).toBe('waiting');
+        let activeRunId: string | undefined;
+        if (active) {
+            activeRunId = (await engine.dispatch({
+                agent: 'worker',
+                trigger: 'work',
+                channel: 'chat',
+                payload: {},
+            })).runId;
+            await engine.tick();
+            await flush();
+        }
+        let completed = false;
+        const draining = engine.drain({ timeoutMs: 10 }).then(() => { completed = true; });
+        await flush();
+        expect(completed).toBe(false);
+        clock.advance(10);
+        await flush();
+        try {
+            expect(completed).toBe(true);
+            expect(signal?.aborted).toBe(true);
+            expect((await store.runs.findOne(runId))?.status).toBe('waiting');
+            if (activeRunId) expect((await store.runs.findOne(activeRunId))?.status).toBe('interrupted');
+            delivered.resolve();
+            await flush();
+            expect((await store.runs.findOne(runId))?.waiting?.notifiedAt).toBeUndefined();
+        } finally {
+            clock.advance(60_000);
+            await draining;
+        }
+    });
+
     it('drain waits for short runs to complete', async () => {
         const { model, calls } = scripted([{ before: () => sleep(30), response: text('done') }]);
         const {

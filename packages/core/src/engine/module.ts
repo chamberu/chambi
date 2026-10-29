@@ -156,6 +156,8 @@ export class Engine implements IContextProvider {
      */
     protected readonly deliveries = new Set<Promise<void>>();
 
+    protected readonly deliveryControllers = new Set<AbortController>();
+
     protected started = false;
 
     protected draining = false;
@@ -728,19 +730,23 @@ export class Engine implements IContextProvider {
             // keepAlive: the process must not exit before the leftovers are marked interrupted
             timer = this.clock.setTimeout(() => resolve(true), opts.timeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS, { keepAlive: true });
         });
-        const settled = await Promise.race([this.queue.idle().then(() => false as const), timedOut]);
-        timer?.clear();
-        if (!settled) { await this.idle(); return; }
+        try {
+            const settled = await Promise.race([this.idle().then(() => false as const), timedOut]);
+            if (!settled) return;
 
-        while (this.executions.size > 0) {
-            const pending = this.executions.values().toArray();
-            for (const execution of pending) {
-                execution.stop ??= 'drain';
-                execution.controller.abort();
+            while (this.executions.size > 0) {
+                const pending = this.executions.values().toArray();
+                for (const execution of pending) {
+                    execution.stop ??= 'drain';
+                    execution.controller.abort();
+                }
+                await Promise.all(pending.map((execution) => execution.done));
             }
-            await Promise.all(pending.map((execution) => execution.done));
+            for (const controller of this.deliveryControllers) controller.abort();
+            await this.idle();
+        } finally {
+            timer?.clear();
         }
-        await this.idle();
     }
 
     /** Resolves when nothing runs, nothing more can be started and no approval delivery is in flight. */
@@ -1048,6 +1054,7 @@ export class Engine implements IContextProvider {
         const isCurrent = (current: Run | undefined) => current?.status === RunStatus.WAITING &&
             current.waiting?.approvalId === waiting.approvalId;
         const controller = new AbortController();
+        this.deliveryControllers.add(controller);
         const timer = this.clock.setTimeout(() => controller.abort(new ChamviError({
             message: `Channel "${channel.name}" did not deliver approval "${waiting.approvalId}" within ${this.claimTtlMs}ms.`,
             code: ErrorCode.TIMEOUT,
@@ -1058,6 +1065,7 @@ export class Engine implements IContextProvider {
             // another attempt may have delivered it since `run` was read
             const current = await this.repositories.runs.findOne(run.id);
             if (!isCurrent(current) || current?.waiting?.notifiedAt) return;
+            controller.signal.throwIfAborted();
             const aborted = new Promise<never>((_, reject) => {
                 if (controller.signal.aborted) reject(controller.signal.reason);
                 controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
@@ -1080,6 +1088,7 @@ export class Engine implements IContextProvider {
             ]);
             // answered meanwhile: nothing left to record
             if (!isCurrent(await this.repositories.runs.findOne(run.id))) return;
+            controller.signal.throwIfAborted();
             const notified = await this.repositories.runs.update(
                 run.id,
                 { waiting: { ...waiting, notifiedAt: this.clock.now() } },
@@ -1087,8 +1096,9 @@ export class Engine implements IContextProvider {
             );
             this.emit({ type: 'run.updated', run: notified });
         } catch (error) {
-            if (!(error instanceof InvalidRunStateError)) this.onError(error, run);
+            if (!(error instanceof InvalidRunStateError) && (!this.draining || !controller.signal.aborted)) this.onError(error, run);
         } finally {
+            this.deliveryControllers.delete(controller);
             timer.clear();
             if (acquired) {
                 await this.repositories.locks.release(lockKey, attempt).catch((releaseError: unknown) => this.onError(releaseError, run));
