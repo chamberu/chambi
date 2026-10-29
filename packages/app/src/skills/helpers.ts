@@ -119,12 +119,13 @@ export function parseSkillDocument(content: string): ParsedSkillDocument {
             invalidSkill('SKILL.md', 'metadata must be a mapping');
         }
 
-        const { name, description } = metadata;
+        const { name } = metadata;
+        const description = typeof metadata.description === 'string' ? metadata.description.trim() : undefined;
         if (typeof name !== 'string' || !SKILL_NAME_PATTERN.test(name)) {
             invalidSkill('SKILL.md', 'invalid skill name');
         }
 
-        if (typeof description !== 'string' || !description.trim() || description.length > 1024 || SKILL_CONTROL_PATTERN.test(description)) {
+        if (typeof description !== 'string' || !description || description.length > 1024 || SKILL_CONTROL_PATTERN.test(description)) {
             invalidSkill('SKILL.md', 'description must be nonblank text of at most 1024 characters without controls');
         }
 

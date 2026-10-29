@@ -92,6 +92,8 @@ export default createApp({
 
 The catalog initially reveals approved metadata only. `load_skill({ name })` returns the body; `load_skill({ name, reference: 'references/checklist.md' })` returns one exact approved supporting file. Both are ordinary tool results, subject to existing policy, hooks and durable approvals, and stored in run checkpoints. Unknown frontmatter settings such as `allowed-tools` are ignored; their names appear in `catalog.skills[*].ignoredFields`.
 
+Supporting `.yaml` and `.yml` files, including agent metadata, are passive UTF-8 references. Descriptions have surrounding whitespace trimmed before the existing length and control-character checks; internal controls remain invalid.
+
 Catalog content is immutable after setup; changed bytes under an old pin fail when the catalog is recreated. External bundle edits are not automatically watched: update the tracked descriptor pin and reviewed runtime assets together. Bundles grant no tools, scripts, subagents or sandboxing. See [Approved Local Skills](https://chamvi.dev/guide/skills) for the review workflow, supported files, bounds, deployment and compatibility limits, and the [public API](https://chamvi.dev/reference/app#approved-local-skills).
 
 ## Environment

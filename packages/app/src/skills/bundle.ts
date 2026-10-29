@@ -82,7 +82,7 @@ function inspectInventory(directory: string): SkillBundleInventory {
                         invalidSkill('.', 'bundle exceeds 64 regular files');
                     }
 
-                    if (!['.md', '.txt', '.json'].includes(extname(path)) && !['LICENSE', 'NOTICE'].includes(basename(path))) {
+                    if (!['.md', '.txt', '.json', '.yaml', '.yml'].includes(extname(path)) && !['LICENSE', 'NOTICE'].includes(basename(path))) {
                         invalidSkill(path, 'unsupported file type');
                     }
 

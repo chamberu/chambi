@@ -28,7 +28,7 @@ description: Review trust boundaries and report evidence for an operator-approve
 Read the scoped task and inspect its trust boundaries. Consult references/checklist.md as needed.
 ```
 
-The frontmatter name must match the descriptor and `^[a-z][a-z0-9-]{0,63}$`. The description is a nonblank string of at most 1,024 characters. Metadata keys and descriptions cannot contain control characters. Duplicate keys, aliases, custom tags and nonstring keys are rejected. Other fields are informational only: `allowed-tools`, `model`, and similar fields grant no capabilities or settings. Their sorted names appear in `SkillMetadata.ignoredFields` for operator diagnostics.
+The frontmatter name must match the descriptor and `^[a-z][a-z0-9-]{0,63}$`. Surrounding description whitespace is trimmed before checking for a nonblank string of at most 1,024 characters. This accepts the trailing newline of a folded YAML description. Metadata keys and the trimmed description cannot contain control characters, including internal newlines and tabs. Duplicate keys, aliases, custom tags and nonstring keys are rejected. Other fields are informational only: `allowed-tools`, `model`, and similar fields grant no capabilities or settings. Their sorted names appear in `SkillMetadata.ignoredFields` for operator diagnostics.
 
 A version is an exact, nonblank opaque release identifier of at most 128 characters. Whitespace, control characters, wildcard/range syntax (including `x` segments) and the case-insensitive rolling labels `latest`, `main`, `master`, `head` are rejected. The SHA-256 identifies content independently of this label.
 
@@ -43,7 +43,7 @@ A version is an exact, nonblank opaque release identifier of at most 128 charact
 | Inventory entries, including root and directories | 1,024 |
 | Nested directory levels | 64 |
 
-Supported files are UTF-8 `.md`, `.txt`, `.json`, and exact basenames `LICENSE` and `NOTICE`. JSON is opaque reference text. Malformed UTF-8 and NUL-bearing content are rejected. Hidden paths, backslashes/control characters in paths, symlinks, special files, scripts, binaries and other file types are unsupported. Ordinary body/reference text may contain line breaks and tabs.
+Supported files are UTF-8 `.md`, `.txt`, `.json`, `.yaml`, `.yml`, and exact basenames `LICENSE` and `NOTICE`. JSON and YAML supporting files (including `agents/openai.yaml`) are opaque reference text, never parsed as configuration or executed. Malformed UTF-8 and NUL-bearing content are rejected. Hidden paths, backslashes/control characters in paths, symlinks, special files, scripts, binaries and other file types are unsupported. Ordinary body/reference text may contain line breaks and tabs.
 
 The digest covers every regular file, including README, LICENSE and references, without agent-folder ignore rules or newline normalization. Its framing is SHA-256 over `chamvi-skill-bundle-v1\n` (`\n` is one LF byte), then files in relative POSIX-path code-point order. For each file append decimal UTF-8 path-byte length, `:`, path bytes, decimal content-byte length, `:`, exact content bytes. Absolute roots, timestamps and empty directories do not contribute to the digest.
 

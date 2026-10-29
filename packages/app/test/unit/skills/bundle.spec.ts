@@ -98,6 +98,39 @@ describe('passive skill bundles', () => {
             .not.toBe(hashSkillBundle(bundle({ 'a.txtb.txt': 'C' })));
     });
 
+    it.each(['.yaml', '.yml'])('snapshots opaque passive %s references with exact byte pins', (extension) => {
+        const path = `agents/openai${extension}`;
+        const content = 'interface:\n  display_name: "Audit"\n---\n!unparsed &alias [*alias]\n';
+        const directory = bundle({ [path]: content });
+        const approved = descriptor(directory);
+        const expected = createHash('sha256')
+            .update('chamvi-skill-bundle-v1\n')
+            .update(`8:SKILL.md${Buffer.byteLength(skill())}:${skill()}`)
+            .update(`${Buffer.byteLength(path)}:${path}${Buffer.byteLength(content)}:${content}`)
+            .digest('hex');
+        expect(approved.sha256).toBe(expected);
+        const loaded = readSkillBundle(approved);
+        expect(loaded.references).toEqual([path]);
+        expect(loaded.readReference(path)).toBe(content);
+        fs.appendFileSync(join(directory, path), '\n');
+        expect(loaded.readReference(path)).toBe(content);
+        expect(() => readSkillBundle(approved)).toThrow(InvalidAgentDefinitionError);
+    });
+
+    it.each([
+        ['>\n  Review code\n  carefully.\n', 'Review code carefully.'],
+        ['" \\tReview code \\t "\n', 'Review code'],
+        [`" ${'x'.repeat(1024)} "\n`, 'x'.repeat(1024)],
+    ])('trims surrounding description whitespace before validation: %j', (value, expected) => {
+        const directory = bundle({ 'SKILL.md': skill(`name: audit\ndescription: ${value}`) });
+        expect(readSkillBundle(descriptor(directory)).metadata.description).toBe(expected);
+    });
+
+    it.each(['bad\\ntext', 'bad\\ttext', 'bad\\u001btext', ' \\n\\t ', ` ${'x'.repeat(1025)} `])('rejects invalid normalized description %j', (value) => {
+        expect(() => hashSkillBundle(bundle({ 'SKILL.md': skill(`name: audit\ndescription: "${value}"\n`) })))
+            .toThrow(InvalidAgentDefinitionError);
+    });
+
     it('requires_matching_name_and_pin', () => {
         const approved = descriptor(bundle());
         expect(readSkillBundle(approved).metadata.name).toBe('audit');

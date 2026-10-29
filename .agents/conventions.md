@@ -108,4 +108,5 @@ Current references:
 
 - [helm.md](references/helm.md): chamvi/helm, the `agent-app` chart; contract map from the CLI, env, routes, image and sandbox to the chart's templates (see [Downstream Repos](../AGENTS.md#downstream-repos)).
 - [agent-template.md](references/agent-template.md): chamvi/agent-template, the starter app; contract map from the public API, CLI, env and chart values to the template's files and tests.
+- [vercel-skills.md](references/vercel-skills.md): Vercel Skills source/install SDK, temporary fork root API and optional `@chamvi/skills` ownership, migration tracked in issue 97.
 - [eve.md](references/eve.md): Vercel's eve agent framework (and `@vercel/agent-runs`), the closest competitor; concept map for durability, approvals, channels, sandboxes, coding tools, tracing, evals and compaction.

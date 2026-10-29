@@ -244,6 +244,8 @@ type LoadedSkill = {
 
 `hashSkillBundle` validates and hashes all supported files; it is a review aid, not approval. `loadSkillBundles` verifies every explicit absolute directory and lowercase full digest before publishing an immutable catalog. Invalid descriptors, metadata, files, bounds, unstable reads or pin mismatches throw `InvalidAgentDefinitionError` with source-relative diagnostics and no file bodies. Names are unique; at most 16 bundles are allowed. Empty input returns empty `skills`, `instructions` and `tools`. Importing the package does no bundle I/O.
 
+`skills` descriptions have surrounding whitespace trimmed before the 1,024-character and control-character checks; internal controls remain invalid. Supporting `.yaml` and `.yml` files are passive UTF-8 text references, with the same file and bundle bounds.
+
 `instructions` contains sorted, escaped approved name/description/version/digest metadata, without bodies, references or host paths. `skills` additionally exposes ignored frontmatter field names in `ignoredFields`; `allowed-tools`, `model` and other extra fields do not take effect.
 
 `tools.load_skill` accepts `{ name: string, reference?: string }`. It returns `LoadedSkill` with the body (`reference: null`) or one exact approved reference, plus the sorted supporting-path list in either form. `SKILL.md` is available only through the body form. Unknown names, invalid/unknown paths and malformed inputs raise `ValidationError` without filesystem access. References can be loaded directly and are never followed automatically. Repeated/parallel calls read the same private snapshot through normal tool policy, hooks, approvals and checkpointing.
