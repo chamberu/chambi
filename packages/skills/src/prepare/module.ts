@@ -135,6 +135,12 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
             invalid();
         }
 
+        // Reject committed links before discovery or copying can follow them.
+        const tree = await run('git', ['-C', clone, 'ls-tree', '-r', '-z', 'HEAD'], { timeout: 30_000 });
+        if (tree.stdout.split('\0').some((entry) => entry.startsWith('120000 '))) {
+            invalid();
+        }
+
         const discovered = await discoverSkills(clone, parsed.subpath, {
             includeDuplicateNames: true,
             includeInternal: true,

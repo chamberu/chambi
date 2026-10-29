@@ -14,7 +14,7 @@ function prepareSkills(options: PrepareSkillsOptions): Promise<readonly Prepared
 
 <<< ../../../skills/src/prepare/types.ts{ts}
 
-`source` is an operator-configured local Git repository, Git URL or repository shorthand supported by the source parser. `revision` must be a full 40-character commit SHA; the cloned HEAD must match it. Embedded source refs/skill filters are refused. Local repositories are cloned at that commit, excluding working-tree edits. Names use `^[a-z][a-z0-9-]{0,63}$`, must be unique, and must each resolve to exactly one discovered skill. Return order follows `names`; paths are absolute.
+`source` is an operator-configured local Git repository, Git URL or repository shorthand supported by the source parser. `revision` must be a full 40-character commit SHA; the cloned HEAD must match it. Embedded source refs/skill filters are refused. Local repositories are cloned at that commit, excluding working-tree edits. Names use `^[a-z][a-z0-9-]{0,63}$`, must be unique, and must each resolve to exactly one discovered skill. The complete committed source must be symlink-free, including paths outside selected bundles. After checking HEAD, preparation inspects the committed Git tree and rejects any source link before discovery or copying; failed tree inspection also rejects preparation. Return order follows `names`; paths are absolute.
 
 `directory` is a dedicated managed corpus, created if missing. Preparation refuses symlinks and nonempty unowned directories. A `.chamvi-skills` ownership marker lives at its root, outside the individual bundles. Successful replacement removes the previous corpus, including previously selected names. Do not put application files there.
 
