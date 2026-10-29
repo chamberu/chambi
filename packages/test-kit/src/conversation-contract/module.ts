@@ -145,6 +145,27 @@ export function describeConversationStoreContract(
             expect(items.total).toBe(4);
         });
 
+        it('active_snapshot_survives_stricter_limits_on_resume', async () => {
+            const {
+                store,
+                clock,
+                scope,
+            } = await setup();
+            await completeTurn(store, clock, scope, 'run-0', 'earlier', ['reply']);
+            const first = await store.beginTurn(scope, 'run-a', 'accepted text', LIMITS);
+            expect(first.kind).toBe('ready');
+            clock.advance(5000);
+            const stricter = {
+                ...LIMITS,
+                maxItemBytes: 4,
+                maxHistoryBytes: 4,
+                retentionMs: 1,
+            };
+            await expect(store.beginTurn(scope, 'run-a', 'accepted text', stricter)).resolves.toEqual(first);
+            await store.endTurn(scope, 'run-a', []);
+            await expect(store.beginTurn(scope, 'run-b', 'new oversized input', stricter)).rejects.toMatchObject(INVALID);
+        });
+
         it('ended_turn_does_not_reclaim_its_retained_input', async () => {
             const { store, scope } = await setup();
             await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
@@ -625,6 +646,8 @@ export function describeConversationStoreContract(
             begun.snapshot.messages.push({ role: 'user', content: 'injected' });
             begun.snapshot.itemIds.length = 0;
             begun.snapshot.createdAt.setTime(0);
+            const admitted = await store.listItems(scope, { limit: 100, offset: 0 });
+            expect(admitted.data.find((item) => item.id === 'user:run-b')?.createdAt).toEqual(clock.now());
             const replay = await store.beginTurn(scope, 'run-b', 'again', LIMITS);
             if (replay.kind !== 'ready') throw new TypeError('expected ready');
             expect(replay.snapshot.messages).toHaveLength(2);

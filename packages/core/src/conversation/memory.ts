@@ -10,7 +10,7 @@ import { systemClock } from '../clock/index.ts';
 import type { IClock } from '../clock/index.ts';
 import { InvalidRunStateError, ValidationError } from '../errors/index.ts';
 import { compareCodePoints, copy } from '../store/memory/helpers.ts';
-import { CONVERSATION_NOTES_MAX } from './constants.ts';
+import { CONVERSATION_LIMITS_MAX, CONVERSATION_NOTES_MAX } from './constants.ts';
 import {
     assertConversationIdentity,
     assertConversationScope,
@@ -112,18 +112,18 @@ export class MemoryConversationStore implements IConversationStore {
     ): Promise<BeginTurnResult> {
         assertConversationScope(scope);
         assertRunId(runId);
-        assertConversationText(text, limits.maxItemBytes);
+        assertConversationText(text, CONVERSATION_LIMITS_MAX.maxItemBytes);
 
         const record = this.records.get(scope.id);
         if (!record || record.generation !== scope.generation) return { kind: 'stale' };
-        // ownership before any replay: a settled run never takes the scope from the active one
-        if (record.activeRunId !== undefined && record.activeRunId !== runId) {
-            return { kind: 'busy', runId: record.activeRunId };
-        }
-
         const existing = record.snapshot;
         if (record.activeRunId === runId && existing) {
             return { kind: 'ready', snapshot: copy(existing) };
+        }
+
+        assertConversationText(text, limits.maxItemBytes);
+        if (record.activeRunId !== undefined && record.activeRunId !== runId) {
+            return { kind: 'busy', runId: record.activeRunId };
         }
 
         if (this.findItem(record, userItemId(runId))) {
@@ -158,7 +158,7 @@ export class MemoryConversationStore implements IConversationStore {
         };
         record.snapshot = copy(snapshot);
         record.activeRunId = runId;
-        return { kind: 'ready', snapshot };
+        return { kind: 'ready', snapshot: copy(snapshot) };
     }
 
     async endTurn(scope: ConversationScope, runId: string, confirmedEmitIds: string[]): Promise<void> {

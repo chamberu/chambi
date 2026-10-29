@@ -6,6 +6,7 @@
  */
 
 import {
+    CONVERSATION_LIMITS_MAX,
     CONVERSATION_NOTES_MAX,
     InvalidRunStateError,
     ValidationError,
@@ -202,10 +203,9 @@ export class TypeormConversationStore implements IConversationStore {
     async beginTurn(scope: ConversationScope, runId: string, text: string, limits: ResolvedConversationLimits): Promise<BeginTurnResult> {
         assertConversationScope(scope);
         assertRunId(runId);
-        assertConversationText(text, limits.maxItemBytes);
+        assertConversationText(text, CONVERSATION_LIMITS_MAX.maxItemBytes);
         return this.locked(scope.id, async (manager, row) => {
             if (!row || row.generation !== scope.generation) return { kind: 'stale' };
-            if (row.activeRunId !== null && row.activeRunId !== runId) return { kind: 'busy', runId: row.activeRunId };
             const where = { scopeId: scope.id, generation: scope.generation };
             if (row.activeRunId === runId && row.snapshotCreatedAt !== null) {
                 return {
@@ -221,6 +221,8 @@ export class TypeormConversationStore implements IConversationStore {
                     },
                 };
             }
+            assertConversationText(text, limits.maxItemBytes);
+            if (row.activeRunId !== null && row.activeRunId !== runId) return { kind: 'busy', runId: row.activeRunId };
             if (await manager.existsBy(ConversationItemEntity, { ...where, id: userItemId(runId) })) {
                 throw new InvalidRunStateError('The conversation turn has already ended.');
             }
