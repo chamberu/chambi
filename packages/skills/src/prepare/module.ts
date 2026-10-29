@@ -37,6 +37,7 @@ function readGitMetadata(clone: string, ...args: string[]): Promise<string> {
     const abort = new AbortController();
     return simpleGit({
         abort: abort.signal,
+        baseDir: clone,
         trimmed: false,
         timeout: {
             block: 30_000,
@@ -55,7 +56,7 @@ function readGitMetadata(clone: string, ...args: string[]): Promise<string> {
                 }
             });
         }
-    }).raw(['-C', clone, ...args]);
+    }).raw(args);
 }
 
 async function inspectTarget(directory: string): Promise<boolean> {

@@ -58,8 +58,9 @@ async function setup(command: string, mode: string) {
     await fs.writeFile(join(bin, 'git'), `#!${process.execPath}
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
-if (args[0] === '-C' && args.includes(${JSON.stringify(command)})) {
-    require('node:fs').writeFileSync(${JSON.stringify(join(root, 'started'))}, ${JSON.stringify(command)});
+if (args[0] === ${JSON.stringify(command)}) {
+    const head = spawnSync(${JSON.stringify(binary)}, ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+    require('node:fs').writeFileSync(${JSON.stringify(join(root, 'started'))}, JSON.stringify({ command: args[0], cwd: process.cwd(), head }));
     const mode = ${JSON.stringify(mode)};
     if (mode === 'slow') {
         setInterval(() => process.stdout.write(' '), 10);
@@ -89,7 +90,10 @@ it.each([
     await expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
     expect(discoverSkills).not.toHaveBeenCalled();
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
-    expect(await fs.readFile(join(root, 'started'), 'utf8')).toBe(command);
+    const started = JSON.parse(await fs.readFile(join(root, 'started'), 'utf8'));
+    expect(started).toMatchObject({ command, head: options.revision });
+    expect(started.cwd).not.toBe(await fs.realpath(options.source));
+    await expect(fs.stat(started.cwd)).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await fs.readdir(root)).sort()).toEqual(['bin', 'corpus', 'started']);
 });
 
@@ -103,6 +107,9 @@ it.each(['rev-parse', 'ls-tree'])('enforces the absolute 30 second deadline for 
     await expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
     expect(timers.mock.calls.some(([, delay]) => delay === 30_000)).toBe(true);
     expect(discoverSkills).not.toHaveBeenCalled();
-    expect(await fs.readFile(join(root, 'started'), 'utf8')).toBe(command);
+    const started = JSON.parse(await fs.readFile(join(root, 'started'), 'utf8'));
+    expect(started).toMatchObject({ command, head: options.revision });
+    expect(started.cwd).not.toBe(await fs.realpath(options.source));
+    await expect(fs.stat(started.cwd)).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await fs.readdir(root)).sort()).toEqual(['bin', 'corpus', 'started']);
 }, 10_000);

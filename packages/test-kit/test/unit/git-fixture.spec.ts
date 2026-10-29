@@ -6,6 +6,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -44,6 +45,10 @@ describe('createGitFixture', () => {
         const fixture = await createGitFixture({ 'a.txt': 'a' });
         try {
             await expect(fixture.git('-c', 'alias.fixture-raw=!printf "trusted\\n"', 'fixture-raw')).resolves.toBe('trusted\n');
+            await expect(fixture.git('status', '--porc')).resolves.toBe('');
+            const config = join(fixture.path, 'fixture.config');
+            await writeFile(config, '[fixture]\nvalue = included\n');
+            await expect(fixture.git('-c', `include.path=${config}`, 'config', 'fixture.value')).resolves.toBe('included\n');
         } finally {
             await fixture.cleanup();
         }
