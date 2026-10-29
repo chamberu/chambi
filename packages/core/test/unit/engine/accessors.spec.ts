@@ -9,45 +9,45 @@ import type { LanguageModel } from 'ai';
 import { describe, expect, it } from 'vitest';
 import { Engine, defineAgent, systemClock } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStores } from '../../../src/store/index.ts';
 
 const model = {} as LanguageModel;
 const triage = defineAgent({
-    name: 'triage', 
-    model, 
-    instructions: 'x', 
+    name: 'triage',
+    model,
+    instructions: 'x',
 });
 const digest = defineAgent({
-    name: 'digest', 
-    model, 
-    instructions: 'x', 
+    name: 'digest',
+    model,
+    instructions: 'x',
 });
 
 describe('engine accessors', () => {
     it('exposes the store and clock it was built with', () => {
         const clock = new ControllableClock();
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStores({ clock });
         const engine = new Engine({
-            store,
+            stores: store,
             agents: [triage],
             clock,
         });
-        expect(engine.store).toBe(store);
+        expect(engine.stores).toBe(store);
         expect(engine.clock).toBe(clock);
     });
 
     it('defaults the clock to systemClock', () => {
         const engine = new Engine({
-            store: new MemoryStore(), 
-            agents: [], 
+            stores: createMemoryStores(),
+            agents: [],
         });
         expect(engine.clock).toBe(systemClock);
     });
 
     it('lists its agents in registration order', () => {
         const engine = new Engine({
-            store: new MemoryStore(), 
-            agents: [triage, digest], 
+            stores: createMemoryStores(),
+            agents: [triage, digest],
         });
         expect(engine.listAgents()).toEqual([triage, digest]);
         expect(engine.listAgents()[0]).toBe(triage);
@@ -55,8 +55,8 @@ describe('engine accessors', () => {
 
     it('returns a fresh array from listAgents', () => {
         const engine = new Engine({
-            store: new MemoryStore(), 
-            agents: [triage], 
+            stores: createMemoryStores(),
+            agents: [triage],
         });
         const agents = engine.listAgents();
         agents.push(digest);
@@ -66,8 +66,8 @@ describe('engine accessors', () => {
 
     it('looks an agent up by name', () => {
         const engine = new Engine({
-            store: new MemoryStore(), 
-            agents: [triage, digest], 
+            stores: createMemoryStores(),
+            agents: [triage, digest],
         });
         expect(engine.getAgent('digest')).toBe(digest);
         expect(engine.getAgent('unknown')).toBeUndefined();

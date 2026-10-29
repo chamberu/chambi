@@ -13,10 +13,10 @@ import {
 } from 'vitest';
 import {
     Engine,
-    MemoryStore,
     RunStatus,
     SandboxError,
     approve,
+    createMemoryStores,
     defineAgent,
 } from '@chamvi/core';
 import type { AgentHooks, Run, RunEvent } from '@chamvi/core';
@@ -62,7 +62,7 @@ function gateHooks(gate: string | undefined): AgentHooks | undefined {
 
 async function run(s: Setup) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStores({ clock });
     const provider = s.provider ?? createFakeProvider({ clock });
     const errors: unknown[] = [];
     const manager = createWorkspaceManager({
@@ -79,7 +79,7 @@ async function run(s: Setup) {
         hooks: gateHooks(s.gate),
     });
     const engine = new Engine({
-        store,
+        stores: store,
         agents: [agent],
         clock,
         onError: () => {},
@@ -99,7 +99,7 @@ async function run(s: Setup) {
         manager,
         errors,
         runId,
-        run: await store.getRun(runId),
+        run: await store.runs.getRun(runId),
     };
 }
 

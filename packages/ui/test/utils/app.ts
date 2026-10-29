@@ -6,7 +6,7 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { Engine, MemoryStore } from '@chamvi/core';
+import { Engine, createMemoryStores } from '@chamvi/core';
 import { createHttpApp, staticTokens } from '@chamvi/http';
 import type { HttpAppOptions } from '@chamvi/http';
 import { ControllableClock } from '@chamvi/test-kit';
@@ -24,7 +24,7 @@ export function createUiTestApp(options: Partial<Omit<HttpAppOptions, 'engine' |
 } {
     const clock = new ControllableClock(new Date(1_000_000));
     const engine = new Engine({
-        store: new MemoryStore({ clock }),
+        stores: createMemoryStores({ clock }),
         agents: [],
         clock,
         onError: () => {},

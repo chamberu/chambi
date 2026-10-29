@@ -6,15 +6,15 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { MemoryStore } from '@chamvi/core';
-import type { IStore } from '@chamvi/core';
+import { createMemoryStores } from '@chamvi/core';
+import type { Stores } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import type { IShutdown } from '@chamvi/http';
 import { call, createTestApp } from '../../utils/app.ts';
 
-function storeWith(getRun: IStore['getRun'], clock: ControllableClock): IStore {
-    const store = new MemoryStore({ clock });
-    store.getRun = getRun;
+function storeWith(getRun: Stores['runs']['getRun'], clock: ControllableClock): Stores {
+    const store = createMemoryStores({ clock });
+    store.runs.getRun = getRun;
     return store;
 }
 
@@ -52,7 +52,7 @@ describe('GET /readyz', () => {
         const store = storeWith(async () => {
             throw new Error('down');
         }, clock);
-        const { app } = createTestApp({ clock, store });
+        const { app } = createTestApp({ clock, stores: store });
         const response = await call(app, 'GET', '/readyz');
         expect(response.status).toBe(503);
         expect(await response.json()).toEqual({ status: 'unavailable', reason: 'store-unreachable' });
@@ -61,7 +61,7 @@ describe('GET /readyz', () => {
     it('fails when the store does not answer in time', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const store = storeWith(() => new Promise(() => {}), clock);
-        const { app } = createTestApp({ clock, store });
+        const { app } = createTestApp({ clock, stores: store });
         let settled = false;
         const pending = call(app, 'GET', '/readyz').then((response) => {
             settled = true;

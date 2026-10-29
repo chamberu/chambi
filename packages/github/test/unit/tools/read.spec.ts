@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest';
 import {
     Engine,
     FatalToolError,
-    MemoryStore,
     ValidationError,
+    createMemoryStores,
     defineAgent,
     wrapToolsForRun,
 } from '@chamvi/core';
@@ -39,7 +39,7 @@ const ISSUE = {
 function setup(github: Partial<GithubAppOptions> = {}, context: ToolContextInput = {}) {
     const fixture = createGithubFixture(github);
     const ctx = toolContext(context);
-    const tools: ToolSet = wrapToolsForRun(fixture.gh.readTools(), ctx, new MemoryStore());
+    const tools: ToolSet = wrapToolsForRun(fixture.gh.readTools(), ctx, createMemoryStores().effects);
     const call = <T = unknown>(name: string, input: unknown) => callTool<T>(tools, name, input, ctx);
     return {
         ...fixture,
@@ -667,7 +667,7 @@ describe('read tools', () => {
             payload: {},
         };
         const ctx = toolContext({ channel: 'github-ent', payload: event });
-        const tools: ToolSet = wrapToolsForRun(fixture.gh.readTools(), ctx, new MemoryStore());
+        const tools: ToolSet = wrapToolsForRun(fixture.gh.readTools(), ctx, createMemoryStores().effects);
         fixture.fake.issues.set('octo/demo#5', { ...ISSUE });
         await callTool(tools, 'github_get_issue', { repo: 'octo/demo', number: 5 }, ctx);
         expect(fixture.fake.tokenInstallations).toEqual([42]);
@@ -786,7 +786,7 @@ describe('read tools', () => {
         });
         const controller = new AbortController();
         const ctx = toolContext({ signal: controller.signal });
-        const tools: ToolSet = wrapToolsForRun(gh.readTools(), ctx, new MemoryStore());
+        const tools: ToolSet = wrapToolsForRun(gh.readTools(), ctx, createMemoryStores().effects);
         const result = callTool(tools, 'github_get_issue', { repo: 'octo/demo', number: 5 }, ctx).catch((e: unknown) => e);
         await started.promise;
         controller.abort(new Error('drained'));
@@ -801,7 +801,7 @@ describe('read tools', () => {
             fake,
             gh,
         } = createGithubFixture();
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStores({ clock });
         const agent = defineAgent({
             name: 'triage',
             model: mockModel([
@@ -819,7 +819,7 @@ describe('read tools', () => {
             tools: () => gh.readTools(),
         });
         const engine = new Engine({
-            store,
+            stores: store,
             agents: [agent],
             channels: [githubChannel({ app: gh, clock })],
             clock,
@@ -841,12 +841,12 @@ describe('read tools', () => {
         await engine.idle();
         await engine.drain();
 
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.getRun(runId))?.status).toBe('completed');
         expect(fake.requests.some((r) => r.path === '/repos/octo/demo/issues/99' && r.authorization === 'token ghs_1')).toBe(true);
-        const steps = await store.listSteps(runId);
+        const steps = await store.steps.listSteps(runId);
         const toolStep = steps.find((s) => s.kind === 'tool');
         expect(toolStep?.error).toMatchObject({ message: expect.stringContaining('GitHub 404') });
-        const checkpoint = await store.latestCheckpoint(runId);
+        const checkpoint = await store.checkpoints.latestCheckpoint(runId);
         const stored = JSON.stringify({ steps, checkpoint });
         expect(stored).not.toContain('ghs_');
         expect(stored.toLowerCase()).not.toContain('authorization');

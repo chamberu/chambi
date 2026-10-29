@@ -38,7 +38,7 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
         drainTimeoutMs = 30_000,
         signal,
     } = opts;
-    const { clock, store } = engine;
+    const { clock, stores: store } = engine;
     const subscription = resolveCronSubscription(engine, agent, opts.subscription);
     // a stop that arrived before the job must not recover and execute the store's queued runs
     if (signal?.aborted) return { status: 'skipped', exitCode: 0 };
@@ -79,7 +79,7 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
                     if (settled) return;
                     const candidate = await engine.getRun(runId);
                     if (settled) return;
-                    if (candidate && (SETTLING.includes(candidate.status) || await isQueuedBehindApproval(store, candidate))) {
+                    if (candidate && (SETTLING.includes(candidate.status) || await isQueuedBehindApproval(store.runs, candidate))) {
                         done(candidate);
                         return;
                     }

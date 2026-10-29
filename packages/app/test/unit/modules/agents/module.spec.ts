@@ -11,10 +11,10 @@ import { join, relative } from 'node:path';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
 } from '@chamvi/core';
-import type { Agent, IStore } from '@chamvi/core';
+import type { Agent, Stores } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { customProvider } from 'ai';
 import {
@@ -70,9 +70,9 @@ function codeAgent(name: string): Agent {
 }
 
 /** A queued run of `name`, dispatched through an engine that never starts. */
-async function queueRun(store: IStore, clock: ControllableClock, name: string): Promise<string> {
+async function queueRun(store: Stores, clock: ControllableClock, name: string): Promise<string> {
     const engine = new Engine({
-        store,
+        stores: store,
         clock,
         agents: [codeAgent(name)],
     });
@@ -104,14 +104,14 @@ afterEach(async () => {
 function build(options: {
     mode?: AppMode;
     dir?: string;
-    store?: IStore;
+    stores?: Stores;
     clock?: ControllableClock;
     agents?: Agent[];
     env?: Record<string, string>;
 } = {}) {
     const clock = options.clock ?? new ControllableClock(START);
     const logger = createRecordingLogger(clock);
-    const store = options.store ?? new MemoryStore({ clock });
+    const store = options.stores ?? createMemoryStores({ clock });
     const module = new AgentsModule();
     const dir = options.dir ?? root.path;
     const harness = buildHarness({
@@ -125,7 +125,7 @@ function build(options: {
         models: { test: provider() },
         modules: [
             configModule({ clock, logger }),
-            storeModule({ store }),
+            storeModule({ stores: store }),
             engineModule(),
             module,
         ],
@@ -137,7 +137,7 @@ function build(options: {
         harness,
         clock,
         logger,
-        store,
+        stores: store,
         engine,
         issues: () => harness.container.resolve(AppToken.AGENT_ISSUES)(),
         /** start mode: runs the `started` hooks (the http module's serve step does in an app). */
@@ -162,11 +162,11 @@ describe('agentsModule', () => {
     it('loads the folder at boot before the engine starts', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStores({ clock });
         const runId = await queueRun(store, clock, 'greeter');
 
         const { harness, engine } = build({
-            store,
+            stores: store,
             clock,
             dir: relative(process.cwd(), root.path),
         });
@@ -174,15 +174,15 @@ describe('agentsModule', () => {
         await engine().idle();
 
         expect(engine().agentRevision('greeter')).toBe(await hashAgentFolder(folder()));
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'from folder' });
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(await hashAgentFolder(folder()));
+        expect(await store.runs.getRun(runId)).toMatchObject({ status: 'completed', output: 'from folder' });
+        expect((await store.agentRevisions.getAgentRevision('greeter'))?.hash).toBe(await hashAgentFolder(folder()));
     });
 
     it('a folder change while stopped cancels the old runs at boot once', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStores({ clock });
+        await store.agentRevisions.setAgentRevision({
             agent: 'greeter',
             hash: 'h1',
             changedAt: START,
@@ -190,27 +190,27 @@ describe('agentsModule', () => {
         const old = await queueRun(store, clock, 'greeter');
         clock.advance(1_000);
 
-        const first = build({ store, clock });
+        const first = build({ stores: store, clock });
         await first.harness.setup();
         await first.engine().idle();
-        expect((await store.getRun(old))?.status).toBe('cancelled');
+        expect((await store.runs.getRun(old))?.status).toBe('cancelled');
         await first.harness.stop();
 
         clock.advance(1_000);
         const later = await queueRun(store, clock, 'greeter');
         clock.advance(1_000);
-        const second = build({ store, clock });
+        const second = build({ stores: store, clock });
         await second.harness.setup();
         await second.engine().idle();
 
-        expect(await store.getRun(later)).toMatchObject({ status: 'completed', output: 'from folder' });
+        expect(await store.runs.getRun(later)).toMatchObject({ status: 'completed', output: 'from folder' });
     });
 
     it('a normal boot cancels nothing', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStores({ clock });
+        await store.agentRevisions.setAgentRevision({
             agent: 'greeter',
             hash: await hashAgentFolder(folder()),
             changedAt: START,
@@ -218,11 +218,11 @@ describe('agentsModule', () => {
         const runId = await queueRun(store, clock, 'greeter');
         clock.advance(1_000);
 
-        const { harness, engine } = build({ store, clock });
+        const { harness, engine } = build({ stores: store, clock });
         await harness.setup();
         await engine().idle();
 
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.getRun(runId))?.status).toBe('completed');
     });
 
     it('an upgrade from the full-folder hash moves the marker and cancels nothing', async () => {
@@ -235,8 +235,8 @@ describe('agentsModule', () => {
             legacy.update('\0');
         }
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStores({ clock });
+        await store.agentRevisions.setAgentRevision({
             agent: 'greeter',
             hash: legacy.digest('hex'),
             changedAt: START,
@@ -244,12 +244,12 @@ describe('agentsModule', () => {
         const runId = await queueRun(store, clock, 'greeter');
         clock.advance(1_000);
 
-        const { harness, engine } = build({ store, clock });
+        const { harness, engine } = build({ stores: store, clock });
         await harness.setup();
         await engine().idle();
 
-        expect((await store.getRun(runId))?.status).toBe('completed');
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(await hashAgentFolder(folder()));
+        expect((await store.runs.getRun(runId))?.status).toBe('completed');
+        expect((await store.agentRevisions.getAgentRevision('greeter'))?.hash).toBe(await hashAgentFolder(folder()));
     });
 
     it('a code agent wins a name clash and the folder is an issue', async () => {
@@ -309,8 +309,8 @@ describe('agentsModule', () => {
 
     it('a marker without a folder removes the agent\'s runs at boot', async () => {
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStores({ clock });
+        await store.agentRevisions.setAgentRevision({
             agent: 'gone',
             hash: 'h1',
             changedAt: START,
@@ -319,48 +319,48 @@ describe('agentsModule', () => {
         // any entry makes an empty listing authoritative (no unmounted volume)
         await writeFile(join(root.path, '.keep'), '');
 
-        const { harness } = build({ store, clock });
+        const { harness } = build({ stores: store, clock });
         await harness.setup();
 
-        expect((await store.getRun(runId))?.status).toBe('cancelled');
-        expect(await store.getAgentRevision('gone')).toBeUndefined();
+        expect((await store.runs.getRun(runId))?.status).toBe('cancelled');
+        expect(await store.agentRevisions.getAgentRevision('gone')).toBeUndefined();
     });
 
     it('an empty agents dir (an unmounted volume) removes no marker at boot', async () => {
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStores({ clock });
+        await store.agentRevisions.setAgentRevision({
             agent: 'gone',
             hash: 'h1',
             changedAt: START,
         });
         const runId = await queueRun(store, clock, 'gone');
 
-        const { harness, logger } = build({ store, clock });
+        const { harness, logger } = build({ stores: store, clock });
         await harness.setup();
 
-        expect((await store.getRun(runId))?.status).toBe('queued');
-        expect(await store.getAgentRevision('gone')).toBeDefined();
+        expect((await store.runs.getRun(runId))?.status).toBe('queued');
+        expect(await store.agentRevisions.getAgentRevision('gone')).toBeDefined();
         expect(logger.entries.filter((entry) => entry.msg === 'the agents dir is empty; no agent is removed')).toHaveLength(1);
     });
 
     it('a marker of a code agent is left alone at boot', async () => {
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStores({ clock });
+        await store.agentRevisions.setAgentRevision({
             agent: 'triage',
             hash: 'h1',
             changedAt: START,
         });
 
         const { harness } = build({
-            store, 
+            stores: store,
             clock, 
             agents: [codeAgent('triage')], 
         });
         await harness.setup();
 
-        expect(await store.getAgentRevision('triage')).toBeDefined();
+        expect(await store.agentRevisions.getAgentRevision('triage')).toBeDefined();
     });
 
     it('the watcher applies a change only once it is stable for one poll', async () => {
@@ -368,7 +368,7 @@ describe('agentsModule', () => {
         const {
             harness,
             engine,
-            store,
+            stores: store,
             watch,
             poll,
         } = build();
@@ -381,19 +381,19 @@ describe('agentsModule', () => {
             channel: 'http',
             payload: {},
         });
-        await expect.poll(async () => (await store.getRun(runId))?.status).toBe('running');
+        await expect.poll(async () => (await store.runs.getRun(runId))?.status).toBe('running');
 
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
         const v2 = await hashAgentFolder(folder());
         await poll();
         expect(engine().agentRevision('greeter')).toBe(v1);
-        expect((await store.getRun(runId))?.status).toBe('running');
+        expect((await store.runs.getRun(runId))?.status).toBe('running');
 
         await poll();
         await engine().idle();
         expect(engine().agentRevision('greeter')).toBe(v2);
-        expect((await store.getRun(runId))?.status).toBe('cancelled');
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(v2);
+        expect((await store.runs.getRun(runId))?.status).toBe('cancelled');
+        expect((await store.agentRevisions.getAgentRevision('greeter'))?.hash).toBe(v2);
     });
 
     it('logs agent reloaded once with the cancelled run ids', async () => {
@@ -401,7 +401,7 @@ describe('agentsModule', () => {
         const {
             harness,
             engine,
-            store,
+            stores: store,
             logger,
             watch,
             poll,
@@ -414,7 +414,7 @@ describe('agentsModule', () => {
             channel: 'http',
             payload: {},
         });
-        await expect.poll(async () => (await store.getRun(runId))?.status).toBe('running');
+        await expect.poll(async () => (await store.runs.getRun(runId))?.status).toBe('running');
 
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
         const v2 = await hashAgentFolder(folder());
@@ -429,7 +429,7 @@ describe('agentsModule', () => {
             revision: v2.slice(0, 12),
             cancelled: [runId],
         })]);
-        expect(await store.getRun(runId)).toMatchObject({ status: 'cancelled', error: { code: 'agent_replaced' } });
+        expect(await store.runs.getRun(runId)).toMatchObject({ status: 'cancelled', error: { code: 'agent_replaced' } });
     });
 
     it('logs agent removed', async () => {
@@ -490,7 +490,7 @@ describe('agentsModule', () => {
             issues,
             logger,
             clock,
-            store,
+            stores: store,
             watch,
             poll,
         } = build();
@@ -506,7 +506,7 @@ describe('agentsModule', () => {
         await poll();
         await poll();
         expect(engine().agentRevision('greeter')).toBe(v1);
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(v1);
+        expect((await store.agentRevisions.getAgentRevision('greeter'))?.hash).toBe(v1);
         expect(issues()).toEqual([{
             agent: 'greeter',
             message: expect.stringMatching(/^greeter\/agent\.ts: /),
@@ -529,7 +529,7 @@ describe('agentsModule', () => {
         const {
             harness,
             engine,
-            store,
+            stores: store,
             watch,
             poll,
         } = build();
@@ -542,7 +542,7 @@ describe('agentsModule', () => {
 
         await poll();
         expect(engine().getAgent('greeter')).toBeUndefined();
-        expect(await store.getAgentRevision('greeter')).toBeUndefined();
+        expect(await store.agentRevisions.getAgentRevision('greeter')).toBeUndefined();
     });
 
     it('an agents dir left empty (an unmounted volume) keeps every agent and its runs', async () => {
@@ -550,7 +550,7 @@ describe('agentsModule', () => {
         const {
             harness,
             engine,
-            store,
+            stores: store,
             logger,
             watch,
             poll,
@@ -570,8 +570,8 @@ describe('agentsModule', () => {
         await poll();
 
         expect(engine().getAgent('greeter')).toBeDefined();
-        expect(await store.getAgentRevision('greeter')).toBeDefined();
-        expect((await store.getRun(runId))?.status).not.toBe('cancelled');
+        expect(await store.agentRevisions.getAgentRevision('greeter')).toBeDefined();
+        expect((await store.runs.getRun(runId))?.status).not.toBe('cancelled');
         expect(logger.entries.filter((entry) => entry.msg === 'the agents dir is empty; no agent is removed')).toHaveLength(1);
     });
 
@@ -606,7 +606,7 @@ describe('agentsModule', () => {
             harness,
             engine,
             clock,
-            store,
+            stores: store,
             watch,
             poll,
         } = build();
@@ -624,7 +624,7 @@ describe('agentsModule', () => {
         await harness.stop();
 
         expect(current.agentRevision('greeter')).toBe(v2);
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(v2);
+        expect((await store.agentRevisions.getAgentRevision('greeter'))?.hash).toBe(v2);
     });
 
     it('stop ends the polling', async () => {
@@ -649,10 +649,10 @@ describe('agentsModule', () => {
     it('job mode loads the folder and runs a folder agent\'s cron trigger', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1', 'test/model', 'greeter', [cronTrigger('0 9 * * *')]) });
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStores({ clock });
         const app = createApp({
             models: { test: provider() },
-            modules: [configModule({ clock, logger: createRecordingLogger(clock) }), storeModule({ store })],
+            modules: [configModule({ clock, logger: createRecordingLogger(clock) }), storeModule({ stores: store })],
         });
         apps.push(app);
 
@@ -665,7 +665,7 @@ describe('agentsModule', () => {
         });
 
         expect(result).toMatchObject({ status: 'completed', exitCode: 0 });
-        expect((await store.getRun(result.runId as string))?.output).toBe('from folder');
+        expect((await store.runs.getRun(result.runId as string))?.output).toBe('from folder');
     });
 
     it('job mode starts no watcher', async () => {

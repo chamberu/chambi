@@ -88,9 +88,9 @@ describe('consoleChannel', () => {
             approvalId: 'a1',
             expiresAt: new Date('2026-10-21T10:00:00Z'),
             options: [{
-                id: 'a', 
-                label: 'Alpha', 
-                detail: 'x', 
+                id: 'a',
+                label: 'Alpha',
+                detail: 'x',
             }, { id: 'b', label: 'Beta' }],
         };
         await consoleChannel({ write }).out!({ ...message, multiple: true }, 'x', opts);

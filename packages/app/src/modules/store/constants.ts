@@ -8,7 +8,7 @@
 /** The purge timer's lifecycle hook. */
 export const PURGE_HOOK_NAME = 'chamvi:purge';
 
-export const MEMORY_STORE_WARNING = 'DATABASE_URL unset: MemoryStore keeps runs in memory; restarts lose them and replicas share nothing.';
+export const MEMORY_STORE_WARNING = 'DATABASE_URL unset: memory stores keep runs in memory; restarts lose them and replicas share nothing.';
 
 /** How a check's store_not_migrated error ends, after the pending count. */
 export const STORE_NOT_MIGRATED_HINT = 'run chamvi migrate or set CHAMVI_MIGRATE=true.';

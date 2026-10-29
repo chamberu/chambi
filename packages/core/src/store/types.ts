@@ -7,11 +7,12 @@
 
 import type { AgentRevision } from '../agent/types.ts';
 import type { Artifact } from '../artifact/types.ts';
-import type { 
-    Checkpoint, 
-    Run, 
-    RunStatusLiteral, 
-    Step, 
+import type { IConversationStore } from '../conversation/types.ts';
+import type {
+    Checkpoint,
+    Run,
+    RunStatusLiteral,
+    Step,
 } from '../run/types.ts';
 
 /**
@@ -130,12 +131,16 @@ export interface IAgentRevisionStore {
     listAgentRevisions(): Promise<AgentRevision[]>;
 }
 
-export interface IStore extends IRunStore,
-    IStepStore,
-    ICheckpointStore,
-    IIdempotencyStore,
-    ILockStore,
-    IEffectStore,
-    IStateStore,
-    IArtifactStore,
-    IAgentRevisionStore {}
+/** Capabilities may be supplied by independent storage implementations. */
+export type Stores = {
+    runs: IRunStore;
+    steps: IStepStore;
+    checkpoints: ICheckpointStore;
+    idempotency: IIdempotencyStore;
+    locks: ILockStore;
+    effects: IEffectStore;
+    state: IStateStore;
+    artifacts: IArtifactStore;
+    agentRevisions: IAgentRevisionStore;
+    conversations?: IConversationStore;
+};

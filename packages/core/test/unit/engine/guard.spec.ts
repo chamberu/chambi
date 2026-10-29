@@ -15,7 +15,7 @@ import { Engine, defineAgent } from '@chamvi/core';
 import type { EngineOptions, Run } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStores } from '../../../src/store/index.ts';
 
 const answer = () => mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
 
@@ -41,7 +41,7 @@ afterEach(() => {
     engines.length = 0;
 });
 
-function make(opts: Partial<EngineOptions> & { store: MemoryStore; clock: ControllableClock }) {
+function make(opts: Partial<EngineOptions> & { stores: ReturnType<typeof createMemoryStores>; clock: ControllableClock }) {
     const errors: unknown[] = [];
     const engine = new HookedEngine({
         agents: [],
@@ -56,8 +56,8 @@ function make(opts: Partial<EngineOptions> & { store: MemoryStore; clock: Contro
 
 function setup() {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = new MemoryStore({ clock });
-    return { clock, store };
+    const store = createMemoryStores({ clock });
+    return { clock, stores: store };
 }
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
@@ -88,7 +88,7 @@ const env = (agent = 'triage') => ({
     payload: {},
 });
 
-const statusOf = async (store: MemoryStore, id: string) => (await store.getRun(id))?.status;
+const statusOf = async (store: ReturnType<typeof createMemoryStores>, id: string) => (await store.runs.getRun(id))?.status;
 
 /** One poll of the queue (claimTtlMs 60 s: every 20 s), then everything it started. */
 async function poll(engine: Engine, clock: ControllableClock): Promise<void> {
@@ -98,59 +98,59 @@ async function poll(engine: Engine, clock: ControllableClock): Promise<void> {
 
 describe('execution guard', () => {
     it('a queued run of an unknown agent stays queued', async () => {
-        const { clock, store } = setup();
+        const { clock, stores: store } = setup();
         const model = answer();
         const triage = defineAgent({
-            name: 'triage', 
-            model, 
-            instructions: 'x', 
+            name: 'triage',
+            model,
+            instructions: 'x',
         });
         const { engine, errors } = make({
-            store, 
-            clock, 
-            agents: [triage], 
+            stores: store,
+            clock,
+            agents: [triage],
         });
-        await store.createRun(makeRun('r1'));
+        await store.runs.createRun(makeRun('r1'));
 
         await engine.start();
         await engine.idle();
         await poll(engine, clock);
 
         expect(await statusOf(store, 'r1')).toBe('queued');
-        expect((await store.getRun('r1'))?.claim).toBeUndefined();
+        expect((await store.runs.getRun('r1'))?.claim).toBeUndefined();
         expect(errors).toEqual([]);
         expect(model.doStreamCalls).toHaveLength(0);
     });
 
     it('a lagging replica does not execute a run after the marker moved', async () => {
-        const { clock, store } = setup();
+        const { clock, stores: store } = setup();
         const modelA = answer();
         const modelB = answer();
         const triageA = defineAgent({
-            name: 'triage', 
-            model: modelA, 
-            instructions: 'x', 
+            name: 'triage',
+            model: modelA,
+            instructions: 'x',
         });
         const triageB = defineAgent({
-            name: 'triage', 
-            model: modelB, 
-            instructions: 'x', 
+            name: 'triage',
+            model: modelB,
+            instructions: 'x',
         });
         const { engine: b, errors: errorsB } = make({
-            store, 
-            clock, 
-            agents: [], 
-            owner: 'B', 
+            stores: store,
+            clock,
+            agents: [],
+            owner: 'B',
         });
         const { engine: a, errors: errorsA } = make({
-            store, 
-            clock, 
-            agents: [], 
-            owner: 'A', 
+            stores: store,
+            clock,
+            agents: [],
+            owner: 'A',
         });
         await b.putAgent(triageB, { revision: 'h1' });
         await a.putAgent(triageA, { revision: 'h2' });
-        expect((await store.getAgentRevision('triage'))?.hash).toBe('h2');
+        expect((await store.agentRevisions.getAgentRevision('triage'))?.hash).toBe('h2');
 
         await b.start();
         const { runId } = await b.dispatch(env());
@@ -169,22 +169,22 @@ describe('execution guard', () => {
     });
 
     it('a code agent is never held back by markers', async () => {
-        const { clock, store } = setup();
+        const { clock, stores: store } = setup();
         const model = answer();
         const triage = defineAgent({
-            name: 'triage', 
-            model, 
-            instructions: 'x', 
+            name: 'triage',
+            model,
+            instructions: 'x',
         });
-        await store.setAgentRevision({
-            agent: 'triage', 
-            hash: 'h9', 
-            changedAt: clock.now(), 
+        await store.agentRevisions.setAgentRevision({
+            agent: 'triage',
+            hash: 'h9',
+            changedAt: clock.now(),
         });
         const { engine, errors } = make({
-            store, 
-            clock, 
-            agents: [triage], 
+            stores: store,
+            clock,
+            agents: [triage],
         });
 
         await engine.start();
@@ -197,13 +197,13 @@ describe('execution guard', () => {
     });
 
     it('a run of an unknown agent with cancelRequested settles cancelled', async () => {
-        const { clock, store } = setup();
+        const { clock, stores: store } = setup();
         const { engine, errors } = make({
-            store, 
-            clock, 
-            agents: [], 
+            stores: store,
+            clock,
+            agents: [],
         });
-        await store.createRun(makeRun('r1', { cancelRequested: true }));
+        await store.runs.createRun(makeRun('r1', { cancelRequested: true }));
 
         await engine.start();
         await engine.idle();
@@ -213,17 +213,17 @@ describe('execution guard', () => {
     });
 
     it('a run whose agent is removed between claim and execute goes back to queued', async () => {
-        const { clock, store } = setup();
+        const { clock, stores: store } = setup();
         const model = answer();
         const triage = defineAgent({
-            name: 'triage', 
-            model, 
-            instructions: 'x', 
+            name: 'triage',
+            model,
+            instructions: 'x',
         });
         const { engine, errors } = make({
-            store, 
-            clock, 
-            agents: [triage], 
+            stores: store,
+            clock,
+            agents: [triage],
         });
         engine.beforeExecute = (e) => e.forget('triage');
         const updates: Run['status'][] = [];
@@ -235,7 +235,7 @@ describe('execution guard', () => {
         const { runId } = await engine.dispatch(env());
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('queued');
         expect(run?.claim).toBeUndefined();
         expect(run?.startedAt).toBeUndefined();
@@ -245,24 +245,24 @@ describe('execution guard', () => {
     });
 
     it('a run whose marker moves between claim and execute goes back to queued', async () => {
-        const { clock, store } = setup();
+        const { clock, stores: store } = setup();
         const model = answer();
         const triage = defineAgent({
-            name: 'triage', 
-            model, 
-            instructions: 'x', 
+            name: 'triage',
+            model,
+            instructions: 'x',
         });
         const { engine, errors } = make({
-            store, 
-            clock, 
-            agents: [], 
+            stores: store,
+            clock,
+            agents: [],
         });
         await engine.putAgent(triage, { revision: 'h1' });
         engine.beforeExecute = async () => {
-            await store.setAgentRevision({
-                agent: 'triage', 
-                hash: 'h2', 
-                changedAt: clock.now(), 
+            await store.agentRevisions.setAgentRevision({
+                agent: 'triage',
+                hash: 'h2',
+                changedAt: clock.now(),
             });
         };
 

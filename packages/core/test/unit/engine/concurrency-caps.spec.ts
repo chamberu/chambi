@@ -40,17 +40,17 @@ describe('nested execution caps', () => {
         const free = await h.dispatch(engine, 'a', { concurrencyKey: 'different' });
         await engine.start();
         await h.settle();
-        const request = (await h.store.getRun(waiting.runId))!;
+        const request = (await h.stores.runs.getRun(waiting.runId))!;
         expect(request.status).toBe('waiting');
-        expect((await h.store.getRun(keyed.runId))?.status).toBe('queued');
-        expect((await h.store.getRun(free.runId))?.status).toBe('running');
+        expect((await h.stores.runs.getRun(keyed.runId))?.status).toBe('queued');
+        expect((await h.stores.runs.getRun(free.runId))?.status).toBe('running');
         await engine.approve(waiting.runId, { approvalId: request.waiting!.approvalId, approved: true });
         await h.settle();
-        expect((await h.store.getRun(waiting.runId))?.status).toBe('queued');
+        expect((await h.stores.runs.getRun(waiting.runId))?.status).toBe('queued');
         h.releases.get(free.runId)!();
         await h.settle();
-        expect((await h.store.getRun(waiting.runId))?.status).toBe('running');
-        expect((await h.store.getRun(keyed.runId))?.status).toBe('queued');
+        expect((await h.stores.runs.getRun(waiting.runId))?.status).toBe('running');
+        expect((await h.stores.runs.getRun(keyed.runId))?.status).toBe('queued');
     });
 
     it('cancels queued cancellation requests even when numerical capacity is full', async () => {
@@ -58,10 +58,10 @@ describe('nested execution caps', () => {
         const engine = h.engine([h.agent('worker', 1)]);
         await h.dispatch(engine);
         const cancel = await h.dispatch(engine);
-        await h.store.updateRun(cancel.runId, { cancelRequested: true });
+        await h.stores.runs.updateRun(cancel.runId, { cancelRequested: true });
         await engine.start();
         await h.settle();
-        expect((await h.store.getRun(cancel.runId))?.status).toBe('cancelled');
+        expect((await h.stores.runs.getRun(cancel.runId))?.status).toBe('cancelled');
         expect(h.entered).toHaveLength(1);
     });
 
@@ -76,13 +76,13 @@ describe('nested execution caps', () => {
         agent.definition.concurrencyMaxRuns = 1;
         const later = await h.dispatch(engine);
         await h.settle();
-        expect((await h.store.listRuns({ status: ['running'] })).total).toBe(2);
+        expect((await h.stores.runs.listRuns({ status: ['running'] })).total).toBe(2);
         h.releases.get(h.entered[0]!)!();
         await h.settle();
-        expect((await h.store.getRun(later.runId))?.status).toBe('queued');
+        expect((await h.stores.runs.getRun(later.runId))?.status).toBe('queued');
         h.releases.get(h.entered[1]!)!();
         await h.settle();
-        expect((await h.store.getRun(later.runId))?.status).toBe('running');
+        expect((await h.stores.runs.getRun(later.runId))?.status).toBe('running');
     });
 
     it('recovers interrupted runs through the same admission ceiling', async () => {
@@ -97,12 +97,12 @@ describe('nested execution caps', () => {
         await h.settle();
         h.clock.advance(1);
         await drained;
-        expect((await h.store.getRun(first.runId))?.status).toBe('interrupted');
+        expect((await h.stores.runs.getRun(first.runId))?.status).toBe('interrupted');
         const b = h.engine([agent]);
         await b.start();
         await h.settle();
-        expect((await h.store.listRuns({ status: ['running'] })).total).toBe(1);
-        expect((await h.store.getRun(next.runId))?.status).toBe('queued');
+        expect((await h.stores.runs.listRuns({ status: ['running'] })).total).toBe(1);
+        expect((await h.stores.runs.getRun(next.runId))?.status).toBe('queued');
     });
     it('keeps excess distinct-key work queued and starts it when capacity is released', async () => {
         const h = setup();
@@ -111,8 +111,8 @@ describe('nested execution caps', () => {
         for (let i = 0; i < 3; i++) ids.push((await h.dispatch(engine, 'a', { concurrencyKey: `key-${i}` })).runId);
         await engine.start();
         await h.settle();
-        expect((await h.store.listRuns({ status: ['running'] })).total).toBe(2);
-        expect((await h.store.getRun(ids[2]!))?.status).toBe('queued');
+        expect((await h.stores.runs.listRuns({ status: ['running'] })).total).toBe(2);
+        expect((await h.stores.runs.getRun(ids[2]!))?.status).toBe('queued');
         h.releases.get(ids[0]!)!();
         await h.settle();
         expect(h.entered).toContain(ids[2]!);
@@ -129,13 +129,13 @@ describe('nested execution caps', () => {
         const other = await h.dispatch(engine, 'a', { agent: 'other' });
         await engine.start();
         await h.settle();
-        const running = (await h.store.listRuns({ status: ['running'], agent: 'worker' })).data;
+        const running = (await h.stores.runs.listRuns({ status: ['running'], agent: 'worker' })).data;
         expect(running).toHaveLength(4);
         expect(running.filter((r) => r.trigger.trigger === 'a')).toHaveLength(2);
         expect(running.filter((r) => r.trigger.trigger === 'b')).toHaveLength(1);
-        expect((await h.store.getRun(ids[2]!))?.status).toBe('queued');
-        expect((await h.store.getRun(ids[4]!))?.status).toBe('queued');
-        expect((await h.store.getRun(other.runId))?.status).toBe('running');
+        expect((await h.stores.runs.getRun(ids[2]!))?.status).toBe('queued');
+        expect((await h.stores.runs.getRun(ids[4]!))?.status).toBe('queued');
+        expect((await h.stores.runs.getRun(other.runId))?.status).toBe('running');
         h.releases.get(ids[5]!)!();
         await h.settle();
         expect(h.entered).toContain(ids[6]);
@@ -146,13 +146,13 @@ describe('nested execution caps', () => {
         const engine = h.engine([h.agent('worker', false, [subscription('a', false), subscription('b')])]);
         let admissions = 0;
         let counts = 0;
-        const acquire = h.store.acquire.bind(h.store);
-        h.store.acquire = async (...args) => {
+        const acquire = h.stores.locks.acquire.bind(h.stores.locks);
+        h.stores.locks.acquire = async (...args) => {
             if (args[0].startsWith('admission:')) admissions++;
             return acquire(...args);
         };
-        const list = h.store.listRuns.bind(h.store);
-        h.store.listRuns = async (query) => {
+        const list = h.stores.runs.listRuns.bind(h.stores.runs);
+        h.stores.runs.listRuns = async (query) => {
             if (query?.agent === 'worker' && query.status?.includes('running')) counts++;
             return list(query);
         };

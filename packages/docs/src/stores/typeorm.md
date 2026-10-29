@@ -12,7 +12,7 @@ npm install @chamvi/store-typeorm typeorm pg
 
 <<< @/snippets/store-typeorm.ts#setup
 
-The store takes an initialized `DataSource` and never initializes or destroys it. The database must exist; create it beforehand, for example with `createDatabase()` from `typeorm-extension`.
+`createTypeormStores({ dataSource, clock? })` assembles all capabilities, including conversations, over the same `DataSource`. Each role is a separate class: `TypeormRunStore`, `TypeormStepStore`, `TypeormCheckpointStore`, `TypeormIdempotencyStore`, `TypeormLockStore`, `TypeormEffectStore`, `TypeormStateStore`, `TypeormArtifactStore`, `TypeormAgentRevisionStore` and `TypeormConversationStore`. The stores take an initialized `DataSource` and never initialize or destroy it. The database must exist; create it beforehand, for example with `createDatabase()` from `typeorm-extension`.
 
 On shutdown, drain the engine before destroying the data source:
 
@@ -25,7 +25,7 @@ On shutdown, drain the engine before destroying the data source:
 
 ## Migrations
 
-`migrateStore(dataSource)` runs the pending migrations under the Postgres advisory lock `chamvi:migrations` (`MIGRATION_LOCK_NAME`). Call it on every boot: replicas that start at once wait for each other, and each migration is applied and recorded once. Each call uses one pooled connection, the one holding the lock, for the migrations as well. chamvi is pre-1.0, so a new version may ship a new migration. The migrations so far: `1792195200000-init.ts`, `1792368000000-artifacts.ts`, `1792454400000-idempotency-scope.ts`, `1792540800000-kv-key-collation.ts` and `1792627200000-agent-revisions.ts` (`AgentRevisions1792627200000`, the table `chamvi_agent_revisions`).
+`migrateStore(dataSource)` runs the pending migrations under the Postgres advisory lock `chamvi:migrations` (`MIGRATION_LOCK_NAME`). Call it on every boot: replicas that start at once wait for each other, and each migration is applied and recorded once. Each call uses one pooled connection, the one holding the lock, for the migrations as well. chamvi is pre-1.0, so a new version may ship a new migration. The migrations so far: `1792195200000-init.ts`, `1792368000000-artifacts.ts`, `1792454400000-idempotency-scope.ts`, `1792540800000-kv-key-collation.ts` and `1792627200000-agent-revisions.ts` (`AgentRevisions1792627200000`, the table `chamvi_agent_revisions`), followed by `1792713600000-conversations.ts` (conversation identities, items, notes and operation receipts, plus run/checkpoint bindings and their foreign keys).
 
 `pendingMigrations(dataSource)` resolves the names of the migrations not run yet, in order, without writing anything (it never creates TypeORM's `migrations` table); `chamvi start --check` uses it to refuse a database a start with `CHAMVI_MIGRATE=false` could not run on (with the default `true` a start migrates, so the check passes).
 
@@ -43,6 +43,8 @@ On shutdown, drain the engine before destroying the data source:
 | `chamvi_docs` | Agent document collections | PK `(agent, collection, id)`; GIN index on `doc` |
 | `chamvi_artifacts` | Artifact metadata and bytes (`data` `bytea`) | PK `id`; `run_id` |
 | `chamvi_agent_revisions` | One revision marker per folder agent: `hash` varchar(128), `changed_at` | PK `agent` varchar(64) `COLLATE "C"` (migration `1792627200000-agent-revisions.ts`) |
+
+Conversation rows, active owners, transcript items, notes and operation receipts use foreign keys to their local runs and identities. Steps and checkpoints also require an existing run. Use the same DataSource for every built-in TypeORM role; these relationships do not create a transaction spanning run dispatch, conversation mutation and generic effects. See [Conversation memory](/guide/conversations).
 
 ## How it keeps the contract
 
@@ -65,14 +67,14 @@ Expired idempotency keys and locks never block anyone, but they stay in their ta
 
 <<< @/snippets/store-typeorm.ts#purge
 
-`purgeExpired(now?)` deletes keys and locks expired at `now` (default: the clock's time) and returns `{ idempotencyKeys, locks }`, the number of rows removed. Effects have no expiry and are never purged. Nothing runs it automatically yet, so schedule it in your app as above.
+`stores.idempotency.purgeExpired(now?)` and `stores.locks.purgeExpired(now?)` each delete their expired rows and return the number removed. The default time comes from the clock. Effects have no expiry and are never purged. Direct engine users schedule both as above; the app's built-in store module schedules them with `CHAMVI_PURGE_INTERVAL_MS`.
 
-## Differences from MemoryStore
+## Differences from memory stores
 
 - **Opaque values are JSON.** A run's `output`, step `input`/`output`/`error`, checkpoint messages, effect results and state lose `Date`, `undefined` and `Map` fidelity, and a typed array such as `Uint8Array` comes back as an object keyed by index. A `BigInt` or a circular structure makes the write throw a `TypeError`.
 - **NUL characters and lone surrogates become U+FFFD** in opaque values, keys and strings alike, because `jsonb` cannot hold them.
 - **Artifact bytes are `bytea`**, never selected by `getArtifact` or `listArtifacts`, and come back from `readArtifact` as a plain `Uint8Array`. Postgres caps a `bytea` value at 1 GB and the whole value travels in one query, so keep artifacts small enough for memory. Nothing purges artifacts yet.
-- **Identifiers have length limits** (`MemoryStore` has none): run and artifact ids 128 characters; `concurrencyKey`, `address`, claim owners, step names, document collections and document ids 255; idempotency, lock, effect and state keys 512; idempotency scopes 1024 (`<agent>:<source>:<kind>:<id>` with the invoker URI-encoded, leaving about 950 characters for the encoded `kind` and `id`). A longer value makes the write fail with the driver's `value too long` error, so validate user-supplied keys before they reach `dispatch` (a rejected run with an `idempotencyKey` keeps its key reserved until the key expires).
+- **Identifiers have length limits** (`createMemoryStores()` has none): run and artifact ids 128 characters; `concurrencyKey`, `address`, claim owners, step names, document collections and document ids 255; idempotency, lock, effect and state keys 512; idempotency scopes 1024 (`<agent>:<source>:<kind>:<id>` with the invoker URI-encoded, leaving about 950 characters for the encoded `kind` and `id`). A longer value makes the write fail with the driver's `value too long` error, so validate user-supplied keys before they reach `dispatch` (a rejected run with an `idempotencyKey` keeps its key reserved until the key expires).
 - **`null` in an optional property reads back as absent:** a run `output` of `null`, and a step `input`, `output` or `error` of `null`, are stored as SQL `NULL`. `putEffect(key, undefined)` reads back `{ result: null }` and `docUpsert(..., undefined)` reads back `doc: null`.
-- **`docList` `where` uses `jsonb` containment (`@>`).** Primitive values match by top-level equality; a nested object or array matches by containment, where `MemoryStore` never matches. A key whose value is `undefined` matches documents that lack the key, as in `MemoryStore`. Documents come back ordered by `id`, not by insertion.
-- **`listRuns` ties** on `createdAt` are broken by the byte order of `id` (`COLLATE "C"`, so `'B' < 'a'`, reversed for `order: 'desc'`); identical to `MemoryStore` for lowercase ids and UUIDs.
+- **`docList` `where` uses `jsonb` containment (`@>`).** Primitive values match by top-level equality; a nested object or array matches by containment, where `createMemoryStores()` never matches. A key whose value is `undefined` matches documents that lack the key, as in `createMemoryStores()`. Documents come back ordered by `id`, not by insertion.
+- **`listRuns` ties** on `createdAt` are broken by the byte order of `id` (`COLLATE "C"`, so `'B' < 'a'`, reversed for `order: 'desc'`); identical to `createMemoryStores()` for lowercase ids and UUIDs.

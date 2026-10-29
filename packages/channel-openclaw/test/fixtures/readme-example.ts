@@ -2,7 +2,7 @@ import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -56,7 +56,7 @@ export function createApprovalEngine(
     });
 
     return new Engine({
-        store: new MemoryStore({ clock: options.clock }),
+        stores: createMemoryStores({ clock: options.clock }),
         agents: [deployer],
         channels: [openclaw],
         clock: options.clock,

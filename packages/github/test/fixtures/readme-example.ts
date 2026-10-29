@@ -1,8 +1,8 @@
 import type { LanguageModel } from 'ai';
 import {
     Engine,
-    MemoryStore,
     ToolDeniedError,
+    createMemoryStores,
     defineAgent,
 } from '@chamvi/core';
 import { createGithubApp, github, githubChannel } from '@chamvi/github';
@@ -54,7 +54,7 @@ export async function createTriageServer(
     });
 
     const engine = new Engine({
-        store: new MemoryStore(),
+        stores: createMemoryStores(),
         agents: [triage],
         channels: [channel],
     });

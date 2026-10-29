@@ -8,11 +8,12 @@
 /* eslint-disable max-classes-per-file */
 import { tool } from 'ai';
 import type { ModelMessage, ToolSet } from 'ai';
-import { 
-    afterEach, 
-    describe, 
-    expect, 
-    it, 
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
 } from 'vitest';
 import { z } from 'zod';
 import {
@@ -26,9 +27,10 @@ import {
 import type {
     AgentDefinition,
     IRunArtifacts,
+    Stores,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { MemoryArtifactStore, createMemoryStores } from '../../../src/store/index.ts';
 import { gateTool, recordApprovals } from '../../utils/approvals.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -46,10 +48,10 @@ const PNG = new Uint8Array([137, 80, 78, 71]);
 
 function setup(
     responses: MockResponse[],
-    opts: { store?: MemoryStore; definition?: Partial<AgentDefinition> } = {},
+    opts: { stores?: Stores; definition?: Partial<AgentDefinition> } = {},
 ) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = opts.store ?? new MemoryStore({ clock });
+    const store = opts.stores ?? createMemoryStores({ clock });
     const model = mockModel(responses);
     const agent = defineAgent({
         name: 'vision',
@@ -59,7 +61,7 @@ function setup(
     });
     const errors: unknown[] = [];
     const engine = new Engine({
-        store,
+        stores: store,
         agents: [agent],
         clock,
         onError: (error) => {
@@ -70,7 +72,7 @@ function setup(
     const notifier = recordApprovals(engine);
     return {
         clock,
-        store,
+        stores: store,
         model,
         engine,
         notifier,
@@ -87,11 +89,11 @@ const env = (extra: Record<string, unknown> = {}) => ({
 });
 
 type PromptPart = {
-    type: string; 
-    data?: unknown; 
-    mediaType?: string; 
-    filename?: string; 
-    text?: string 
+    type: string;
+    data?: unknown;
+    mediaType?: string;
+    filename?: string;
+    text?: string
 };
 
 /** The file parts of the user messages the model got on call `i`. */
@@ -125,15 +127,15 @@ describe('attachments at dispatch', () => {
         const { runId } = await ctx.engine.dispatch(env({
             attachments: [
                 {
-                    mediaType: 'image/png', 
-                    filename: 'shot.png', 
-                    data: PNG, 
+                    mediaType: 'image/png',
+                    filename: 'shot.png',
+                    data: PNG,
                 },
                 { mediaType: 'text/plain', data: new Uint8Array([104, 105]) },
             ],
         }));
-        const run = (await ctx.store.getRun(runId))!;
-        const listed = await ctx.store.listArtifacts(runId);
+        const run = (await ctx.stores.runs.getRun(runId))!;
+        const listed = await ctx.stores.artifacts.listArtifacts(runId);
         expect(listed).toEqual(run.trigger.attachments);
         expect(run.trigger.attachments?.[0]).toEqual({
             id: `${runId}.0000`,
@@ -145,7 +147,7 @@ describe('attachments at dispatch', () => {
             createdAt: run.createdAt,
         });
         expect(run.trigger.attachments?.[1]?.filename).toBeUndefined();
-        expect(Array.from((await ctx.store.readArtifact(run.trigger.attachments![0]!.id))!)).toEqual(Array.from(PNG));
+        expect(Array.from((await ctx.stores.artifacts.readArtifact(run.trigger.attachments![0]!.id))!)).toEqual(Array.from(PNG));
         expect(run.trigger).not.toHaveProperty('attachments.0.data');
     });
 
@@ -157,7 +159,7 @@ describe('attachments at dispatch', () => {
             data: new Uint8Array([i]),
         }));
         const { runId } = await ctx.engine.dispatch(env({ attachments }));
-        const listed = await ctx.store.listArtifacts(runId);
+        const listed = await ctx.stores.artifacts.listArtifacts(runId);
         expect(listed.map((a) => a.filename)).toEqual(attachments.map((a) => a.filename));
         expect(listed.map((a) => a.id)).toEqual(attachments.map((_, i) => `${runId}.${String(i).padStart(4, '0')}`));
     });
@@ -166,21 +168,21 @@ describe('attachments at dispatch', () => {
         const ctx = setup([text('ok')]);
         const attachments = Array.from({ length: 10_001 }, () => ({ mediaType: 'text/plain', data: new Uint8Array([1]) }));
         const { runId } = await ctx.engine.dispatch(env({ attachments }));
-        const listed = await ctx.store.listArtifacts(runId);
+        const listed = await ctx.stores.artifacts.listArtifacts(runId);
         expect(listed[0]!.id).toBe(`${runId}.00000`);
         expect(listed.at(-1)!.id).toBe(`${runId}.10000`);
-        expect(listed.map((a) => a.id)).toEqual((await ctx.store.getRun(runId))!.trigger.attachments!.map((a) => a.id));
+        expect(listed.map((a) => a.id)).toEqual((await ctx.stores.runs.getRun(runId))!.trigger.attachments!.map((a) => a.id));
     });
 
     it('leaves no extra artifacts when two healers of one key race', async () => {
         /** A store whose artifact writes take a round trip, like a database. */
-        class SlowArtifactStore extends MemoryStore {
-            override async putArtifact(...args: Parameters<MemoryStore['putArtifact']>): Promise<boolean> {
+        class SlowArtifactStore extends MemoryArtifactStore {
+            override async putArtifact(...args: Parameters<MemoryArtifactStore['putArtifact']>): Promise<boolean> {
                 await new Promise<void>((resolve) => { setImmediate(resolve); });
                 return super.putArtifact(...args);
             }
         }
-        const ctx = setup([text('ok')], { store: new SlowArtifactStore() });
+        const ctx = setup([text('ok')], { stores: { ...createMemoryStores(), artifacts: new SlowArtifactStore() } });
         const attachment = (text: string) => ({
             mediaType: 'text/plain',
             filename: `${text}.txt`,
@@ -193,20 +195,20 @@ describe('attachments at dispatch', () => {
         expect(a.runId).toBe(b.runId);
         expect([a.deduplicated, b.deduplicated].sort()).toEqual([false, true]);
 
-        const run = (await ctx.store.getRun(a.runId))!;
-        const listed = await ctx.store.listArtifacts(a.runId);
+        const run = (await ctx.stores.runs.getRun(a.runId))!;
+        const listed = await ctx.stores.artifacts.listArtifacts(a.runId);
         expect(listed).toHaveLength(1);
         // the run names the artifact that was stored: metadata and bytes agree
         expect(run.trigger.attachments).toEqual(listed);
-        const bytes = await ctx.store.readArtifact(listed[0]!.id);
+        const bytes = await ctx.stores.artifacts.readArtifact(listed[0]!.id);
         expect(new TextDecoder().decode(bytes)).toBe(listed[0]!.filename!.replace('.txt', ''));
     });
 
     it('leaves the envelope without attachments when none are given', async () => {
         const ctx = setup([text('ok')]);
         const { runId } = await ctx.engine.dispatch(env({ attachments: [] }));
-        expect((await ctx.store.getRun(runId))?.trigger).not.toHaveProperty('attachments');
-        expect(await ctx.store.listArtifacts(runId)).toEqual([]);
+        expect((await ctx.stores.runs.getRun(runId))?.trigger).not.toHaveProperty('attachments');
+        expect(await ctx.stores.artifacts.listArtifacts(runId)).toEqual([]);
     });
 
     it('stores nothing for a deduplicated dispatch', async () => {
@@ -220,7 +222,7 @@ describe('attachments at dispatch', () => {
             attachments: [{ mediaType: 'image/png', data: PNG }],
         }));
         expect(second).toEqual({ runId: first.runId, deduplicated: true });
-        expect(await ctx.store.listArtifacts(first.runId)).toHaveLength(1);
+        expect(await ctx.stores.artifacts.listArtifacts(first.runId)).toHaveLength(1);
     });
 
     it.each([
@@ -229,28 +231,25 @@ describe('attachments at dispatch', () => {
         ['a media type with spaces', { mediaType: 'image/ png', data: PNG }],
         ['data that is no Uint8Array', { mediaType: 'image/png', data: 'iVBORw==' }],
         ['a filename that is no string', {
-            mediaType: 'image/png', 
-            filename: 42, 
-            data: PNG, 
+            mediaType: 'image/png',
+            filename: 42,
+            data: PNG,
         }],
     ])('rejects %s with a ValidationError before any store write', async (_, attachment) => {
         const ctx = setup([text('ok')]);
-        const writes: string[] = [];
-        for (const method of ['claimKey', 'createRun', 'putArtifact'] as const) {
-            const original = ctx.store[method].bind(ctx.store) as (...args: unknown[]) => Promise<unknown>;
-            (ctx.store as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
-                writes.push(method);
-                return original(...args);
-            };
-        }
+        const writes = [
+            vi.spyOn(ctx.stores.idempotency, 'claimKey'),
+            vi.spyOn(ctx.stores.runs, 'createRun'),
+            vi.spyOn(ctx.stores.artifacts, 'putArtifact'),
+        ];
         const promise = ctx.engine.dispatch(env({
             idempotencyKey: 'k',
             attachments: [{ mediaType: 'text/plain', data: new Uint8Array([1]) }, attachment],
         }));
         await expect(promise).rejects.toBeInstanceOf(ValidationError);
         await expect(promise).rejects.toMatchObject({ code: ErrorCode.VALIDATION });
-        expect(writes).toEqual([]);
-        expect((await ctx.store.listRuns({})).total).toBe(0);
+        for (const write of writes) expect(write).not.toHaveBeenCalled();
+        expect((await ctx.stores.runs.listRuns({})).total).toBe(0);
     });
 });
 
@@ -260,14 +259,14 @@ describe('attachments in the model prompt', () => {
         await ctx.engine.start();
         const { runId } = await ctx.engine.dispatch(env({
             attachments: [{
-                mediaType: 'image/png', 
-                filename: 'shot.png', 
-                data: PNG, 
-            }], 
+                mediaType: 'image/png',
+                filename: 'shot.png',
+                data: PNG,
+            }],
         }));
         await ctx.engine.idle();
 
-        const run = (await ctx.store.getRun(runId))!;
+        const run = (await ctx.stores.runs.getRun(runId))!;
         expect(run.status).toBe('completed');
         const [artifact] = run.trigger.attachments!;
 
@@ -275,7 +274,7 @@ describe('attachments in the model prompt', () => {
         expect(part).toMatchObject({ mediaType: 'image/png', filename: 'shot.png' });
         expect(bytesOf(part!)).toEqual(Array.from(PNG));
 
-        const checkpoint = (await ctx.store.latestCheckpoint(runId))!;
+        const checkpoint = (await ctx.stores.checkpoints.latestCheckpoint(runId))!;
         const content = userContentOf(checkpoint.messages);
         expect(content[0]).toMatchObject({ type: 'text' });
         expect(content[0]!.text).toContain('"look": true');
@@ -292,7 +291,7 @@ describe('attachments in the model prompt', () => {
         await ctx.engine.start();
         const { runId } = await ctx.engine.dispatch(env());
         await ctx.engine.idle();
-        const checkpoint = (await ctx.store.latestCheckpoint(runId))!;
+        const checkpoint = (await ctx.stores.checkpoints.latestCheckpoint(runId))!;
         expect(typeof checkpoint.messages[0]!.content).toBe('string');
     });
 
@@ -319,30 +318,30 @@ describe('attachments in the model prompt', () => {
         await ctx.engine.start();
         const { runId } = await ctx.engine.dispatch(env({ attachments: [{ mediaType: 'image/png', data: PNG }] }));
         await ctx.engine.idle();
-        expect((await ctx.store.getRun(runId))?.status).toBe('waiting');
+        expect((await ctx.stores.runs.getRun(runId))?.status).toBe('waiting');
 
         await ctx.engine.approve(ctx.notifier.calls[0]!.runId, { approvalId: ctx.notifier.calls[0]!.approvalId, approved: true });
         await ctx.engine.idle();
 
-        expect((await ctx.store.getRun(runId))?.status).toBe('completed');
+        expect((await ctx.stores.runs.getRun(runId))?.status).toBe('completed');
         const [part] = filePartsOf(ctx.model, 1);
         expect(bytesOf(part!)).toEqual(Array.from(PNG));
-        const checkpoint = (await ctx.store.latestCheckpoint(runId))!;
+        const checkpoint = (await ctx.stores.checkpoints.latestCheckpoint(runId))!;
         expect(userContentOf(checkpoint.messages)[1]!.data).toMatch(/^chamvi-artifact:/);
     });
 
     it('fails the run with ARTIFACT_NOT_FOUND when an attachment is gone', async () => {
-        class LossyStore extends MemoryStore {
+        class LossyStore extends MemoryArtifactStore {
             override async readArtifact(): Promise<Uint8Array | undefined> {
                 return undefined;
             }
         }
-        const ctx = setup([text('never')], { store: new LossyStore() });
+        const ctx = setup([text('never')], { stores: { ...createMemoryStores(), artifacts: new LossyStore() } });
         await ctx.engine.start();
         const { runId } = await ctx.engine.dispatch(env({ attachments: [{ mediaType: 'image/png', data: PNG }] }));
         await ctx.engine.idle();
 
-        const run = (await ctx.store.getRun(runId))!;
+        const run = (await ctx.stores.runs.getRun(runId))!;
         expect(run.status).toBe('failed');
         expect(run.error?.code).toBe(ErrorCode.ARTIFACT_NOT_FOUND);
         expect(run.error?.message).toContain(run.trigger.attachments![0]!.id);
@@ -385,8 +384,8 @@ describe('tool artifacts', () => {
         await ctx.engine.idle();
         const b = await ctx.engine.dispatch(env());
         await ctx.engine.idle();
-        expect((await ctx.store.getRun(a.runId))?.status).toBe('completed');
-        expect((await ctx.store.getRun(b.runId))?.status).toBe('completed');
+        expect((await ctx.stores.runs.getRun(a.runId))?.status).toBe('completed');
+        expect((await ctx.stores.runs.getRun(b.runId))?.status).toBe('completed');
 
         const [ofA, ofB] = scoped;
         const listed = await ofA!.list();
@@ -427,9 +426,9 @@ describe('artifacts in tool results', () => {
         inputSchema: z.object({ name: z.string() }),
         execute: async ({ name }, { context }) => {
             const artifact = await context.artifacts.put({
-                mediaType: 'image/png', 
-                filename: name, 
-                data: PNG, 
+                mediaType: 'image/png',
+                filename: name,
+                data: PNG,
             });
             return { artifactId: artifact.id, mediaType: artifact.mediaType };
         },
@@ -446,17 +445,17 @@ describe('artifacts in tool results', () => {
         const ctx = setup([
             {
                 parts: [{
-                    type: 'tool-call', 
-                    toolName: 'screenshot', 
-                    input: { name: 'shot.png' }, 
-                }], 
+                    type: 'tool-call',
+                    toolName: 'screenshot',
+                    input: { name: 'shot.png' },
+                }],
             },
             {
                 parts: [{
-                    type: 'tool-call', 
-                    toolName: 'screenshot', 
-                    input: { name: 'again.png' }, 
-                }], 
+                    type: 'tool-call',
+                    toolName: 'screenshot',
+                    input: { name: 'again.png' },
+                }],
             },
             text('seen'),
         ], { definition: { tools: { screenshot } } });
@@ -464,7 +463,7 @@ describe('artifacts in tool results', () => {
         const { runId } = await ctx.engine.dispatch(env());
         await ctx.engine.idle();
 
-        expect((await ctx.store.getRun(runId))?.status).toBe('completed');
+        expect((await ctx.stores.runs.getRun(runId))?.status).toBe('completed');
         const [first] = toolFilesOf(ctx.model, 1);
         expect(first).toMatchObject({ mediaType: 'image/png' });
         expect(bytesOf(first!)).toEqual(Array.from(PNG));
@@ -472,10 +471,10 @@ describe('artifacts in tool results', () => {
         expect(later).toHaveLength(2);
         for (const part of later) expect(bytesOf(part)).toEqual(Array.from(PNG));
 
-        const checkpoint = JSON.stringify((await ctx.store.latestCheckpoint(runId))!.messages);
+        const checkpoint = JSON.stringify((await ctx.stores.checkpoints.latestCheckpoint(runId))!.messages);
         expect(checkpoint).toMatch(/"data":"chamvi-artifact:[0-9a-f-]+"/);
         expect(checkpoint).not.toContain(Buffer.from(PNG).toString('base64'));
-        const steps = await ctx.store.listSteps(runId);
+        const steps = await ctx.stores.steps.listSteps(runId);
         expect(steps.filter((s) => s.kind === 'tool').map((s) => Object.keys(s.output as object))).toEqual([
             ['artifactId', 'mediaType'],
             ['artifactId', 'mediaType'],
@@ -490,17 +489,17 @@ describe('artifacts in tool results', () => {
         const ctx = setup([
             {
                 parts: [{
-                    type: 'tool-call', 
-                    toolName: 'screenshot', 
-                    input: { name: 'shot.png' }, 
-                }], 
+                    type: 'tool-call',
+                    toolName: 'screenshot',
+                    input: { name: 'shot.png' },
+                }],
             },
             {
                 parts: [{
-                    type: 'tool-call', 
-                    toolName: 'deploy', 
-                    input: { env: 'prod' }, 
-                }], 
+                    type: 'tool-call',
+                    toolName: 'deploy',
+                    input: { env: 'prod' },
+                }],
             },
             text('done'),
         ], {
@@ -512,21 +511,21 @@ describe('artifacts in tool results', () => {
         await ctx.engine.start();
         const { runId } = await ctx.engine.dispatch(env());
         await ctx.engine.idle();
-        expect((await ctx.store.getRun(runId))?.status).toBe('waiting');
+        expect((await ctx.stores.runs.getRun(runId))?.status).toBe('waiting');
 
         await ctx.engine.approve(runId, { approvalId: ctx.notifier.calls[0]!.approvalId, approved: true });
         await ctx.engine.idle();
 
-        expect((await ctx.store.getRun(runId))?.status).toBe('completed');
+        expect((await ctx.stores.runs.getRun(runId))?.status).toBe('completed');
         const [part] = toolFilesOf(ctx.model, 2);
         expect(bytesOf(part!)).toEqual(Array.from(PNG));
     });
 
     it('builds the marker file part of an artifact', () => {
         expect(artifactFilePart({
-            id: 'a1', 
-            mediaType: 'image/png', 
-            filename: 'x.png', 
+            id: 'a1',
+            mediaType: 'image/png',
+            filename: 'x.png',
         })).toEqual({
             type: 'file',
             mediaType: 'image/png',

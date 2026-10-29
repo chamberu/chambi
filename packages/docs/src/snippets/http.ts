@@ -1,5 +1,5 @@
 import type { ITokenVerifier } from '@authup/server-adapter-kit';
-import type { Agent, IStore } from '@chamvi/core';
+import type { Agent, Stores } from '@chamvi/core';
 import { cronChannel } from '@chamvi/channel-cron';
 import { Engine } from '@chamvi/core';
 import {
@@ -52,13 +52,13 @@ export function authenticators(verifier: ITokenVerifier): Authenticator[] {
     // #endregion auth
 }
 
-export async function start(store: IStore, agents: Agent[], verifier: ITokenVerifier) {
+export async function start(store: Stores, agents: Agent[], verifier: ITokenVerifier) {
     // #region app
     const auth = authenticators(verifier);
     // POST /channels/webhook/<agent><path>, authenticated with the same chain
     const webhooks = webhookChannel({ auth });
     const engine = new Engine({
-        store,
+        stores: store,
         agents,
         // the channels read the store, agents and clock from the engine
         channels: [httpChannel(), mcpChannel(), webhooks, cronChannel()],

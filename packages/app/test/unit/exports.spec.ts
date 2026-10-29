@@ -110,7 +110,6 @@ describe('public api', () => {
             'CLOCK',
             'CONFIG',
             'CONTEXT',
-            'CONVERSATIONS',
             'DATA_SOURCE',
             'ENGINE',
             'GIT_CREDENTIALS',
@@ -119,7 +118,7 @@ describe('public api', () => {
             'LOGGER',
             'SERVER',
             'SHUTDOWN',
-            'STORE',
+            'STORES',
         ]);
     });
 

@@ -12,7 +12,16 @@ describe('public api', () => {
     it.each([
         'migrateStore',
         'pendingMigrations',
-        'TypeormStore',
+        'createTypeormStores',
+        'TypeormRunStore',
+        'TypeormStepStore',
+        'TypeormCheckpointStore',
+        'TypeormIdempotencyStore',
+        'TypeormLockStore',
+        'TypeormEffectStore',
+        'TypeormStateStore',
+        'TypeormArtifactStore',
+        'TypeormAgentRevisionStore',
         'TypeormConversationStore',
     ])('exports %s', (name) => {
         expect(pkg).toHaveProperty(name);

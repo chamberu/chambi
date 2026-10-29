@@ -6,7 +6,7 @@
  */
 
 import { cron } from '@chamvi/channel-cron';
-import { InvalidAgentDefinitionError, MemoryStore, defineAgent } from '@chamvi/core';
+import { InvalidAgentDefinitionError, createMemoryStores, defineAgent } from '@chamvi/core';
 import type { Agent, IChannel } from '@chamvi/core';
 import { http, webhook } from '@chamvi/http';
 import { ControllableClock } from '@chamvi/test-kit';
@@ -222,7 +222,7 @@ describe('channels', () => {
             })],
             modules: [
                 configModule({ clock, logger: createRecordingLogger(clock) }),
-                storeModule({ store: new MemoryStore({ clock }) }),
+                storeModule({ stores: createMemoryStores({ clock }) }),
                 contributing('spy', spyChannel('spy', events)),
             ],
         });

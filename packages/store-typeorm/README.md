@@ -32,9 +32,9 @@
 
 ## Why @chamvi/store-typeorm?
 
-`MemoryStore` from `@chamvi/core` loses every queued run, waiting approval and checkpoint with the process, and it cannot be shared between replicas. `TypeormStore` keeps the same `IStore` contract in Postgres and passes the same `describeStoreContract` suite, so the engine behaves the same on both.
+`createMemoryStores()` from `@chamvi/core` loses every queued run, waiting approval and checkpoint with the process, and it cannot be shared between replicas. `createTypeormStores()` provides the same `Stores` capabilities in Postgres and passes the same `describeStoreContract` suite, so the engine behaves the same on both.
 
-| Concern | `MemoryStore` | `TypeormStore` |
+| Concern | `createMemoryStores()` | `createTypeormStores()` |
 |---|---|---|
 | **Restarts** | Everything is gone | Runs, steps, checkpoints, effects and state stay in Postgres; `recover()` picks interrupted runs up |
 | **Replicas** | One process only | Claims, idempotency keys and locks are single statements built with TypeORM's query builder, atomic across processes |
@@ -62,7 +62,7 @@ import { Engine, defineAgent } from '@chamvi/core';
 import {
     STORE_ENTITIES,
     STORE_MIGRATIONS,
-    TypeormStore,
+    createTypeormStores,
     migrateStore,
 } from '@chamvi/store-typeorm';
 import { DataSource } from 'typeorm';
@@ -83,9 +83,9 @@ export async function startEngine(model: LanguageModel) {
     await dataSource.initialize();
     await migrateStore(dataSource);
 
-    const store = new TypeormStore({ dataSource });
+    const stores = createTypeormStores({ dataSource });
     const engine = new Engine({
-        store,
+        stores,
         agents: [triage],
     });
     await engine.start();
@@ -96,7 +96,7 @@ export async function startEngine(model: LanguageModel) {
         await dataSource.destroy();
     };
 
-    return { engine, store, shutdown };
+    return { engine, stores, shutdown };
 }
 ```
 
@@ -111,12 +111,13 @@ Expired idempotency keys and locks are taken over by the next caller, so they ne
 ```typescript
 // e.g. every hour; clear the interval on shutdown
 const purge = setInterval(() => {
-    store.purgeExpired().catch((e: unknown) => console.error(e));
+    Promise.all([stores.idempotency.purgeExpired(), stores.locks.purgeExpired()])
+        .catch((e: unknown) => console.error(e));
 }, 60 * 60 * 1000);
 purge.unref();
 ```
 
-`purgeExpired(now?)` deletes keys and locks expired at `now` (default: the clock's time) and returns `{ idempotencyKeys, locks }`, how many rows it removed. Effects have no expiry and are never purged.
+Each role's `purgeExpired(now?)` deletes its rows expired at `now` (default: the clock's time) and returns the number removed. Effects have no expiry and are never purged.
 
 ## Options
 
@@ -129,25 +130,27 @@ purge.unref();
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `TypeormStore` | class | `IStore` on Postgres, plus `purgeExpired(now?)` |
+| `createTypeormStores()` | function | Assembles all `Stores` capabilities over one data source, including conversations |
 | `migrateStore` | function | Runs the migrations under the advisory lock `MIGRATION_LOCK_NAME` |
-| `STORE_ENTITIES` | array | The nine entity classes for the data source's `entities` |
+| `STORE_ENTITIES` | array | The entity classes for the data source's `entities` |
 | `STORE_MIGRATIONS` | array | The migrations for the data source's `migrations` |
 | `MIGRATION_LOCK_NAME` | constant | `'chamvi:migrations'` |
 
-Types: `TypeormStoreOptions`, `PurgeResult`.
+Types: `TypeormStoresOptions`, `TypeormStores`.
+
+Each capability is also available as its own class: `TypeormRunStore`, `TypeormStepStore`, `TypeormCheckpointStore`, `TypeormIdempotencyStore`, `TypeormLockStore`, `TypeormEffectStore`, `TypeormStateStore`, `TypeormArtifactStore`, `TypeormAgentRevisionStore` and `TypeormConversationStore`. Constructors take `{ dataSource }`; runs, idempotency, locks and conversations also accept `clock`. Use the same data source for all roles so their foreign keys share one database.
 
 ## Notes
 
 - **Tables are prefixed `chamvi_`:** `chamvi_runs`, `chamvi_steps`, `chamvi_checkpoints`, `chamvi_idempotency_keys`, `chamvi_locks`, `chamvi_effects`, `chamvi_kv`, `chamvi_docs`, `chamvi_artifacts`. They live in the data source's default schema.
-- **Identifiers have length limits** (`MemoryStore` has none): run and artifact ids 128 characters; `concurrencyKey`, `address`, claim owners, step names, document collections and document ids 255; idempotency, lock, effect and state keys 512; idempotency scopes 1024 (`<agent>:<source>:<kind>:<id>` with the invoker URI-encoded, leaving about 950 characters for the encoded `kind` and `id`). A longer value makes the write fail with the driver's `value too long` error, so validate user-supplied keys before they reach `dispatch` (a rejected run with an `idempotencyKey` keeps its key reserved until the key expires).
+- **Identifiers have length limits** (`createMemoryStores()` has none): run and artifact ids 128 characters; `concurrencyKey`, `address`, claim owners, step names, document collections and document ids 255; idempotency, lock, effect and state keys 512; idempotency scopes 1024 (`<agent>:<source>:<kind>:<id>` with the invoker URI-encoded, leaving about 950 characters for the encoded `kind` and `id`). A longer value makes the write fail with the driver's `value too long` error, so validate user-supplied keys before they reach `dispatch` (a rejected run with an `idempotencyKey` keeps its key reserved until the key expires).
 - **Artifact bytes are `bytea`** in `chamvi_artifacts` (indexed by `run_id`), read only by `readArtifact`; `getArtifact` and `listArtifacts` never load them. Postgres caps a `bytea` value at 1 GB, and the whole value travels in one query, so keep artifacts small enough for memory.
 - **Only the latest checkpoint is kept** per run; an equal `stepIndex` replaces it.
-- **Opaque values are JSON.** A run's `output`, a step's `input`/`output`/`error`, checkpoint messages, effect results and state values are stored as `jsonb`, so a `Date` inside them comes back as a string, `undefined` or `Map` values are lost and a typed array such as `Uint8Array` comes back as an object keyed by index. A `BigInt` or a circular structure makes the write throw a `TypeError` (`MemoryStore` accepts both). The run's own dates, `trigger.receivedAt`, `waiting.expiresAt` and `waiting.notifiedAt` come back as `Date`.
+- **Opaque values are JSON.** A run's `output`, a step's `input`/`output`/`error`, checkpoint messages, effect results and state values are stored as `jsonb`, so a `Date` inside them comes back as a string, `undefined` or `Map` values are lost and a typed array such as `Uint8Array` comes back as an object keyed by index. A `BigInt` or a circular structure makes the write throw a `TypeError` (`createMemoryStores()` accepts both). The run's own dates, `trigger.receivedAt`, `waiting.expiresAt` and `waiting.notifiedAt` come back as `Date`.
 - **NUL characters and lone surrogates become U+FFFD** in opaque values (keys and strings alike), because `jsonb` cannot hold them. A literal backslash sequence such as the text `\u0000` is kept.
 - **`null` in an optional property reads back as absent:** a run `output` of `null` and a step `input`, `output` or `error` of `null` are stored as SQL `NULL`. `putEffect(key, undefined)` reads back `{ result: null }` and `docUpsert(..., undefined)` reads back `doc: null`.
-- **`docList` `where` uses `jsonb` containment (`@>`).** For primitive values that is top-level equality; a nested object or array matches by containment (`MemoryStore` never matches those). A key whose value is `undefined` matches documents that lack the key. Documents are returned ordered by `id` (`MemoryStore`: insertion order).
-- **`listRuns` and `listArtifacts` break `createdAt` ties by byte order of `id`** (`COLLATE "C"`, so `'B' < 'a'`, in both directions of `listRuns`' `order`); `MemoryStore` compares with `localeCompare`. Both agree for lowercase ids and UUIDs.
+- **`docList` `where` uses `jsonb` containment (`@>`).** For primitive values that is top-level equality; a nested object or array matches by containment (`createMemoryStores()` never matches those). A key whose value is `undefined` matches documents that lack the key. Documents are returned ordered by `id` (`createMemoryStores()`: insertion order).
+- **`listRuns` and `listArtifacts` break `createdAt` ties by byte order of `id`** (`COLLATE "C"`, so `'B' < 'a'`, in both directions of `listRuns`' `order`); `createMemoryStores()` compares with `localeCompare`. Both agree for lowercase ids and UUIDs.
 - **`kvList` orders keys by byte order** (`chamvi_kv.key` is `COLLATE "C"`, migration `KvKeyCollation1792540800000`), the code-point order the contract asks for.
 - **The schema may still change before 1.0.** New versions ship new migrations; run `migrateStore()` on every boot.
 

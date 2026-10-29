@@ -6,7 +6,7 @@
  */
 
 import type { ToolSet } from 'ai';
-import { MemoryStore, createAgentState } from '@chamvi/core';
+import { createAgentState, createMemoryStores } from '@chamvi/core';
 import type { Artifact, IRunArtifacts, ToolContext } from '@chamvi/core';
 
 /** In-memory run artifacts (`read_file` stores the images it shows), ids `artifact-<n>`. */
@@ -53,7 +53,7 @@ export function toolContext(
             },
             signal,
         },
-        state: createAgentState('coder', undefined, new MemoryStore()),
+        state: createAgentState('coder', undefined, createMemoryStores().state),
         artifacts,
     };
 }

@@ -127,8 +127,8 @@ export class RunQueue {
 
     protected async pass(): Promise<void> {
         if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
-        const { store } = this.opts;
-        const { data: queued } = await store.listRuns({ status: [RunStatus.QUEUED] });
+        const { stores } = this.opts;
+        const { data: queued } = await stores.runs.listRuns({ status: [RunStatus.QUEUED] });
         if (queued.length === 0) return;
         const mayStart = await this.opts.prepareStart?.();
         for (const run of queued) {
@@ -142,7 +142,7 @@ export class RunQueue {
 
     protected async tryStart(run: Run): Promise<Run | undefined> {
         const {
-            store,
+            stores,
             owner,
             claimTtlMs,
         } = this.opts;
@@ -151,11 +151,11 @@ export class RunQueue {
         // keyed runs: check + claim + mark running must be atomic across replicas.
         // The lock TTL is claimTtlMs: a transition slower than that lets a second replica in.
         const lockKey = `concurrency:${run.agent}:${run.concurrencyKey}`;
-        if (!await store.acquire(lockKey, owner, claimTtlMs)) return undefined;
+        if (!await stores.locks.acquire(lockKey, owner, claimTtlMs)) return undefined;
         try {
             return await this.transition(run, groupKey(run));
         } finally {
-            await store.release(lockKey, owner).catch((error: unknown) => {
+            await stores.locks.release(lockKey, owner).catch((error: unknown) => {
                 try {
                     this.opts.onError(error, run);
                 } catch {
@@ -167,7 +167,7 @@ export class RunQueue {
 
     protected async transition(run: Run, group: string | undefined): Promise<Run | undefined> {
         const {
-            store,
+            stores,
             clock,
             owner,
             claimTtlMs,
@@ -176,7 +176,7 @@ export class RunQueue {
         if (this.running.has(run.id)) return undefined;
         if (group !== undefined) {
             if (this.running.values().toArray().includes(group)) return undefined;
-            const { total } = await store.listRuns({
+            const { total } = await stores.runs.listRuns({
                 agent: run.agent,
                 // an interrupted run is unfinished and keeps its key until recovery requeues it
                 status: [RunStatus.RUNNING, RunStatus.WAITING, RunStatus.INTERRUPTED],
@@ -185,12 +185,12 @@ export class RunQueue {
             });
             if (total > 0) return undefined;
         }
-        if (!await store.claimRun(run.id, owner, claimTtlMs)) return undefined;
+        if (!await stores.runs.claimRun(run.id, owner, claimTtlMs)) return undefined;
         // reserve the slot before the next await so concurrent passes cannot overshoot
         this.running.set(run.id, group);
         try {
             const now = clock.now();
-            return await store.updateRun(run.id, {
+            return await stores.runs.updateRun(run.id, {
                 status: RunStatus.RUNNING,
                 startedAt: now,
                 updatedAt: now,
@@ -220,7 +220,7 @@ export class RunQueue {
 
     protected keepClaim(runId: string): { stop(): void } {
         const {
-            store,
+            stores,
             clock,
             owner,
             claimTtlMs,
@@ -229,7 +229,7 @@ export class RunQueue {
         let timer: { clear(): void } | undefined;
         const schedule = () => {
             timer = clock.setTimeout(() => {
-                store.renewClaim(runId, owner, claimTtlMs).then(
+                stores.runs.renewClaim(runId, owner, claimTtlMs).then(
                     (ok) => {
                         if (stopped) return;
                         if (ok) schedule();

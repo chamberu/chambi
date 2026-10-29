@@ -1,16 +1,18 @@
-# MemoryStore
+# Memory stores
 
-`MemoryStore` implements `IStore` in process memory. It ships with `@chamvi/core` because every test needs it.
+`createMemoryStores()` assembles independent in-memory capability stores, including conversations. It ships with `@chamvi/core` for development and tests.
 
 ```ts
-import { MemoryStore } from '@chamvi/core';
+import { createMemoryStores } from '@chamvi/core';
 
-const store = new MemoryStore();
+const stores = createMemoryStores();
 ```
 
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `clock` | `IClock` | `systemClock` | Time source for every expiry decision |
+
+Each role is also exported as a class: `MemoryRunStore`, `MemoryStepStore`, `MemoryCheckpointStore`, `MemoryIdempotencyStore`, `MemoryLockStore`, `MemoryEffectStore`, `MemoryStateStore`, `MemoryArtifactStore`, `MemoryAgentRevisionStore` and `MemoryConversationStore`. Only runs, idempotency, locks and conversations need a clock.
 
 ## How it keeps the contract
 

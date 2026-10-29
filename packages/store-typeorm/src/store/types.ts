@@ -7,15 +7,13 @@
 
 import type { IClock } from '@chamvi/core';
 import type { DataSource } from 'typeorm';
+import type { createTypeormStores } from './module.ts';
 
-export type TypeormStoreOptions = {
+export type TypeormStoresOptions = {
     /** An initialized Postgres data source listing STORE_ENTITIES and STORE_MIGRATIONS. */
     dataSource: DataSource;
     /** Source of time for leases and expiry (default: systemClock). */
     clock?: IClock;
 };
 
-export type PurgeResult = {
-    idempotencyKeys: number;
-    locks: number;
-};
+export type TypeormStores = ReturnType<typeof createTypeormStores>;

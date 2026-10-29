@@ -5,7 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { MemoryStore } from '@chamvi/core';
+import { MemoryRunStore, createMemoryStores } from '@chamvi/core';
+import type { Stores } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { describe, expect, it } from 'vitest';
 import {
@@ -27,22 +28,23 @@ function flush(): Promise<void> {
     });
 }
 
-/** A MemoryStore with a purgeExpired whose calls settle on demand. */
+/** A memory stores with a purgeExpired whose calls settle on demand. */
 function purgingStore() {
     const calls: Array<{ resolve(value: unknown): void; reject(error: unknown): void }> = [];
-    const store = Object.assign(new MemoryStore(), {
+    const store = createMemoryStores();
+    Object.assign(store.idempotency, {
         purgeExpired: () => new Promise<unknown>((resolve, reject) => {
             calls.push({ resolve, reject });
         }),
     });
-    return { store, calls };
+    return { stores: store, calls };
 }
 
 async function setup(options: {
     mode?: AppMode;
     dev?: boolean;
     env?: Record<string, string>;
-    store?: MemoryStore;
+    stores?: Stores;
 } = {}) {
     const clock = new ControllableClock();
     const logger = createRecordingLogger(clock);
@@ -52,7 +54,7 @@ async function setup(options: {
         env: { ...options.env },
         modules: [
             configModule({ clock, logger }),
-            storeModule(options.store ? { store: options.store } : {}),
+            storeModule(options.stores ? { stores: options.stores } : {}),
         ],
     });
     return {
@@ -69,15 +71,15 @@ describe('storeModule', () => {
         expect(module.dependencies).toEqual([ModuleName.CONFIG]);
     });
 
-    it('MemoryStore without DATABASE_URL', async () => {
+    it('memory stores without DATABASE_URL', async () => {
         const { harness, clock } = await setup();
-        const store = harness.container.resolve(AppToken.STORE);
-        expect(store).toBeInstanceOf(MemoryStore);
+        const store = harness.container.resolve(AppToken.STORES);
+        expect(store.runs).toBeInstanceOf(MemoryRunStore);
 
         // the store runs on the app clock
-        await store.acquire('l', 'a', 1000);
+        await store.locks.acquire('l', 'a', 1000);
         clock.advance(1000);
-        await expect(store.acquire('l', 'b', 1000)).resolves.toBe(true);
+        await expect(store.locks.acquire('l', 'b', 1000)).resolves.toBe(true);
         await harness.stop();
     });
 
@@ -86,7 +88,7 @@ describe('storeModule', () => {
         const warnings = logger.entries.filter((entry) => entry.msg.includes('DATABASE_URL'));
         expect(warnings).toHaveLength(1);
         expect(warnings[0]!.level).toBe('warn');
-        expect(warnings[0]!.msg).toContain('MemoryStore');
+        expect(warnings[0]!.msg).toContain('memory stores');
         await harness.stop();
     });
 
@@ -96,21 +98,28 @@ describe('storeModule', () => {
         await harness.stop();
     });
 
+    it('accepts a stores bundle without conversation persistence', async () => {
+        const stores = { ...createMemoryStores(), conversations: undefined };
+        const { harness } = await setup({ stores });
+        expect(harness.container.resolve(AppToken.STORES)).toBe(stores);
+        await harness.stop();
+    });
+
     it('uses a given store', async () => {
-        const store = new MemoryStore();
-        const { harness, logger } = await setup({ store });
-        expect(harness.container.resolve(AppToken.STORE)).toBe(store);
+        const store = createMemoryStores();
+        const { harness, logger } = await setup({ stores: store });
+        expect(harness.container.resolve(AppToken.STORES)).toBe(store);
         expect(logger.entries).toEqual([]);
         await harness.stop();
     });
 
     it('purge runs every interval and never overlaps', async () => {
-        const { store, calls } = purgingStore();
+        const { stores: store, calls } = purgingStore();
         const {
             harness,
             clock,
             logger,
-        } = await setup({ store });
+        } = await setup({ stores: store });
         await runHooks(harness.container, 'started');
 
         clock.advance(DEFAULT_PURGE_INTERVAL_MS - 1);
@@ -125,7 +134,7 @@ describe('storeModule', () => {
 
         calls[0]!.resolve({ idempotencyKeys: 2, locks: 1 });
         await flush();
-        expect(logger.entries.find((entry) => entry.level === 'debug')).toMatchObject({ idempotencyKeys: 2, locks: 1 });
+        expect(logger.entries.find((entry) => entry.level === 'debug')).toMatchObject({ results: [{ idempotencyKeys: 2, locks: 1 }] });
 
         clock.advance(DEFAULT_PURGE_INTERVAL_MS);
         expect(calls).toHaveLength(2);
@@ -135,8 +144,8 @@ describe('storeModule', () => {
     });
 
     it('purge stops on stopping', async () => {
-        const { store, calls } = purgingStore();
-        const { harness, clock } = await setup({ store });
+        const { stores: store, calls } = purgingStore();
+        const { harness, clock } = await setup({ stores: store });
         await runHooks(harness.container, 'started');
         await runHooks(harness.container, 'stopping');
 
@@ -146,8 +155,8 @@ describe('storeModule', () => {
     });
 
     it('stopping prevents the re-arm of a call in flight', async () => {
-        const { store, calls } = purgingStore();
-        const { harness, clock } = await setup({ store });
+        const { stores: store, calls } = purgingStore();
+        const { harness, clock } = await setup({ stores: store });
         await runHooks(harness.container, 'started');
         clock.advance(DEFAULT_PURGE_INTERVAL_MS);
         expect(calls).toHaveLength(1);
@@ -164,8 +173,8 @@ describe('storeModule', () => {
     });
 
     it('stopping waits for a call in flight', async () => {
-        const { store, calls } = purgingStore();
-        const { harness, clock } = await setup({ store });
+        const { stores: store, calls } = purgingStore();
+        const { harness, clock } = await setup({ stores: store });
         await runHooks(harness.container, 'started');
         clock.advance(DEFAULT_PURGE_INTERVAL_MS);
         expect(calls).toHaveLength(1);
@@ -184,12 +193,12 @@ describe('storeModule', () => {
     });
 
     it('purge failure is logged and re-armed', async () => {
-        const { store, calls } = purgingStore();
+        const { stores: store, calls } = purgingStore();
         const {
             harness,
             clock,
             logger,
-        } = await setup({ store });
+        } = await setup({ stores: store });
         await runHooks(harness.container, 'started');
         clock.advance(DEFAULT_PURGE_INTERVAL_MS);
 
@@ -207,8 +216,8 @@ describe('storeModule', () => {
     });
 
     it('teardown stops the purge timer', async () => {
-        const { store, calls } = purgingStore();
-        const { harness, clock } = await setup({ store });
+        const { stores: store, calls } = purgingStore();
+        const { harness, clock } = await setup({ stores: store });
         await runHooks(harness.container, 'started');
         await harness.stop();
 
@@ -217,10 +226,10 @@ describe('storeModule', () => {
     });
 
     it.each(['job', 'migrate'] as const)('no purge hook in %s mode', async (mode) => {
-        const { store } = purgingStore();
+        const { stores: store } = purgingStore();
         const { harness } = await setup({
             mode,
-            store,
+            stores: store,
             env: mode === 'migrate' ? { DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x' } : {},
         });
         expect(harness.container.resolveAll(AppToken.LIFECYCLE_HOOKS)).toEqual([]);
@@ -228,8 +237,8 @@ describe('storeModule', () => {
     });
 
     it('no purge hook when CHAMVI_PURGE_INTERVAL_MS=0', async () => {
-        const { store } = purgingStore();
-        const { harness } = await setup({ store, env: { CHAMVI_PURGE_INTERVAL_MS: '0' } });
+        const { stores: store } = purgingStore();
+        const { harness } = await setup({ stores: store, env: { CHAMVI_PURGE_INTERVAL_MS: '0' } });
         expect(harness.container.resolveAll(AppToken.LIFECYCLE_HOOKS)).toEqual([]);
         await harness.stop();
     });
@@ -241,8 +250,8 @@ describe('storeModule', () => {
     });
 
     it('registers the purge hook', async () => {
-        const { store } = purgingStore();
-        const { harness } = await setup({ store });
+        const { stores: store } = purgingStore();
+        const { harness } = await setup({ stores: store });
         expect(harness.container.resolveAll(AppToken.LIFECYCLE_HOOKS).map((hook) => hook.name)).toEqual(['chamvi:purge']);
         await harness.stop();
     });

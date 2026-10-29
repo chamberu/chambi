@@ -46,7 +46,7 @@ ESM only, Node.js `>=22`. `@chamvi/core` is a peer dependency; [`hubwire`](https
 import type { LanguageModel } from 'ai';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
 } from '@chamvi/core';
 import { cron, cronChannel } from '@chamvi/channel-cron';
@@ -60,10 +60,10 @@ export async function startScheduling(model: LanguageModel) {
         channels: [cron.on('*/30 * * * *', { timezone: 'Europe/Berlin' })],
     });
 
-    // MemoryStore is per process; with several replicas, pass one shared store
-    // (e.g. TypeormStore) so its lock fires each tick once across them
+    // createMemoryStores is per process; with several replicas, pass one shared store
+    // (e.g. createTypeormStores) so its lock fires each tick once across them
     const engine = new Engine({
-        store: new MemoryStore(),
+        stores: createMemoryStores(),
         agents: [sweep],
         // every replica registers the same channel; it reads agents and store from the engine
         channels: [cronChannel()],

@@ -18,8 +18,8 @@ import {
 } from 'vitest';
 import {
     Engine,
-    MemoryStore,
     approve,
+    createMemoryStores,
     defineAgent,
 } from '@chamvi/core';
 import { codingTools } from '@chamvi/coding';
@@ -69,9 +69,9 @@ describe('coding flow (local)', () => {
             ]),
             tools: { ...manager.tools(), ...codingTools(manager) },
         });
-        const store = new MemoryStore();
+        const store = createMemoryStores();
         const engine = new Engine({
-            store,
+            stores: store,
             agents: [agent],
             onError: () => {},
         });
@@ -87,11 +87,11 @@ describe('coding flow (local)', () => {
         });
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('tests failed with exit code 1');
 
-        const steps = await store.listSteps(runId);
+        const steps = await store.steps.listSteps(runId);
         const create = steps.find((step) => step.kind === 'tool' && step.name === 'create_workspace');
         expect(create?.error).toBeUndefined();
         expect(create?.output).toMatchObject({ repo: fixture.url, commit: fixture.commit });
@@ -149,8 +149,8 @@ describe('repository guidance through Engine checkpoints', () => {
                 },
             },
         });
-        const store = new MemoryStore();
-        const first = new Engine({ store, agents: [agentFor(firstManager)] });
+        const store = createMemoryStores();
+        const first = new Engine({ stores: store, agents: [agentFor(firstManager)] });
         cleanups.push(() => first.stop());
         firstManager.attach(first);
         await first.start();
@@ -161,10 +161,10 @@ describe('repository guidance through Engine checkpoints', () => {
             payload: {},
         });
         await first.idle();
-        const paused = await store.getRun(runId);
+        const paused = await store.runs.getRun(runId);
         expect(paused?.status).toBe('waiting');
 
-        const beforeRestart = await store.listSteps(runId);
+        const beforeRestart = await store.steps.listSteps(runId);
         const created = beforeRestart.find((step) => step.kind === 'tool' && step.name === 'create_workspace');
         const initialRead = beforeRestart.find((step) => step.kind === 'tool' && step.name === 'read_file');
         const rootInstructions = (created?.output as { instructions: RepositoryInstructions }).instructions;
@@ -206,19 +206,19 @@ describe('repository guidance through Engine checkpoints', () => {
         await firstManager.close();
         const secondManager = makeManager();
         cleanups.push(() => secondManager.close());
-        const second = new Engine({ store, agents: [agentFor(secondManager)] });
+        const second = new Engine({ stores: store, agents: [agentFor(secondManager)] });
         cleanups.push(() => second.stop());
         secondManager.attach(second);
         await second.start();
         await second.approve(runId, { approvalId: paused!.waiting!.approvalId, approved: true });
         await second.idle();
 
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'guidance received' });
+        expect(await store.runs.getRun(runId)).toMatchObject({ status: 'completed', output: 'guidance received' });
         expect(resultsAt(3)).toEqual(expect.arrayContaining([
             { name: 'create_workspace', output: { type: 'json', value: created!.output } },
             { name: 'read_file', output: { type: 'json', value: initialRead!.output } },
         ]));
-        const steps = await store.listSteps(runId);
+        const steps = await store.steps.listSteps(runId);
         const reads = steps.filter((step) => step.kind === 'tool' && step.name === 'read_file');
         expect(reads).toHaveLength(2);
         expect(reads[0]!.output).toEqual(initialRead!.output);

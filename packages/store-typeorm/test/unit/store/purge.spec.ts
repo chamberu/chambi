@@ -13,10 +13,10 @@ import {
     it,
 } from 'vitest';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormStore } from '@chamvi/store-typeorm';
+import { createTypeormStores } from '@chamvi/store-typeorm';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 
-describePostgres('TypeormStore purgeExpired', () => {
+describePostgres('createTypeormStores purgeExpired', () => {
     let dataSource: DataSource;
 
     beforeAll(async () => {
@@ -29,20 +29,22 @@ describePostgres('TypeormStore purgeExpired', () => {
 
     it('removes expired keys and locks only, never effects', async () => {
         const clock = new ControllableClock(new Date(0));
-        const store = new TypeormStore({ dataSource, clock });
+        const store = createTypeormStores({ dataSource, clock });
 
-        await store.claimKey('s', 'k1', 'r1', 1_000);
-        await store.claimKey('s', 'k2', 'r2', 5_000);
-        await store.acquire('l1', 'o', 1_000);
-        await store.acquire('l2', 'o', 5_000);
-        await store.putEffect('e', 1);
+        await store.idempotency.claimKey('s', 'k1', 'r1', 1_000);
+        await store.idempotency.claimKey('s', 'k2', 'r2', 5_000);
+        await store.locks.acquire('l1', 'o', 1_000);
+        await store.locks.acquire('l2', 'o', 5_000);
+        await store.effects.putEffect('e', 1);
 
         clock.advance(1_000);
-        await expect(store.purgeExpired()).resolves.toEqual({ idempotencyKeys: 1, locks: 1 });
-        await expect(store.claimKey('s', 'k2', 'other', 1_000)).resolves.toEqual({ created: false, runId: 'r2' });
-        await expect(store.acquire('l2', 'x', 1)).resolves.toBe(false);
-        await expect(store.getEffect('e')).resolves.toEqual({ result: 1 });
+        await expect(store.idempotency.purgeExpired()).resolves.toBe(1);
+        await expect(store.locks.purgeExpired()).resolves.toBe(1);
+        await expect(store.idempotency.claimKey('s', 'k2', 'other', 1_000)).resolves.toEqual({ created: false, runId: 'r2' });
+        await expect(store.locks.acquire('l2', 'x', 1)).resolves.toBe(false);
+        await expect(store.effects.getEffect('e')).resolves.toEqual({ result: 1 });
 
-        await expect(store.purgeExpired(new Date(5_000))).resolves.toEqual({ idempotencyKeys: 1, locks: 1 });
+        await expect(store.idempotency.purgeExpired(new Date(5_000))).resolves.toBe(1);
+        await expect(store.locks.purgeExpired(new Date(5_000))).resolves.toBe(1);
     });
 });

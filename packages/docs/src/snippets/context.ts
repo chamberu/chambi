@@ -2,7 +2,7 @@ import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
     defineContextKey,
     defineTool,
@@ -49,7 +49,7 @@ export const ops = defineAgent({
 
 // #region provide
 const engine = new Engine({
-    store: new MemoryStore(),
+    stores: createMemoryStores(),
     agents: [ops],
 });
 

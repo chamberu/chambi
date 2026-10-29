@@ -12,7 +12,7 @@ import {
     it,
     vi,
 } from 'vitest';
-import { Engine, InvalidAgentDefinitionError, MemoryStore } from '@chamvi/core';
+import { Engine, InvalidAgentDefinitionError, createMemoryStores } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { createShutdown } from '@chamvi/http';
 import {
@@ -140,9 +140,9 @@ describe('stream.maxOpen', () => {
     });
 
     it('frees the slot of a settled run streamed at once', async () => {
-        const { app, store } = createRunTestApp({ stream: { maxOpen: 1 } });
+        const { app, stores: store } = createRunTestApp({ stream: { maxOpen: 1 } });
         const runId = await start(app);
-        await store.updateRun(runId, { status: 'failed' });
+        await store.runs.updateRun(runId, { status: 'failed' });
         const reader = await open(app, runId);
         await reader.rest();
 
@@ -153,7 +153,7 @@ describe('stream.maxOpen', () => {
     it('frees the slot when the snapshot fails', async () => {
         const ctx = createRunTestApp({ stream: { maxOpen: 1 }, onError: () => {} });
         const runId = await start(ctx.app);
-        vi.spyOn(ctx.store, 'listSteps').mockRejectedValueOnce(new Error('store down'));
+        vi.spyOn(ctx.stores.steps, 'listSteps').mockRejectedValueOnce(new Error('store down'));
         expect((await streamStatus(ctx.app, runId)).status).toBe(500);
 
         await expectExactlyOneFreeSlot(ctx.app, runId);
@@ -163,7 +163,7 @@ describe('stream.maxOpen', () => {
         const ctx = createRunTestApp({ stream: { maxOpen: 1 }, onError: () => {} });
         const runId = await start(ctx.app);
         const reader = await open(ctx.app, runId);
-        vi.spyOn(ctx.store, 'getRun').mockRejectedValueOnce(new Error('store down'));
+        vi.spyOn(ctx.stores.runs, 'getRun').mockRejectedValueOnce(new Error('store down'));
         ctx.clock.advance(2_000);
         await reader.rest();
 
@@ -172,10 +172,10 @@ describe('stream.maxOpen', () => {
 
     it('frees the slots on shutdown', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStores({ clock });
         const agents = createRunAgents();
         const engine = new Engine({
-            store,
+            stores: store,
             agents,
             clock,
             channels: testChannels(),
@@ -201,7 +201,7 @@ describe('stream.maxOpen', () => {
 
     describe('mcp run_<agent> waits', () => {
         it('answer at once with the dispatched run when the cap is reached', async () => {
-            const { app, store } = createRunTestApp({ stream: { maxOpen: 1 } });
+            const { app, stores: store } = createRunTestApp({ stream: { maxOpen: 1 } });
             const runId = await start(app);
             const reader = await open(app, runId);
             const client = await connectMcp(app, ADMIN_TOKEN);
@@ -213,7 +213,7 @@ describe('stream.maxOpen', () => {
                 status: 'queued',
                 deduplicated: false,
             });
-            const dispatched = await store.getRun(result.structuredContent!.runId as string);
+            const dispatched = await store.runs.getRun(result.structuredContent!.runId as string);
             expect(dispatched?.status).toBe('queued');
 
             await reader.reader.cancel();
@@ -226,7 +226,7 @@ describe('stream.maxOpen', () => {
             const subscribe = vi.spyOn(setup.engine, 'on');
             const pending = callTool(client, 'run_echo', { waitSeconds: 10 });
             await until(() => subscribe.mock.calls.length > 0);
-            const [run] = (await setup.store.listRuns({ agent: 'echo' })).data;
+            const [run] = (await setup.stores.runs.listRuns({ agent: 'echo' })).data;
 
             expect((await streamStatus(setup.app, run!.id)).status).toBe(503);
 
@@ -256,7 +256,7 @@ describe('stream.maxOpen', () => {
             const subscribe = vi.spyOn(setup.engine, 'on');
             void callTool(client, 'run_echo', { waitSeconds: 30 }).catch(() => undefined);
             await until(() => subscribe.mock.calls.length > 0);
-            const [run] = (await setup.store.listRuns({ agent: 'echo' })).data;
+            const [run] = (await setup.stores.runs.listRuns({ agent: 'echo' })).data;
 
             controller.abort();
             await until(async () => {
@@ -273,9 +273,9 @@ describe('stream.maxOpen', () => {
         it('free the slot when the wait fails', async () => {
             const setup = createRunTestApp({ stream: { maxOpen: 1 }, onError: () => {} });
             const client = await connectMcp(setup.app, ADMIN_TOKEN);
-            const getRun = setup.store.getRun.bind(setup.store);
+            const getRun = setup.stores.runs.getRun.bind(setup.stores.runs);
             let failed = false;
-            vi.spyOn(setup.store, 'getRun').mockImplementation(async (id) => {
+            vi.spyOn(setup.stores.runs, 'getRun').mockImplementation(async (id) => {
                 if (!failed) {
                     failed = true;
                     throw new Error('store down');
@@ -284,7 +284,7 @@ describe('stream.maxOpen', () => {
             });
             const result = await callTool(client, 'run_echo', { waitSeconds: 5 });
             expect(result.isError).toBe(true);
-            const [run] = (await setup.store.listRuns({ agent: 'echo' })).data;
+            const [run] = (await setup.stores.runs.listRuns({ agent: 'echo' })).data;
 
             await expectExactlyOneFreeSlot(setup.app, run!.id);
             await client.close();

@@ -26,7 +26,7 @@ import type {
     RunContext,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStores } from '../../../src/store/index.ts';
 import { gateTool, recordApprovals } from '../../utils/approvals.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -64,7 +64,7 @@ type Setup = {
 
 function setup(s: Setup) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStores({ clock });
     const agent = defineAgent({
         name: 'release',
         instructions: 'You release.',
@@ -75,7 +75,7 @@ function setup(s: Setup) {
         hooks: s.hooks,
     });
     const engine = new Engine({
-        store,
+        stores: store,
         agents: [agent],
         clock,
         claimTtlMs: 30,
@@ -85,7 +85,7 @@ function setup(s: Setup) {
     const notifier = recordApprovals(engine);
     return {
         clock,
-        store,
+        stores: store,
         engine,
         notifier,
     };
@@ -106,20 +106,20 @@ const toolNames = (model: ReturnType<typeof mockModel>, i: number) => (model.doS
 
 describe('invoker', () => {
     it('stores a copy of the invoker on the run', async () => {
-        const { engine, store } = setup({ model: mockModel([]) });
+        const { engine, stores: store } = setup({ model: mockModel([]) });
         const invoker = { ...alice, permissions: [...alice.permissions] };
         const { runId } = await engine.dispatch(env(invoker));
         invoker.permissions.push('*');
         invoker.name = 'Mallory';
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.trigger.invoker).toEqual(alice);
     });
 
     it('keeps only the invoker fields', async () => {
-        const { engine, store } = setup({ model: mockModel([]) });
+        const { engine, stores: store } = setup({ model: mockModel([]) });
         const { runId } = await engine.dispatch(env({ ...alice, token: 'secret-bearer' }));
-        expect((await store.getRun(runId))?.trigger.invoker).toEqual(alice);
+        expect((await store.runs.getRun(runId))?.trigger.invoker).toEqual(alice);
     });
 
     it.each([
@@ -132,25 +132,25 @@ describe('invoker', () => {
         ['a non-string permission', { ...alice, permissions: ['ok', 1] }],
         ['a non-string name', { ...alice, name: 42 }],
     ])('rejects %s before any write', async (_label, invoker) => {
-        const { engine, store } = setup({ model: mockModel([]) });
+        const { engine, stores: store } = setup({ model: mockModel([]) });
         await expect(engine.dispatch(env(invoker, 'key-1'))).rejects.toBeInstanceOf(ValidationError);
-        expect((await store.listRuns({})).data).toHaveLength(0);
+        expect((await store.runs.listRuns({})).data).toHaveLength(0);
         // the idempotency key was not claimed either
         const { runId, deduplicated } = await engine.dispatch(env(alice, 'key-1'));
         expect(deduplicated).toBe(false);
-        expect((await store.getRun(runId))?.trigger.invoker).toEqual(alice);
+        expect((await store.runs.getRun(runId))?.trigger.invoker).toEqual(alice);
     });
 
     it('dedupes a key per invoker: the same invoker gets the first run', async () => {
-        const { engine, store } = setup({ model: mockModel([]) });
+        const { engine, stores: store } = setup({ model: mockModel([]) });
         const first = await engine.dispatch(env(alice, 'same'));
         const second = await engine.dispatch(env({ ...alice, permissions: [] }, 'same'));
         expect(second).toEqual({ runId: first.runId, deduplicated: true });
-        expect((await store.getRun(first.runId))?.trigger.invoker).toEqual(alice);
+        expect((await store.runs.getRun(first.runId))?.trigger.invoker).toEqual(alice);
     });
 
     it('gives two invokers with the same key a run each', async () => {
-        const { engine, store } = setup({ model: mockModel([]) });
+        const { engine, stores: store } = setup({ model: mockModel([]) });
         const first = await engine.dispatch(env(alice, 'same'));
         const bob: Invoker = {
             id: 'u-bob',
@@ -160,27 +160,27 @@ describe('invoker', () => {
         const second = await engine.dispatch(env(bob, 'same'));
         expect(second.deduplicated).toBe(false);
         expect(second.runId).not.toBe(first.runId);
-        expect((await store.getRun(first.runId))?.trigger.invoker).toEqual(alice);
-        expect((await store.getRun(second.runId))?.trigger.invoker).toEqual(bob);
+        expect((await store.runs.getRun(first.runId))?.trigger.invoker).toEqual(alice);
+        expect((await store.runs.getRun(second.runId))?.trigger.invoker).toEqual(bob);
     });
 
     it('keeps an invoker id apart from another kind and from a run without an invoker', async () => {
         const { engine } = setup({ model: mockModel([]) });
         const ids = [
             await engine.dispatch(env({
-                id: 'a:b', 
-                kind: 'user', 
-                permissions: [], 
+                id: 'a:b',
+                kind: 'user',
+                permissions: [],
             }, 'same')),
             await engine.dispatch(env({
-                id: 'b', 
-                kind: 'user:a', 
-                permissions: [], 
+                id: 'b',
+                kind: 'user:a',
+                permissions: [],
             }, 'same')),
             await engine.dispatch(env({
-                id: 'a:b', 
-                kind: 'client', 
-                permissions: [], 
+                id: 'a:b',
+                kind: 'client',
+                permissions: [],
             }, 'same')),
             await engine.dispatch(env(undefined, 'same')),
         ];
@@ -191,17 +191,17 @@ describe('invoker', () => {
     });
 
     it('claims the key under <agent>:<source>:<kind>:<id>, each part URI-encoded', async () => {
-        const { engine, store } = setup({ model: mockModel([]) });
+        const { engine, stores: store } = setup({ model: mockModel([]) });
         const scopes: string[] = [];
-        const claimKey = store.claimKey.bind(store);
-        store.claimKey = (scope, ...rest) => {
+        const claimKey = store.idempotency.claimKey.bind(store.idempotency);
+        store.idempotency.claimKey = (scope, ...rest) => {
             scopes.push(scope);
             return claimKey(scope, ...rest);
         };
         await engine.dispatch(env({
-            id: 'a:b c', 
-            kind: 'user', 
-            permissions: [], 
+            id: 'a:b c',
+            kind: 'user',
+            permissions: [],
         }, 'k'));
         await engine.dispatch(env(undefined, 'k'));
         expect(scopes).toEqual(['release:http:user:a%3Ab%20c', 'release:http']);
@@ -210,7 +210,7 @@ describe('invoker', () => {
     it('hands the invoker to the tool factory and the agent hooks', async () => {
         const seen: Array<Invoker | undefined> = [];
         const model = mockModel([callTool('deploy'), text('done')]);
-        const { engine, store } = setup({
+        const { engine, stores: store } = setup({
             model,
             tools: ({ run }) => {
                 seen.push(run.trigger.invoker);
@@ -231,7 +231,7 @@ describe('invoker', () => {
         await engine.start();
         const { runId } = await engine.dispatch(env(alice));
         await engine.idle();
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.getRun(runId))?.status).toBe('completed');
         expect(seen).toEqual([alice, alice]);
     });
 });
@@ -289,9 +289,9 @@ describe('tool policy', () => {
         const { runId } = await engine.dispatch(env(alice));
         await engine.idle();
         expect(contexts[0]).toMatchObject({
-            runId, 
-            agent: 'release', 
-            trigger: { invoker: alice }, 
+            runId,
+            agent: 'release',
+            trigger: { invoker: alice },
         });
     });
 
@@ -299,7 +299,7 @@ describe('tool policy', () => {
         let executed = 0;
         let checks = 0;
         const model = mockModel([callTool('deploy'), text('could not deploy')]);
-        const { engine, store } = setup({
+        const { engine, stores: store } = setup({
             model,
             tools: () => ({
                 deploy: tool({
@@ -317,7 +317,7 @@ describe('tool policy', () => {
         const { runId } = await engine.dispatch(env(alice));
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('could not deploy');
         expect(executed).toBe(0);
@@ -332,7 +332,7 @@ describe('tool policy', () => {
     ])('records a model call to %s (%s) with code %s', async (_, toolName, code) => {
         let executed = 0;
         const model = mockModel([callTool(toolName), text('done')]);
-        const { engine, store } = setup({
+        const { engine, stores: store } = setup({
             model,
             tools: () => ({
                 deploy: tool({
@@ -353,10 +353,10 @@ describe('tool policy', () => {
         const { runId } = await engine.dispatch(env(alice));
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('completed');
         expect(executed).toBe(0);
-        const step = (await store.listSteps(runId)).find((s) => s.kind === 'tool');
+        const step = (await store.steps.listSteps(runId)).find((s) => s.kind === 'tool');
         expect(step?.name).toBe(toolName);
         const error = step?.error as { code: string; message: string } | undefined;
         expect(error?.code).toBe(code);
@@ -367,9 +367,9 @@ describe('tool policy', () => {
         let deployed = 0;
         const model = mockModel([callTool('deploy'), text('done')]);
         const {
-            engine, 
-            store, 
-            notifier, 
+            engine,
+            stores: store,
+            notifier,
         } = setup({
             model,
             tools: () => ({
@@ -388,28 +388,28 @@ describe('tool policy', () => {
         await engine.start();
         const { runId } = await engine.dispatch(env(alice));
         await engine.idle();
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect((await store.runs.getRun(runId))?.status).toBe('waiting');
 
         const approver: Invoker = {
-            id: 'u-bob', 
-            kind: 'user', 
-            permissions: ['agent:release:approve'], 
+            id: 'u-bob',
+            kind: 'user',
+            permissions: ['agent:release:approve'],
         };
         await engine.approve(notifier.calls[0]!.runId, {
-            approvalId: notifier.calls[0]!.approvalId, 
-            approved: true, 
-            approver, 
+            approvalId: notifier.calls[0]!.approvalId,
+            approved: true,
+            approver,
         });
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('completed');
         expect(run?.trigger.invoker).toEqual(alice);
         expect(deployed).toBe(1);
         expect(toolNames(model, 0)).toEqual(['deploy']);
         expect(toolNames(model, 1)).toEqual(toolNames(model, 0));
 
-        const wait = (await store.listSteps(runId)).find((s) => s.kind === 'wait');
+        const wait = (await store.steps.listSteps(runId)).find((s) => s.kind === 'wait');
         expect(wait?.output).toEqual({
             approvalId: expect.any(String),
             approved: true,
@@ -432,7 +432,7 @@ describe('tool policy', () => {
         });
         const {
             engine,
-            store,
+            stores: store,
             clock,
             notifier,
         } = setup({
@@ -444,12 +444,12 @@ describe('tool policy', () => {
         await engine.start();
         const { runId } = await engine.dispatch(env(alice));
         await engine.idle();
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect((await store.runs.getRun(runId))?.status).toBe('waiting');
         engine.stop();
 
         // redeployed with a tighter policy: deploy is refused now
         const tightened = new Engine({
-            store,
+            stores: store,
             agents: [defineAgent({
                 name: 'release',
                 instructions: 'You release.',
@@ -467,7 +467,7 @@ describe('tool policy', () => {
         await tightened.approve(notifier.calls[0]!.runId, { approvalId: notifier.calls[0]!.approvalId, approved: true });
         await tightened.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('could not deploy');
         expect(deployed).toBe(0);
@@ -480,9 +480,9 @@ describe('tool policy', () => {
     it('rejects an invalid approver before answering', async () => {
         const model = mockModel([callTool('deploy'), text('done')]);
         const {
-            engine, 
-            store, 
-            notifier, 
+            engine,
+            stores: store,
+            notifier,
         } = setup({
             model,
             tools: () => ({ deploy }),
@@ -497,18 +497,18 @@ describe('tool policy', () => {
             approvalId,
             approved: true,
             approver: {
-                id: '', 
-                kind: 'user', 
-                permissions: [], 
+                id: '',
+                kind: 'user',
+                permissions: [],
             },
         })).rejects.toBeInstanceOf(ValidationError);
-        expect((await store.getRun(runId))?.status).toBe('waiting');
-        expect((await store.listSteps(runId)).some((s) => s.kind === 'wait')).toBe(false);
+        expect((await store.runs.getRun(runId))?.status).toBe('waiting');
+        expect((await store.steps.listSteps(runId)).some((s) => s.kind === 'wait')).toBe(false);
 
         // without an approver the wait step has none
         await engine.approve(runId, { approvalId, approved: true });
         await engine.idle();
-        const wait = (await store.listSteps(runId)).find((s) => s.kind === 'wait');
+        const wait = (await store.steps.listSteps(runId)).find((s) => s.kind === 'wait');
         expect(wait?.output).not.toHaveProperty('approver');
     });
 });

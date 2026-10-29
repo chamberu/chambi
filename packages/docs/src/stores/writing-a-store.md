@@ -1,10 +1,10 @@
 # Writing a Store
 
-A store is any object that implements `IStore` from `@chamvi/core`. Pass it to `new Engine({ store })`; the engine needs nothing else.
+Implement the capability interfaces from `@chamvi/core` and assemble them into a plain `Stores` object. Pass it to `new Engine({ stores, agents })`. A backend can expose its own assembly factory, as `createMemoryStores()` and `createTypeormStores()` do.
 
 ## Prove it with the contract suite
 
-`@chamvi/test-kit` ships `describeStoreContract`, the Vitest suite every store must pass. It is the same suite `MemoryStore` runs.
+`@chamvi/test-kit` ships `describeStoreContract`, the Vitest suite every store must pass. It is the same suite `createMemoryStores()` runs.
 
 ```bash
 npm install --save-dev @chamvi/test-kit vitest

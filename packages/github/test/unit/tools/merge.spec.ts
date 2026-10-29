@@ -8,9 +8,9 @@
 import { describe, expect, it } from 'vitest';
 import {
     InvalidAgentDefinitionError,
-    MemoryStore,
     ToolDeniedError,
     ValidationError,
+    createMemoryStores,
     wrapToolsForRun,
 } from '@chamvi/core';
 import type { ToolSet } from 'ai';
@@ -22,7 +22,7 @@ function setup(options?: GithubWriteToolsOptions) {
     const fixture = createGithubFixture();
     const ctx = toolContext({ channel: 'cron' });
     fixture.fake.installations.set('octo/demo', 9);
-    const wrap = (store = new MemoryStore()): ToolSet => wrapToolsForRun(fixture.gh.writeTools(options), ctx, store);
+    const wrap = (store = createMemoryStores()): ToolSet => wrapToolsForRun(fixture.gh.writeTools(options), ctx, store.effects);
     const call = <T = unknown>(tools: ToolSet, name: string, input: unknown) => callTool<T>(tools, name, input, ctx);
     const pullPosts = () => fixture.fake.requests.filter((r) => r.method === 'POST' && r.path === '/repos/octo/demo/pulls');
     return {

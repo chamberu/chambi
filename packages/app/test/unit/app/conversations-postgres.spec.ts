@@ -59,7 +59,7 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
         harness.context.conversations = { authorize: () => true };
         cleanup.push(() => harness.stop());
         await harness.setup();
-        const conversations = harness.container.resolve(AppToken.CONVERSATIONS);
+        const conversations = harness.container.resolve(AppToken.STORES).conversations!;
         expect(conversations).toBeInstanceOf(TypeormConversationStore);
         await conversations.resolve(identity);
         expect(await dataSource.query('SELECT count(*)::int AS count FROM chamvi_conversations')).toEqual([{ count: 1 }]);
@@ -151,14 +151,14 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
             text: 'remember my style',
         });
         await engine.idle();
-        const runs = harness.container.resolve(AppToken.STORE);
-        const conversations = harness.container.resolve(AppToken.CONVERSATIONS);
-        expect((await runs.getRun(result.runId))?.status).toBe('completed');
+        const runs = harness.container.resolve(AppToken.STORES);
+        const conversations = harness.container.resolve(AppToken.STORES).conversations!;
+        expect((await runs.runs.getRun(result.runId))?.status).toBe('completed');
         expect(sent).toEqual(['saved']);
         const scope = (await conversations.get(identity))!;
         expect((await conversations.getNote(scope, 'style'))?.text).toBe('short answers');
         expect((await conversations.listItems(scope, { limit: 10, offset: 0 })).data.map((item) => item.text)).toEqual(['remember my style', 'saved']);
-        expect((await runs.latestCheckpoint(result.runId))?.conversation).toEqual({ scopeId: scope.id, generation: scope.generation });
+        expect((await runs.checkpoints.latestCheckpoint(result.runId))?.conversation).toEqual({ scopeId: scope.id, generation: scope.generation });
         const ds = harness.container.resolve(AppToken.DATA_SOURCE);
         expect(await ds.query('SELECT run_id FROM chamvi_conversation_operations')).toEqual([{ run_id: result.runId }]);
         expect(await conversations.activeRun(scope)).toBeUndefined();
@@ -191,7 +191,7 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
         cleanup.push(async () => { release.resolve(); await harness.stop(); });
         await harness.setup();
         const dataSource = harness.container.resolve(AppToken.DATA_SOURCE);
-        const conversations = harness.container.resolve(AppToken.CONVERSATIONS);
+        const conversations = harness.container.resolve(AppToken.STORES).conversations!;
         const endTurn = conversations.endTurn.bind(conversations);
         vi.spyOn(conversations, 'endTurn').mockImplementation(async (...args) => {
             entered.resolve();

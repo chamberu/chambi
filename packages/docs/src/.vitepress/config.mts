@@ -153,7 +153,7 @@ export default defineConfig({
                     text: 'Stores',
                     items: [
                         { text: 'Store Contract', link: '/stores/' },
-                        { text: 'MemoryStore', link: '/stores/memory' },
+                        { text: 'Memory stores', link: '/stores/memory' },
                         { text: 'Writing a Store', link: '/stores/writing-a-store' },
                         { text: 'TypeORM', link: '/stores/typeorm' },
                     ],

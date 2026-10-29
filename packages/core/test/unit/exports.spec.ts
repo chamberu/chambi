@@ -46,9 +46,18 @@ describe('public api', () => {
     });
 
     it.each([
+        'createMemoryStores',
         'defineAgent',
         'Engine',
-        'MemoryStore',
+        'MemoryAgentRevisionStore',
+        'MemoryArtifactStore',
+        'MemoryCheckpointStore',
+        'MemoryEffectStore',
+        'MemoryIdempotencyStore',
+        'MemoryLockStore',
+        'MemoryRunStore',
+        'MemoryStateStore',
+        'MemoryStepStore',
         'defineEffectTool',
         'defineTool',
         'effectMarker',
@@ -158,7 +167,6 @@ describe('public api', () => {
             invoker?: core.Invoker;
         }>();
         expectTypeOf<core.ConversationOptions>().toEqualTypeOf<{
-            store: core.IConversationStore;
             authorize: (access: core.ConversationAccess) => boolean | Promise<boolean>;
             limits?: core.ConversationLimits;
         }>();
@@ -185,7 +193,7 @@ describe('public api', () => {
         expectTypeOf<core.ConversationNoteOperation>().toHaveProperty('kind').toEqualTypeOf<'set' | 'remove'>();
         expectTypeOf<core.IConversationStore['get']>()
             .toEqualTypeOf<(identity: core.ConversationIdentity) => Promise<core.ConversationScope | undefined>>();
-        expectTypeOf<core.IStore>().not.toHaveProperty('resolve');
+        expectTypeOf<core.Stores>().not.toHaveProperty('resolve');
     });
 
     it('exports the trigger key bound', () => {

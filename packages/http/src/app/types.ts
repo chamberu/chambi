@@ -10,7 +10,7 @@ import type {
     Engine,
     IChannel,
     IClock,
-    IStore,
+    Stores,
 } from '@chamvi/core';
 import type { Options as CorsPluginOptions } from '@routup/cors';
 import type { Options as PrometheusPluginOptions } from '@routup/prometheus';
@@ -181,7 +181,7 @@ export type HttpAgents = {
 /** Shared by every route module; internal. */
 export type HttpContext = {
     engine: Engine;
-    store: IStore;
+    stores: Stores;
     agents: HttpAgents;
     /** Agents that failed to load, as `GET /agents` lists them. */
     agentIssues: () => AgentIssue[];

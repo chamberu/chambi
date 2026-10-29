@@ -54,4 +54,4 @@ The next execution continues from the latest checkpoint. A step whose checkpoint
 | Crash or kill | `running`, claim expires | after the lease expires, on the next `recover()` |
 | Lost network to the store | `running` until the lease expires | as for a crash; the old owner stops writing once it notices |
 
-`MemoryStore` loses everything with the process, so recovery across restarts needs a durable store.
+`createMemoryStores()` loses everything with the process, so recovery across restarts needs a durable store.

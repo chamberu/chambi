@@ -14,8 +14,7 @@ import {
     it,
 } from 'vitest';
 import type { Artifact } from '@chamvi/core';
-import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormStore } from '@chamvi/store-typeorm';
+import { TypeormArtifactStore } from '@chamvi/store-typeorm';
 import { ArtifactEntity } from '../../../src/entities/index.ts';
 import { createTestDataSource, describePostgres, truncateStore } from '../../utils/database.ts';
 
@@ -30,9 +29,9 @@ const artifact = (id: string, overrides: Partial<Artifact> = {}): Artifact => ({
     ...overrides,
 });
 
-describePostgres('TypeormStore artifacts', () => {
+describePostgres('TypeormArtifactStore artifacts', () => {
     let dataSource: DataSource;
-    let store: TypeormStore;
+    let store: TypeormArtifactStore;
 
     beforeAll(async () => {
         dataSource = await createTestDataSource();
@@ -40,7 +39,7 @@ describePostgres('TypeormStore artifacts', () => {
 
     beforeEach(async () => {
         await truncateStore(dataSource);
-        store = new TypeormStore({ dataSource, clock: new ControllableClock(new Date(10_000)) });
+        store = new TypeormArtifactStore({ dataSource });
     });
 
     afterAll(async () => {

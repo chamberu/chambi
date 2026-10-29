@@ -7,11 +7,11 @@
 
 import type { DataSource } from 'typeorm';
 import type { ConversationScope, ResolvedConversationLimits, Run } from '@chamvi/core';
-import { TypeormConversationStore, TypeormStore } from '@chamvi/store-typeorm';
+import { TypeormConversationStore, TypeormRunStore } from '@chamvi/store-typeorm';
 
 export async function seedRun(dataSource: DataSource, id: string, overrides: Partial<Run> = {}): Promise<void> {
     const now = new Date('2026-10-28T00:00:00.000Z');
-    await new TypeormStore({ dataSource }).createRun({
+    await new TypeormRunStore({ dataSource }).createRun({
         id,
         agent: 'helper',
         status: 'running',

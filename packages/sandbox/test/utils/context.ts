@@ -6,7 +6,7 @@
  */
 
 import type { ToolSet } from 'ai';
-import { MemoryStore, createAgentState } from '@chamvi/core';
+import { createAgentState, createMemoryStores } from '@chamvi/core';
 import type { IRunArtifacts, ToolContext } from '@chamvi/core';
 
 const NO_ARTIFACTS: IRunArtifacts = {
@@ -33,7 +33,7 @@ export function toolContext(runId: string, signal: AbortSignal = new AbortContro
             },
             signal,
         },
-        state: createAgentState('coder', undefined, new MemoryStore()),
+        state: createAgentState('coder', undefined, createMemoryStores().state),
         artifacts: NO_ARTIFACTS,
     };
 }

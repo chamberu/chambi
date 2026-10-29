@@ -1,6 +1,6 @@
 # @chamvi/core
 
-The public API of `@chamvi/core`, taken from `packages/core/src/index.ts`. Contract interfaces carry an `I` prefix (`IStore`, `IClock`, `IChannel`, `IAgentState`); data shapes are unprefixed types.
+The public API of `@chamvi/core`, taken from `packages/core/src/index.ts`. Contract interfaces carry an `I` prefix (`IRunStore`, `IClock`, `IChannel`, `IAgentState`); data shapes are unprefixed types.
 
 ```ts
 import { Engine, defineAgent } from '@chamvi/core';
@@ -62,7 +62,7 @@ Subscription builders live in the channel packages: `http.on()` and `webhook.on(
 class Engine {
     constructor(opts: EngineOptions);
 
-    readonly store: IStore;
+    readonly stores: Stores;
     readonly clock: IClock;
     getAgent(name: string): Agent | undefined;
     listAgents(): Agent[];
@@ -93,7 +93,7 @@ class Engine {
 
 | Method | Description | Guide |
 |---|---|---|
-| `store`, `clock` | The store and clock the engine was built with (`clock` defaults to `systemClock`) | |
+| `stores`, `clock` | The store and clock the engine was built with (`clock` defaults to `systemClock`) | |
 | `getAgent`, `listAgents` | One registered agent by name; all of them in registration order (a new array), read at call time | |
 | `getChannel`, `listChannels` | One registered channel by name; all of them in registration order | [Channels](/guide/channels) |
 | `putAgent` | Registers an agent or replaces the one of the same name in place (a new one goes last); refuses a subscription to an unknown channel like the constructor. Replacing cancels the agent's unsettled runs created before now. With a `revision` (a folder's content hash) the store's marker is brought to it under the lock `agents:<name>` instead, cancelling once across replicas and only when a marker existed (swept before and again after the marker write; no run of the agent starts on this engine meanwhile). Each cancelled run stores `agent_replaced` as its `error` ([Errors](/guide/errors#run-errors)), and the sweep emits `agents.cancelled`. With `reload: false` (a process that never reloads, a job) nothing is cancelled: a missing marker is written, a different one moved only while the agent has no unsettled run, else `InvalidRunStateError` and the agent stays unregistered. A marker at `formerRevision` (the same content hashed by an earlier algorithm) counts as equal and is moved to `revision` without a cancel. Resolves `unchanged` (no event) for the same agent object at the same revision | [Agent Folders](/guide/agent-folders) |
@@ -137,12 +137,10 @@ The `RunStatus` enum, whose values `RunStatusLiteral` is built from:
 ## Stores
 
 ```ts
-class MemoryStore implements IStore {
-    constructor(opts?: { clock?: IClock });
-}
+function createMemoryStores(options?: MemoryStoresOptions): Stores & { conversations: IConversationStore };
 ```
 
-`IStore` and its parts (`IRunStore`, `IStepStore`, `ICheckpointStore`, `IIdempotencyStore`, `ILockStore`, `IEffectStore`, `IStateStore`, `IArtifactStore`, `IAgentRevisionStore`) are listed on the [Store Contract](/stores/) page.
+The `Stores` aggregate and its capability interfaces (`IRunStore`, `IStepStore`, `ICheckpointStore`, `IIdempotencyStore`, `ILockStore`, `IEffectStore`, `IStateStore`, `IArtifactStore`, `IAgentRevisionStore`) are listed on the [Store Contract](/stores/) page.
 
 ## Artifacts
 

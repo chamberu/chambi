@@ -10,7 +10,7 @@ import { createServer } from 'node:net';
 import type { AddressInfo, Socket } from 'node:net';
 import { inspect } from 'node:util';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
-import { STORE_ENTITIES, STORE_MIGRATIONS, TypeormStore } from '@chamvi/store-typeorm';
+import { STORE_ENTITIES, STORE_MIGRATIONS, TypeormRunStore } from '@chamvi/store-typeorm';
 import { ControllableClock } from '@chamvi/test-kit';
 import { DataSource, QueryFailedError } from 'typeorm';
 import {
@@ -105,7 +105,7 @@ describe('storeModule on a database URL', () => {
         expect(inspect(error, { depth: 5 })).not.toContain('sekr3t');
         expect(logger.lines.join('\n')).not.toContain('sekr3t');
         expect(inspect(harness.reported, { depth: 5 })).not.toContain('sekr3t');
-        expect(harness.container.has(AppToken.STORE)).toBe(false);
+        expect(harness.container.has(AppToken.STORES)).toBe(false);
     });
 
     it('an unreachable DATABASE_URL fails a check too', async () => {
@@ -138,7 +138,7 @@ describe('storeModule on a database URL', () => {
             const began = Date.now();
             await expect(harness.setup()).rejects.toBeInstanceOf(Error);
             expect(Date.now() - began).toBeLessThan(5_000);
-            expect(harness.container.has(AppToken.STORE)).toBe(false);
+            expect(harness.container.has(AppToken.STORES)).toBe(false);
         } finally {
             sockets.forEach((socket) => socket.destroy());
             await new Promise((resolve) => { server.close(resolve); });
@@ -155,7 +155,7 @@ describe('storeModule on a database URL', () => {
         const { harness } = build({ store: { dataSource } });
 
         await expect(harness.setup()).rejects.toBeInstanceOf(InvalidAgentDefinitionError);
-        expect(harness.container.has(AppToken.STORE)).toBe(false);
+        expect(harness.container.has(AppToken.STORES)).toBe(false);
     });
 
     it('stop during migrate: an aborted context initializes nothing', async () => {
@@ -164,7 +164,7 @@ describe('storeModule on a database URL', () => {
 
         await expect(harness.setup()).rejects.toMatchObject({ code: APP_ERROR_CODE.STOPPED });
         expect(harness.container.has(AppToken.DATA_SOURCE)).toBe(false);
-        expect(harness.container.has(AppToken.STORE)).toBe(false);
+        expect(harness.container.has(AppToken.STORES)).toBe(false);
     });
 });
 
@@ -176,7 +176,7 @@ describePostgres('storeModule on Postgres', () => {
 
         const dataSource = harness.container.resolve(AppToken.DATA_SOURCE);
         expect(await tableExists(dataSource, 'chamvi_runs')).toBe(true);
-        expect(harness.container.resolve(AppToken.STORE)).toBeInstanceOf(TypeormStore);
+        expect(harness.container.resolve(AppToken.STORES).runs).toBeInstanceOf(TypeormRunStore);
 
         await harness.stop();
         expect(dataSource.isInitialized).toBe(false);
@@ -187,8 +187,8 @@ describePostgres('storeModule on Postgres', () => {
         const { harness } = build({ env: { DATABASE_URL: url } });
         await harness.setup();
 
-        const store = harness.container.resolve(AppToken.STORE);
-        await expect(store.listRuns({})).resolves.toMatchObject({ total: 0 });
+        const store = harness.container.resolve(AppToken.STORES);
+        await expect(store.runs.listRuns({})).resolves.toMatchObject({ total: 0 });
         await harness.stop();
     });
 
@@ -197,9 +197,9 @@ describePostgres('storeModule on Postgres', () => {
         const { harness } = build({ env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'false' } });
         await harness.setup();
 
-        const store = harness.container.resolve(AppToken.STORE);
-        expect(store).toBeInstanceOf(TypeormStore);
-        await expect(store.listRuns({})).rejects.toThrow();
+        const store = harness.container.resolve(AppToken.STORES);
+        expect(store.runs).toBeInstanceOf(TypeormRunStore);
+        await expect(store.runs.listRuns({})).rejects.toThrow();
         await harness.stop();
     });
 
@@ -208,7 +208,7 @@ describePostgres('storeModule on Postgres', () => {
         const { harness } = build({ env: { DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x' }, store: { url } });
         await harness.setup();
 
-        expect(harness.container.resolve(AppToken.STORE)).toBeInstanceOf(TypeormStore);
+        expect(harness.container.resolve(AppToken.STORES).runs).toBeInstanceOf(TypeormRunStore);
         await harness.stop();
     });
 
@@ -225,7 +225,7 @@ describePostgres('storeModule on Postgres', () => {
         expect(error).toMatchObject({ driverError: { code: '42P07' } });
         expect((error as Error).message).toMatch(/chamvi_checkpoints/);
         expect(harness.container.resolve(AppToken.DATA_SOURCE).isInitialized).toBe(false);
-        expect(harness.container.has(AppToken.STORE)).toBe(false);
+        expect(harness.container.has(AppToken.STORES)).toBe(false);
     });
 
     it('a failed migration keeps the TypeORM error for a password found in the stack', async () => {
@@ -279,9 +279,9 @@ describePostgres('storeModule on Postgres', () => {
             await harness.setup();
 
             expect(harness.container.resolve(AppToken.DATA_SOURCE)).toBe(dataSource);
-            const store = harness.container.resolve(AppToken.STORE);
-            expect(store).toBeInstanceOf(TypeormStore);
-            await expect(store.listRuns({})).resolves.toMatchObject({ total: 0 });
+            const store = harness.container.resolve(AppToken.STORES);
+            expect(store.runs).toBeInstanceOf(TypeormRunStore);
+            await expect(store.runs.listRuns({})).resolves.toMatchObject({ total: 0 });
 
             await harness.stop();
             expect(dataSource.isInitialized).toBe(true);
@@ -299,13 +299,13 @@ describePostgres('storeModule on Postgres', () => {
         } = build({ env: { DATABASE_URL: url } });
         await harness.setup();
 
-        const store = harness.container.resolve(AppToken.STORE);
-        await store.acquire('lock', 'owner', 1000);
+        const store = harness.container.resolve(AppToken.STORES);
+        await store.locks.acquire('lock', 'owner', 1000);
         await runHooks(harness.container, 'started');
         clock.advance(DEFAULT_PURGE_INTERVAL_MS);
 
         await vi.waitFor(() => {
-            expect(logger.entries.find((entry) => entry.level === 'debug')).toMatchObject({ locks: 1 });
+            expect(logger.entries.find((entry) => entry.level === 'debug')).toMatchObject({ results: [0, 1] });
         });
 
         await runHooks(harness.container, 'stopping');
@@ -353,7 +353,7 @@ describePostgres('storeModule on Postgres', () => {
 
         const { harness } = build({ check: true, env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'false' } });
         await harness.setup();
-        expect(harness.container.resolve(AppToken.STORE)).toBeInstanceOf(TypeormStore);
+        expect(harness.container.resolve(AppToken.STORES).runs).toBeInstanceOf(TypeormRunStore);
         await harness.stop();
     });
 });

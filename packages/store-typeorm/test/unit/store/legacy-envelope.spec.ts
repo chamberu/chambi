@@ -14,14 +14,14 @@ import {
     it,
 } from 'vitest';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormStore } from '@chamvi/store-typeorm';
+import { TypeormRunStore } from '@chamvi/store-typeorm';
 import { RunEntity } from '../../../src/entities/index.ts';
 import { asValues } from '../../../src/store/helpers.ts';
 import { createTestDataSource, describePostgres, truncateStore } from '../../utils/database.ts';
 
-describePostgres('TypeormStore legacy envelopes', () => {
+describePostgres('TypeormRunStore legacy envelopes', () => {
     let dataSource: DataSource;
-    let store: TypeormStore;
+    let store: TypeormRunStore;
 
     beforeAll(async () => {
         dataSource = await createTestDataSource();
@@ -29,7 +29,7 @@ describePostgres('TypeormStore legacy envelopes', () => {
 
     beforeEach(async () => {
         await truncateStore(dataSource);
-        store = new TypeormStore({ dataSource, clock: new ControllableClock(new Date(10_000)) });
+        store = new TypeormRunStore({ dataSource, clock: new ControllableClock(new Date(10_000)) });
     });
 
     afterAll(async () => {

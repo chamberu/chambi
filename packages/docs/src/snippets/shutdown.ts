@@ -1,10 +1,10 @@
-import type { Agent, IStore } from '@chamvi/core';
+import type { Agent, Stores } from '@chamvi/core';
 import { Engine } from '@chamvi/core';
 
-export async function serve(store: IStore, agents: Agent[]) {
+export async function serve(store: Stores, agents: Agent[]) {
     // #region shutdown
     const engine = new Engine({
-        store,
+        stores: store,
         agents,
         onError: (error, run) => console.error('[agents]', run?.id, error),
     });

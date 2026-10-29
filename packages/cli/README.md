@@ -80,7 +80,7 @@ Relative imports carry `.ts` and there is no `enum`, so `chamvi dev` (Node's typ
 
 The entry is `--entry`, else for the source commands (`dev`, `build`, `start --dev`) the `package.json` field `"chamvi": { "entry": "<path>" }`, else `src/index.ts`. The built commands (`start`, `run-job`, `migrate`) never read that field and default to `dist/index.mjs`, so an image built from a repository that sets it still starts; a `.ts` entry runs through type stripping too. With none of them (no `--entry`, no `chamvi.entry`, no default file), `dev`, `start`, `run-job` and `migrate` run the default app, `createApp({})` configured by env alone, with its agents from `./agents` (or `CHAMVI_AGENTS_DIR`), and say so on stderr; `build` exits 2 (nothing to build). A missing `dist/index.mjs` beside a `src/index.ts` still exits 2 with the build hint.
 
-`chamvi dev` runs `start --dev`: the source entry, `.env` from the working directory (never overriding a set variable), a `MemoryStore` unless `DATABASE_URL` is set and, without another authenticator, one random `*` token, logged with a warning, and shorter timeouts (`CHAMVI_DRAIN_TIMEOUT_MS` 5000, `CHAMVI_FORCE_EXIT_MS` 15000).
+`chamvi dev` runs `start --dev`: the source entry, `.env` from the working directory (never overriding a set variable), in-memory stores from `createMemoryStores()` unless `DATABASE_URL` is set and, without another authenticator, one random `*` token, logged with a warning, and shorter timeouts (`CHAMVI_DRAIN_TIMEOUT_MS` 5000, `CHAMVI_FORCE_EXIT_MS` 15000).
 
 ## Exit codes
 

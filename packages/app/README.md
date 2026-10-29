@@ -96,9 +96,9 @@ Every variable is read once per lifecycle. An empty string counts as unset, inte
 | `CHAMVI_BASE_PATH` | http | empty or `^(?:\/[a-z0-9._~-]+)+$` | `''` (health at `/healthz`, UI at `/ui`) |
 | `CHAMVI_PUBLIC_URL` | ui, channels | absolute URL | unset; set it for approval links (`<url><basePath>/ui/approvals?run=<runId>&approval=<approvalId>`) |
 | `CHAMVI_LOG_LEVEL` | config | `error`, `warn`, `info`, `debug` | `info` |
-| `DATABASE_URL` | store | `postgres://...` | unset: `MemoryStore` (warned outside `--dev`); required for `migrate` and any multi-replica or CronJob deployment |
+| `DATABASE_URL` | store | `postgres://...` | unset: `createMemoryStores()` (warned outside `--dev`); required for `migrate` and any multi-replica or CronJob deployment |
 | `CHAMVI_MIGRATE` | store | bool | `true` (`start` and `run-job` migrate, advisory-locked) |
-| `CHAMVI_PURGE_INTERVAL_MS` | store | int, `0` disables | `3600000` (only with `TypeormStore`) |
+| `CHAMVI_PURGE_INTERVAL_MS` | store | int, `0` disables | `3600000` (for purgeable capability stores) |
 | `CHAMVI_MAX_CONCURRENT_RUNS` | engine | int >= 1 | `4` |
 | `CHAMVI_SCHEDULER` | scheduler | bool | `true`; `false` starts no in-process cron (CronJob mode; `cron.on()` subscriptions still validate) |
 | `CHAMVI_READINESS_DELAY_MS` | http shutdown | int | `0` |
@@ -139,7 +139,7 @@ Modules are orkos `IModule`s on an eldin container. The built-in ones are always
 | Module | Name | Entry | Does |
 |---|---|---|---|
 | `configModule()` | `chamvi:config` | `@chamvi/app` | reads the config, registers `CONFIG`, `CLOCK`, `LOGGER` |
-| `storeModule({ url?, store?, dataSource? })` | `chamvi:store` | `@chamvi/app` | `TypeormStore` over `DATABASE_URL` (migrated), else `MemoryStore`; the purge timer |
+| `storeModule({ url?, stores?, dataSource? })` | `chamvi:store` | `@chamvi/app` | `createTypeormStores()` over `DATABASE_URL` (migrated), else `createMemoryStores()`; registers `AppToken.STORES` and schedules purgeable roles |
 | `staticTokensModule({ tokens? })` | `chamvi:static-tokens` | `@chamvi/app` | the static-token authenticator from `CHAMVI_TOKENS` |
 | `engineModule({ owner?, claimTtlMs? })` | `chamvi:engine` | `@chamvi/app` | checks the model strings, builds the `Engine` with every contributed channel (`CHANNELS`) and starts it (which starts the channels) |
 | `schedulerModule({ owner?, lockTtlMs? })` | `chamvi:scheduler` | `@chamvi/app` | the `cron` channel (`cronChannel()` of `@chamvi/channel-cron`; in start mode it fires only with `CHAMVI_SCHEDULER`) |
@@ -253,7 +253,7 @@ const harness = await createModuleHarness({
 await harness.stop();
 ```
 
-- **Tokens** (`AppToken`): `CONTEXT`, `CONFIG`, `LOGGER`, `CLOCK`, `STORE`, `DATA_SOURCE`, `ENGINE`, `SHUTDOWN` and `SERVER` hold one value; `HTTP_ROUTES`, `AUTHENTICATORS` (`{ name, order, authenticator }`, lowest `order` first, `AUTHENTICATOR_ORDER`), `CHANNELS` (every `IChannel` the engine registers; names unique, those with an `in` are mounted at `/channels/<name>`), `LIFECYCLE_HOOKS` and `AGENT_CHECKS` are collections (`registerMany(token, { useValue })` in `setup`, `resolveAll` in `onReady`).
+- **Tokens** (`AppToken`): `CONTEXT`, `CONFIG`, `LOGGER`, `CLOCK`, `STORES`, `DATA_SOURCE`, `ENGINE`, `SHUTDOWN` and `SERVER` hold one value; `HTTP_ROUTES`, `AUTHENTICATORS` (`{ name, order, authenticator }`, lowest `order` first, `AUTHENTICATOR_ORDER`), `CHANNELS` (every `IChannel` the engine registers; names unique, those with an `in` are mounted at `/channels/<name>`), `LIFECYCLE_HOOKS` and `AGENT_CHECKS` are collections (`registerMany(token, { useValue })` in `setup`, `resolveAll` in `onReady`).
 - **Order**: contributions need none, since every consumer builds in `onReady`. A module that resolves `ENGINE` or `SERVER` in `onReady` lists that module in `dependencies`; a dependency the app does not register, a cycle or a version mismatch is an `InvalidAgentDefinitionError` before any module set up.
 - **Modes**: `CONTEXT.mode` is `start` (everything), `job` (config, store, engine) or `migrate` (config and store only), so a module resolving `ENGINE` in `onReady` returns early in `migrate`.
 - **Hooks** (`LIFECYCLE_HOOKS`, `ILifecycleHook`): `engineCreated(engine)` before `engine.start()`, `started()` after `engine.start()` (channels started), before the server listens, `stopping()` first in the shutdown, before the drain stops the channels, `drained()` after the engine drained, before the store closes.

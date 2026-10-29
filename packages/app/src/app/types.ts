@@ -8,7 +8,6 @@
 import type {
     Agent,
     ConversationOptions,
-    IConversationStore,
     ModelRef,
 } from '@chamvi/core';
 import type { AgentIssue } from '@chamvi/http';
@@ -21,7 +20,7 @@ export type AppOptions = {
     /** The code agents; may be omitted or empty when CHAMVI_AGENTS_DIR names an agents folder. */
     agents?: Agent[];
     /** Optional conversation recall and notes; the default store follows the app's selected data source. */
-    conversations?: Omit<ConversationOptions, 'store'> & { store?: IConversationStore };
+    conversations?: ConversationOptions;
     /** Extra modules; one named like a built-in (`ModuleName`) replaces it. */
     modules?: IModule[];
     /** The default model of agents without one; CHAMVI_MODEL and the config file win. */

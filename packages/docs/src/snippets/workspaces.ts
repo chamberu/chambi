@@ -1,5 +1,5 @@
 import type { LanguageModel } from 'ai';
-import type { IStore } from '@chamvi/core';
+import type { Stores } from '@chamvi/core';
 import {
     Engine,
     ToolDeniedError,
@@ -14,7 +14,7 @@ import { createWorkspaceManager, staticGitCredentials } from '@chamvi/sandbox';
 import type { ISandboxProvider } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 
-export async function serve(store: IStore, model: LanguageModel, provider: ISandboxProvider) {
+export async function serve(store: Stores, model: LanguageModel, provider: ISandboxProvider) {
     // #region setup
     const workspaces = createWorkspaceManager({
         provider,
@@ -43,7 +43,7 @@ export async function serve(store: IStore, model: LanguageModel, provider: ISand
     });
 
     const engine = new Engine({
-        store,
+        stores: store,
         agents: [repro],
         channels: [httpChannel()],
     });

@@ -37,3 +37,9 @@ Documentation follow-up in chamvi/agent-template: show `httpModule({ channelRate
 ## Bash-first migration (2026-10-28)
 
 Reviewed local template commit 0374e2b. `.env.example:49-50` advertises CHAMVI_GIT_CREDENTIAL_MODE and dedicated Git tools; remove those lines when consuming #59. Keep token and author configuration. No source/test consumer found. Downstream follow-up is separate from the monorepo PR.
+
+## Capability stores compatibility check (2026-10-29)
+
+Checked current GitHub HEAD `a720d7a6caae5ad7ea8ab84ad92bf8478386d6e4` from a read-only source archive. Reviewed `src/index.ts`, `src/modules.ts`, `src/agents/example.ts`, app/example/entry/env tests and the README. Its `createApp({ model, agents, modules, models? })` use remains valid. No consumer supplies custom stores or conversation options, uses the removed store classes/aggregate interface, or reads the removed engine property/container tokens. Tests reading `config.store.url` and `config.store.migrate` use the unchanged environment configuration shape.
+
+The monorepo now exposes `Stores`, `createMemoryStores()`, `createTypeormStores()`, `Engine.stores`, `storeModule({ stores })` and `AppToken.STORES`; conversation storage is `stores.conversations`, with authorization/limits kept in conversation policy. No downstream source migration is required for the usages above. CLI, env, route, image, model-format and chart contracts are unchanged. No downstream repository was modified, tested, or published for this check.

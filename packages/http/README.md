@@ -46,7 +46,7 @@ ESM only, Node.js `>=22`. `@chamvi/core` is a peer dependency; [routup](https://
 
 ```typescript
 import type { LanguageModel } from 'ai';
-import { Engine, MemoryStore, defineAgent } from '@chamvi/core';
+import { Engine, createMemoryStores, defineAgent } from '@chamvi/core';
 import {
     createHttpApp,
     createShutdown,
@@ -66,7 +66,7 @@ export async function createAgentServer(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        store: new MemoryStore(),
+        stores: createMemoryStores(),
         agents: [echo],
         // REST runs carry channel http, MCP runs channel mcp
         channels: [httpChannel(), mcpChannel()],
@@ -249,7 +249,7 @@ process.once('SIGTERM', () => {
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `engine` | `Engine` | required | Dispatches, cancels and resumes runs; its `store`, agents and `clock` serve every route (runs, steps and state are read from `engine.store`, polls, waits and timeouts run on `engine.clock`) |
+| `engine` | `Engine` | required | Dispatches, cancels and resumes runs; its `stores`, agents and `clock` serve every route (runs, steps and state are read from `engine.stores`, polls, waits and timeouts run on `engine.clock`) |
 | `agents` | `string[]` | every agent | Names of the engine's agents this app serves (routes, MCP tools, extra routes); the others are unknown to it. A mounted channel serves every agent subscribing to it. A name the engine lacks or given twice throws `InvalidAgentDefinitionError` |
 | `auth` | `Authenticator \| Authenticator[]` | required | The authenticator chain |
 | `basePath` | `string` | none | Prefix of every route, e.g. `/api` |

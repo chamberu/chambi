@@ -1,9 +1,9 @@
-import { Engine, MemoryStore } from '@chamvi/core';
+import { Engine, createMemoryStores } from '@chamvi/core';
 import { createHttpApp, staticTokens } from '@chamvi/http';
 import { uiRoutes } from '@chamvi/ui';
 
 const engine = new Engine({
-    store: new MemoryStore(),
+    stores: createMemoryStores(),
     agents: [],
 });
 

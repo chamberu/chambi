@@ -54,7 +54,7 @@ describe('webhook to comment', () => {
         const {
             app,
             engine,
-            store,
+            stores: store,
             fake,
         } = setup([
             {
@@ -91,7 +91,7 @@ describe('webhook to comment', () => {
         await engine.start();
         await engine.idle();
 
-        const run = await store.getRun(runs[0]!.runId);
+        const run = await store.runs.getRun(runs[0]!.runId);
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('Triaged.');
         const comments = fake.comments.get('octo/demo#5') ?? [];
@@ -114,7 +114,7 @@ describe('webhook to comment', () => {
         const {
             app,
             engine,
-            store,
+            stores: store,
             fake,
         } = setup([
             {
@@ -135,7 +135,7 @@ describe('webhook to comment', () => {
         await engine.start();
         await engine.idle();
 
-        const run = await store.getRun(runs[0]!.runId);
+        const run = await store.runs.getRun(runs[0]!.runId);
         expect(run?.status).toBe('waiting');
         expect(run?.waiting?.toolName).toBe('github_close_issue');
         expect(fake.requests.filter((r) => r.method === 'PATCH')).toHaveLength(0);
@@ -163,7 +163,7 @@ describe('webhook to comment', () => {
         const {
             app,
             engine,
-            store,
+            stores: store,
             fake,
             errors,
         } = setup;
@@ -179,14 +179,14 @@ describe('webhook to comment', () => {
         await engine.start();
         await engine.idle();
 
-        const paused = await store.getRun(runId);
+        const paused = await store.runs.getRun(runId);
         expect(paused?.status).toBe('waiting');
         expect(paused?.waiting?.toolName).toBe('github_create_comment');
         expect(fake.comments.get('octo/demo#5')).toHaveLength(1);
 
         await engine.approve(runId, { approvalId: paused!.waiting!.approvalId, approved: true });
         await engine.idle();
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.getRun(runId))?.status).toBe('completed');
         expect(errors).toEqual([]);
         const bodies = (fake.comments.get('octo/demo#5') ?? []).map((c) => String(c.body));
         expect(bodies).toHaveLength(3);
@@ -208,7 +208,7 @@ describe('webhook to comment', () => {
         const {
             app,
             engine,
-            store,
+            stores: store,
             fake,
         } = setup([comment('zero'), comment('one'), { parts: [{ type: 'text', text: 'Done.' }] }]);
         const response = await deliver(app, {
@@ -221,7 +221,7 @@ describe('webhook to comment', () => {
         await engine.start();
         await engine.idle();
 
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.getRun(runId))?.status).toBe('completed');
         const bodies = (fake.comments.get('octo/demo#5') ?? []).map((c) => String(c.body));
         expect(bodies).toHaveLength(2);
         expect(bodies[1]).toContain(`${runId}:github_create_comment:octo/demo#5:1 -->`);

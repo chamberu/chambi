@@ -5,16 +5,15 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { isObject } from 'smob';
 import type { IPurgeTimer, PurgeTimerOptions } from './types.ts';
 
 /**
- * Runs `store.purgeExpired()` every `intervalMs` on the clock. The next call
+ * Runs each store's `purgeExpired()` every `intervalMs` on the clock. The next call
  * is armed only after the previous one settled, so calls never overlap.
  */
 export function createPurgeTimer(options: PurgeTimerOptions): IPurgeTimer {
     const {
-        store,
+        stores,
         clock,
         intervalMs,
         logger,
@@ -30,12 +29,16 @@ export function createPurgeTimer(options: PurgeTimerOptions): IPurgeTimer {
 
         timer = clock.setTimeout(() => {
             timer = undefined;
-            inFlight = store.purgeExpired()
-                .then((result) => {
-                    logger.debug('Purged expired idempotency keys and locks.', isObject(result) ? result : {});
-                })
-                .catch((error: unknown) => {
-                    logger.error('Purging expired idempotency keys and locks failed.', error);
+            inFlight = Promise.all(stores.map(async (store) => {
+                try {
+                    return await store.purgeExpired();
+                } catch (error) {
+                    logger.error('Purging expired store records failed.', error);
+                    return undefined;
+                }
+            }))
+                .then((results) => {
+                    logger.debug('Purged expired store records.', { results });
                 })
                 .finally(() => {
                     inFlight = undefined;

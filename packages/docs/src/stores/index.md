@@ -1,6 +1,6 @@
 # Store Contract
 
-Everything the engine persists goes through one interface, `IStore`. It is a set of small interfaces, so a store can be built and tested part by part.
+The engine receives a `Stores` object with one implementation per persistence capability. Each role has its own small interface and can be built and tested independently.
 
 | Interface | Holds | Key operations |
 |---|---|---|
@@ -13,8 +13,26 @@ Everything the engine persists goes through one interface, `IStore`. It is a set
 | `IStateStore` | Per-agent state | `kvGet`/`kvSet` (`undefined` removes the key), `kvList` (key code-point order, `limit`/`offset`), `docList`/`docUpsert`/`docDelete` |
 | `IArtifactStore` | Files of a run (attachments, files tools stored) | `putArtifact(artifact, data)` (insert-if-absent), `getArtifact` (metadata), `readArtifact` (bytes), `listArtifacts(runId)` |
 | `IAgentRevisionStore` | One revision marker per [folder agent](/guide/agent-folders): `{ agent, hash, changedAt }`, no code | `getAgentRevision`, `setAgentRevision` (upsert), `deleteAgentRevision` (a missing one is a no-op), `listAgentRevisions` (agent code-point order) |
+| `IConversationStore` (optional) | Conversation generations, turn ownership, recall, journal and explicit notes | `resolve`, `beginTurn`, `endTurn`, `prepareEmit`, `confirmEmit`, `applyNote`, `reset`, `prune` |
 
-`IStore` extends all nine. A store written before agent folders existed needs the four `IAgentRevisionStore` methods (a breaking change of the 0.x line).
+`Stores` has nine required fields: `runs`, `steps`, `checkpoints`, `idempotency`, `locks`, `effects`, `state`, `artifacts` and `agentRevisions`. Its optional `conversations` field implements `IConversationStore`. Pass the aggregate as `new Engine({ stores, agents })`; use `stores.runs.getRun(id)` or `stores.state.kvGet(agent, key)` for direct access. Conversation storage alone does not enable memory: configure `conversations: { authorize, limits? }` on the engine and opt agents in.
+
+## Updating existing callers
+
+This changes the storage API. `IStore`, `MemoryStore` and `TypeormStore` are removed; custom adapters implement the individual interfaces and are supplied in a `Stores` object.
+
+| Previous API | Separate stores API |
+|---|---|
+| `new MemoryStore(options)` | `createMemoryStores(options)` |
+| `new TypeormStore(options)` | `createTypeormStores(options)` |
+| `new Engine({ store, agents })` | `new Engine({ stores, agents })` |
+| `engine.store.getRun(id)` | `engine.stores.runs.getRun(id)` |
+| `storeModule({ store })` | `storeModule({ stores })` |
+| `AppToken.STORE` | `AppToken.STORES` |
+| `conversations: { store, authorize }` | `stores.conversations` holds storage; `conversations: { authorize }` holds policy |
+| `container.resolve(AppToken.CONVERSATIONS)` | `container.resolve(AppToken.STORES).conversations` |
+
+The class split itself changes no database schema. Existing TypeORM roles must keep sharing the same DataSource so their relationships remain valid.
 
 ## Rules every store keeps
 
@@ -36,7 +54,7 @@ Everything the engine persists goes through one interface, `IStore`. It is a set
 
 | Store | Package | Status |
 |---|---|---|
-| [`MemoryStore`](/stores/memory) | `@chamvi/core` | Shipped. Development and tests |
+| [`createMemoryStores()`](/stores/memory) | `@chamvi/core` | Shipped. Development and tests |
 | [TypeORM](/stores/typeorm) | `@chamvi/store-typeorm` | Shipped. PostgreSQL, production |
 
 Redis is never required. Any store that passes the [contract suite](/stores/writing-a-store) from `@chamvi/test-kit` works with the engine.

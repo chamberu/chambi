@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { defineEffectTool, wrapToolsForRun } from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
 import { currentToolCall } from '../../../src/effect/frame.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStores } from '../../../src/store/index.ts';
 
 const ctx = { run: { runId: 'r1' } } as unknown as ToolContext;
 const schema = z.object({});
@@ -40,17 +40,17 @@ describe('tool-call frame', () => {
             },
         });
         const effect = defineEffectTool({ inputSchema: schema, execute: async () => currentToolCall() });
-        const tools = wrapToolsForRun({ plain, effect }, ctx, new MemoryStore());
+        const tools = wrapToolsForRun({ plain, effect }, ctx, createMemoryStores().effects);
         expect(await call(tools, 'plain', 'c1')).toMatchObject({
-            runId: 'r1', 
-            toolCallId: 'c1', 
-            toolName: 'plain', 
+            runId: 'r1',
+            toolCallId: 'c1',
+            toolName: 'plain',
             approvals: 0,
         });
         expect(await call(tools, 'effect', 'c2')).toMatchObject({
-            runId: 'r1', 
-            toolCallId: 'c2', 
-            toolName: 'effect', 
+            runId: 'r1',
+            toolCallId: 'c2',
+            toolName: 'effect',
             approvals: 0,
         });
         expect(currentToolCall()).toBeUndefined();
@@ -65,7 +65,7 @@ describe('tool-call frame', () => {
                 yield currentToolCall()?.toolCallId;
             },
         });
-        const tools = wrapToolsForRun({ stream }, ctx, new MemoryStore());
+        const tools = wrapToolsForRun({ stream }, ctx, createMemoryStores().effects);
         expect(await call(tools, 'stream', 'c3')).toEqual(['c3', 'c3']);
     });
 });

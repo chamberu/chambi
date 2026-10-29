@@ -14,8 +14,9 @@ import type {
     ConversationOperationLiteral,
     ConversationOptions,
     ConversationScope,
+    IConversationStore,
 } from './types.ts';
-import type { IStore } from '../store/types.ts';
+import type { IEffectStore, IRunStore } from '../store/types.ts';
 import { InvalidAgentDefinitionError, InvalidRunStateError, ValidationError } from '../errors/index.ts';
 import { ConversationOperation, ConversationTurnKind } from './constants.ts';
 import { RunStatus } from '../run/constants.ts';
@@ -36,14 +37,20 @@ export class Conversations {
 
     protected readonly pending = new Map<string, Set<Promise<void>>>();
 
-    constructor(options: ConversationOptions) {
-        if (!isObject(options) || typeof options.authorize !== 'function' || !isObject(options.store)) {
+    protected readonly runs: IRunStore;
+
+    protected readonly effects: IEffectStore;
+
+    constructor(options: ConversationOptions, store: IConversationStore, runs: IRunStore, effects: IEffectStore) {
+        if (!isObject(options) || typeof options.authorize !== 'function' || !isObject(store)) {
             throw new InvalidAgentDefinitionError('Conversations need a store and an authorizer.');
         }
         for (const method of ['resolve', 'get', 'beginTurn', 'activeRun', 'endTurn', 'prepareEmit', 'confirmEmit', 'pendingEmits', 'listItems', 'listNotes', 'getNote', 'applyNote', 'reset', 'delete', 'prune'] as const) {
-            if (typeof options.store[method] !== 'function') throw new InvalidAgentDefinitionError(`The conversation store needs ${method}().`);
+            if (typeof store[method] !== 'function') throw new InvalidAgentDefinitionError(`The conversation store needs ${method}().`);
         }
-        this.store = options.store;
+        this.store = store;
+        this.runs = runs;
+        this.effects = effects;
         this.authorize = options.authorize;
         this.limits = normalizeConversationLimits(options.limits);
     }
@@ -66,12 +73,12 @@ export class Conversations {
         if (!current || current.id !== scope.id || current.generation !== scope.generation) throw new InvalidRunStateError('The conversation scope is stale: it was reset or deleted.');
     }
 
-    async admit(run: Run, runs: IStore) {
+    async admit(run: Run) {
         await this.check(run);
         const { scope, text } = run.conversation!;
         let result = await this.store.beginTurn(scope, run.id, text, this.limits);
-        if (result.kind === ConversationTurnKind.BUSY && settled(await runs.getRun(result.runId))) {
-            await this.reconcile(scope, result.runId, runs);
+        if (result.kind === ConversationTurnKind.BUSY && settled(await this.runs.getRun(result.runId))) {
+            await this.reconcile(scope, result.runId);
             result = await this.store.beginTurn(scope, run.id, text, this.limits);
         }
         if (result.kind === ConversationTurnKind.STALE) throw new InvalidRunStateError('The conversation scope is stale: it was reset or deleted.');
@@ -100,25 +107,25 @@ export class Conversations {
         }
     }
 
-    async reconcile(scope: ConversationScope, runId: string, runs: IStore): Promise<void> {
+    async reconcile(scope: ConversationScope, runId: string): Promise<void> {
         // Terminal repair never fabricates success for an unrecorded external send.
         await this.idle(runId);
         await this.track(runId, (async () => {
             const pending = await this.store.pendingEmits(scope, runId);
             const confirmed: string[] = [];
             for (const item of pending) {
-                const effect = item.effectKey ? await runs.getEffect(item.effectKey) : undefined;
+                const effect = item.effectKey ? await this.effects.getEffect(item.effectKey) : undefined;
                 if (effect && matchesEmitReceipt(effect.result, item.target)) confirmed.push(item.id);
             }
             await this.store.endTurn(scope, runId, confirmed);
         })());
     }
 
-    async repair(identity: ConversationIdentity, runs: IStore): Promise<void> {
+    async repair(identity: ConversationIdentity): Promise<void> {
         const scope = await this.store.get(identity);
         if (!scope) return;
         const owner = await this.store.activeRun(scope);
-        if (owner && settled(await runs.getRun(owner))) await this.reconcile(scope, owner, runs);
+        if (owner && settled(await this.runs.getRun(owner))) await this.reconcile(scope, owner);
     }
 
     async inspect(identity: ConversationIdentity, query: { limit?: number; offset?: number } = {}): Promise<ConversationInspection | undefined> {
@@ -135,7 +142,7 @@ export class Conversations {
         };
     }
 
-    async prune(runs: IStore): Promise<void> {
-        await this.store.prune(this.limits, { isSettled: async (id) => settled(await runs.getRun(id)) });
+    async prune(): Promise<void> {
+        await this.store.prune(this.limits, { isSettled: async (id) => settled(await this.runs.getRun(id)) });
     }
 }

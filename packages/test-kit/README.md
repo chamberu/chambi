@@ -28,13 +28,13 @@ npm install --save-dev @chamvi/test-kit @chamvi/core vitest
 
 ### Store contract
 
-Every `IStore` implementation proves itself with the shared Vitest suite. The factory gets a fresh `ControllableClock` per test and must use it for every expiry decision:
+Every `Stores` implementation proves itself with the shared Vitest suite. The factory gets a fresh `ControllableClock` per test and must use it for every expiry decision:
 
 ```typescript
-import { MemoryStore } from '@chamvi/core';
+import { createMemoryStores } from '@chamvi/core';
 import { describeStoreContract } from '@chamvi/test-kit';
 
-describeStoreContract((clock) => new MemoryStore({ clock }));
+describeStoreContract((clock) => createMemoryStores({ clock }));
 ```
 
 ### Controllable clock
@@ -42,12 +42,12 @@ describeStoreContract((clock) => new MemoryStore({ clock }));
 `ControllableClock` implements `IClock` and only moves when told to, so engine timeouts, claim leases and approval expiry are tested without real timers:
 
 ```typescript
-import { MemoryStore, Engine } from '@chamvi/core';
+import { createMemoryStores, Engine } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 
 const clock = new ControllableClock();
-const store = new MemoryStore({ clock });
-const engine = new Engine({ store, agents: [], clock });
+const store = createMemoryStores({ clock });
+const engine = new Engine({ stores: store, agents: [], clock });
 
 clock.advance(60_000); // fires every timer due within the next minute, in order
 ```
@@ -98,7 +98,7 @@ fake.failNext('POST', '/repos/octo/demo/issues/7/comments', 502); // one injecte
 | Export | Kind | Purpose |
 |---|---|---|
 | `ControllableClock` | class | `IClock` that advances only via `advance(ms)`; starts at `new Date(0)` unless given a date |
-| `describeStoreContract` | function | Vitest suite every `IStore` implementation must pass |
+| `describeStoreContract` | function | Vitest suite every `Stores` implementation must pass |
 | `describeWorkspaceContract` | function | Vitest suite every sandbox provider's `IWorkspace` must pass |
 | `createGitFixture` | function | A temporary git repository with one commit (branch `main`, tag `v1`) |
 | `createFakeGithub` | function | An in-process GitHub (App JWTs, installation tokens, repository routes) for `createGithubApp({ fetch })` |

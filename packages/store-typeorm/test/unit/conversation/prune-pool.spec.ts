@@ -14,7 +14,7 @@ import {
 } from 'vitest';
 import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormStore } from '@chamvi/store-typeorm';
+import { TypeormRunStore } from '@chamvi/store-typeorm';
 import { SeededConversationStore, seedRun } from '../../utils/conversation.ts';
 import { ConversationItemEntity, ConversationOperationEntity } from '../../../src/entities/index.ts';
 import { asValues } from '../../../src/store/helpers.ts';
@@ -41,7 +41,7 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
         dataSource = await createTestDataSource({ max: 1 });
         const clock = new ControllableClock(new Date('2026-10-28T00:00:00.000Z'));
         const store = new SeededConversationStore({ dataSource, clock });
-        const runs = new TypeormStore({ dataSource, clock });
+        const runs = new TypeormRunStore({ dataSource, clock });
         const scope = await store.resolve({
             agent: 'helper',
             channel: 'chat',

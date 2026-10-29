@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { MemoryStore, defineAgent } from '@chamvi/core';
+import { createMemoryStores, defineAgent } from '@chamvi/core';
 import { http } from '@chamvi/http';
 import type { Engine } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
@@ -225,7 +225,7 @@ describe('App.stop', () => {
             name: ModuleName.STORE,
             dependencies: [ModuleName.CONFIG],
             async setup(container) {
-                container.register(AppToken.STORE, { useValue: new MemoryStore() });
+                container.register(AppToken.STORES, { useValue: createMemoryStores() });
                 container.registerMany(AppToken.LIFECYCLE_HOOKS, {
                     useValue: {
                         name: 'purge',

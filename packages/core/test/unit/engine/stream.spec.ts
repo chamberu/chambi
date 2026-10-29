@@ -19,7 +19,7 @@ import {
 import { z } from 'zod';
 import { Engine, defineAgent } from '@chamvi/core';
 import type { RunDelta } from '@chamvi/core';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStores } from '../../../src/store/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 
 const engines: Engine[] = [];
@@ -38,7 +38,7 @@ const env = {
 };
 
 function make(model: LanguageModel, tools?: () => ToolSet) {
-    const store = new MemoryStore();
+    const store = createMemoryStores();
     const agent = defineAgent({
         name: 'triage',
         instructions: 'You triage.',
@@ -46,7 +46,7 @@ function make(model: LanguageModel, tools?: () => ToolSet) {
         tools,
     });
     const engine = new Engine({
-        store,
+        stores: store,
         agents: [agent],
         onError: () => {},
     });
@@ -56,7 +56,7 @@ function make(model: LanguageModel, tools?: () => ToolSet) {
         deltas.push(e.delta);
     });
     return {
-        store,
+        stores: store,
         engine,
         deltas,
     };
@@ -143,15 +143,15 @@ describe('streaming', () => {
             { parts: [{ type: 'text', text: 'Hel' }, { type: 'text', text: 'lo' }] },
         ]);
         const {
-            engine, 
-            store, 
-            deltas, 
+            engine,
+            stores: store,
+            deltas,
         } = make(model, lookup);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.getRun(runId))?.status).toBe('completed');
         expect(deltas).toEqual([
             {
                 runId,
@@ -166,10 +166,10 @@ describe('streaming', () => {
                 text: 'lo',
             },
         ]);
-        const llm = (await store.listSteps(runId)).filter((s) => s.kind === 'llm');
+        const llm = (await store.steps.listSteps(runId)).filter((s) => s.kind === 'llm');
         const stored = llm.at(-1)?.output as { text: string };
         expect(deltas.map((d) => d.text).join('')).toBe(stored.text);
-        expect((await store.latestCheckpoint(runId))?.stepIndex).toBe(1);
+        expect((await store.checkpoints.latestCheckpoint(runId))?.stepIndex).toBe(1);
     });
 
     it('emits reasoning deltas', async () => {
@@ -190,15 +190,15 @@ describe('streaming', () => {
             { type: 'text-end', id: 't' },
         ]);
         const {
-            engine, 
-            store, 
-            deltas, 
+            engine,
+            stores: store,
+            deltas,
         } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        expect((await store.getRun(runId))?.output).toBe('answer');
+        expect((await store.runs.getRun(runId))?.output).toBe('answer');
         expect(deltas.map((d) => [d.step, d.kind, d.text])).toEqual([
             [0, 'reasoning', 'think'],
             [0, 'text', 'answer'],
@@ -229,9 +229,9 @@ describe('streaming', () => {
             },
         });
         const {
-            engine, 
-            store, 
-            deltas, 
+            engine,
+            stores: store,
+            deltas,
         } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
@@ -244,7 +244,7 @@ describe('streaming', () => {
         await vi.waitFor(() => expect(deltas).toHaveLength(1));
 
         await engine.cancel(runId);
-        expect((await store.getRun(runId))?.status).toBe('cancelled');
+        expect((await store.runs.getRun(runId))?.status).toBe('cancelled');
         push?.({
             type: 'text-delta',
             id: 't',
@@ -267,12 +267,12 @@ describe('streaming', () => {
             },
             { type: 'error', error: new Error('boom') },
         ]);
-        const { engine, store } = make(model);
+        const { engine, stores: store } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'boom' });
     });
@@ -287,18 +287,18 @@ describe('streaming', () => {
             },
             { type: 'error', error: new Error('boom') },
         ]]);
-        const { engine, store } = make(model);
+        const { engine, stores: store } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'boom' });
-        const steps = await store.listSteps(runId);
+        const steps = await store.steps.listSteps(runId);
         expect(steps.map((step) => step.kind)).toEqual(['llm']);
         expect(steps[0]?.output).toMatchObject({ text: 'partial', finishReason: 'error' });
-        expect(await store.latestCheckpoint(runId)).toMatchObject({ stepIndex: 0, finishReason: 'error' });
+        expect(await store.checkpoints.latestCheckpoint(runId)).toMatchObject({ stepIndex: 0, finishReason: 'error' });
     });
 
     it('a model error after a completed step fails the run', async () => {
@@ -309,26 +309,26 @@ describe('streaming', () => {
                 input: { q: 1 },
             }],
         }]);
-        const { engine, store } = make(model, lookup);
+        const { engine, stores: store } = make(model, lookup);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'mock script exhausted' });
-        expect((await store.latestCheckpoint(runId))?.stepIndex).toBe(0);
+        expect((await store.checkpoints.latestCheckpoint(runId))?.stepIndex).toBe(0);
     });
 
     it('a model error is not logged by the AI SDK', async () => {
         // onError is passed untyped to streamText; a dependency bump that stops forwarding it fails here
         const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const { engine, store } = make(mockModel([]));
+        const { engine, stores: store } = make(mockModel([]));
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'mock script exhausted' });
         expect(log).not.toHaveBeenCalled();
@@ -336,12 +336,12 @@ describe('streaming', () => {
 
     it('fails a run whose model stream ends without a finish part after text', async () => {
         const model = rawModel([textChunks('partial')]);
-        const { engine, store } = make(model);
+        const { engine, stores: store } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('incomplete_response');
         expect(run?.error?.message).toMatch(/without a finish/);
@@ -359,7 +359,7 @@ describe('streaming', () => {
             }],
             [...textChunks('done'), finishChunk('stop')],
         ]);
-        const { engine, store } = make(model, () => ({
+        const { engine, stores: store } = make(model, () => ({
             lookup: tool({
                 inputSchema: z.object({ q: z.number() }),
                 execute: async () => {
@@ -372,7 +372,7 @@ describe('streaming', () => {
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('incomplete_response');
         expect(executed).toBe(0);
@@ -384,12 +384,12 @@ describe('streaming', () => {
         ['without a raw reason', undefined],
     ])('completes a run whose model reports finish reason other %s', async (_, raw) => {
         const model = rawModel([[...textChunks('answer'), finishChunk('other', raw)]]);
-        const { engine, store } = make(model);
+        const { engine, stores: store } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('answer');
     });
@@ -416,9 +416,9 @@ describe('streaming', () => {
                 return { stream };
             },
         });
-        const store = new MemoryStore();
+        const store = createMemoryStores();
         const engine = new Engine({
-            store,
+            stores: store,
             agents: [defineAgent({
                 name: 'triage',
                 instructions: 'You triage.',
@@ -443,7 +443,7 @@ describe('streaming', () => {
         });
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'sink failed' });
         expect(calls[0]?.abortSignal?.aborted).toBe(true);

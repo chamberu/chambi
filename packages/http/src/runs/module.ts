@@ -82,7 +82,7 @@ export function registerRunRoutes(app: App, ctx: HttpContext): void {
         const query = parseRunListQuery(event.searchParams, ctx.agents.names());
         assertCanListRuns(principal, query.agent);
 
-        const { data, total } = await ctx.store.listRuns(query);
+        const { data, total } = await ctx.stores.runs.listRuns(query);
         return {
             data: data.map(serializeRun),
             meta: {
@@ -95,7 +95,7 @@ export function registerRunRoutes(app: App, ctx: HttpContext): void {
 
     app.get('/runs/:id', defineCoreHandler(async (event) => {
         const run = await readableRun(event, ctx, param(event, 'id'));
-        return { ...serializeRun(run), steps: (await ctx.store.listSteps(run.id)).map(serializeStep) };
+        return { ...serializeRun(run), steps: (await ctx.stores.steps.listSteps(run.id)).map(serializeStep) };
     }));
 
     app.get('/runs/:id/stream', defineCoreHandler(async (event) => {
@@ -105,7 +105,7 @@ export function registerRunRoutes(app: App, ctx: HttpContext): void {
 
     app.get('/runs/:id/artifacts', defineCoreHandler(async (event) => {
         const run = await readableRun(event, ctx, param(event, 'id'));
-        return { data: await ctx.store.listArtifacts(run.id) };
+        return { data: await ctx.stores.artifacts.listArtifacts(run.id) };
     }));
 
     app.get('/runs/:id/artifacts/:artifactId', defineCoreHandler(async (event) => {

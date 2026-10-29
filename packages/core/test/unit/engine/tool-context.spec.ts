@@ -33,7 +33,7 @@ import type {
     ToolContext,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStores } from '../../../src/store/index.ts';
 import { gateTool, recordApprovals } from '../../utils/approvals.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -88,14 +88,14 @@ type Setup = {
     toolPolicy?: AgentDefinition['toolPolicy'];
     hooks?: AgentDefinition['hooks'];
     toolsContext?: AgentDefinition['toolsContext'];
-    store?: MemoryStore;
+    stores?: ReturnType<typeof createMemoryStores>;
     owner?: string;
     claimTtlMs?: number;
 };
 
 function setup(s: Setup) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = s.store ?? new MemoryStore({ clock });
+    const store = s.stores ?? createMemoryStores({ clock });
     const agent = defineAgent({
         name: 'release',
         instructions: 'You release.',
@@ -107,9 +107,9 @@ function setup(s: Setup) {
         toolsContext: s.toolsContext,
     });
     const engine = new Engine({
-        store,
+        stores: store,
         agents: [agent],
-        clock: s.store ? undefined : clock,
+        clock: s.stores ? undefined : clock,
         claimTtlMs: s.claimTtlMs ?? 30,
         owner: s.owner,
         onError: () => {},
@@ -118,7 +118,7 @@ function setup(s: Setup) {
     const notifier = recordApprovals(engine);
     return {
         clock,
-        store,
+        stores: store,
         engine,
         notifier,
     };
@@ -138,9 +138,9 @@ async function runOnce(s: Setup) {
     const { runId } = await ctx.engine.dispatch(env());
     await ctx.engine.idle();
     return {
-        ...ctx, 
-        runId, 
-        run: await ctx.store.getRun(runId), 
+        ...ctx,
+        runId,
+        run: await ctx.stores.runs.getRun(runId),
     };
 }
 
@@ -170,9 +170,9 @@ describe('tool context', () => {
 
     it('hands run, state and artifacts to a module-level defineTool', async () => {
         const recorded: Array<{
-            runId: string; 
-            invoker: unknown; 
-            signal: unknown 
+            runId: string;
+            invoker: unknown;
+            signal: unknown
         }> = [];
         const release = defineTool({
             inputSchema: z.object({}),
@@ -188,7 +188,7 @@ describe('tool context', () => {
             },
         });
         const {
-            store,
+            stores: store,
             runId,
             run,
         } = await runOnce({ model: mockModel([callTool('release'), text('done')]), tools: { release } });
@@ -197,23 +197,23 @@ describe('tool context', () => {
         expect(recorded[0]!.runId).toBe(runId);
         expect(recorded[0]!.invoker).toEqual(alice);
         expect(recorded[0]!.signal).toBeInstanceOf(AbortSignal);
-        expect(await store.kvGet('release', 'k')).toBe('v');
-        expect(await store.listArtifacts(runId)).toHaveLength(1);
+        expect(await store.state.kvGet('release', 'k')).toBe('v');
+        expect(await store.artifacts.listArtifacts(runId)).toHaveLength(1);
     });
 
     it('gives parallel calls of one step the same context object', async () => {
         const model = mockModel([{
             parts: [
                 {
-                    type: 'tool-call', 
-                    toolName: 'lookup', 
-                    input: {}, 
+                    type: 'tool-call',
+                    toolName: 'lookup',
+                    input: {},
                     toolCallId: 'a',
                 },
                 {
-                    type: 'tool-call', 
-                    toolName: 'lookup', 
-                    input: {}, 
+                    type: 'tool-call',
+                    toolName: 'lookup',
+                    input: {},
                     toolCallId: 'b',
                 },
             ],
@@ -347,7 +347,7 @@ describe('tool context', () => {
         })).toThrow(/toolsContext entry "lookup" names a chamvi tool/);
 
         const {
-            store,
+            stores: store,
             runId,
             run,
         } = await runOnce({
@@ -361,7 +361,7 @@ describe('tool context', () => {
             message: 'Agent "release": toolsContext entry "lookup" names a chamvi tool, which gets the run context instead.',
         });
         expect(model.doStreamCalls).toHaveLength(0);
-        expect(await store.listSteps(runId)).toEqual([]);
+        expect(await store.steps.listSteps(runId)).toEqual([]);
     });
 
     it('rejects a toolsContext entry naming no tool', async () => {
@@ -403,7 +403,7 @@ describe('tool context', () => {
         expect(first.run?.status).toBe('failed');
         expect(first.run?.error).toEqual({ code: 'validation_error', message: expected });
         expect(executed).toBe(0);
-        expect((await first.store.listSteps(first.runId)).map((s) => s.kind)).toEqual(['llm']);
+        expect((await first.stores.steps.listSteps(first.runId)).map((s) => s.kind)).toEqual(['llm']);
     });
 
     it('keeps a rejected toolsContext entry out of the run error', async () => {
@@ -507,7 +507,7 @@ describe('tool context', () => {
 
     it('injects state tools too', async () => {
         const {
-            store,
+            stores: store,
             run,
         } = await runOnce({
             model: mockModel([
@@ -518,7 +518,7 @@ describe('tool context', () => {
             state: { notes: z.object({ title: z.string() }) },
         });
         expect(run?.status).toBe('completed');
-        expect(await store.docList('release', 'notes')).toEqual([{ id: 'n1', doc: { title: 'hello' } }]);
+        expect(await store.state.docList('release', 'notes')).toEqual([{ id: 'n1', doc: { title: 'hello' } }]);
     });
 
     it('rejects a toolsContext entry naming a state tool', async () => {
@@ -545,16 +545,16 @@ describe('tool context', () => {
             },
         });
         const {
-            store, 
-            runId, 
-            run, 
+            stores: store,
+            runId,
+            run,
         } = await runOnce({
             model: mockModel([callTool('post', { body: 'hi' }), text('done')]),
             tools: { post },
         });
         expect(run?.status).toBe('completed');
         expect(applied).toBe(1);
-        expect(await store.getEffect('u-alice:post:hi')).toEqual({ result: runId });
+        expect(await store.effects.getEffect('u-alice:post:hi')).toEqual({ result: runId });
     });
 
     it('keeps policy-hidden tools and the execute re-check working', async () => {
@@ -574,7 +574,7 @@ describe('tool context', () => {
             },
         });
         const {
-            store,
+            stores: store,
             runId,
             run,
         } = await runOnce({
@@ -586,15 +586,15 @@ describe('tool context', () => {
         expect(seen).toHaveLength(1);
         expect(seen[0]!.run.runId).toBe(runId);
         expect(rolledBack).toBe(0);
-        const refused = (await store.listSteps(runId)).find((s) => s.kind === 'tool' && s.name === 'rollback');
+        const refused = (await store.steps.listSteps(runId)).find((s) => s.kind === 'tool' && s.name === 'rollback');
         expect((refused?.error as { code: string } | undefined)?.code).toBe('tool_not_allowed');
     });
 
     it('hands the context to a call approved on resume', async () => {
         const recorded: Array<{
-            runId: string; 
-            invoker: unknown; 
-            aborted: boolean 
+            runId: string;
+            invoker: unknown;
+            aborted: boolean
         }> = [];
         const deploy = defineTool({
             inputSchema: z.object({}),
@@ -609,7 +609,7 @@ describe('tool context', () => {
         });
         const {
             engine,
-            store,
+            stores: store,
             notifier,
         } = setup({
             model: mockModel([callTool('deploy'), text('done')]),
@@ -619,35 +619,35 @@ describe('tool context', () => {
         await engine.start();
         const { runId } = await engine.dispatch(env());
         await engine.idle();
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect((await store.runs.getRun(runId))?.status).toBe('waiting');
         expect(recorded).toHaveLength(0);
 
         await engine.approve(notifier.calls[0]!.runId, { approvalId: notifier.calls[0]!.approvalId, approved: true });
         await engine.idle();
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.getRun(runId))?.status).toBe('completed');
         expect(recorded).toEqual([{
-            runId, 
-            invoker: alice, 
-            aborted: false, 
+            runId,
+            invoker: alice,
+            aborted: false,
         }]);
     });
 
     it('hands the context to a call after recovery', async () => {
         const { model, calls } = scripted(['hang', callTool('lookup'), text('done')]);
-        const store = new MemoryStore();
+        const store = createMemoryStores();
         // real time: a short lease could expire on a slow runner and let A re-run
         // the run itself; drain releases the claim, so B recovers it at once
         const a = setup({
             model,
             tools: { lookup },
-            store,
+            stores: store,
             owner: 'A',
             claimTtlMs: 60_000,
         });
         const b = setup({
             model,
             tools: { lookup },
-            store,
+            stores: store,
             owner: 'B',
             claimTtlMs: 60_000,
         });
@@ -655,27 +655,27 @@ describe('tool context', () => {
         const { runId } = await a.engine.dispatch(env());
         await vi.waitFor(() => expect(calls).toHaveLength(1));
         await a.engine.drain({ timeoutMs: 50 });
-        expect((await store.getRun(runId))?.status).toBe('interrupted');
+        expect((await store.runs.getRun(runId))?.status).toBe('interrupted');
 
         await b.engine.start();
         await b.engine.idle();
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.getRun(runId))?.status).toBe('completed');
         expect(seen).toHaveLength(1);
         expect(seen[0]!.run.runId).toBe(runId);
     });
 
     it('stores no tool context in steps or checkpoints', async () => {
         const {
-            store, 
-            runId, 
-            run, 
+            stores: store,
+            runId,
+            run,
         } = await runOnce({
             model: mockModel([callTool('lookup'), text('done')]),
             tools: { lookup },
         });
         expect(run?.status).toBe('completed');
-        const steps = JSON.stringify(await store.listSteps(runId));
-        const checkpoint = JSON.stringify(await store.latestCheckpoint(runId));
+        const steps = JSON.stringify(await store.steps.listSteps(runId));
+        const checkpoint = JSON.stringify(await store.checkpoints.latestCheckpoint(runId));
         for (const json of [steps, checkpoint]) {
             expect(json).not.toContain('toolsContext');
             expect(json).not.toContain('"artifacts"');

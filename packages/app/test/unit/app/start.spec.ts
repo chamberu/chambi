@@ -9,7 +9,7 @@ import { cron } from '@chamvi/channel-cron';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
 } from '@chamvi/core';
 import { http } from '@chamvi/http';
@@ -223,10 +223,10 @@ describe('App.start', () => {
                 instructions: 'x',
                 channels: [http.on(), cron.on('*/5 * * * *')],
             });
-            const store = new MemoryStore();
+            const store = createMemoryStores();
             // another replica's run, waiting in the shared store
             const other = new Engine({
-                store,
+                stores: store,
                 agents: [queued],
                 // names only: this replica serves nothing
                 channels: [{ name: 'http' }, { name: 'cron' }],
@@ -238,7 +238,7 @@ describe('App.start', () => {
                 payload: {},
             });
             return {
-                store,
+                stores: store,
                 queued,
                 runId,
                 calls: () => calls,
@@ -247,7 +247,7 @@ describe('App.start', () => {
 
         it('no authenticator', async () => {
             const ctx = await queuedRun();
-            const app = track(createApp({ agents: [ctx.queued], modules: [quiet(), storeModule({ store: ctx.store })] }));
+            const app = track(createApp({ agents: [ctx.queued], modules: [quiet(), storeModule({ stores: ctx.stores })] }));
             const { env } = await envFor({ CHAMVI_TOKENS: '' });
 
             const error = await rejectionOf(app.start({ env }));
@@ -255,21 +255,21 @@ describe('App.start', () => {
             expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
             expect(error.message).toContain('No authenticator');
             expect(ctx.calls()).toBe(0);
-            expect((await ctx.store.getRun(ctx.runId))?.status).toBe('queued');
+            expect((await ctx.stores.runs.getRun(ctx.runId))?.status).toBe('queued');
         });
 
         it('an app without the http module still starts the engine', async () => {
             const ctx = await queuedRun();
             const app = track(createApp({
                 agents: [ctx.queued],
-                modules: [quiet(), storeModule({ store: ctx.store }), httpless()],
+                modules: [quiet(), storeModule({ stores: ctx.stores }), httpless()],
             }));
             const { env } = await envFor({ CHAMVI_TOKENS: '' });
 
             await app.start({ env });
 
             await vi.waitFor(async () => {
-                expect((await ctx.store.getRun(ctx.runId))?.status).toBe('completed');
+                expect((await ctx.stores.runs.getRun(ctx.runId))?.status).toBe('completed');
             });
         });
 
@@ -280,7 +280,7 @@ describe('App.start', () => {
                 agents: [ctx.queued],
                 modules: [
                     quiet(),
-                    storeModule({ store: ctx.store }),
+                    storeModule({ stores: ctx.stores }),
                     httpless(),
                     {
                         name: 'hooks',
@@ -310,7 +310,7 @@ describe('App.start', () => {
             const started: string[] = [];
             const app = track(createApp({
                 agents: [ctx.queued],
-                modules: [quiet(), storeModule({ store: ctx.store }), {
+                modules: [quiet(), storeModule({ stores: ctx.stores }), {
                     name: 'late',
                     // ordered after the http module, so its onReady runs last
                     dependencies: [ModuleName.HTTP],
@@ -327,20 +327,20 @@ describe('App.start', () => {
             expect(await rejectionOf(app.start({ env }))).toBeInstanceOf(InvalidAgentDefinitionError);
             expect(started).toEqual([]);
             expect(ctx.calls()).toBe(0);
-            expect((await ctx.store.getRun(ctx.runId))?.status).toBe('queued');
+            expect((await ctx.stores.runs.getRun(ctx.runId))?.status).toBe('queued');
         });
 
         it('a scheduler definition error', async () => {
             const ctx = await queuedRun();
             const app = track(createApp({
                 agents: [ctx.queued],
-                modules: [quiet(), storeModule({ store: ctx.store }), schedulerModule({ lockTtlMs: 0 })],
+                modules: [quiet(), storeModule({ stores: ctx.stores }), schedulerModule({ lockTtlMs: 0 })],
             }));
             const { env } = await envFor();
 
             expect(await rejectionOf(app.start({ env }))).toBeInstanceOf(InvalidAgentDefinitionError);
             expect(ctx.calls()).toBe(0);
-            expect((await ctx.store.getRun(ctx.runId))?.status).toBe('queued');
+            expect((await ctx.stores.runs.getRun(ctx.runId))?.status).toBe('queued');
         });
     });
 });

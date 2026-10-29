@@ -51,14 +51,14 @@ export function registerAgentRoutes(app: App, ctx: HttpContext): void {
     app.get('/agents/:name/state/kv', defineCoreHandler(async (event) => {
         await authorize(event, ctx, Permission.STATE_READ);
         const agent = requireAgent(ctx.agents, param(event, 'name'));
-        return { data: await ctx.store.kvList(agent.name, parseKvListQuery(event.searchParams)) };
+        return { data: await ctx.stores.state.kvList(agent.name, parseKvListQuery(event.searchParams)) };
     }));
 
     app.get('/agents/:name/state/kv/:key', defineCoreHandler(async (event) => {
         await authorize(event, ctx, Permission.STATE_READ);
         const agent = requireAgent(ctx.agents, param(event, 'name'));
         const key = param(event, 'key');
-        const value = await ctx.store.kvGet(agent.name, key);
+        const value = await ctx.stores.state.kvGet(agent.name, key);
         return { key, value: value ?? null };
     }));
 
@@ -67,7 +67,7 @@ export function registerAgentRoutes(app: App, ctx: HttpContext): void {
         const agent = requireAgent(ctx.agents, param(event, 'name'));
         const key = param(event, 'key');
         const body = await validateBody(kvContainer, await readJsonBody(event, ctx.bodyLimit), { required: true });
-        await ctx.store.kvSet(agent.name, key, body.value);
+        await ctx.stores.state.kvSet(agent.name, key, body.value);
         return { key, value: body.value };
     }));
 
@@ -77,7 +77,7 @@ export function registerAgentRoutes(app: App, ctx: HttpContext): void {
         const collection = param(event, 'collection');
         assertCollection(agent, collection);
         const query = parseCollectionQuery(event.searchParams);
-        const docs = await ctx.store.docList(agent.name, collection, query);
+        const docs = await ctx.stores.state.docList(agent.name, collection, query);
         return { data: docs.map(serializeDoc) };
     }));
 }

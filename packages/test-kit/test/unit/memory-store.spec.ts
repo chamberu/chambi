@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { MemoryStore } from '@chamvi/core';
+import { createMemoryStores } from '@chamvi/core';
 import { describeStoreContract } from '@chamvi/test-kit';
 
-describeStoreContract((clock) => new MemoryStore({ clock }));
+describeStoreContract((clock) => createMemoryStores({ clock }));

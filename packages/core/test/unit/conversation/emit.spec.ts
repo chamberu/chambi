@@ -16,7 +16,7 @@ import { jsonSchema } from 'ai';
 import {
     Engine,
     MemoryConversationStore,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -48,7 +48,7 @@ function setup(
     action: (context: ToolContext) => Promise<unknown> = async (ctx) => ctx.channels.findOneOrFail().emit({ body: 'actual reply' }),
     clock?: ControllableClock,
 ) {
-    const store = new MemoryStore({ clock }); const conversations = new MemoryConversationStore({ clock });
+    const store = createMemoryStores({ clock }); const conversations = new MemoryConversationStore({ clock });
     const out = vi.fn<NonNullable<IChannel['out']>>(async () => {}); const other = vi.fn<NonNullable<IChannel['out']>>(async () => {});
     const channel = { name: 'chat', out }; const alternate = {
         name: 'other',
@@ -65,7 +65,7 @@ function setup(
     }, { parts: [{ type: 'text', text: 'model output is not a reply' }] }, { parts: [{ type: 'text', text: 'second result' }] }]);
     const errors: unknown[] = [];
     const engine = new Engine({
-        store,
+        stores: { ...store, conversations },
         clock,
         agents: [defineAgent({
             name: 'helper',
@@ -75,13 +75,13 @@ function setup(
             tools: { reply: tool },
         })],
         channels: [channel, alternate],
-        conversations: { store: conversations, authorize: () => true },
+        conversations: { authorize: () => true },
         onError: (e) => { errors.push(e); },
     });
     engines.push(engine);
     return {
         engine,
-        store,
+        stores: store,
         conversations,
         model,
         out,
@@ -112,10 +112,10 @@ describe('source emit journal', () => {
             try { await handle.emit({ body: 'invalid key reply', key: '\ud800' }); } catch { rejected = true; }
             await handle.emit({ body: 'legitimate reply', key: '\ufffd' });
         });
-        const get = s.store.getEffect.bind(s.store); const put = s.store.putEffect.bind(s.store);
+        const get = s.stores.effects.getEffect.bind(s.stores.effects); const put = s.stores.effects.putEffect.bind(s.stores.effects);
         const wire = (key: string) => Buffer.from(key, 'utf8').toString('utf8');
-        vi.spyOn(s.store, 'getEffect').mockImplementation((key) => get(wire(key)));
-        vi.spyOn(s.store, 'putEffect').mockImplementation((key, value) => put(wire(key), value));
+        vi.spyOn(s.stores.effects, 'getEffect').mockImplementation((key) => get(wire(key)));
+        vi.spyOn(s.stores.effects, 'putEffect').mockImplementation((key, value) => put(wire(key), value));
         await run(s);
         expect(rejected).toBe(true);
         expect(s.out.mock.calls.map(([message]) => message.body)).toEqual(['legitimate reply']);
@@ -137,7 +137,7 @@ describe('source emit journal', () => {
 
         // Assert outside the SDK's tool-error handling as well as inside the action.
         const result = await run(s);
-        const steps = await s.store.listSteps(result);
+        const steps = await s.stores.steps.listSteps(result);
         const rejected = steps.some((step) => step.kind === 'tool' && step.error !== undefined);
         expect(rejected).toBe(false);
         expect(s.model.doStreamCalls).toHaveLength(2);
@@ -166,10 +166,10 @@ describe('source emit journal', () => {
         } finally {
             gate.resolve(); await draining;
         }
-        expect((await s.store.getRun(result.runId))?.status).toBe('interrupted');
+        expect((await s.stores.runs.getRun(result.runId))?.status).toBe('interrupted');
         const pending = (await items(s)).find((item) => item.role === 'assistant')!;
         expect(pending.status).toBe('pending');
-        expect(await s.store.getEffect(pending.effectKey!)).toBeUndefined();
+        expect(await s.stores.effects.getEffect(pending.effectKey!)).toBeUndefined();
     });
     it('tool_emit_not_run_output_is_remembered and two new runs see prior reply', async () => {
         const s = setup(); await run(s);
@@ -180,7 +180,7 @@ describe('source emit journal', () => {
             address: 'source',
         }, { ...target, text: 'second' });
         await s.engine.idle();
-        expect((await s.store.getRun(second.runId))?.status).toBe('completed');
+        expect((await s.stores.runs.getRun(second.runId))?.status).toBe('completed');
         expect((await items(s)).filter((i) => i.role === 'assistant')).toMatchObject([{ text: 'actual reply', status: 'sent' }]);
         const prompt = JSON.stringify(s.model.doStreamCalls[2]?.prompt);
         expect(prompt).toContain('actual reply'); expect(prompt).not.toContain('model output is not a reply');
@@ -201,7 +201,7 @@ describe('source emit journal', () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'second' }] }]);
         const channel = { name: 'chat' };
         const peer = new Engine({
-            store: first.store,
+            stores: { ...first.stores, conversations: first.conversations },
             agents: [defineAgent({
                 name: 'helper',
                 model,
@@ -209,7 +209,7 @@ describe('source emit journal', () => {
                 conversation: true,
             })],
             channels: [channel],
-            conversations: { store: first.conversations, authorize: () => true },
+            conversations: { authorize: () => true },
             owner: 'peer',
         });
         engines.push(peer);
@@ -220,18 +220,18 @@ describe('source emit journal', () => {
             address: 'source',
         }, { ...target, text: 'second' });
         await peer.start(); await peer.idle();
-        expect((await first.store.getRun(second.runId))?.status).toBe('queued');
+        expect((await first.stores.runs.getRun(second.runId))?.status).toBe('queued');
         expect(model.doStreamCalls).toHaveLength(0);
         gate.resolve(); await draining;
-        expect((await first.store.getRun(firstResult.runId))?.status).toBe('completed');
+        expect((await first.stores.runs.getRun(firstResult.runId))?.status).toBe('completed');
         await peer.stop(); await peer.start(); await peer.idle();
-        expect((await first.store.getRun(second.runId))?.status).toBe('completed');
+        expect((await first.stores.runs.getRun(second.runId))?.status).toBe('completed');
         expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain('actual reply');
     });
     it('approval_notification_not_recalled', async () => {
         const s = setup(async (ctx) => ctx.channels.findOneOrFail().approve({ title: 'continue?' }));
         const id = await run(s);
-        expect((await s.store.getRun(id))?.status).toBe('waiting');
+        expect((await s.stores.runs.getRun(id))?.status).toBe('waiting');
         expect(s.out.mock.calls[0]?.[0].kind).toBe('approval');
         expect((await items(s)).filter((item) => item.role === 'assistant')).toHaveLength(0);
         await s.engine.cancel(id);
@@ -253,7 +253,7 @@ describe('source emit journal', () => {
     });
     it('effect_failure_after_send_stays_uncertain', async () => {
         const s = setup(); const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-        vi.spyOn(s.store, 'putEffect').mockRejectedValueOnce(new Error('effect write unavailable'));
+        vi.spyOn(s.stores.effects, 'putEffect').mockRejectedValueOnce(new Error('effect write unavailable'));
         await run(s); expect(s.out).toHaveBeenCalledTimes(1);
         expect((await items(s)).filter((i) => i.role === 'assistant')).toMatchObject([{ status: 'unknown' }]);
         expect(JSON.stringify(log.mock.calls)).not.toContain('actual reply');
@@ -332,7 +332,7 @@ describe('source emit journal', () => {
             target: { channel: 'chat', address: 'source' },
             createdAt: new Date(),
         });
-        await s.store.putEffect('effect', { channel: 'chat', address: 'source' });
+        await s.stores.effects.putEffect('effect', { channel: 'chat', address: 'source' });
         await s.engine.cancel(runId);
         expect(await s.conversations.activeRun(scope)).toBeUndefined();
         expect((await items(s)).find((i) => i.id === 'pending')?.status).toBe('sent');

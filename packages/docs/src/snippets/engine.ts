@@ -1,8 +1,8 @@
 import type { LanguageModel } from 'ai';
 import {
     Engine,
-    MemoryStore,
     consoleChannel,
+    createMemoryStores,
     defineAgent,
 } from '@chamvi/core';
 
@@ -20,7 +20,7 @@ export function createEngine(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        store: new MemoryStore(),
+        stores: createMemoryStores(),
         agents: [triage, digest],
         // tools reach it with ctx.channels.findOneOrFail('console')
         channels: [consoleChannel()],

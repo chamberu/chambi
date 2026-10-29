@@ -16,7 +16,7 @@ import { z } from 'zod';
 import type { ChamviError } from '@chamvi/core';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -71,7 +71,7 @@ function setup(
     });
     const errors: unknown[] = [];
     const engine = new Engine({
-        store: new MemoryStore({ clock }),
+        stores: createMemoryStores({ clock }),
         agents: [agent],
         channels: [
             openclawChannel({

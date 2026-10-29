@@ -5,6 +5,12 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { IClock } from '../../clock/index.ts';
+
+export type MemoryStoresOptions = {
+    clock?: IClock;
+};
+
 export type Expiring = {
     expiresAt: number;
 };

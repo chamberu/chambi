@@ -164,7 +164,7 @@ describe('acceptance flows', () => {
         const {
             app,
             engine,
-            store,
+            stores: store,
         } = setup();
         const deliver = () => call(app, 'POST', '/channels/webhook/intake/issues', {
             token: ADMIN_TOKEN,
@@ -179,7 +179,7 @@ describe('acceptance flows', () => {
 
         const last = await deliver();
         expect(await last.json()).toMatchObject({ deduplicated: true });
-        const { data, total } = await store.listRuns({ agent: 'intake' });
+        const { data, total } = await store.runs.listRuns({ agent: 'intake' });
         expect(total).toBe(1);
         expect(data[0]?.status).toBe('completed');
         await engine.drain();

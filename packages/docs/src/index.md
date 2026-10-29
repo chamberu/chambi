@@ -51,7 +51,7 @@ packages:
             body: Agents, the channel contract, the run engine, checkpoints, budgets, effect tools, durable approvals, agent hooks, agent state and the in-memory store.
             link: /reference/
         -   name: '@chamvi/test-kit'
-            body: ControllableClock and the store contract suite every IStore implementation must pass.
+            body: ControllableClock and the store contract suite every storage backend must pass.
             link: /reference/test-kit
         -   name: '@chamvi/channel-cron'
             body: The cron channel. Fires cron.on() subscriptions once per tick across replicas, with overlap policies, timezones and one-shot jobs.
@@ -87,7 +87,7 @@ packages:
 
 cta:
     title: Start with one agent.
-    lead: Define an agent, dispatch a run and watch it settle. MemoryStore needs no database, so the quick start runs in a single file.
+    lead: Define an agent, dispatch a run and watch it settle. In-memory stores need no database, so the quick start runs in a single file.
     command: npm install @chamvi/core ai zod
     actions:
         -   text: Quick start

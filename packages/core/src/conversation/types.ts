@@ -90,7 +90,6 @@ export type ConversationAccess = {
 
 /** The engine's conversation capability (`EngineOptions.conversations`). */
 export type ConversationOptions = {
-    store: IConversationStore;
     authorize: (access: ConversationAccess) => boolean | Promise<boolean>;
     limits?: ConversationLimits;
 };
@@ -190,7 +189,7 @@ export type MemoryConversationStoreOptions = {
 };
 
 /**
- * Conversation persistence, separate from (and optional beside) IStore.
+ * Optional conversation persistence in the engine's Stores bundle.
  * Dates come from the store's IClock; values are copied in and out.
  */
 export interface IConversationStore {

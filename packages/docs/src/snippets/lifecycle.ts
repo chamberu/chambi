@@ -1,7 +1,7 @@
 import type { LanguageModel } from 'ai';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
 } from '@chamvi/core';
 
@@ -12,7 +12,7 @@ export async function watchRuns(model: LanguageModel) {
         instructions: 'Repeat the payload.',
     });
     const engine = new Engine({
-        store: new MemoryStore(),
+        stores: createMemoryStores(),
         agents: [agent],
     });
 

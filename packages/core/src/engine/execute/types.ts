@@ -13,7 +13,7 @@ import type { IClock } from '../../clock/index.ts';
 import type { ContextKey } from '../../context/types.ts';
 import type { IModelResolver, ModelRef } from '../../model/types.ts';
 import type { Run, Step, Usage } from '../../run/types.ts';
-import type { IStore } from '../../store/types.ts';
+import type { Stores } from '../../store/types.ts';
 import type { Engine } from '../module.ts';
 import type { RunDelta } from '../types.ts';
 
@@ -27,7 +27,7 @@ export type ExecuteContext = {
     model: ModelRef | undefined;
     /** Resolves a string model at execution start; without one a string goes to the AI SDK as is. */
     models?: IModelResolver;
-    store: IStore;
+    stores: Pick<Stores, 'steps' | 'checkpoints' | 'effects' | 'state' | 'artifacts'>;
     clock: IClock;
     /** Aborted by engine.cancel(). */
     signal: AbortSignal;

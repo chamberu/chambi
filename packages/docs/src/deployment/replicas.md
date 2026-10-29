@@ -4,7 +4,7 @@ Running more than one replica of an agent app relies on the store. Core, the Typ
 
 ## What core already guarantees
 
-With a shared, durable store such as the [TypeORM store](/stores/typeorm) (`MemoryStore` cannot be shared), several `Engine`s coordinate without a leader:
+With a shared, durable store such as the [TypeORM store](/stores/typeorm) (`createMemoryStores()` cannot be shared), several `Engine`s coordinate without a leader:
 
 - **One executor per run.** Run claims are leases (`claimTtlMs`, renewed every third of it). A replica that loses its lease stops writing.
 - **One run per concurrency key.** Checked under a store lock, across replicas.

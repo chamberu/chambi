@@ -14,7 +14,7 @@ import {
 import {
     Engine,
     MemoryConversationStore,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
     toolContextSchema,
 } from '@chamvi/core';
@@ -91,7 +91,7 @@ function setup(options: {
     authorize?: (access: ConversationAccess) => boolean;
     factory?: (ctx: ToolContext) => ToolSet;
 } = {}) {
-    const store = new MemoryStore();
+    const store = createMemoryStores();
     const conversations = options.conversations ?? new MemoryConversationStore();
     const model = mockModel([...(options.responses ?? []), { parts: [{ type: 'text', text: 'done' }] }]);
     let context: ToolContext;
@@ -106,7 +106,7 @@ function setup(options: {
         },
     };
     const engine = new Engine({
-        store,
+        stores: { ...store, conversations },
         agents: [defineAgent({
             name: 'helper',
             model,
@@ -118,12 +118,12 @@ function setup(options: {
             budget: { maxSteps: 10 },
         })],
         channels: [channel],
-        conversations: { store: conversations, authorize: options.authorize ?? (() => true) },
+        conversations: { authorize: options.authorize ?? (() => true) },
     });
     engines.push(engine);
     return {
         engine,
-        store,
+        stores: store,
         conversations,
         model,
         hookErrors,
@@ -136,7 +136,7 @@ async function run(s: ReturnType<typeof setup>, bound = true) {
     await s.engine.start();
     await s.engine.idle();
     expect(s.hookErrors).toEqual([]);
-    expect((await s.store.getRun(result.runId))?.status).toBe('completed');
+    expect((await s.stores.runs.getRun(result.runId))?.status).toBe('completed');
     return result.runId;
 }
 

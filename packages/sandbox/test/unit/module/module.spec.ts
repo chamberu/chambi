@@ -10,15 +10,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStores,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
 import type {
     Agent,
     Engine,
-    IStore,
     Run,
+    Stores,
 } from '@chamvi/core';
 import { createWorkspaceManager, injectSandboxContext, provideSandboxContext } from '@chamvi/sandbox';
 import type { ISandboxProvider, IWorkspaceManager } from '@chamvi/sandbox';
@@ -141,7 +141,7 @@ async function harnessWith(module: IModule, options: {
     mode?: AppMode;
     agents?: Agent[];
     events?: string[];
-    store?: IStore;
+    stores?: Stores;
     clock?: ControllableClock;
 } = {}) {
     const harness = await createModuleHarness({
@@ -150,7 +150,7 @@ async function harnessWith(module: IModule, options: {
         agents: options.agents ?? [agent()],
         modules: [
             configModule({ logger: createRecordingLogger(), ...(options.clock && { clock: options.clock }) }),
-            storeModule(options.store ? { store: options.store } : {}),
+            storeModule(options.stores ? { stores: options.stores } : {}),
             engineModule(),
             module,
         ],
@@ -424,7 +424,7 @@ describe('sandboxModule', () => {
         expect(events).toEqual(['attach', 'drain', 'detach', 'close']);
     });
 
-    it('disposes the held workspaces after drained when the store is a MemoryStore', async () => {
+    it('disposes the held workspaces after drained when the store is a memory stores', async () => {
         // nothing resumes a run of a memory store after the restart
         const manager = fakeManager([]);
         await (await harnessWith(sandboxModule({ manager, env: {} }))).stop();
@@ -432,20 +432,21 @@ describe('sandboxModule', () => {
     });
 
     it('keeps the held workspaces after drained when the store persists', async () => {
-        const memory = new MemoryStore();
+        const memory = createMemoryStores();
         // a store of its own kind: the runs outlive the process
-        const store = new Proxy({}, {
+        const runs = new Proxy({}, {
             get: (_target, key) => {
-                const value: unknown = Reflect.get(memory, key);
-                return typeof value === 'function' ? value.bind(memory) : value;
+                const value: unknown = Reflect.get(memory.runs, key);
+                return typeof value === 'function' ? value.bind(memory.runs) : value;
             },
-        }) as IStore;
+        }) as Stores['runs'];
+        const store = { ...memory, runs };
         const manager = fakeManager([]);
-        await (await harnessWith(sandboxModule({ manager, env: {} }), { store })).stop();
+        await (await harnessWith(sandboxModule({ manager, env: {} }), { stores: store })).stop();
         expect(manager.closes).toEqual([{ dispose: false }]);
     });
 
-    it('a MemoryStore app disposes a live run\'s workspace on stop', async () => {
+    it('a memory stores app disposes a live run\'s workspace on stop', async () => {
         const root = await mkdtemp(join(tmpdir(), 'chamvi-sandbox-module-'));
         roots.push(root);
         const module = sandboxModule({
@@ -526,7 +527,7 @@ describe('sandboxModule', () => {
 
         const run = await engine.getRun(runId);
         expect(run?.status).toBe('completed');
-        const steps = await engine.store.listSteps(runId);
+        const steps = await engine.stores.steps.listSteps(runId);
         const created = steps.find((step) => step.kind === 'tool');
         expect(created?.output).toMatchObject({ root: '/workspace', reused: false });
 

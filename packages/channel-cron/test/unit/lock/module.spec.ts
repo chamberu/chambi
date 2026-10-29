@@ -7,38 +7,38 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ILockStore } from '@chamvi/core';
-import { MemoryStore } from '@chamvi/core';
+import { createMemoryStores } from '@chamvi/core';
 import { createStoreScheduleLock } from '@chamvi/channel-cron';
 import { ControllableClock } from '@chamvi/test-kit';
 
 const setup = () => {
     const clock = new ControllableClock(new Date('2026-03-01T08:00:00.000Z'));
-    const store = new MemoryStore({ clock });
-    return { clock, store };
+    const store = createMemoryStores({ clock });
+    return { clock, stores: store };
 };
 
 describe('createStoreScheduleLock', () => {
     it('first acquirer of a tick wins', async () => {
-        const { store } = setup();
-        const a = createStoreScheduleLock(store, 'a');
-        const b = createStoreScheduleLock(store, 'b');
+        const { stores: store } = setup();
+        const a = createStoreScheduleLock(store.locks, 'a');
+        const b = createStoreScheduleLock(store.locks, 'b');
 
         expect(await a.acquire('cron:x:y:T', 600_000)).toBe(true);
         expect(await b.acquire('cron:x:y:T', 600_000)).toBe(false);
     });
 
     it('different ticks do not block each other', async () => {
-        const { store } = setup();
-        const lock = createStoreScheduleLock(store, 'a');
+        const { stores: store } = setup();
+        const lock = createStoreScheduleLock(store.locks, 'a');
 
         expect(await lock.acquire('cron:x:y:T1', 600_000)).toBe(true);
         expect(await lock.acquire('cron:x:y:T2', 600_000)).toBe(true);
     });
 
     it('the lock is never released', async () => {
-        const { clock, store } = setup();
-        const lock = createStoreScheduleLock(store, 'a');
-        const other = createStoreScheduleLock(store, 'b');
+        const { clock, stores: store } = setup();
+        const lock = createStoreScheduleLock(store.locks, 'a');
+        const other = createStoreScheduleLock(store.locks, 'b');
 
         expect('release' in lock).toBe(false);
         expect(await lock.acquire('k', 600_000)).toBe(true);

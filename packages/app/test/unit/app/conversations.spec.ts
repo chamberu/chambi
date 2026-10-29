@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { MemoryConversationStore, defineAgent } from '@chamvi/core';
+import { MemoryConversationStore, createMemoryStores, defineAgent } from '@chamvi/core';
 import type { Engine, IConversationStore } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import type { IContainer } from 'eldin';
@@ -15,7 +15,12 @@ import {
     expect,
     it,
 } from 'vitest';
-import { AppToken, configModule, createApp } from '@chamvi/app';
+import {
+    AppToken,
+    configModule,
+    createApp,
+    storeModule,
+} from '@chamvi/app';
 import type { AppOptions, IApp } from '@chamvi/app';
 import { TOKENS } from '../../utils/app.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
@@ -35,7 +40,7 @@ afterEach(async () => {
     apps.length = 0;
 });
 
-function build(conversations?: AppOptions['conversations']) {
+function build(conversations?: AppOptions['conversations'], store?: IConversationStore) {
     const clock = new ControllableClock(new Date('2026-10-28T00:00:00Z'));
     const logger = createRecordingLogger(clock);
     let container: IContainer;
@@ -47,10 +52,14 @@ function build(conversations?: AppOptions['conversations']) {
             conversation: conversations !== undefined,
         })],
         ...(conversations !== undefined && { conversations }),
-        modules: [configModule({ clock, logger }), {
-            name: 'test:capture',
-            async setup(value) { container = value; },
-        }],
+        modules: [
+            configModule({ clock, logger }),
+            ...(store ? [storeModule({ stores: { ...createMemoryStores({ clock }), conversations: store } })] : []),
+            {
+                name: 'test:capture',
+                async setup(value) { container = value; },
+            },
+        ],
     });
     apps.push(app);
     return {
@@ -64,10 +73,10 @@ function build(conversations?: AppOptions['conversations']) {
 const env = { CHAMVI_TOKENS: TOKENS };
 
 describe('app conversation capability', () => {
-    it('disabled_default_no_store_or_migration_side_effect', async () => {
+    it('disabled_default_keeps_memory_inactive', async () => {
         const built = build();
         await built.app.check({ env });
-        expect(built.container().has(AppToken.CONVERSATIONS)).toBe(false);
+        expect(built.container().resolve(AppToken.STORES).conversations).toBeInstanceOf(MemoryConversationStore);
         expect(built.container().has(AppToken.DATA_SOURCE)).toBe(false);
     });
 
@@ -82,16 +91,16 @@ describe('app conversation capability', () => {
                 } : value;
             },
         }) as IConversationStore;
-        const built = build({ authorize: () => true, store: custom });
+        const built = build({ authorize: () => true }, custom);
         await built.app.check({ env });
-        expect(built.container().resolve(AppToken.CONVERSATIONS)).toBe(custom);
+        expect(built.container().resolve(AppToken.STORES).conversations!).toBe(custom);
         expect(calls).toEqual([]);
     });
 
     it('memory_store_warns_no_restart_durability and uses app clock', async () => {
         const built = build({ authorize: () => true });
         await built.app.check({ env });
-        const store = built.container().resolve(AppToken.CONVERSATIONS);
+        const store = built.container().resolve(AppToken.STORES).conversations!;
         expect(store).toBeInstanceOf(MemoryConversationStore);
         const engine = built.container().resolve(AppToken.ENGINE) as Engine;
         expect(await engine.inspectConversation(identity)).toBeUndefined();
@@ -113,8 +122,8 @@ describe('app conversation capability', () => {
         const second = build({ authorize: () => false });
         await first.app.check({ env });
         await second.app.check({ env });
-        const firstStore = first.container().resolve(AppToken.CONVERSATIONS);
-        const secondStore = second.container().resolve(AppToken.CONVERSATIONS);
+        const firstStore = first.container().resolve(AppToken.STORES).conversations!;
+        const secondStore = second.container().resolve(AppToken.STORES).conversations!;
         expect(firstStore).not.toBe(secondStore);
         await firstStore.resolve(identity);
         expect(await secondStore.get(identity)).toBeUndefined();

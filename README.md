@@ -112,7 +112,7 @@ ESM only, Node.js `>=22`. `ai@^7` is a peer dependency; use the provider package
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 import {
-    MemoryStore,
+    createMemoryStores,
     Engine,
     consoleChannel,
     defineAgent,
@@ -139,7 +139,7 @@ const triage = defineAgent({
 });
 
 const engine = new Engine({
-    store: new MemoryStore(),
+    stores: createMemoryStores(),
     agents: [triage],
     // channels are what runs come from and talk to: cron, HTTP, GitHub, OpenClaw, ...
     channels: [consoleChannel()],
@@ -160,7 +160,7 @@ console.log(await engine.getRun(runId)); // status: 'completed', output: the mod
 await engine.drain();
 ```
 
-`MemoryStore` keeps everything in process memory; it is for development and tests. Channels, effect tools, approvals, hooks, agent state, budgets and the full option reference are in the [`@chamvi/core` README](./packages/core#readme).
+`createMemoryStores()` keeps everything in process memory; it is for development and tests. Channels, effect tools, approvals, hooks, agent state, budgets and the full option reference are in the [`@chamvi/core` README](./packages/core#readme).
 
 ### Give the agent a workspace
 

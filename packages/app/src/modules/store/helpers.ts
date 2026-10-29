@@ -5,7 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { IStore } from '@chamvi/core';
 import { isObject } from 'smob';
 import type { DataSource } from 'typeorm';
 import type { ILogger } from '../../logger/types.ts';
@@ -109,6 +108,6 @@ export async function destroyQuietly(dataSource: DataSource, logger: ILogger, ur
     }
 }
 
-export function isPurgingStore(store: IStore): store is IStore & PurgingStore {
-    return typeof (store as Partial<PurgingStore>).purgeExpired === 'function';
+export function isPurgingStore<T>(store: T): store is T & PurgingStore {
+    return isObject(store) && 'purgeExpired' in store && typeof store.purgeExpired === 'function';
 }

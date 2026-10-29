@@ -2,8 +2,8 @@ import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
     Engine,
-    MemoryStore,
     consoleChannel,
+    createMemoryStores,
     defineAgent,
     defineEffectTool,
 } from '@chamvi/core';
@@ -33,7 +33,7 @@ export async function triageIssue(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        store: new MemoryStore(),
+        stores: createMemoryStores(),
         agents: [triage],
         channels: [consoleChannel({
             write: (line) => {
@@ -55,8 +55,8 @@ export async function triageIssue(model: LanguageModel) {
     await engine.stop();
 
     return {
-        run: await engine.getRun(runId), 
-        labels, 
-        lines, 
+        run: await engine.getRun(runId),
+        labels,
+        lines,
     };
 }

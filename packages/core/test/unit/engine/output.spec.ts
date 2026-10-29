@@ -18,7 +18,7 @@ import {
 import { MockLanguageModelV4 } from 'ai/test';
 import { z } from 'zod';
 import { Engine, defineAgent } from '@chamvi/core';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStores } from '../../../src/store/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
@@ -39,11 +39,11 @@ const env = {
 const output = Output.object({ schema: z.object({ label: z.enum(['bug', 'feature']) }) });
 
 function make(model: LanguageModel, opts: {
-    tools?: () => ToolSet; 
-    maxSteps?: number; 
-    output?: typeof output 
+    tools?: () => ToolSet;
+    maxSteps?: number;
+    output?: typeof output
 } = {}) {
-    const store = new MemoryStore();
+    const store = createMemoryStores();
     const agent = defineAgent({
         name: 'triage',
         instructions: 'You triage.',
@@ -53,20 +53,20 @@ function make(model: LanguageModel, opts: {
         ...(opts.maxSteps ? { budget: { maxSteps: opts.maxSteps } } : {}),
     });
     const engine = new Engine({
-        store,
+        stores: store,
         agents: [agent],
         onError: () => {},
     });
     engines.push(engine);
-    return { store, engine };
+    return { stores: store, engine };
 }
 
 async function runOnce(model: LanguageModel, opts: Parameters<typeof make>[1] = {}) {
-    const { engine, store } = make(model, opts);
+    const { engine, stores: store } = make(model, opts);
     await engine.start();
     const { runId } = await engine.dispatch(env);
     await engine.idle();
-    return store.getRun(runId);
+    return store.runs.getRun(runId);
 }
 
 const text = (t: string): MockResponse => ({ parts: [{ type: 'text', text: t }] });
@@ -165,9 +165,9 @@ describe('structured output', () => {
         ['oops', 'failed'],
     ])('parses the answer of an earlier execution at the step limit (%s)', async (answer, status) => {
         const model = mockModel([]);
-        const { engine, store } = make(model, { maxSteps: 2 });
+        const { engine, stores: store } = make(model, { maxSteps: 2 });
         const { runId } = await engine.dispatch(env);
-        await store.saveCheckpoint({
+        await store.checkpoints.saveCheckpoint({
             runId,
             stepIndex: 1,
             messages: [
@@ -179,7 +179,7 @@ describe('structured output', () => {
         });
         await engine.start();
         await engine.idle();
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe(status);
         if (status === 'completed') expect(run?.output).toEqual({ label: 'bug' });
         else expect(run?.error?.code).toBe('validation_error');
@@ -234,9 +234,9 @@ describe('structured output', () => {
 
     it('fails an earlier execution\'s cut answer at the step limit as incomplete', async () => {
         const model = mockModel([]);
-        const { engine, store } = make(model, { maxSteps: 1 });
+        const { engine, stores: store } = make(model, { maxSteps: 1 });
         const { runId } = await engine.dispatch(env);
-        await store.saveCheckpoint({
+        await store.checkpoints.saveCheckpoint({
             runId,
             stepIndex: 0,
             messages: [
@@ -248,7 +248,7 @@ describe('structured output', () => {
         });
         await engine.start();
         await engine.idle();
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('incomplete_response');
         expect(model.doStreamCalls).toHaveLength(0);
@@ -307,7 +307,7 @@ describe('structured output', () => {
                 }),
             }),
         });
-        const { engine, store } = make(model, { output: counted });
+        const { engine, stores: store } = make(model, { output: counted });
         const deltas: RunDelta[] = [];
         engine.on('run.delta', (e) => {
             deltas.push(e.delta);
@@ -316,7 +316,7 @@ describe('structured output', () => {
         const { runId } = await engine.dispatch(env);
         await engine.idle();
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.getRun(runId);
         expect(run?.status).toBe('completed');
         expect(run?.output).toEqual({ label: 'bug' });
         expect(partialParses).toBe(0);

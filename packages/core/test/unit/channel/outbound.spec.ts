@@ -31,15 +31,15 @@ import type {
     ToolContext,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStores } from '../../../src/store/index.ts';
 import { stableHash } from '../../../src/effect/helpers.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
 type Sent = {
-    message: ChannelMessage; 
-    address: string; 
-    opts: ChannelSendOptions 
+    message: ChannelMessage;
+    address: string;
+    opts: ChannelSendOptions
 };
 
 function recorder(name: string) {
@@ -49,9 +49,9 @@ function recorder(name: string) {
         name,
         async out(message, address, opts) {
             calls.push({
-                message, 
-                address, 
-                opts, 
+                message,
+                address,
+                opts,
             });
             if (state.failures > 0) {
                 state.failures -= 1;
@@ -60,9 +60,9 @@ function recorder(name: string) {
         },
     };
     return {
-        channel, 
-        calls, 
-        state, 
+        channel,
+        calls,
+        state,
     };
 }
 
@@ -90,17 +90,17 @@ function setup(
     model: LanguageModel,
     tools: AgentDefinition['tools'],
     opts: {
-        store?: MemoryStore; 
-        clock?: ControllableClock; 
-        channels?: IChannel[] 
+        stores?: ReturnType<typeof createMemoryStores>;
+        clock?: ControllableClock;
+        channels?: IChannel[]
     } = {},
 ) {
     const clock = opts.clock ?? new ControllableClock(new Date(1_000_000));
-    const store = opts.store ?? new MemoryStore({ clock });
+    const store = opts.stores ?? createMemoryStores({ clock });
     const slack = recorder('slack');
     const errors: unknown[] = [];
     const engine = new Engine({
-        store,
+        stores: store,
         agents: [defineAgent({
             name: 'ops',
             instructions: 'You operate.',
@@ -117,7 +117,7 @@ function setup(
     engines.push(engine);
     return {
         engine,
-        store,
+        stores: store,
         clock,
         slack,
         errors,
@@ -125,7 +125,7 @@ function setup(
 }
 
 async function run(
-    ctx: { engine: Engine; store: MemoryStore },
+    ctx: { engine: Engine; stores: ReturnType<typeof createMemoryStores> },
     envelope: { channel?: string; address?: string } = {},
 ) {
     await ctx.engine.start();
@@ -139,8 +139,8 @@ async function run(
     await ctx.engine.idle();
     return {
         runId,
-        run: await ctx.store.getRun(runId),
-        steps: await ctx.store.listSteps(runId),
+        run: await ctx.stores.runs.getRun(runId),
+        steps: await ctx.stores.steps.listSteps(runId),
     };
 }
 
@@ -163,9 +163,9 @@ describe('channel outbound', () => {
         expect(sent.message).toEqual({
             kind: 'message',
             key: `${runId}:emit:slack:${stableHash({
-                address: 'C1', 
-                title: 't', 
-                body: 'b', 
+                address: 'C1',
+                title: 't',
+                body: 'b',
             })}`,
             runId,
             agent: 'ops',
@@ -183,15 +183,15 @@ describe('channel outbound', () => {
             {
                 parts: [
                     {
-                        type: 'tool-call', 
-                        toolName: 'notify', 
-                        input: { body: 'b' }, 
+                        type: 'tool-call',
+                        toolName: 'notify',
+                        input: { body: 'b' },
                         toolCallId: 'a',
                     },
                     {
-                        type: 'tool-call', 
-                        toolName: 'notify', 
-                        input: { body: 'b' }, 
+                        type: 'tool-call',
+                        toolName: 'notify',
+                        input: { body: 'b' },
                         toolCallId: 'b',
                     },
                 ],
@@ -207,20 +207,20 @@ describe('channel outbound', () => {
 
     it('identical emits in one step and after a recovery reach out once', async () => {
         const storeClock = new ControllableClock(new Date(1_000_000));
-        const store = new MemoryStore({ clock: storeClock });
+        const store = createMemoryStores({ clock: storeClock });
         const slack = recorder('slack');
         const parallel: MockResponse = {
             parts: [
                 {
-                    type: 'tool-call', 
-                    toolName: 'notify', 
-                    input: { body: 'b' }, 
+                    type: 'tool-call',
+                    toolName: 'notify',
+                    input: { body: 'b' },
                     toolCallId: 'a',
                 },
                 {
-                    type: 'tool-call', 
-                    toolName: 'notify', 
-                    input: { body: 'b' }, 
+                    type: 'tool-call',
+                    toolName: 'notify',
+                    input: { body: 'b' },
                     toolCallId: 'b',
                 },
             ],
@@ -239,7 +239,7 @@ describe('channel outbound', () => {
 
         // replica A: its own clock, so its claim is never renewed
         const a = setup(mockModel([parallel]), tools(true), {
-            store,
+            stores: store,
             clock: new ControllableClock(new Date(1_000_000)),
             channels: [slack.channel, web],
         });
@@ -257,12 +257,12 @@ describe('channel outbound', () => {
         // replica B recovers the run once A's claim expired and redoes the step
         storeClock.advance(1000);
         const b = setup(mockModel([parallel, text('done')]), tools(false), {
-            store,
+            stores: store,
             clock: storeClock,
             channels: [slack.channel, web],
         });
         await b.engine.start();
-        await vi.waitFor(async () => expect((await store.getRun(runId))?.status).toBe('completed'));
+        await vi.waitFor(async () => expect((await store.runs.getRun(runId))?.status).toBe('completed'));
         expect(slack.calls).toHaveLength(1);
     });
 

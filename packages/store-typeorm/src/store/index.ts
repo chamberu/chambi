@@ -6,4 +6,4 @@
  */
 
 export * from './module.ts';
-export type { PurgeResult, TypeormStoreOptions } from './types.ts';
+export type { TypeormStores, TypeormStoresOptions } from './types.ts';

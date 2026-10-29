@@ -82,8 +82,8 @@ import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
     Engine,
-    MemoryStore,
     consoleChannel,
+    createMemoryStores,
     defineAgent,
     defineEffectTool,
 } from '@chamvi/core';
@@ -113,7 +113,7 @@ export async function triageIssue(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        store: new MemoryStore(),
+        stores: createMemoryStores(),
         agents: [triage],
         channels: [consoleChannel({
             write: (line) => {
@@ -135,9 +135,9 @@ export async function triageIssue(model: LanguageModel) {
     await engine.stop();
 
     return {
-        run: await engine.getRun(runId), 
-        labels, 
-        lines, 
+        run: await engine.getRun(runId),
+        labels,
+        lines,
     };
 }
 ```
@@ -221,7 +221,7 @@ const deployer = defineAgent({
 });
 
 const engine = new Engine({
-    store,
+    stores,
     agents: [deployer],
 });
 
@@ -300,12 +300,12 @@ const digest = defineAgent({
 
 ### Stores
 
-`MemoryStore` keeps everything in process memory, for development and tests. A store implements the `IStore` interface (runs, steps, checkpoints, idempotency keys, locks, effects, state, artifacts) and proves it with the shared contract suite from [`@chamvi/test-kit`](../test-kit):
+`createMemoryStores()` keeps everything in process memory, for development and tests. The factory assembles separate capability stores (runs, steps, checkpoints, idempotency keys, locks, effects, state, artifacts, agent revisions and optional conversations) into `Stores` and proves their contracts with the shared contract suite from [`@chamvi/test-kit`](../test-kit):
 
 ```typescript
 import { describeStoreContract } from '@chamvi/test-kit';
 
-describeStoreContract((clock) => new MemoryStore({ clock }));
+describeStoreContract((clock) => createMemoryStores({ clock }));
 ```
 
 The factory receives a `ControllableClock` and must use it for every expiry decision. The suite runs on Vitest.
@@ -336,7 +336,7 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `store` | `IStore` | required | Where runs, steps, checkpoints and state live |
+| `stores` | `Stores` | required | Where runs, steps, checkpoints and state live |
 | `agents` | `Agent[]` | required | The agents this engine runs |
 | `channels` | `IChannel[]` | `[]` | Channels by unique name, started by `start()` and stopped first by `drain()`/`stop()`; tools reach them through `ctx.channels` |
 | `concurrencyMaxRuns` | `number` | `4` | Runs executing at once in this process |
@@ -370,7 +370,7 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 | `defineAgent` | function | Validates an agent definition and applies defaults |
 | `DEFAULT_MAX_STEPS`, `DEFAULT_TIMEOUT_MS` | constant | The default budget: `20` steps, `900_000` ms |
 | `Engine` | class | `store`, `clock`, `getAgent`, `listAgents`, `putAgent`, `removeAgent`, `getChannel`, `listChannels`, `provide`, `start`, `dispatch`, `getRun`, `on`, `approve`, `cancel`, `recover`, `tick`, `idle`, `stop`, `drain` |
-| `MemoryStore` | class | In-memory `IStore` |
+| `createMemoryStores()` | function | Assembles independent in-memory stores, including conversations |
 | `defineTool` | function | An AI SDK `tool()` whose `execute` gets the run's `ToolContext` as `context` |
 | `defineContextKey`, `inject`, `tryInject` | function | Typed context keys, and reading a value provided on the engine from a `ToolContext` |
 | `toolContextSchema` | object | The `contextSchema` that marks a chamvi tool |
@@ -397,7 +397,7 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 | `ErrorCode` | object | The `code` of every error above |
 | `systemClock` | object | The default `IClock` |
 
-Types: `Agent`, `AgentDefinition`, `ToolContext`, `ContextKey`, `IContextProvider`, `ToolPolicy`, `AgentHooks`, `ToolCallInfo`, `TriggerEnvelope`, `Invoker`, `Run`, `RunStatus`, `Step`, `Checkpoint`, `WaitPoint`, `Budget`, `Usage`, `ApprovalRequestInput`, `ApprovalDecision`, `ApprovalAnswer`, `IStore` and its parts, `Artifact`, `ArtifactInput`, `IRunArtifacts`, `IChannel`, `ChannelSubscription`, `ChannelContext`, `ChannelMessage`, `ChannelSendOptions`, `ChannelHandle`, `EmitMessage`, `ConsoleChannelOptions`, `IAgentState`, `RunEvent`, `EngineOptions`, `ModelRef`, `IModelResolver`, `IClock`.
+Types: `Agent`, `AgentDefinition`, `ToolContext`, `ContextKey`, `IContextProvider`, `ToolPolicy`, `AgentHooks`, `ToolCallInfo`, `TriggerEnvelope`, `Invoker`, `Run`, `RunStatus`, `Step`, `Checkpoint`, `WaitPoint`, `Budget`, `Usage`, `ApprovalRequestInput`, `ApprovalDecision`, `ApprovalAnswer`, `Stores` and its capability interfaces, `Artifact`, `ArtifactInput`, `IRunArtifacts`, `IChannel`, `ChannelSubscription`, `ChannelContext`, `ChannelMessage`, `ChannelSendOptions`, `ChannelHandle`, `EmitMessage`, `ConsoleChannelOptions`, `IAgentState`, `RunEvent`, `EngineOptions`, `ModelRef`, `IModelResolver`, `IClock`.
 
 Test helpers (`ControllableClock`, `describeStoreContract`) live in [`@chamvi/test-kit`](../test-kit).
 
@@ -407,7 +407,7 @@ Test helpers (`ControllableClock`, `describeStoreContract`) live in [`@chamvi/te
 - **Budgets settle runs.** A run stopped by `maxSteps` or `maxTokens` while the model still wanted to call tools fails with code `BudgetExceeded`; a run that hits its timeout fails with code `Timeout`.
 - **Effects are recorded after they happen.** A crash between a tool's side effect and the store write repeats the effect on resume, unless `alreadyApplied` finds it.
 - **Several approvals in one step are handled one at a time.** The run waits on the first in call order; the other suspended calls stay pending and ask again after the resume, before any further model call.
-- **`MemoryStore` is not durable.** Everything is gone with the process; use a persistent store to survive restarts or to run replicas.
+- **`createMemoryStores()` is not durable.** Everything is gone with the process; use a persistent store to survive restarts or to run replicas.
 - **`stop()` stops polling and the channels.** It resolves once every channel stopped; runs in progress continue, so use `drain()` to shut down.
 
 ## License

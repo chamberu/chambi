@@ -8,7 +8,7 @@
 import type { DataSource } from 'typeorm';
 import { afterAll, beforeAll } from 'vitest';
 import { describeStoreContract } from '@chamvi/test-kit';
-import { TypeormStore } from '@chamvi/store-typeorm';
+import { createTypeormStores } from '@chamvi/store-typeorm';
 import { createTestDataSource, describePostgres, truncateStore } from '../../utils/database.ts';
 
 describePostgres('postgres', () => {
@@ -24,6 +24,6 @@ describePostgres('postgres', () => {
 
     describeStoreContract(async (clock) => {
         await truncateStore(dataSource);
-        return new TypeormStore({ dataSource, clock });
+        return createTypeormStores({ dataSource, clock });
     });
 });
