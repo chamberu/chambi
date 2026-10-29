@@ -8,7 +8,7 @@
 import type { ToolExecutionOptions, ToolSet } from 'ai';
 import { isObject } from 'smob';
 import { ToolNotAllowedError } from '../errors/index.ts';
-import type { IEffectStore } from '../store/types.ts';
+import type { IEffectRepository } from '../repository/types.ts';
 import type { ToolContext } from '../tool/types.ts';
 import { SUSPENDED_RESULT } from '../approval/constants.ts';
 import { SuspendSignal } from '../approval/request.ts';
@@ -84,7 +84,7 @@ function toolCallIdOf(options: unknown): string {
 export function wrapToolsForRun(
     tools: ToolSet,
     ctx: ToolContext,
-    store: IEffectStore,
+    store: IEffectRepository,
     options: WrapToolsOptions = {},
 ): ToolSet {
     const {
@@ -210,12 +210,12 @@ export function wrapToolsForRun(
         }
 
         const apply = async (key: string, input: unknown, callOptions: unknown) => {
-            const stored = await store.getEffect(key);
+            const stored = await store.findOne(key);
             if (stored) return stored.result;
 
             const remote = await effectHooks?.alreadyApplied?.(key, input, ctx);
             if (remote !== undefined) {
-                await store.putEffect(key, remote);
+                await store.save(key, remote);
                 return remote;
             }
 
@@ -228,7 +228,7 @@ export function wrapToolsForRun(
             // The effect already happened: a failing write must not fail the call.
             // `alreadyApplied` is what guards this window on a later retry.
             try {
-                await store.putEffect(key, result);
+                await store.save(key, result);
             } catch (error) {
                 // eslint-disable-next-line no-console
                 console.error(`chamvi: failed to record effect ${key}`, error);

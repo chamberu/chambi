@@ -21,8 +21,8 @@ import {
     ModuleName,
     configModule,
     engineModule,
+    repositoryModule,
     schedulerModule,
-    storeModule,
 } from '@chamvi/app';
 import type { AppMode } from '@chamvi/app';
 import { createHarness } from '../../../utils/harness.ts';
@@ -73,7 +73,7 @@ async function setup(options: { mode?: AppMode; env?: Record<string, string> } =
         agents: [sweep()],
         modules: [
             configModule({ logger }),
-            storeModule(),
+            repositoryModule(),
             engineModule(),
             schedulerModule(),
         ],
@@ -83,7 +83,7 @@ async function setup(options: { mode?: AppMode; env?: Record<string, string> } =
 }
 
 async function runs(harness: Harness) {
-    return (await harness.container.resolve(AppToken.STORES).runs.listRuns({ agent: 'sweep' })).data;
+    return (await harness.container.resolve(AppToken.REPOSITORIES).runs.find({ agent: 'sweep' })).data;
 }
 
 describe('schedulerModule', () => {
@@ -122,12 +122,12 @@ describe('schedulerModule', () => {
 
     it('teardown stops it', async () => {
         const harness = await setup();
-        const store = harness.container.resolve(AppToken.STORES);
+        const store = harness.container.resolve(AppToken.REPOSITORIES);
         await vi.advanceTimersByTimeAsync(30_000);
         expect(await runs(harness)).toHaveLength(1);
 
         await settle(harness.stop());
         await vi.advanceTimersByTimeAsync(180_000);
-        expect((await store.runs.listRuns({ agent: 'sweep' })).data).toHaveLength(1);
+        expect((await store.runs.find({ agent: 'sweep' })).data).toHaveLength(1);
     });
 });

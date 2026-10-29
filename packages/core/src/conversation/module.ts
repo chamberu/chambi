@@ -14,9 +14,9 @@ import type {
     ConversationOperationLiteral,
     ConversationOptions,
     ConversationScope,
-    IConversationStore,
+    IConversationRepository,
 } from './types.ts';
-import type { IEffectStore, IRunStore } from '../store/types.ts';
+import type { IEffectRepository, IRunRepository } from '../repository/types.ts';
 import { InvalidAgentDefinitionError, InvalidRunStateError, ValidationError } from '../errors/index.ts';
 import { ConversationOperation, ConversationTurnKind } from './constants.ts';
 import { RunStatus } from '../run/constants.ts';
@@ -29,7 +29,7 @@ function settled(run: Run | undefined): boolean {
 
 /** Optional engine capability; no ordinary run calls it. */
 export class Conversations {
-    readonly store;
+    readonly repository;
 
     readonly limits;
 
@@ -37,18 +37,18 @@ export class Conversations {
 
     protected readonly pending = new Map<string, Set<Promise<void>>>();
 
-    protected readonly runs: IRunStore;
+    protected readonly runs: IRunRepository;
 
-    protected readonly effects: IEffectStore;
+    protected readonly effects: IEffectRepository;
 
-    constructor(options: ConversationOptions, store: IConversationStore, runs: IRunStore, effects: IEffectStore) {
-        if (!isObject(options) || typeof options.authorize !== 'function' || !isObject(store)) {
-            throw new InvalidAgentDefinitionError('Conversations need a store and an authorizer.');
+    constructor(options: ConversationOptions, repository: IConversationRepository, runs: IRunRepository, effects: IEffectRepository) {
+        if (!isObject(options) || typeof options.authorize !== 'function' || !isObject(repository)) {
+            throw new InvalidAgentDefinitionError('Conversations need a repository and an authorizer.');
         }
-        for (const method of ['resolve', 'get', 'beginTurn', 'activeRun', 'endTurn', 'prepareEmit', 'confirmEmit', 'pendingEmits', 'listItems', 'listNotes', 'getNote', 'applyNote', 'reset', 'delete', 'prune'] as const) {
-            if (typeof store[method] !== 'function') throw new InvalidAgentDefinitionError(`The conversation store needs ${method}().`);
+        for (const method of ['resolve', 'findOne', 'beginTurn', 'activeRun', 'endTurn', 'prepareEmit', 'confirmEmit', 'pendingEmits', 'findItems', 'findNotes', 'findOneNote', 'applyNote', 'reset', 'delete', 'prune'] as const) {
+            if (typeof repository[method] !== 'function') throw new InvalidAgentDefinitionError(`The conversation repository needs ${method}().`);
         }
-        this.store = store;
+        this.repository = repository;
         this.runs = runs;
         this.effects = effects;
         this.authorize = options.authorize;
@@ -69,17 +69,17 @@ export class Conversations {
     async check(run: Run, operation: `${ConversationOperation.RECALL | ConversationOperation.NOTES}` = ConversationOperation.RECALL): Promise<void> {
         const { scope } = run.conversation!;
         await this.allow(operation, scope.identity, run.trigger.agent, run.trigger.invoker);
-        const current = await this.store.get(scope.identity);
+        const current = await this.repository.findOne(scope.identity);
         if (!current || current.id !== scope.id || current.generation !== scope.generation) throw new InvalidRunStateError('The conversation scope is stale: it was reset or deleted.');
     }
 
     async admit(run: Run) {
         await this.check(run);
         const { scope, text } = run.conversation!;
-        let result = await this.store.beginTurn(scope, run.id, text, this.limits);
-        if (result.kind === ConversationTurnKind.BUSY && settled(await this.runs.getRun(result.runId))) {
+        let result = await this.repository.beginTurn(scope, run.id, text, this.limits);
+        if (result.kind === ConversationTurnKind.BUSY && settled(await this.runs.findOne(result.runId))) {
             await this.reconcile(scope, result.runId);
-            result = await this.store.beginTurn(scope, run.id, text, this.limits);
+            result = await this.repository.beginTurn(scope, run.id, text, this.limits);
         }
         if (result.kind === ConversationTurnKind.STALE) throw new InvalidRunStateError('The conversation scope is stale: it was reset or deleted.');
         return result;
@@ -111,30 +111,30 @@ export class Conversations {
         // Terminal repair never fabricates success for an unrecorded external send.
         await this.idle(runId);
         await this.track(runId, (async () => {
-            const pending = await this.store.pendingEmits(scope, runId);
+            const pending = await this.repository.pendingEmits(scope, runId);
             const confirmed: string[] = [];
             for (const item of pending) {
-                const effect = item.effectKey ? await this.effects.getEffect(item.effectKey) : undefined;
+                const effect = item.effectKey ? await this.effects.findOne(item.effectKey) : undefined;
                 if (effect && matchesEmitReceipt(effect.result, item.target)) confirmed.push(item.id);
             }
-            await this.store.endTurn(scope, runId, confirmed);
+            await this.repository.endTurn(scope, runId, confirmed);
         })());
     }
 
     async repair(identity: ConversationIdentity): Promise<void> {
-        const scope = await this.store.get(identity);
+        const scope = await this.repository.findOne(identity);
         if (!scope) return;
-        const owner = await this.store.activeRun(scope);
-        if (owner && settled(await this.runs.getRun(owner))) await this.reconcile(scope, owner);
+        const owner = await this.repository.activeRun(scope);
+        if (owner && settled(await this.runs.findOne(owner))) await this.reconcile(scope, owner);
     }
 
     async inspect(identity: ConversationIdentity, query: { limit?: number; offset?: number } = {}): Promise<ConversationInspection | undefined> {
         const page = { limit: query.limit ?? 50, offset: query.offset ?? 0 };
         assertPage(page);
         if (page.limit > 100) throw new ValidationError('Conversation inspection limit must be at most 100.');
-        const scope = await this.store.get(identity);
+        const scope = await this.repository.findOne(identity);
         if (!scope) return undefined;
-        const [items, notes] = await Promise.all([this.store.listItems(scope, page), this.store.listNotes(scope, page)]);
+        const [items, notes] = await Promise.all([this.repository.findItems(scope, page), this.repository.findNotes(scope, page)]);
         return {
             scope,
             items,
@@ -143,6 +143,6 @@ export class Conversations {
     }
 
     async prune(): Promise<void> {
-        await this.store.prune(this.limits, { isSettled: async (id) => settled(await this.runs.getRun(id)) });
+        await this.repository.prune(this.limits, { isSettled: async (id) => settled(await this.runs.findOne(id)) });
     }
 }

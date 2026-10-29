@@ -7,10 +7,10 @@
 
 import {
     Engine,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
-import type { Agent, Stores } from '@chamvi/core';
+import type { Agent, Repositories } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { customProvider } from 'ai';
 import type { AppMode, IModule  } from '@chamvi/app';
@@ -19,8 +19,8 @@ import {
     AppToken,
     configModule,
     engineModule,
+    repositoryModule,
     runHooks,
-    storeModule,
 } from '@chamvi/app';
 import { hangingModel } from './app.ts';
 import { buildHarness } from './harness.ts';
@@ -65,9 +65,9 @@ export function codeAgent(name: string): Agent {
 }
 
 /** A queued run of `name`, dispatched through an engine that never starts. */
-export async function queueRun(store: Stores, clock: ControllableClock, name: string): Promise<string> {
+export async function queueRun(store: Repositories, clock: ControllableClock, name: string): Promise<string> {
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         clock,
         agents: [codeAgent(name)],
     });
@@ -87,7 +87,7 @@ export type AgentsDirHarnessOptions = {
     job?: { agent: string };
     /** Check mode (`IApp.check()`): mode stays `start`. */
     check?: boolean;
-    stores?: Stores;
+    repositories?: Repositories;
     clock?: ControllableClock;
     agents?: Agent[];
     env?: Record<string, string>;
@@ -99,7 +99,7 @@ export type AgentsDirHarnessOptions = {
 export function buildAgentsDirHarness(options: AgentsDirHarnessOptions) {
     const clock = options.clock ?? new ControllableClock(START);
     const logger = createRecordingLogger(clock);
-    const store = options.stores ?? createMemoryStores({ clock });
+    const store = options.repositories ?? createMemoryRepositories({ clock });
     const module = new AgentsModule();
     const harness: Harness = buildHarness({
         mode: options.mode,
@@ -114,7 +114,7 @@ export function buildAgentsDirHarness(options: AgentsDirHarnessOptions) {
         models: { test: provider() },
         modules: [
             configModule({ clock, logger }),
-            storeModule({ stores: store }),
+            repositoryModule({ repositories: store }),
             engineModule(),
             module,
             ...options.modules ?? [],
@@ -125,7 +125,7 @@ export function buildAgentsDirHarness(options: AgentsDirHarnessOptions) {
         harness,
         clock,
         logger,
-        stores: store,
+        repositories: store,
         engine: () => harness.container.resolve(AppToken.ENGINE),
         issues: () => harness.container.resolve(AppToken.AGENT_ISSUES)(),
         /** start mode: runs the `started` hooks (the http module's serve step does in an app). */

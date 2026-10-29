@@ -7,7 +7,7 @@
 
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createMemoryStores } from '@chamvi/core';
+import { createMemoryRepositories } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
     afterEach,
@@ -90,25 +90,25 @@ describe('the checks a folder agent passes before it is registered', () => {
     ])('a change to %s keeps the old agent, cancels nothing and is tried once', async (_label, change) => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = createMemoryStores({ clock });
+        const store = createMemoryRepositories({ clock });
         const setup = buildAgentsDirHarness({
             root: root.path,
             clock,
-            stores: store,
+            repositories: store,
             modules: [schedulerModule()],
         });
         harnesses.push(setup.harness);
         await setup.harness.setup();
         await setup.watch();
-        const marker = await store.agentRevisions.getAgentRevision('greeter');
+        const marker = await store.agentRevisions.findOne('greeter');
         const runId = await queueRun(store, clock, 'greeter');
 
         await writeTree(join(root.path, 'greeter'), change);
         for (let i = 0; i < 5; i++) await setup.poll();
 
         expect(setup.engine().getAgent('greeter')?.definition.instructions).toBe('v1');
-        expect(await store.agentRevisions.getAgentRevision('greeter')).toEqual(marker);
-        expect((await store.runs.getRun(runId))?.status).toBe('queued');
+        expect(await store.agentRevisions.findOne('greeter')).toEqual(marker);
+        expect((await store.runs.findOne(runId))?.status).toBe('queued');
         expect(setup.issues()).toEqual([expect.objectContaining({ agent: 'greeter' })]);
         expect(setup.logger.entries.filter((entry) => entry.msg === 'agent load failed')).toHaveLength(1);
         expect(setup.logger.entries.filter((entry) => entry.msg === 'agent reload failed')).toHaveLength(0);

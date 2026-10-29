@@ -13,7 +13,7 @@ import {
     inject,
     tryInject,
 } from '@chamvi/core';
-import type { ToolContext, createMemoryStores } from '@chamvi/core';
+import type { ToolContext, createMemoryRepositories } from '@chamvi/core';
 
 function handBuilt(): ToolContext {
     return {
@@ -39,7 +39,7 @@ describe('context keys', () => {
     });
 
     it('inject on a hand-built ToolContext throws ContextNotProvidedError', () => {
-        const key = defineContextKey<ReturnType<typeof createMemoryStores>>('x');
+        const key = defineContextKey<ReturnType<typeof createMemoryRepositories>>('x');
         const ctx = handBuilt();
         let caught: unknown;
         try {

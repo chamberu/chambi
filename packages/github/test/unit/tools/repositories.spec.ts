@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ValidationError, createMemoryStores, wrapToolsForRun } from '@chamvi/core';
+import { ValidationError, createMemoryRepositories, wrapToolsForRun } from '@chamvi/core';
 import type { ToolSet } from 'ai';
 import type { GithubIssueList, GithubRepositoryList } from '@chamvi/github';
 import { createGithubFixture } from '../../utils/app.ts';
@@ -15,7 +15,7 @@ import { callTool, toolContext } from '../../utils/tools.ts';
 function setup() {
     const fixture = createGithubFixture();
     const ctx = toolContext({ channel: 'cron' });
-    const tools: ToolSet = wrapToolsForRun(fixture.gh.readTools(), ctx, createMemoryStores().effects);
+    const tools: ToolSet = wrapToolsForRun(fixture.gh.readTools(), ctx, createMemoryRepositories().effects);
     const call = <T = unknown>(name: string, input: unknown) => callTool<T>(tools, name, input, ctx);
     return { ...fixture, call };
 }

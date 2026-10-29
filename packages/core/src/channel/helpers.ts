@@ -23,7 +23,7 @@ import {
 import { NAME_MAX_LENGTH, NAME_PATTERN } from '../agent/constants.ts';
 import { untilAborted } from '../run/helpers.ts';
 import type { RunContext } from '../run/types.ts';
-import type { IEffectStore } from '../store/types.ts';
+import type { IEffectRepository } from '../repository/types.ts';
 import type {
     ChannelContext,
     ChannelHandle,
@@ -83,7 +83,7 @@ function assertEmitMessage(message: unknown): asserts message is EmitMessage {
  */
 function createChannelHandle(
     run: RunContext,
-    effects: IEffectStore,
+    effects: IEffectRepository,
     inflight: Inflight,
     channel: IChannel<any, any>,
     address?: string,
@@ -96,7 +96,7 @@ function createChannelHandle(
     );
     const capture = conversation && run.trigger.channel === name ? conversation : undefined;
     const send = async (effectKey: string, key: string, message: EmitMessage, target: string) => {
-        const stored = await effects.getEffect(effectKey);
+        const stored = await effects.findOne(effectKey);
         if (stored) return stored.result;
         if (conversation) run.signal.throwIfAborted();
         const delivery = Promise.resolve(channel.out!({
@@ -121,7 +121,7 @@ function createChannelHandle(
             key,
         };
         try {
-            await effects.putEffect(effectKey, receipt);
+            await effects.save(effectKey, receipt);
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error(`chamvi: failed to record emit ${effectKey}`, error);
@@ -158,7 +158,7 @@ function createChannelHandle(
             const source = capture && target === capture.run.trigger.address ? capture : undefined;
             if (source) {
                 assertConversationText(captured.body, source.capability.limits.maxItemBytes);
-                await source.capability.store.prepareEmit(source.binding.scope, {
+                await source.capability.repository.prepareEmit(source.binding.scope, {
                     id: `emit:${stableHash(effectKey)}`,
                     runId: source.run.id,
                     role: 'assistant',
@@ -179,7 +179,7 @@ function createChannelHandle(
             // Every source caller validates a shared send, including the in-flight fast path.
             if (source && receipt !== undefined) {
                 if (!matchesEmitReceipt(receipt, { channel: name, address: target })) throw new ValidationError('The emit effect belongs to another target.');
-                await source.capability.store.confirmEmit(source.binding.scope, `emit:${stableHash(effectKey)}`);
+                await source.capability.repository.confirmEmit(source.binding.scope, `emit:${stableHash(effectKey)}`);
             }
         })();
         return conversation ? conversation.capability.track(conversation.run.id, work) : work;
@@ -212,7 +212,7 @@ function createChannelHandle(
  */
 export function createToolChannels(
     run: RunContext,
-    effects: IEffectStore,
+    effects: IEffectRepository,
     engine: Pick<Engine, 'getChannel' | 'listChannels'>,
 ): ToolChannels {
     const inflight: Inflight = new Map();

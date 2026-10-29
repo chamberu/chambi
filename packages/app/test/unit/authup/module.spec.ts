@@ -21,8 +21,8 @@ import {
     configModule,
     engineModule,
     httpModule,
+    repositoryModule,
     staticTokensModule,
-    storeModule,
 } from '@chamvi/app';
 import { authupModule, oidcModule } from '@chamvi/app/authup';
 import { resolveAuthenticators } from '../../../src/modules/http/helpers.ts';
@@ -87,7 +87,7 @@ async function served(verifier: ITokenVerifier) {
             configModule({ logger: createRecordingLogger() }),
             // authup contributes first: only the authenticator order puts static tokens ahead
             authupModule({ verifier }),
-            storeModule(),
+            repositoryModule(),
             staticTokensModule(),
             engineModule(),
             httpModule({ metrics: false, rateLimit: false }),

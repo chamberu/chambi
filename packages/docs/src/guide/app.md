@@ -43,12 +43,12 @@ An agent's `model` is optional: without one it uses the app's default (`CHAMVI_M
 
 ## Modules
 
-Modules are [orkos](https://github.com/tada5hi/orkos) `IModule`s on an [eldin](https://github.com/tada5hi/eldin) container, unwrapped. Seven built-in modules are always there; listing a module with a built-in's name (`ModuleName`) replaces it, which is also how you configure one (`storeModule({ dataSource })`, `httpModule({ cors })`). Two modules of one name, a built-in's included, throw `InvalidAgentDefinitionError` from `createApp`.
+Modules are [orkos](https://github.com/tada5hi/orkos) `IModule`s on an [eldin](https://github.com/tada5hi/eldin) container, unwrapped. Seven built-in modules are always there; listing a module with a built-in's name (`ModuleName`) replaces it, which is also how you configure one (`repositoryModule({ dataSource })`, `httpModule({ cors })`). Two modules of one name, a built-in's included, throw `InvalidAgentDefinitionError` from `createApp`.
 
 | Module | Does |
 |---|---|
 | `configModule()` | Reads every variable once ([environment](/reference/app#environment)) and registers the config, the clock and the JSON line logger |
-| `storeModule()` | `createTypeormStores()` over `DATABASE_URL`, migrated unless `CHAMVI_MIGRATE=false`, plus hourly `purgeExpired()` on the idempotency and lock roles; without `DATABASE_URL` in-memory stores from `createMemoryStores()` (warned outside dev) |
+| `repositoryModule()` | `createTypeormRepositories()` over `DATABASE_URL`, migrated unless `CHAMVI_MIGRATE=false`, plus hourly `purgeExpired()` on the idempotency and lock roles; without `DATABASE_URL` in-memory repositories from `createMemoryRepositories()` (warned outside dev) |
 | `staticTokensModule()` | The `staticTokens()` authenticator from `CHAMVI_TOKENS` |
 | `engineModule()` | Reads the [model settings](/guide/models) (env, `chamvi.json`, code) into the default model and the provider resolver, builds the `Engine` (which checks every agent's model) with every contributed channel (`AppToken.CHANNELS`) and starts it, which starts the channels |
 | `agentsModule()` | Loads the [agent folders](/guide/agent-folders) of `CHAMVI_AGENTS_DIR` (else `./agents` when it exists) before the engine starts and watches them; an app with no agent at all starts with a warning |

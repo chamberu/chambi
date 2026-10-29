@@ -8,7 +8,7 @@
 import type { FilePart, ModelMessage } from 'ai';
 import { isObject } from 'smob';
 import { ArtifactNotFoundError, ValidationError } from '../errors/index.ts';
-import type { IArtifactStore } from '../store/types.ts';
+import type { IArtifactRepository } from '../repository/types.ts';
 import { ARTIFACT_URI_PREFIX } from './constants.ts';
 import { isArtifactMediaType } from './media-type.ts';
 import type { Artifact, ArtifactInput } from './types.ts';
@@ -85,7 +85,7 @@ function hydrateToolResult<T>(part: T, bytes: Map<string, Uint8Array>): T {
  * without a marker it is returned as is. Throws ArtifactNotFoundError for a
  * marker whose artifact is gone.
  */
-export async function hydrateMessages(messages: ModelMessage[], store: IArtifactStore): Promise<ModelMessage[]> {
+export async function hydrateMessages(messages: ModelMessage[], store: IArtifactRepository): Promise<ModelMessage[]> {
     const ids = new Set<string>();
     for (const message of messages) {
         if (typeof message.content === 'string') continue;
@@ -102,7 +102,7 @@ export async function hydrateMessages(messages: ModelMessage[], store: IArtifact
 
     const bytes = new Map<string, Uint8Array>();
     for (const id of ids) {
-        const data = await store.readArtifact(id);
+        const data = await store.read(id);
         if (!data) throw new ArtifactNotFoundError(id);
         bytes.set(id, data);
     }

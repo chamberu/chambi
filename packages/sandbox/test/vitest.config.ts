@@ -14,7 +14,7 @@ export default defineConfig({
             { find: /^@chamvi\/sandbox\/module$/, replacement: fileURLToPath(new URL('../src/module/index.ts', import.meta.url)) },
             { find: /^@chamvi\/sandbox-local$/, replacement: fileURLToPath(new URL('../../sandbox-local/src/index.ts', import.meta.url)) },
             { find: /^@chamvi\/channel-cron$/, replacement: fileURLToPath(new URL('../../channel-cron/src/index.ts', import.meta.url)) },
-            { find: /^@chamvi\/store-typeorm$/, replacement: fileURLToPath(new URL('../../store-typeorm/src/index.ts', import.meta.url)) },
+            { find: /^@chamvi\/store-db$/, replacement: fileURLToPath(new URL('../../store-db/src/index.ts', import.meta.url)) },
         ],
     },
     test: {

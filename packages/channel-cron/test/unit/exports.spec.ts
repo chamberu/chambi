@@ -11,7 +11,7 @@ import * as channelCron from '@chamvi/channel-cron';
 describe('public api', () => {
     it.each([
         'assertSchedulable',
-        'createStoreScheduleLock',
+        'createRepositoryScheduleLock',
         'cronChannel',
         'fireCronSubscription',
         'readCronOptions',

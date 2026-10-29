@@ -28,7 +28,7 @@ import {
 import type { AgentDefinition, AgentHooks } from '@chamvi/core';
 import { currentToolCall } from '../../../src/effect/frame.ts';
 import { stableHash } from '../../../src/effect/helpers.ts';
-import { createMemoryStores } from '../../../src/store/index.ts';
+import { createMemoryRepositories } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -55,9 +55,9 @@ async function runOnce(
     setup?: (engine: Engine) => void,
 ) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [defineAgent({
             name: 'ops',
             instructions: 'You operate.',
@@ -77,11 +77,11 @@ async function runOnce(
         payload: {},
     });
     await engine.idle();
-    const steps = await store.steps.listSteps(runId);
+    const steps = await store.steps.find(runId);
     return {
         runId,
-        stores: store,
-        run: await store.runs.getRun(runId),
+        repositories: store,
+        run: await store.runs.findOne(runId),
         tools: steps.filter((step) => step.kind === 'tool'),
     };
 }
@@ -197,14 +197,14 @@ describe('agent hooks', () => {
         const {
             run,
             runId,
-            stores: store,
+            repositories: store,
         } = await runOnce(mockModel([call('post', { body: 'x' }), text('done')]), {
             tools: { post },
             hooks: { beforeToolExecution: () => ({ body: 'y' }) },
         });
         expect(run?.status).toBe('completed');
-        expect(await store.effects.getEffect(`${runId}:post:${stableHash({ body: 'y' })}`)).toEqual({ result: 'y' });
-        expect(await store.effects.getEffect(`${runId}:post:${stableHash({ body: 'x' })}`)).toBeUndefined();
+        expect(await store.effects.findOne(`${runId}:post:${stableHash({ body: 'y' })}`)).toEqual({ result: 'y' });
+        expect(await store.effects.findOne(`${runId}:post:${stableHash({ body: 'x' })}`)).toBeUndefined();
     });
 
     it('afterToolExecution rewrites a fresh result and a recorded effect result alike', async () => {

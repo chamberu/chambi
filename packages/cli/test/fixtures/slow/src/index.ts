@@ -15,7 +15,7 @@ declare global {
 }
 
 /** A store module whose setup waits until the app stops (a migration that never ends). */
-const slowStore = {
+const slowRepository = {
     name: ModuleName.STORE,
     dependencies: [ModuleName.CONFIG],
     async setup(container: { resolve(token: typeof AppToken.CONTEXT): AppContext }): Promise<void> {
@@ -29,4 +29,4 @@ const slowStore = {
     },
 };
 
-export default createApp({ agents: [echo], modules: [slowStore] });
+export default createApp({ agents: [echo], modules: [slowRepository] });

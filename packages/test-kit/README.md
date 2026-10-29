@@ -5,7 +5,7 @@
 <h1 align="center">@chamvi/test-kit</h1>
 
 <p align="center">
-    <b>Test helpers for chamvi: a controllable clock, the store and workspace contract suites, a git fixture and an in-process fake GitHub.</b>
+    <b>Test helpers for chamvi: a controllable clock, the repository and workspace contract suites, a git fixture and an in-process fake GitHub.</b>
 </p>
 
 <p align="center">
@@ -26,15 +26,15 @@ npm install --save-dev @chamvi/test-kit @chamvi/core vitest
 
 ## Usage
 
-### Store contract
+### Repository contract
 
-Every `Stores` implementation proves itself with the shared Vitest suite. The factory gets a fresh `ControllableClock` per test and must use it for every expiry decision:
+Every `Repositories` implementation proves itself with the shared Vitest suite. The factory gets a fresh `ControllableClock` per test and must use it for every expiry decision:
 
 ```typescript
-import { createMemoryStores } from '@chamvi/core';
-import { describeStoreContract } from '@chamvi/test-kit';
+import { createMemoryRepositories } from '@chamvi/core';
+import { describeRepositoryContract } from '@chamvi/test-kit';
 
-describeStoreContract((clock) => createMemoryStores({ clock }));
+describeRepositoryContract((clock) => createMemoryRepositories({ clock }));
 ```
 
 ### Controllable clock
@@ -42,12 +42,12 @@ describeStoreContract((clock) => createMemoryStores({ clock }));
 `ControllableClock` implements `IClock` and only moves when told to, so engine timeouts, claim leases and approval expiry are tested without real timers:
 
 ```typescript
-import { createMemoryStores, Engine } from '@chamvi/core';
+import { createMemoryRepositories, Engine } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 
 const clock = new ControllableClock();
-const store = createMemoryStores({ clock });
-const engine = new Engine({ stores: store, agents: [], clock });
+const store = createMemoryRepositories({ clock });
+const engine = new Engine({ repositories: store, agents: [], clock });
 
 clock.advance(60_000); // fires every timer due within the next minute, in order
 ```
@@ -98,7 +98,7 @@ fake.failNext('POST', '/repos/octo/demo/issues/7/comments', 502); // one injecte
 | Export | Kind | Purpose |
 |---|---|---|
 | `ControllableClock` | class | `IClock` that advances only via `advance(ms)`; starts at `new Date(0)` unless given a date |
-| `describeStoreContract` | function | Vitest suite every `Stores` implementation must pass |
+| `describeRepositoryContract` | function | Vitest suite every `Repositories` implementation must pass |
 | `describeWorkspaceContract` | function | Vitest suite every sandbox provider's `IWorkspace` must pass |
 | `createGitFixture` | function | A temporary git repository with one commit (branch `main`, tag `v1`) |
 | `createFakeGithub` | function | An in-process GitHub (App JWTs, installation tokens, repository routes) for `createGithubApp({ fetch })` |

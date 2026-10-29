@@ -16,7 +16,7 @@ import { z } from 'zod';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -34,10 +34,10 @@ afterEach(() => {
 
 function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     const { clock, gh } = createGithubFixture();
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const errors: unknown[] = [];
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [defineAgent({
             name: 'triage',
             instructions: 'Triage.',
@@ -52,13 +52,13 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     engines.push(engine);
     return {
         engine,
-        stores: store,
+        repositories: store,
         gh,
         errors,
     };
 }
 
-async function run(engine: Engine, store: ReturnType<typeof createMemoryStores>) {
+async function run(engine: Engine, store: ReturnType<typeof createMemoryRepositories>) {
     const { runId } = await engine.dispatch({
         agent: 'triage',
         trigger: 'http',
@@ -66,7 +66,7 @@ async function run(engine: Engine, store: ReturnType<typeof createMemoryStores>)
         payload: {},
     });
     await engine.idle();
-    return store.runs.getRun(runId);
+    return store.runs.findOne(runId);
 }
 
 describe('github context', () => {
@@ -91,7 +91,7 @@ describe('github context', () => {
         ]);
         const {
             engine,
-            stores: store,
+            repositories: store,
             gh,
         } = setup(model, { use });
         provideGithubContext(engine, gh);
@@ -105,7 +105,7 @@ describe('github context', () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
         const {
             engine,
-            stores: store,
+            repositories: store,
             gh,
         } = setup(model, (ctx) => injectGithubContext(ctx).readTools());
         provideGithubContext(engine, gh);
@@ -119,7 +119,7 @@ describe('github context', () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
         const {
             engine,
-            stores: store,
+            repositories: store,
             errors,
         } = setup(model, (ctx) => injectGithubContext(ctx).readTools());
         await engine.start();

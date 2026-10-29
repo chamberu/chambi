@@ -8,7 +8,7 @@
 import { cron } from '@chamvi/channel-cron';
 import {
     InvalidAgentDefinitionError,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
 import type { IModule } from 'orkos';
@@ -97,7 +97,7 @@ describe('createApp', () => {
                 dependencies: [ModuleName.CONFIG],
                 async setup(container) {
                     calls.push('fake store');
-                    container.register(AppToken.STORES, { useValue: createMemoryStores() });
+                    container.register(AppToken.REPOSITORIES, { useValue: createMemoryRepositories() });
                 },
             }],
         });

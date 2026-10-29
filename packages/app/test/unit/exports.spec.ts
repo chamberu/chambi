@@ -44,7 +44,7 @@ describe('public api', () => {
         'hashAgentFolder',
         'listAgentFolders',
         'configModule',
-        'storeModule',
+        'repositoryModule',
         'staticTokensModule',
         'consoleChannelModule',
         'engineModule',
@@ -116,9 +116,9 @@ describe('public api', () => {
             'HTTP_ROUTES',
             'LIFECYCLE_HOOKS',
             'LOGGER',
+            'REPOSITORIES',
             'SERVER',
             'SHUTDOWN',
-            'STORES',
         ]);
     });
 

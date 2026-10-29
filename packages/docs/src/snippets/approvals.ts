@@ -7,7 +7,7 @@ import {
     ToolDeniedError,
     approve,
     consoleChannel,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -129,7 +129,7 @@ export async function approvalFlow(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        stores: createMemoryStores(),
+        repositories: createMemoryRepositories(),
         agents: [deployer],
         channels: [consoleChannel()],
     });

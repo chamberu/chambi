@@ -1,7 +1,7 @@
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import { cron, cronChannel } from '@chamvi/channel-cron';
-import type { Stores } from '@chamvi/core';
+import type { Repositories } from '@chamvi/core';
 import {
     Engine,
     ToolDeniedError,
@@ -12,7 +12,7 @@ import {
 import { createGithubApp, github, githubChannel } from '@chamvi/github';
 import { createHttpApp, staticTokens } from '@chamvi/http';
 
-export function createTriage(model: LanguageModel, store: Stores) {
+export function createTriage(model: LanguageModel, store: Repositories) {
     // #region app
     const gh = createGithubApp({
         appId: process.env.GITHUB_APP_ID ?? '',
@@ -71,7 +71,7 @@ export function createTriage(model: LanguageModel, store: Stores) {
 
     // #region http
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [triage],
         channels: [channel, cronChannel()],
     });

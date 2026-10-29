@@ -42,8 +42,13 @@ Documentation follow-up in chamvi/helm: explain known-source app `trustProxy` (I
 
 Reviewed local helm commit a8bf3b3: charts use generic env/envFrom and do not reference credential modes or dedicated Git tools. #59/#72 require no chart template change.
 
-## Capability stores compatibility check (2026-10-29)
+## Capability repositories compatibility check (2026-10-29)
 
 Checked current GitHub HEAD `482f7de3759e43d61a7faedeb00547e9b3fc5202` from a read-only source archive. Reviewed `ci/app/dist/index.mjs`, chart Deployment/CronJob/helpers, values and chart notes. The fixture imports `createApp`, `defineAgent`, `http` and `cron`; the chart uses env and CLI contracts. No executable consumer uses the removed store classes, aggregate interface, engine property, store module option or container token. Three prose/comment occurrences of the previous memory-store class name remain in CI values and NOTES; they do not affect rendering or runtime behavior.
 
-The monorepo now exposes `Stores`, `createMemoryStores()`, `createTypeormStores()`, `Engine.stores`, `storeModule({ stores })` and `AppToken.STORES`; conversation storage is `stores.conversations`, with authorization/limits kept in conversation policy. No downstream source migration is required for the usages above. CLI, env, route, image, model-format and chart contracts are unchanged. No downstream repository was modified, tested, or published for this check.
+The monorepo now exposes `Repositories`, `createMemoryRepositories()`, `createTypeormRepositories()`, `Engine.repositories`, `repositoryModule({ repositories })` and `AppToken.REPOSITORIES`; conversation storage is `repositories.conversations`, with authorization/limits kept in conversation policy. No downstream source migration is required for the usages above. CLI, env, route, image, model-format and chart contracts are unchanged. No downstream repository was modified, tested, or published for this check.
+
+
+## Repository API and database package naming check (2026-10-29)
+
+Rechecked the current GitHub HEAD against the source archive above: unchanged. The renamed persistence API (`IRunRepository`, `Repositories`, `findOne`/`find` and their `OrFail` counterparts) and `@chamvi/store-db` package have no direct consumer in this downstream repository. Database environment settings and `config.store` remain unchanged; the app still supplies its backend by default. No downstream source migration is required for this refactor. This was a read-only source check, not a downstream build or test run.

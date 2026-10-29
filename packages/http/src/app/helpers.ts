@@ -49,6 +49,7 @@ const CORE_STATUS: Record<string, number> = {
     [ErrorCode.AGENT_NOT_FOUND]: 404,
     [ErrorCode.RUN_NOT_FOUND]: 404,
     [ErrorCode.ARTIFACT_NOT_FOUND]: 404,
+    [ErrorCode.REPOSITORY_NOT_FOUND]: 404,
     [ErrorCode.INVALID_RUN_STATE]: 409,
 };
 
@@ -180,7 +181,7 @@ export function buildContext(options: HttpAppOptions): HttpContext {
 
     return {
         engine: options.engine,
-        stores: options.engine.stores,
+        repositories: options.engine.repositories,
         agents: createLiveAgents(options.engine, options.agents),
         agentIssues: readAgentIssues(options),
         authenticators,

@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { ILockStore } from '@chamvi/core';
+import type { ILockRepository } from '@chamvi/core';
 import type { IScheduleLock } from 'hubwire';
 
 /**
@@ -13,6 +13,6 @@ import type { IScheduleLock } from 'hubwire';
  * tick's key runs it. Tick keys are never released (hubwire's contract), so a
  * replica firing the same tick late cannot win it again.
  */
-export function createStoreScheduleLock(store: ILockStore, owner: string): IScheduleLock {
+export function createRepositoryScheduleLock(store: ILockRepository, owner: string): IScheduleLock {
     return { acquire: (key, ttlMs) => store.acquire(key, owner, ttlMs) };
 }

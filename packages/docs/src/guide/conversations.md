@@ -10,7 +10,7 @@ Enable both the app capability and `conversation: true` on the agent. A required
 
 `memoryTools()` supplies `memory_list`, `memory_get`, `memory_set` and `memory_remove`. Add them through the tools factory when `hasConversation(ctx)` is true. They are not automatically installed. Ordinary runs of the same agent still work without a conversation binding. Executing a memory tool outside a bound run fails validation.
 
-Without `conversations`, the app creates no conversation store. Enabling the agent without the app capability is a configuration error. The default conversation store uses the same selected PostgreSQL DataSource as the run store. With no selected DataSource it uses `MemoryConversationStore` and warns: a process restart loses history and notes, and replicas do not share them. PostgreSQL is required for the default restart-durable production setup.
+Without `conversations`, the app creates no conversation store. Enabling the agent without the app capability is a configuration error. The default conversation store uses the same selected PostgreSQL DataSource as the run store. With no selected DataSource it uses `MemoryConversationRepository` and warns: a process restart loses history and notes, and replicas do not share them. PostgreSQL is required for the default restart-durable production setup.
 
 ## Keep memory when renaming an agent
 
@@ -67,13 +67,13 @@ Inspection of an unknown identity returns `undefined` and creates nothing. Reset
 
 Deletion is not erasure of every copy. Runs retain trigger/payload and conversation input, and checkpoints, effects, provider logs and backups have their own lifecycles. Removing a note clears its live body, but prior immutable snapshots and audit copies can still contain it.
 
-## Store and shutdown lifecycle
+## Repository and shutdown lifecycle
 
 Normal app migrations install conversation tables even when recall is disabled. `chamvi start --check` validates configuration and connects read-only: it creates no conversation identity and runs no migrations. Existing migration flags keep their ordinary behavior.
 
-Conversation policy lives in `conversations: { authorize, limits? }`; storage lives in `stores.conversations`. For an app, pass custom capabilities through `storeModule({ stores })`, or register the aggregate as `AppToken.STORES` in a replacement store module. Store adapters reuse `@chamvi/core/conversation/persistence` for canonical identity validation, hashing and recall selection. A custom store owns its schema, connection and shutdown lifecycle. All built-in TypeORM roles, including conversations, must use the same DataSource; mixing the relational conversation store with another backend is unsupported. With the built-in store module, an injected DataSource remains caller-owned.
+Conversation policy lives in `conversations: { authorize, limits? }`; storage lives in `repositories.conversations`. For an app, pass custom capabilities through `repositoryModule({ repositories })`, or register the aggregate as `AppToken.REPOSITORIES` in a replacement store module. Repository adapters reuse `@chamvi/core/conversation/persistence` for canonical identity validation, hashing and recall selection. A custom store owns its schema, connection and shutdown lifecycle. All built-in TypeORM roles, including conversations, must use the same DataSource; mixing the relational conversation store with another backend is unsupported. With the built-in store module, an injected DataSource remains caller-owned.
 
-The existing app drain waits for engine executions and conversation journal/reconciliation writes before closing its owned DataSource. With the built-in PostgreSQL stores, run and conversation records must share the same database. Their foreign keys enforce this relationship. Admission and conversation writes still use separate transactions; no cross-transaction atomicity is promised. Runs are created before conversation ownership is claimed, and restart reconciliation repairs terminal ownership safely.
+The existing app drain waits for engine executions and conversation journal/reconciliation writes before closing its owned DataSource. With the built-in PostgreSQL repositories, run and conversation records must share the same database. Their foreign keys enforce this relationship. Admission and conversation writes still use separate transactions; no cross-transaction atomicity is promised. Runs are created before conversation ownership is claimed, and restart reconciliation repairs terminal ownership safely.
 
 ## PostgreSQL records
 

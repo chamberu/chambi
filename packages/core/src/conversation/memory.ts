@@ -8,8 +8,8 @@
 import { isObject } from 'smob';
 import { systemClock } from '../clock/index.ts';
 import type { IClock } from '../clock/index.ts';
-import { InvalidRunStateError, ValidationError } from '../errors/index.ts';
-import { compareCodePoints, copy } from '../store/memory/helpers.ts';
+import { InvalidRunStateError, RepositoryNotFoundError, ValidationError } from '../errors/index.ts';
+import { compareCodePoints, copy } from '../repository/memory/helpers.ts';
 import { CONVERSATION_LIMITS_MAX, CONVERSATION_NOTES_MAX } from './constants.ts';
 import {
     assertConversationIdentity,
@@ -28,6 +28,7 @@ import {
 import { isExpired, isNoteActive } from './helpers.ts';
 import type {
     BeginTurnResult,
+    ConversationFindOptions,
     ConversationIdentity,
     ConversationItem,
     ConversationNote,
@@ -35,8 +36,8 @@ import type {
     ConversationNoteResult,
     ConversationScope,
     ConversationSnapshot,
-    IConversationStore,
-    MemoryConversationStoreOptions,
+    IConversationRepository,
+    MemoryConversationRepositoryOptions,
     ResolvedConversationLimits,
 } from './types.ts';
 
@@ -76,16 +77,16 @@ function ownerError(): InvalidRunStateError {
 }
 
 /**
- * In-memory IConversationStore. Methods never await between a check and the
+ * In-memory IConversationRepository. Methods never await between a check and the
  * matching write, which makes every operation atomic; values are structured
  * clones in and out, and every date and expiry comes from the IClock.
  */
-export class MemoryConversationStore implements IConversationStore {
+export class MemoryConversationRepository implements IConversationRepository {
     protected clock: IClock;
 
     protected records = new Map<string, ScopeRecord>();
 
-    constructor(options: MemoryConversationStoreOptions = {}) {
+    constructor(options: MemoryConversationRepositoryOptions = {}) {
         this.clock = options.clock ?? systemClock;
     }
 
@@ -93,7 +94,31 @@ export class MemoryConversationStore implements IConversationStore {
         return this.scopeOf(this.recordFor(identity));
     }
 
-    async get(identity: ConversationIdentity): Promise<ConversationScope | undefined> {
+    async findOneOrFail(identity: ConversationIdentity): Promise<ConversationScope> {
+        const result = await this.findOne(identity);
+        if (result === undefined) throw new RepositoryNotFoundError('conversations');
+        return result;
+    }
+
+    async findOneNoteOrFail(scope: ConversationScope, key: string): Promise<ConversationNote> {
+        const result = await this.findOneNote(scope, key);
+        if (result === undefined) throw new RepositoryNotFoundError('conversation notes');
+        return result;
+    }
+
+    async findItemsOrFail(scope: ConversationScope, query: ConversationFindOptions): Promise<{ data: ConversationItem[]; total: number }> {
+        const result = await this.findItems(scope, query);
+        if (result.data.length === 0) throw new RepositoryNotFoundError('conversation items');
+        return result;
+    }
+
+    async findNotesOrFail(scope: ConversationScope, query: ConversationFindOptions): Promise<{ data: ConversationNote[]; total: number }> {
+        const result = await this.findNotes(scope, query);
+        if (result.data.length === 0) throw new RepositoryNotFoundError('conversation notes');
+        return result;
+    }
+
+    async findOne(identity: ConversationIdentity): Promise<ConversationScope | undefined> {
         const record = this.records.get(identityId(identity));
         return record ? this.scopeOf(record) : undefined;
     }
@@ -231,9 +256,9 @@ export class MemoryConversationStore implements IConversationStore {
             .map((entry) => copy(entry.item));
     }
 
-    async listItems(
+    async findItems(
         scope: ConversationScope,
-        query: { limit: number; offset: number },
+        query: ConversationFindOptions,
     ): Promise<{ data: ConversationItem[]; total: number }> {
         assertConversationScope(scope);
         assertPage(query);
@@ -247,9 +272,9 @@ export class MemoryConversationStore implements IConversationStore {
         };
     }
 
-    async listNotes(
+    async findNotes(
         scope: ConversationScope,
-        query: { limit: number; offset: number },
+        query: ConversationFindOptions,
     ): Promise<{ data: ConversationNote[]; total: number }> {
         assertConversationScope(scope);
         assertPage(query);
@@ -265,7 +290,7 @@ export class MemoryConversationStore implements IConversationStore {
         };
     }
 
-    async getNote(scope: ConversationScope, key: string): Promise<ConversationNote | undefined> {
+    async findOneNote(scope: ConversationScope, key: string): Promise<ConversationNote | undefined> {
         assertConversationScope(scope);
         const record = this.records.get(scope.id);
         if (!record || record.generation !== scope.generation || typeof key !== 'string') return undefined;

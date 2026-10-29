@@ -1,6 +1,6 @@
 # @chamvi/core
 
-The public API of `@chamvi/core`, taken from `packages/core/src/index.ts`. Contract interfaces carry an `I` prefix (`IRunStore`, `IClock`, `IChannel`, `IAgentState`); data shapes are unprefixed types.
+The public API of `@chamvi/core`, taken from `packages/core/src/index.ts`. Contract interfaces carry an `I` prefix (`IRunRepository`, `IClock`, `IChannel`, `IAgentState`); data shapes are unprefixed types.
 
 ```ts
 import { Engine, defineAgent } from '@chamvi/core';
@@ -40,7 +40,7 @@ function requireToolPermission(opts?: RequireToolPermissionOptions): ToolPolicy;
 
 ```ts
 function consoleChannel(options?: ConsoleChannelOptions): IChannel;           // out only, name 'console'
-function normalizeEnvelope(raw: Record<string, unknown>): TriggerEnvelope;    // for stores: legacy source/thread read back as channel/address
+function normalizeEnvelope(raw: Record<string, unknown>): TriggerEnvelope;    // for repositories: legacy source/thread read back as channel/address
 function assertTriggerKey(name: string, value: string | undefined): void;     // 255 characters, no NUL
 ```
 
@@ -62,7 +62,7 @@ Subscription builders live in the channel packages: `http.on()` and `webhook.on(
 class Engine {
     constructor(opts: EngineOptions);
 
-    readonly stores: Stores;
+    readonly repositories: Repositories;
     readonly clock: IClock;
     getAgent(name: string): Agent | undefined;
     listAgents(): Agent[];
@@ -93,14 +93,14 @@ class Engine {
 
 | Method | Description | Guide |
 |---|---|---|
-| `stores`, `clock` | The store and clock the engine was built with (`clock` defaults to `systemClock`) | |
+| `repositories`, `clock` | The store and clock the engine was built with (`clock` defaults to `systemClock`) | |
 | `getAgent`, `listAgents` | One registered agent by name; all of them in registration order (a new array), read at call time | |
 | `getChannel`, `listChannels` | One registered channel by name; all of them in registration order | [Channels](/guide/channels) |
 | `putAgent` | Registers an agent or replaces the one of the same name in place (a new one goes last); refuses a subscription to an unknown channel like the constructor. Replacing cancels the agent's unsettled runs created before now. With a `revision` (a folder's content hash) the store's marker is brought to it under the lock `agents:<name>` instead, cancelling once across replicas and only when a marker existed (swept before and again after the marker write; no run of the agent starts on this engine meanwhile). Each cancelled run stores `agent_replaced` as its `error` ([Errors](/guide/errors#run-errors)), and the sweep emits `agents.cancelled`. With `reload: false` (a process that never reloads, a job) nothing is cancelled: a missing marker is written, a different one moved only while the agent has no unsettled run, else `InvalidRunStateError` and the agent stays unregistered. A marker at `formerRevision` (the same content hashed by an earlier algorithm) counts as equal and is moved to `revision` without a cancel. Resolves `unchanged` (no event) for the same agent object at the same revision | [Agent Folders](/guide/agent-folders) |
 | `checkAgent` | What `putAgent` refuses before any store access (a model that does not resolve, a subscription to an unknown channel), as `InvalidAgentDefinitionError`; registers and writes nothing | [Agent Folders](/guide/agent-folders) |
 | `removeAgent` | Unregisters the agent here first (no further dispatch), then under the same lock cancels its unsettled runs and deletes its marker (when it has one, unless this engine had it at another revision: a newer one registered elsewhere stays), or without a marker cancels the runs of an agent registered here; each cancelled run stores `agent_removed` ([Errors](/guide/errors#run-errors)) and the sweep emits `agents.cancelled`; resolves whether it was registered here | [Agent Folders](/guide/agent-folders) |
 | `agentRevision` | The revision an agent was registered at; `undefined` for a code agent | |
-| `dispatch` | Stores a `queued` run (and its attachments as artifacts); deduplicates by `idempotencyKey` under `<agent>:<channel>[:<kind>:<id>]` | [Channels](/guide/channels#idempotency-keys) |
+| `dispatch` | Repositories a `queued` run (and its attachments as artifacts); deduplicates by `idempotencyKey` under `<agent>:<channel>[:<kind>:<id>]` | [Channels](/guide/channels#idempotency-keys) |
 | `getRun` | Reads a run from the store | [Run Lifecycle](/guide/run-lifecycle) |
 | `on` | Subscribes to `run.updated`, `step.appended`, `run.delta`, `agents.changed` or `agents.cancelled` (`AgentRunsCancelled { name, reason: 'agent_replaced' \| 'agent_removed', revision?, runIds }`, the runs whose cancel went through: a run on another replica only gets a cancel request and may still complete); returns an unsubscribe function | [Run Lifecycle](/guide/run-lifecycle#watching-runs) |
 | `start` | Recovers, starts every channel (unless `{ channels: false }`; a throwing `start` stops those already started and rejects), starts polling and starts queued runs: only runs of an agent it holds, a folder agent only at the stored revision (the others stay `queued`) | [Recovery](/guide/recovery) |
@@ -134,13 +134,13 @@ The `RunStatus` enum, whose values `RunStatusLiteral` is built from:
 
 <<< ../../../core/src/run/constants.ts{ts}
 
-## Stores
+## Repositories
 
 ```ts
-function createMemoryStores(options?: MemoryStoresOptions): Stores & { conversations: IConversationStore };
+function createMemoryRepositories(options?: MemoryRepositoriesOptions): Repositories & { conversations: IConversationRepository };
 ```
 
-The `Stores` aggregate and its capability interfaces (`IRunStore`, `IStepStore`, `ICheckpointStore`, `IIdempotencyStore`, `ILockStore`, `IEffectStore`, `IStateStore`, `IArtifactStore`, `IAgentRevisionStore`) are listed on the [Store Contract](/stores/) page.
+The `Repositories` aggregate and its capability interfaces (`IRunRepository`, `IStepRepository`, `ICheckpointRepository`, `IIdempotencyRepository`, `ILockRepository`, `IEffectRepository`, `IStateRepository`, `IArtifactRepository`, `IAgentRevisionRepository`) are listed on the [Repository Contract](/repositories/) page.
 
 ## Artifacts
 
@@ -213,7 +213,7 @@ function effectMarker(effectKey: string): string; // '<!-- chamvi:effect=<key> -
 function wrapToolsForRun(
     tools: ToolSet,
     ctx: ToolContext,
-    store: IEffectStore,
+    store: IEffectRepository,
     options?: { allow?: (toolName: string) => boolean; hooks?: AgentHooks },
 ): ToolSet;
 
@@ -246,7 +246,7 @@ const APPROVAL_OPTIONS_DETAIL_MAX_LENGTH: 100_000; // all details of one request
 function createAgentState<S extends StateSchema = StateSchema>(
     agent: string,
     schema: S | undefined,
-    store: IStateStore,
+    store: IStateRepository,
 ): IAgentState<S>;
 
 function createStateTools<S extends StateSchema>(schema: S): ToolSet; // the tools read context.state

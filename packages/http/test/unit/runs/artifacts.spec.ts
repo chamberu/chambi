@@ -46,7 +46,7 @@ describe('GET /runs/:id/artifacts', () => {
         const response = await call(ctx.app, 'GET', `/runs/${runId}/artifacts`, { token: READER_TOKEN });
         expect(response.status).toBe(200);
         const { data } = await response.json() as { data: Array<Record<string, unknown>> };
-        const stored = await ctx.stores.artifacts.listArtifacts(runId);
+        const stored = await ctx.repositories.artifacts.find(runId);
         expect(data).toEqual(stored.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() })));
         expect(data).toHaveLength(2);
         // in the order the client sent them
@@ -78,7 +78,7 @@ describe('GET /runs/:id/artifacts/:artifactId', () => {
         const ctx = createRunTestApp();
         const bytes = new Uint8Array([0, 1, 2, 250, 255]);
         const runId = await startWith(ctx, [{ mediaType: 'image/png', data: b64(bytes) }]);
-        const [artifact] = await ctx.stores.artifacts.listArtifacts(runId);
+        const [artifact] = await ctx.repositories.artifacts.find(runId);
 
         const response = await call(ctx.app, 'GET', `/runs/${runId}/artifacts/${artifact!.id}`, { token: READER_TOKEN });
         expect(response.status).toBe(200);
@@ -97,7 +97,7 @@ describe('GET /runs/:id/artifacts/:artifactId', () => {
             filename: 'résumé "v1" (final).txt',
             data: b64('x'),
         }]);
-        const [artifact] = await ctx.stores.artifacts.listArtifacts(runId);
+        const [artifact] = await ctx.repositories.artifacts.find(runId);
         const response = await call(ctx.app, 'GET', `/runs/${runId}/artifacts/${artifact!.id}`, { token: ADMIN_TOKEN });
         expect(response.headers.get('content-disposition')).toBe(
             'attachment; filename="r_sum_ _v1_ (final).txt"; filename*=UTF-8\'\'r%C3%A9sum%C3%A9%20%22v1%22%20%28final%29.txt',
@@ -116,7 +116,7 @@ describe('GET /runs/:id/artifacts/:artifactId', () => {
         const ctx = createRunTestApp();
         const own = await startWith(ctx, []);
         const other = await startWith(ctx, [{ mediaType: 'text/plain', data: b64('secret') }], 'gate');
-        const [artifact] = await ctx.stores.artifacts.listArtifacts(other);
+        const [artifact] = await ctx.repositories.artifacts.find(other);
         const response = await call(ctx.app, 'GET', `/runs/${own}/artifacts/${artifact!.id}`, { token: tokenFor('agent:echo:run') });
         expect(response.status).toBe(404);
         expect(await response.json()).toMatchObject({ code: 'artifact_not_found' });
@@ -125,7 +125,7 @@ describe('GET /runs/:id/artifacts/:artifactId', () => {
     it('follows the run read rule before it looks up the artifact', async () => {
         const ctx = createRunTestApp();
         const runId = await startWith(ctx, [{ mediaType: 'text/plain', data: b64('x') }]);
-        const [artifact] = await ctx.stores.artifacts.listArtifacts(runId);
+        const [artifact] = await ctx.repositories.artifacts.find(runId);
         const path = `/runs/${runId}/artifacts/${artifact!.id}`;
         expect((await call(ctx.app, 'GET', path)).status).toBe(401);
         expect((await call(ctx.app, 'GET', `/runs/nope/artifacts/${artifact!.id}`, { token: tokenFor() })).status).toBe(404);

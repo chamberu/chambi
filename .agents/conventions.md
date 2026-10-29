@@ -12,7 +12,7 @@
 | release-please | One linked version for every package, one release and changelog (`linked-versions`) |
 | Dependabot | Daily npm + GitHub Actions updates, grouped by prod/dev and major/minor+patch |
 | EditorConfig | Whitespace rules shared with the editor |
-| unplugin-swc | Compiles the store-typeorm entities' legacy decorators in tsdown and Vitest; the root `tsconfig.build.json` sets `experimentalDecorators: true` |
+| unplugin-swc | Compiles the store-db entities' legacy decorators in tsdown and Vitest; the root `tsconfig.build.json` sets `experimentalDecorators: true` |
 
 The `@tada5hi/*` config packages are the source of truth for lint, TS and commit rules; the local config files are thin wrappers. Prefer changing the shared package over adding a local override, unless the deviation is chamvi-specific.
 
@@ -47,13 +47,14 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 - **The package entry composes folder barrels.** `src/index.ts` is `export * from './<folder>/index.ts'` per folder. Inside a package, import the file you need (`../errors/index.ts`, `../state/types.ts`), not `src/index.ts`.
 - **Feature package modules.** An app module lives in its feature package's `src/module/`, published as the `/module` subpath (`@chamvi/github/module`, ...): the only folder importing `@chamvi/app`, which is an optional peer (`peerDependenciesMeta`) plus a devDependency, and stays external in `dist/module.mjs` (one `AppToken` set per process). The main entry and every chunk it loads stay app-free. A shared instance reaches tools through a context pair in the main entry (`provide<Name>Context(engine, value)`, `inject<Name>Context(ctx)`, core-only, in `src/context/`); the `ContextKey` stays internal, and the module provides in its `engineCreated` hook. `@chamvi/app` itself keeps only `/authup` (http cannot depend on app) and `/testing`.
 - **Dependency graph.** The `@chamvi/*` edges of `dependencies`, `devDependencies`, `optionalDependencies` and `peerDependencies` (optional or not) must stay acyclic: nx builds its project graph from them, and release-please's node-workspace plugin (with `updatePeerDependencies`) throws on a cycle, which aborts the release run for every package. An `nx.implicitDependencies` exclusion only hides an edge from nx, so it is no fix. Break a cycle in the package.json files instead (a structural type in place of a type import, as `@chamvi/test-kit` does for `IWorkspace`; a variable-specifier import of a package that is in no dependency field, as `@chamvi/sandbox/module` does for its providers). `packages/app/test/unit/graph.spec.ts` checks the graph release-please builds.
-- **Test helpers are a package.** Helpers other packages test with (`ControllableClock`, `describeStoreContract`) live in `@chamvi/test-kit`, which depends on `@chamvi/core`; core never depends on the kit (that would be an nx cycle), so core's own tests use the private copy in `test/utils/clock.ts`.
+- **Test helpers are a package.** Helpers other packages test with (`ControllableClock`, `describeRepositoryContract`) live in `@chamvi/test-kit`, which depends on `@chamvi/core`; core never depends on the kit (that would be an nx cycle), so core's own tests use the private copy in `test/utils/clock.ts`.
 
 ## Naming
 
-- **`interface` is for behavior contracts and always carries the `I` prefix**: `IRunStore`, `IClock`, `IChannel`, `IAgentState`. A class implements it (`MemoryRunStore implements IRunStore`), or a factory returns it.
-- **Data shapes are `type` aliases without a prefix**: `Run`, `Step`, `TriggerEnvelope`, `EngineOptions`, `ApprovalAnswer`, `Stores`.
+- **`interface` is for behavior contracts and always carries the `I` prefix**: `IRunRepository`, `IClock`, `IChannel`, `IAgentState`. A class implements it (`MemoryRunRepository implements IRunRepository`), or a factory returns it.
+- **Data shapes are `type` aliases without a prefix**: `Run`, `Step`, `TriggerEnvelope`, `EngineOptions`, `ApprovalAnswer`, `Repositories`.
 - Files are kebab-case.
+- Persistence capabilities are repositories (`IRunRepository`, `MemoryRunRepository`); the database backend remains a store. Use concise role-local methods (`insert`, `save`, `findOne`, `find`), preserving domain operations such as `claim` and `beginTurn`. Query `OrFail` variants reject missing records or empty selected pages, never present falsy values.
 
 ## Helpers and Dependencies
 

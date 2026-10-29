@@ -14,7 +14,7 @@ import {
 } from 'vitest';
 import {
     Engine,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
 import type { RunJobResult } from '@chamvi/channel-cron';
@@ -38,7 +38,7 @@ function hangingModel() {
 
 function setup() {
     const clock = new ControllableClock(T);
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const agent = defineAgent({
         name: 'sweep',
         model: hangingModel(),
@@ -46,14 +46,14 @@ function setup() {
         channels: [cron.on('*/5 * * * *')],
     });
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [agent],
         channels: [cronChannel()],
         clock,
     });
     return {
         clock,
-        stores: store,
+        repositories: store,
         agent,
         engine,
     };
@@ -74,7 +74,7 @@ async function abortWhileRunning(ctx: ReturnType<typeof setup>) {
     });
 
     await vi.waitFor(async () => {
-        const { data } = await ctx.stores.runs.listRuns({ agent: 'sweep' });
+        const { data } = await ctx.repositories.runs.find({ agent: 'sweep' });
         expect(data[0]?.status).toBe('running');
     });
     controller.abort();
@@ -93,7 +93,7 @@ describe('runJob with a signal', () => {
         const result = await abortWhileRunning(ctx);
 
         expect(result).toMatchObject({ status: 'interrupted', exitCode: 0 });
-        const run = await ctx.stores.runs.getRun(result.runId as string);
+        const run = await ctx.repositories.runs.findOne(result.runId as string);
         expect(run?.status).toBe('interrupted');
     });
 
@@ -111,7 +111,7 @@ describe('runJob with a signal', () => {
 
     it('fires nothing and never starts the engine for an aborted signal', async () => {
         const ctx = setup();
-        const listRuns = vi.spyOn(ctx.stores.runs, 'listRuns');
+        const listRuns = vi.spyOn(ctx.repositories.runs, 'find');
         const start = vi.spyOn(ctx.engine, 'start');
         const controller = new AbortController();
         controller.abort();
@@ -126,7 +126,7 @@ describe('runJob with a signal', () => {
         expect(start).not.toHaveBeenCalled();
         expect(listRuns).not.toHaveBeenCalled();
         listRuns.mockRestore();
-        const { total } = await ctx.stores.runs.listRuns({});
+        const { total } = await ctx.repositories.runs.find({});
         expect(total).toBe(0);
     });
 

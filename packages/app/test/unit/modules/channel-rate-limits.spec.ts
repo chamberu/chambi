@@ -20,9 +20,9 @@ import {
     configModule,
     engineModule,
     httpModule,
+    repositoryModule,
     schedulerModule,
     staticTokensModule,
-    storeModule,
 } from '@chamvi/app';
 import type { ChannelRateLimitOptions } from '@chamvi/http';
 import { TOKEN, TOKENS } from '../../utils/app.ts';
@@ -57,7 +57,7 @@ describe('httpModule channel policies', () => {
             })],
             modules: [
                 configModule({ clock, logger: createRecordingLogger(clock) }),
-                storeModule(),
+                repositoryModule(),
                 staticTokensModule(),
                 engineModule(),
                 schedulerModule(),

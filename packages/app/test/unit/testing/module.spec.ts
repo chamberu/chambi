@@ -19,7 +19,7 @@ import {
     ModuleName,
     configModule,
     engineModule,
-    storeModule,
+    repositoryModule,
 } from '@chamvi/app';
 import type { AppMode, IContainer, IModule } from '@chamvi/app';
 import { buildModuleHarness, createModuleHarness } from '@chamvi/app/testing';
@@ -47,7 +47,7 @@ function modules(extra: IModule[] = []): IModule[] {
     const clock = new ControllableClock(new Date('2026-10-22T00:00:00Z'));
     return [
         configModule({ clock, logger: createRecordingLogger(clock) }),
-        storeModule(),
+        repositoryModule(),
         engineModule(),
         ...extra,
     ];

@@ -20,6 +20,6 @@ export * from './model/index.ts';
 export * from './permission/index.ts';
 export * from './run/index.ts';
 export * from './state/index.ts';
-export * from './store/index.ts';
+export * from './repository/index.ts';
 export * from './tool/index.ts';
 export * from './trigger/index.ts';

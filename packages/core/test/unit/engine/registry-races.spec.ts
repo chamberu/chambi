@@ -7,10 +7,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { Engine, defineAgent } from '@chamvi/core';
-import type { EngineOptions, Stores  } from '@chamvi/core';
+import type { EngineOptions, Repositories  } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
-import { MemoryAgentRevisionStore, createMemoryStores } from '../../../src/store/index.ts';
+import { MemoryAgentRevisionRepository, createMemoryRepositories } from '../../../src/repository/index.ts';
 
 const answers = (text: string) => Array.from({ length: 5 }, () => ({ parts: [{ type: 'text' as const, text }] }));
 const agent = (text: string) => defineAgent({
@@ -20,19 +20,19 @@ const agent = (text: string) => defineAgent({
 });
 
 /** Holds the next marker write or delete at a gate until released. */
-class GatedStore extends MemoryAgentRevisionStore {
+class GatedRepository extends MemoryAgentRevisionRepository {
     gate?: Promise<void>;
 
     entered?: () => void;
 
-    override async setAgentRevision(...args: Parameters<MemoryAgentRevisionStore['setAgentRevision']>) {
+    override async save(...args: Parameters<MemoryAgentRevisionRepository['save']>) {
         await this.pass();
-        return super.setAgentRevision(...args);
+        return super.save(...args);
     }
 
-    override async deleteAgentRevision(...args: Parameters<MemoryAgentRevisionStore['deleteAgentRevision']>) {
+    override async delete(...args: Parameters<MemoryAgentRevisionRepository['delete']>) {
         await this.pass();
-        return super.deleteAgentRevision(...args);
+        return super.delete(...args);
     }
 
     arm(): Promise<void> {
@@ -56,9 +56,9 @@ class GatedStore extends MemoryAgentRevisionStore {
     }
 }
 
-function createEngine(store: Stores, clock: ControllableClock, extra: Partial<EngineOptions> = {}): Engine {
+function createEngine(store: Repositories, clock: ControllableClock, extra: Partial<EngineOptions> = {}): Engine {
     return new Engine({
-        stores: store,
+        repositories: store,
         clock,
         agents: [],
         onError: () => {},
@@ -76,7 +76,7 @@ const dispatch = (engine: Engine) => engine.dispatch({
 describe('registry races', () => {
     it('a run dispatched while putAgent replaces never executes on the old code', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = { ...createMemoryStores({ clock }), agentRevisions: new GatedStore() };
+        const store = { ...createMemoryRepositories({ clock }), agentRevisions: new GatedRepository() };
         const engine = createEngine(store, clock);
         await engine.putAgent(agent('old code'), { revision: 'h1' });
         await engine.start();
@@ -92,14 +92,14 @@ describe('registry races', () => {
         clock.advance(60_000);
         await engine.idle();
 
-        const run = await store.runs.getRun(runId);
+        const run = await store.runs.findOne(runId);
         expect(run?.output).not.toBe('old code');
         engine.stop();
     });
 
     it('a queued run created while the marker moves is kept and runs on the new code', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = { ...createMemoryStores({ clock }), agentRevisions: new GatedStore() };
+        const store = { ...createMemoryRepositories({ clock }), agentRevisions: new GatedRepository() };
         const a = createEngine(store, clock, { owner: 'a' });
         const b = createEngine(store, clock, { owner: 'b' });
         await a.putAgent(agent('old code'), { revision: 'h1' });
@@ -112,18 +112,18 @@ describe('registry races', () => {
         const { runId } = await dispatch(b);
         store.agentRevisions.open();
         await replacing;
-        expect((await store.runs.getRun(runId))?.status).toBe('queued');
+        expect((await store.runs.findOne(runId))?.status).toBe('queued');
 
         await b.putAgent(agent('new code'), { revision: 'h2' });
         await b.start();
         await b.idle();
-        expect((await store.runs.getRun(runId))?.output).toBe('new code');
+        expect((await store.runs.findOne(runId))?.output).toBe('new code');
         b.stop();
     });
 
     it('a run dispatched on a lagging replica between two removals is cancelled', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = createMemoryStores({ clock });
+        const store = createMemoryRepositories({ clock });
         const a = createEngine(store, clock, { owner: 'a' });
         const b = createEngine(store, clock, { owner: 'b' });
         await a.putAgent(agent('v1'), { revision: 'h1' });
@@ -133,12 +133,12 @@ describe('registry races', () => {
         const { runId } = await dispatch(b);
         await b.removeAgent('triage');
 
-        expect((await store.runs.getRun(runId))?.status).toBe('cancelled');
+        expect((await store.runs.findOne(runId))?.status).toBe('cancelled');
     });
 
     it('a dispatch while removeAgent cancels is refused', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = { ...createMemoryStores({ clock }), agentRevisions: new GatedStore() };
+        const store = { ...createMemoryRepositories({ clock }), agentRevisions: new GatedRepository() };
         const engine = createEngine(store, clock);
         await engine.putAgent(agent('v1'), { revision: 'h1' });
 
@@ -153,7 +153,7 @@ describe('registry races', () => {
 
     it('a removal at an older revision leaves a newer marker and its runs alone', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = createMemoryStores({ clock });
+        const store = createMemoryRepositories({ clock });
         const a = createEngine(store, clock, { owner: 'a' });
         const b = createEngine(store, clock, { owner: 'b' });
         await a.putAgent(agent('v1'), { revision: 'h1' });
@@ -164,7 +164,7 @@ describe('registry races', () => {
 
         await a.removeAgent('triage');
 
-        expect((await store.agentRevisions.getAgentRevision('triage'))?.hash).toBe('h2');
-        expect((await store.runs.getRun(runId))?.status).toBe('queued');
+        expect((await store.agentRevisions.findOne('triage'))?.hash).toBe('h2');
+        expect((await store.runs.findOne(runId))?.status).toBe('queued');
     });
 });

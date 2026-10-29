@@ -27,7 +27,7 @@ import type {
     ToolContext,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { createMemoryStores } from '../../../src/store/index.ts';
+import { createMemoryRepositories } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
@@ -67,14 +67,14 @@ function setup(
     options: Partial<EngineOptions> = {},
 ) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const agent = defineAgent({
         name: 'ops',
         instructions: 'You operate.',
         ...definition,
     });
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [agent],
         clock,
         claimTtlMs: 30,
@@ -82,10 +82,10 @@ function setup(
         ...options,
     });
     engines.push(engine);
-    return { stores: store, engine };
+    return { repositories: store, engine };
 }
 
-async function runOn(engine: Engine, store: ReturnType<typeof createMemoryStores>) {
+async function runOn(engine: Engine, store: ReturnType<typeof createMemoryRepositories>) {
     await engine.start();
     const { runId } = await engine.dispatch({
         agent: 'ops',
@@ -95,8 +95,8 @@ async function runOn(engine: Engine, store: ReturnType<typeof createMemoryStores
     });
     await engine.idle();
     return {
-        run: await store.runs.getRun(runId),
-        steps: await store.steps.listSteps(runId),
+        run: await store.runs.findOne(runId),
+        steps: await store.steps.find(runId),
     };
 }
 
@@ -115,14 +115,14 @@ describe('resolveModel', () => {
         const own = mockModel([callTool('use'), text('done')]);
         const seen: unknown[] = [];
         const a = setup({ model: own, tools: { use: seeingTool(seen) } });
-        expect((await runOn(a.engine, a.stores)).run?.status).toBe('completed');
+        expect((await runOn(a.engine, a.repositories)).run?.status).toBe('completed');
         expect(seen).toHaveLength(1);
         expect(seen[0]).toBe(own);
 
         const fallback = mockModel([callTool('use'), text('done')]);
         const other: unknown[] = [];
         const b = setup({ tools: { use: seeingTool(other) } }, { model: fallback });
-        expect((await runOn(b.engine, b.stores)).run?.status).toBe('completed');
+        expect((await runOn(b.engine, b.repositories)).run?.status).toBe('completed');
         expect(other).toHaveLength(1);
         expect(other[0]).toBe(fallback);
     });
@@ -131,7 +131,7 @@ describe('resolveModel', () => {
         const delegate = mockModel([]);
         const models = recordingResolver({ 'router/cc/claude-opus-4-6': delegate });
         const seen: unknown[] = [];
-        const { engine, stores: store } = setup(
+        const { engine, repositories: store } = setup(
             { model: mockModel([callTool('use'), text('done')]), tools: { use: seeingTool(seen, 'router/cc/claude-opus-4-6') } },
             { models },
         );
@@ -150,13 +150,13 @@ describe('resolveModel', () => {
                 return 'ok';
             },
         });
-        const { engine, stores: store } = setup({ model: mockModel([callTool('use'), text('done')]), tools: { use } });
+        const { engine, repositories: store } = setup({ model: mockModel([callTool('use'), text('done')]), tools: { use } });
         expect((await runOn(engine, store)).run?.status).toBe('completed');
         expect(seen).toEqual([delegate]);
     });
 
     it('without a resolver a string ref is an InvalidAgentDefinitionError tool error', async () => {
-        const { engine, stores: store } = setup({
+        const { engine, repositories: store } = setup({
             model: mockModel([callTool('use'), text('done')]),
             tools: { use: seeingTool([], 'router/cc/claude-opus-4-6') },
         });
@@ -171,7 +171,7 @@ describe('resolveModel', () => {
 
     it('a ref the resolver refuses is an InvalidAgentDefinitionError tool error', async () => {
         const models = recordingResolver({});
-        const { engine, stores: store } = setup(
+        const { engine, repositories: store } = setup(
             { model: mockModel([callTool('use'), text('done')]), tools: { use: seeingTool([], 'router/unknown') } },
             { models },
         );
@@ -186,7 +186,7 @@ describe('resolveModel', () => {
         const first = mockModel([]);
         const second = mockModel([callTool('use'), text('done')]);
         const seen: unknown[] = [];
-        const { engine, stores: store } = setup({ model: first, tools: { use: seeingTool(seen) } });
+        const { engine, repositories: store } = setup({ model: first, tools: { use: seeingTool(seen) } });
         await engine.putAgent(defineAgent({
             name: 'ops',
             instructions: 'You operate.',
@@ -200,7 +200,7 @@ describe('resolveModel', () => {
     it('works in the tools factory', async () => {
         const own = mockModel([text('done')]);
         let seen: unknown;
-        const { engine, stores: store } = setup({
+        const { engine, repositories: store } = setup({
             model: own,
             tools: (ctx) => {
                 seen = resolveModel(ctx);
@@ -213,7 +213,7 @@ describe('resolveModel', () => {
 
     it('ToolContext keys unchanged', async () => {
         let keys: string[] = [];
-        const { engine, stores: store } = setup({
+        const { engine, repositories: store } = setup({
             model: mockModel([text('done')]),
             tools: (ctx) => {
                 keys = Object.keys(ctx).sort();

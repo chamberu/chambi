@@ -27,7 +27,7 @@ import type {
     IChannel,
     Run,
 } from '@chamvi/core';
-import { createMemoryStores } from '../../../src/store/index.ts';
+import { createMemoryRepositories } from '../../../src/repository/index.ts';
 
 const model = {} as LanguageModel;
 
@@ -71,7 +71,7 @@ afterEach(() => {
 
 function make(opts: Partial<EngineOptions> = {}) {
     const engine = new GatedEngine({
-        stores: createMemoryStores(),
+        repositories: createMemoryRepositories(),
         agents: [agent],
         onError: () => {},
         ...opts,

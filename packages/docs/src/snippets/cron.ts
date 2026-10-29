@@ -1,11 +1,11 @@
-import type { Agent, Stores } from '@chamvi/core';
+import type { Agent, Repositories } from '@chamvi/core';
 import { Engine } from '@chamvi/core';
 import { cronChannel, runJob } from '@chamvi/channel-cron';
 
-export async function serve(store: Stores, agents: Agent[]) {
+export async function serve(store: Repositories, agents: Agent[]) {
     // #region channel
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents,
         // every replica registers the same channel; a store lock fires each tick once
         channels: [cronChannel({ onError: (error, { agent, subscription }) => console.error('[cron]', agent, subscription, error) })],
@@ -23,11 +23,11 @@ export async function serve(store: Stores, agents: Agent[]) {
     return { engine };
 }
 
-export async function job(store: Stores, agent: Agent) {
+export async function job(store: Repositories, agent: Agent) {
     // #region job
     // a Kubernetes CronJob: fire the agent's cron subscription once and exit with its outcome
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [agent],
         // the engine must hold the channel; runJob starts it with start({ channels: false })
         channels: [cronChannel()],

@@ -10,15 +10,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     InvalidAgentDefinitionError,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
 import type {
     Agent,
     Engine,
+    Repositories,
     Run,
-    Stores,
 } from '@chamvi/core';
 import { createWorkspaceManager, injectSandboxContext, provideSandboxContext } from '@chamvi/sandbox';
 import type { ISandboxProvider, IWorkspaceManager } from '@chamvi/sandbox';
@@ -35,7 +35,7 @@ import {
     AppToken,
     configModule,
     engineModule,
-    storeModule,
+    repositoryModule,
 } from '@chamvi/app';
 import type { AppMode, ILifecycleHook, IModule } from '@chamvi/app';
 import { createModuleHarness } from '@chamvi/app/testing';
@@ -141,7 +141,7 @@ async function harnessWith(module: IModule, options: {
     mode?: AppMode;
     agents?: Agent[];
     events?: string[];
-    stores?: Stores;
+    repositories?: Repositories;
     clock?: ControllableClock;
 } = {}) {
     const harness = await createModuleHarness({
@@ -150,7 +150,7 @@ async function harnessWith(module: IModule, options: {
         agents: options.agents ?? [agent()],
         modules: [
             configModule({ logger: createRecordingLogger(), ...(options.clock && { clock: options.clock }) }),
-            storeModule(options.stores ? { stores: options.stores } : {}),
+            repositoryModule(options.repositories ? { repositories: options.repositories } : {}),
             engineModule(),
             module,
         ],
@@ -424,7 +424,7 @@ describe('sandboxModule', () => {
         expect(events).toEqual(['attach', 'drain', 'detach', 'close']);
     });
 
-    it('disposes the held workspaces after drained when the store is a memory stores', async () => {
+    it('disposes the held workspaces after drained when the store is in-memory repositories', async () => {
         // nothing resumes a run of a memory store after the restart
         const manager = fakeManager([]);
         await (await harnessWith(sandboxModule({ manager, env: {} }))).stop();
@@ -432,21 +432,21 @@ describe('sandboxModule', () => {
     });
 
     it('keeps the held workspaces after drained when the store persists', async () => {
-        const memory = createMemoryStores();
+        const memory = createMemoryRepositories();
         // a store of its own kind: the runs outlive the process
         const runs = new Proxy({}, {
             get: (_target, key) => {
                 const value: unknown = Reflect.get(memory.runs, key);
                 return typeof value === 'function' ? value.bind(memory.runs) : value;
             },
-        }) as Stores['runs'];
+        }) as Repositories['runs'];
         const store = { ...memory, runs };
         const manager = fakeManager([]);
-        await (await harnessWith(sandboxModule({ manager, env: {} }), { stores: store })).stop();
+        await (await harnessWith(sandboxModule({ manager, env: {} }), { repositories: store })).stop();
         expect(manager.closes).toEqual([{ dispose: false }]);
     });
 
-    it('a memory stores app disposes a live run\'s workspace on stop', async () => {
+    it('an app with memory repositories disposes a live run\'s workspace on stop', async () => {
         const root = await mkdtemp(join(tmpdir(), 'chamvi-sandbox-module-'));
         roots.push(root);
         const module = sandboxModule({
@@ -527,7 +527,7 @@ describe('sandboxModule', () => {
 
         const run = await engine.getRun(runId);
         expect(run?.status).toBe('completed');
-        const steps = await engine.stores.steps.listSteps(runId);
+        const steps = await engine.repositories.steps.find(runId);
         const created = steps.find((step) => step.kind === 'tool');
         expect(created?.output).toMatchObject({ root: '/workspace', reused: false });
 
@@ -592,7 +592,7 @@ describe('sandboxModule', () => {
             agents: [agent()],
             modules: [
                 configModule({ logger: createRecordingLogger() }),
-                storeModule(),
+                repositoryModule(),
                 engineModule(),
                 earlier,
                 sandboxModule({ manager: fakeManager([]), env: {} }),

@@ -15,14 +15,14 @@ import {
 import { jsonSchema } from 'ai';
 import { defineAgent, defineTool, memoryTools } from '@chamvi/core';
 import type { IChannel } from '@chamvi/core';
-import { STORE_ENTITIES, STORE_MIGRATIONS, TypeormConversationStore } from '@chamvi/store-typeorm';
+import { STORE_ENTITIES, STORE_MIGRATIONS, TypeormConversationRepository } from '@chamvi/store-db';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
     AppToken,
     configModule,
     createApp,
     engineModule,
-    storeModule,
+    repositoryModule,
 } from '@chamvi/app';
 import { buildModuleHarness } from '@chamvi/app/testing';
 import { TOKENS, deferred } from '../../utils/app.ts';
@@ -55,12 +55,14 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
         await dataSource.initialize();
         cleanup.push(() => dataSource.destroy());
         const clock = new ControllableClock();
-        const harness = buildModuleHarness({ modules: [configModule({ clock, logger: createRecordingLogger(clock) }), storeModule({ dataSource })] });
+        const harness = buildModuleHarness(
+            { modules: [configModule({ clock, logger: createRecordingLogger(clock) }), repositoryModule({ dataSource })] },
+        );
         harness.context.conversations = { authorize: () => true };
         cleanup.push(() => harness.stop());
         await harness.setup();
-        const conversations = harness.container.resolve(AppToken.STORES).conversations!;
-        expect(conversations).toBeInstanceOf(TypeormConversationStore);
+        const conversations = harness.container.resolve(AppToken.REPOSITORIES).conversations!;
+        expect(conversations).toBeInstanceOf(TypeormConversationRepository);
         await conversations.resolve(identity);
         expect(await dataSource.query('SELECT count(*)::int AS count FROM chamvi_conversations')).toEqual([{ count: 1 }]);
         await harness.stop();
@@ -130,7 +132,7 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
                     options: {},
                 }],
             })],
-            modules: [configModule({ logger: createRecordingLogger() }), storeModule(), engineModule(), {
+            modules: [configModule({ logger: createRecordingLogger() }), repositoryModule(), engineModule(), {
                 name: 'test:chat',
                 async setup(container) { container.registerMany(AppToken.CHANNELS, { useValue: chat }); },
             }],
@@ -151,14 +153,14 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
             text: 'remember my style',
         });
         await engine.idle();
-        const runs = harness.container.resolve(AppToken.STORES);
-        const conversations = harness.container.resolve(AppToken.STORES).conversations!;
-        expect((await runs.runs.getRun(result.runId))?.status).toBe('completed');
+        const runs = harness.container.resolve(AppToken.REPOSITORIES);
+        const conversations = harness.container.resolve(AppToken.REPOSITORIES).conversations!;
+        expect((await runs.runs.findOne(result.runId))?.status).toBe('completed');
         expect(sent).toEqual(['saved']);
-        const scope = (await conversations.get(identity))!;
-        expect((await conversations.getNote(scope, 'style'))?.text).toBe('short answers');
-        expect((await conversations.listItems(scope, { limit: 10, offset: 0 })).data.map((item) => item.text)).toEqual(['remember my style', 'saved']);
-        expect((await runs.checkpoints.latestCheckpoint(result.runId))?.conversation).toEqual({ scopeId: scope.id, generation: scope.generation });
+        const scope = (await conversations.findOne(identity))!;
+        expect((await conversations.findOneNote(scope, 'style'))?.text).toBe('short answers');
+        expect((await conversations.findItems(scope, { limit: 10, offset: 0 })).data.map((item) => item.text)).toEqual(['remember my style', 'saved']);
+        expect((await runs.checkpoints.findOne(result.runId))?.conversation).toEqual({ scopeId: scope.id, generation: scope.generation });
         const ds = harness.container.resolve(AppToken.DATA_SOURCE);
         expect(await ds.query('SELECT run_id FROM chamvi_conversation_operations')).toEqual([{ run_id: result.runId }]);
         expect(await conversations.activeRun(scope)).toBeUndefined();
@@ -182,7 +184,7 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
                     options: {},
                 }],
             })],
-            modules: [configModule({ clock, logger: createRecordingLogger(clock) }), storeModule(), engineModule(), {
+            modules: [configModule({ clock, logger: createRecordingLogger(clock) }), repositoryModule(), engineModule(), {
                 name: 'test:chat',
                 async setup(container) { container.registerMany(AppToken.CHANNELS, { useValue: chat }); },
             }],
@@ -191,7 +193,7 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
         cleanup.push(async () => { release.resolve(); await harness.stop(); });
         await harness.setup();
         const dataSource = harness.container.resolve(AppToken.DATA_SOURCE);
-        const conversations = harness.container.resolve(AppToken.STORES).conversations!;
+        const conversations = harness.container.resolve(AppToken.REPOSITORIES).conversations!;
         const endTurn = conversations.endTurn.bind(conversations);
         vi.spyOn(conversations, 'endTurn').mockImplementation(async (...args) => {
             entered.resolve();

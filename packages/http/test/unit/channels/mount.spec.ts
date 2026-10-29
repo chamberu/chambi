@@ -14,7 +14,7 @@ import {
     Engine,
     InvalidAgentDefinitionError,
     ValidationError,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
 import type { ChannelContext, ChannelRequest, IChannel } from '@chamvi/core';
@@ -55,7 +55,7 @@ function recordingChannel(name: string, seen: Seen[]): IChannel {
 function setup(channels: IChannel<any, any>[], mounted: IChannel<any, any>[] = channels, basePath?: string) {
     const clock = new ControllableClock(new Date(1_000_000));
     const engine = new Engine({
-        stores: createMemoryStores({ clock }),
+        repositories: createMemoryRepositories({ clock }),
         agents: [defineAgent({
             name: 'echo',
             model: textModel(),

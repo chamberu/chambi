@@ -15,7 +15,7 @@ import { z } from 'zod';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -35,7 +35,7 @@ afterEach(() => {
 
 function setup(script: MockResponse[], tools: AgentDefinition['tools']) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const provider = createFakeProvider({ clock });
     const manager = createWorkspaceManager({
         provider,
@@ -45,7 +45,7 @@ function setup(script: MockResponse[], tools: AgentDefinition['tools']) {
     const model = mockModel(script);
     const errors: unknown[] = [];
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [defineAgent({
             name: 'coder',
             instructions: 'You code.',
@@ -59,7 +59,7 @@ function setup(script: MockResponse[], tools: AgentDefinition['tools']) {
     manager.attach(engine);
     return {
         engine,
-        stores: store,
+        repositories: store,
         provider,
         manager,
         model,
@@ -67,7 +67,7 @@ function setup(script: MockResponse[], tools: AgentDefinition['tools']) {
     };
 }
 
-async function run(engine: Engine, store: ReturnType<typeof createMemoryStores>) {
+async function run(engine: Engine, store: ReturnType<typeof createMemoryRepositories>) {
     const { runId } = await engine.dispatch({
         agent: 'coder',
         trigger: 'http',
@@ -75,7 +75,7 @@ async function run(engine: Engine, store: ReturnType<typeof createMemoryStores>)
         payload: {},
     });
     await engine.idle();
-    return { runId, run: await store.runs.getRun(runId) };
+    return { runId, run: await store.runs.findOne(runId) };
 }
 
 const text = (t: string): MockResponse => ({ parts: [{ type: 'text', text: t }] });
@@ -91,7 +91,7 @@ describe('sandbox context', () => {
     it('the tools factory offers the injected manager\'s tools', async () => {
         const {
             engine,
-            stores: store,
+            repositories: store,
             provider,
             manager,
         } = setup([call('create_workspace'), text('done')], (ctx) => injectSandboxContext(ctx).tools());
@@ -114,7 +114,7 @@ describe('sandbox context', () => {
         });
         const {
             engine,
-            stores: store,
+            repositories: store,
             manager,
         } = setup([call('use'), text('done')], { use });
         provideSandboxContext(engine, manager);
@@ -127,7 +127,7 @@ describe('sandbox context', () => {
     it('without provide the run fails naming sandbox', async () => {
         const {
             engine,
-            stores: store,
+            repositories: store,
             model,
             errors,
         } = setup([text('done')], (ctx) => injectSandboxContext(ctx).tools());

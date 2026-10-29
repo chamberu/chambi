@@ -57,7 +57,7 @@ async function writeNote(kind: 'set' | 'remove', input: unknown, ctx: ToolContex
     const id = stableHash({ ...source, ordinal: 0 });
     if (kind === 'remove') {
         const content = { kind, key: input.key };
-        return bound.capability.store.applyNote(bound.binding.scope, {
+        return bound.capability.repository.applyNote(bound.binding.scope, {
             id,
             source,
             inputHash: stableHash(content),
@@ -80,7 +80,7 @@ async function writeNote(kind: 'set' | 'remove', input: unknown, ctx: ToolContex
         text: input.text,
         ...(expiresAt ? { expiresAt } : {}),
     };
-    return bound.capability.store.applyNote(bound.binding.scope, {
+    return bound.capability.repository.applyNote(bound.binding.scope, {
         id,
         source,
         inputHash: stableHash(content),
@@ -111,7 +111,7 @@ export function memoryTools(): ToolSet {
                 const page = { limit: input.limit === undefined ? 50 : input.limit, offset: input.offset === undefined ? 0 : input.offset };
                 assertPage(page);
                 if (page.limit > 50) throw new ValidationError('The memory list limit must be at most 50.');
-                const result = await bound.capability.store.listNotes(bound.binding.scope, page);
+                const result = await bound.capability.repository.findNotes(bound.binding.scope, page);
                 return {
                     data: result.data.map(({
                         key,
@@ -146,7 +146,7 @@ export function memoryTools(): ToolSet {
                 const bound = await boundConversation(context);
                 assertInput(input, ['key']);
                 assertKey(input.key);
-                return bound.capability.store.getNote(bound.binding.scope, input.key);
+                return bound.capability.repository.findOneNote(bound.binding.scope, input.key);
             },
         }),
         memory_set: defineTool({

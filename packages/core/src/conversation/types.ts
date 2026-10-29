@@ -183,20 +183,25 @@ export type BeginTurnResult = {
     kind: `${ConversationTurnKind.STALE}`;
 };
 
-export type MemoryConversationStoreOptions = {
+export type MemoryConversationRepositoryOptions = {
     /** Every date and expiry decision; default systemClock. */
     clock?: IClock;
 };
 
+export type ConversationFindOptions = { limit: number; offset: number };
+
 /**
- * Optional conversation persistence in the engine's Stores bundle.
- * Dates come from the store's IClock; values are copied in and out.
+ * Optional conversation persistence in the engine's Repositories bundle.
+ * Dates come from the repository's IClock; values are copied in and out.
+ * OrFail queries throw RepositoryNotFoundError on absence or an empty selected
+ * page, preserving validation, expiry and generation rules of the plain query.
  */
-export interface IConversationStore {
+export interface IConversationRepository {
     /** The identity's current scope, created at generation 0 when missing; never revives a deleted generation. */
     resolve(identity: ConversationIdentity): Promise<ConversationScope>;
     /** The identity's current scope, or undefined; read only. */
-    get(identity: ConversationIdentity): Promise<ConversationScope | undefined>;
+    findOne(identity: ConversationIdentity): Promise<ConversationScope | undefined>;
+    findOneOrFail(identity: ConversationIdentity): Promise<ConversationScope>;
     /** Admit only a nonterminal run; retries reuse its snapshot while it owns the turn. */
     beginTurn(
         scope: ConversationScope,
@@ -211,15 +216,24 @@ export interface IConversationStore {
     prepareEmit(scope: ConversationScope, item: ConversationItem): Promise<void>;
     confirmEmit(scope: ConversationScope, itemId: string): Promise<void>;
     pendingEmits(scope: ConversationScope, runId: string): Promise<ConversationItem[]>;
-    listItems(
+    findItems(
         scope: ConversationScope,
-        query: { limit: number; offset: number },
+        query: ConversationFindOptions,
     ): Promise<{ data: ConversationItem[]; total: number }>;
-    listNotes(
+    findItemsOrFail(
         scope: ConversationScope,
-        query: { limit: number; offset: number },
+        query: ConversationFindOptions,
+    ): Promise<{ data: ConversationItem[]; total: number }>;
+    findNotes(
+        scope: ConversationScope,
+        query: ConversationFindOptions,
     ): Promise<{ data: ConversationNote[]; total: number }>;
-    getNote(scope: ConversationScope, key: string): Promise<ConversationNote | undefined>;
+    findNotesOrFail(
+        scope: ConversationScope,
+        query: ConversationFindOptions,
+    ): Promise<{ data: ConversationNote[]; total: number }>;
+    findOneNote(scope: ConversationScope, key: string): Promise<ConversationNote | undefined>;
+    findOneNoteOrFail(scope: ConversationScope, key: string): Promise<ConversationNote>;
     applyNote(scope: ConversationScope, operation: ConversationNoteOperation): Promise<ConversationNoteResult>;
     reset(identity: ConversationIdentity, options: { keepNotes: boolean }): Promise<ConversationScope>;
     delete(identity: ConversationIdentity): Promise<void>;

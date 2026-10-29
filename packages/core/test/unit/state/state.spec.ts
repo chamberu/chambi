@@ -22,7 +22,7 @@ import { systemClock } from '../../../src/clock/index.ts';
 import type { RunContext } from '../../../src/run/types.ts';
 import { createAgentState } from '../../../src/state/module.ts';
 import { createStateTools } from '../../../src/state/tools.ts';
-import { createMemoryStores } from '../../../src/store/index.ts';
+import { createMemoryRepositories } from '../../../src/repository/index.ts';
 import { toolContextSchema } from '../../../src/tool/constants.ts';
 import type { ToolContext } from '../../../src/tool/types.ts';
 import { mockModel } from '../../utils/mock-model.ts';
@@ -34,7 +34,7 @@ const schema = {
 
 const callOpts = { toolCallId: 'c', messages: [] };
 
-function toolContext(store: ReturnType<typeof createMemoryStores>): ToolContext {
+function toolContext(store: ReturnType<typeof createMemoryRepositories>): ToolContext {
     const run: RunContext = {
         runId: 'r1',
         agent: 'alpha',
@@ -65,9 +65,9 @@ afterEach(() => {
     engines.length = 0;
 });
 
-async function runOnce(store: ReturnType<typeof createMemoryStores>, agent: Parameters<typeof defineAgent>[0]) {
+async function runOnce(store: ReturnType<typeof createMemoryRepositories>, agent: Parameters<typeof defineAgent>[0]) {
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [defineAgent(agent)],
         onError: () => {},
     });
@@ -85,7 +85,7 @@ async function runOnce(store: ReturnType<typeof createMemoryStores>, agent: Para
 
 describe('agent state', () => {
     it('kv roundtrip is scoped per agent', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const a = createAgentState('alpha', schema, store.state);
         const b = createAgentState('beta', schema, store.state);
 
@@ -99,13 +99,13 @@ describe('agent state', () => {
     });
 
     it('upsert validates against schema', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const state = createAgentState('alpha', schema, store.state);
         const items = state.collection('items');
 
         await expect(items.upsert('a', { title: 1 } as never)).rejects.toBeInstanceOf(ValidationError);
         expect(await items.list()).toEqual([]);
-        expect(await store.state.docList('alpha', 'items')).toEqual([]);
+        expect(await store.state.findDocuments('alpha', 'items')).toEqual([]);
 
         await items.upsert('a', { title: 'ok', done: false });
         expect(await items.list()).toEqual([{
@@ -116,7 +116,7 @@ describe('agent state', () => {
     });
 
     it('list filters by where', async () => {
-        const state = createAgentState('alpha', schema, createMemoryStores().state);
+        const state = createAgentState('alpha', schema, createMemoryRepositories().state);
         const items = state.collection('items');
         await items.upsert('a', { title: 'one', done: true });
         await items.upsert('b', { title: 'two', done: false });
@@ -133,7 +133,7 @@ describe('agent state', () => {
     });
 
     it('state tools are generated per collection with expected names', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const context = toolContext(store);
         const tools = createStateTools(schema);
 
@@ -165,7 +165,7 @@ describe('agent state', () => {
     });
 
     it('repeated writes within a run are not memoized away', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const context = toolContext(store);
         const tools = wrapToolsForRun(createStateTools(schema), context, store.effects);
         const a = { id: 'x', doc: { title: 'a', done: false } };
@@ -174,16 +174,16 @@ describe('agent state', () => {
         await call(tools, 'state_items_upsert', a, context);
         await call(tools, 'state_items_upsert', b, context);
         await call(tools, 'state_items_upsert', a, context);
-        expect(await store.state.docList('alpha', 'items')).toEqual([{ id: 'x', doc: a.doc }]);
+        expect(await store.state.findDocuments('alpha', 'items')).toEqual([{ id: 'x', doc: a.doc }]);
 
         await call(tools, 'state_items_remove', { id: 'x' }, context);
         await call(tools, 'state_items_upsert', b, context);
         await call(tools, 'state_items_remove', { id: 'x' }, context);
-        expect(await store.state.docList('alpha', 'items')).toEqual([]);
+        expect(await store.state.findDocuments('alpha', 'items')).toEqual([]);
     });
 
     it('model can upsert via generated tool', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const runId = await runOnce(store, {
             name: 'todo',
             instructions: 'x',
@@ -200,14 +200,14 @@ describe('agent state', () => {
             ]),
         });
 
-        expect((await store.runs.getRun(runId))?.status).toBe('completed');
-        expect(await store.state.docList('todo', 'items')).toEqual([
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
+        expect(await store.state.findDocuments('todo', 'items')).toEqual([
             { id: 'a', doc: { title: 'buy milk', done: false } },
         ]);
     });
 
     it('user tools win on a name clash', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         let userCalls = 0;
         const runId = await runOnce(store, {
             name: 'todo',
@@ -238,10 +238,10 @@ describe('agent state', () => {
             ]),
         });
 
-        expect((await store.runs.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
         expect(userCalls).toBe(1);
-        expect(await store.state.docList('todo', 'items')).toEqual([]);
+        expect(await store.state.findDocuments('todo', 'items')).toEqual([]);
         // the other generated tools are still there
-        expect(await store.state.docList('todo', 'notes')).toEqual([{ id: 'n', doc: { body: 'hi' } }]);
+        expect(await store.state.findDocuments('todo', 'notes')).toEqual([{ id: 'n', doc: { body: 'hi' } }]);
     });
 });

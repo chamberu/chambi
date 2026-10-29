@@ -10,7 +10,7 @@ import type { ChannelSubscription } from '@chamvi/core';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
 import {
@@ -27,7 +27,7 @@ const T_ISO = '2026-03-01T08:00:00.000Z';
 
 function setup(subscription: ChannelSubscription = cron.on('*/5 * * * *')) {
     const clock = new ControllableClock(T);
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const agent = defineAgent({
         name: 'sweep',
         model: textModel(),
@@ -35,7 +35,7 @@ function setup(subscription: ChannelSubscription = cron.on('*/5 * * * *')) {
         channels: [subscription],
     });
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [agent],
         channels: [cronChannel(), cronChannel({ name: 'cron-eu' })],
         clock,
@@ -48,23 +48,23 @@ function setup(subscription: ChannelSubscription = cron.on('*/5 * * * *')) {
     });
     return {
         clock,
-        stores: store,
+        repositories: store,
         agent,
         engine,
         fire,
     };
 }
 
-async function runOf(store: ReturnType<typeof createMemoryStores>, result: Awaited<ReturnType<typeof fireCronSubscription>>) {
+async function runOf(store: ReturnType<typeof createMemoryRepositories>, result: Awaited<ReturnType<typeof fireCronSubscription>>) {
     if (!result.dispatched) throw new Error('not dispatched');
-    const run = await store.runs.getRun(result.runId);
+    const run = await store.runs.findOne(result.runId);
     if (!run) throw new Error('run missing');
     return run;
 }
 
 describe('fireCronSubscription', () => {
     it('dispatches with the tick envelope', async () => {
-        const { stores: store, fire } = setup();
+        const { repositories: store, fire } = setup();
 
         const result = await fire();
 
@@ -82,7 +82,7 @@ describe('fireCronSubscription', () => {
     });
 
     it('uses the subscription payload when set', async () => {
-        const { stores: store, fire } = setup(cron.on('0 * * * *', { payload: { full: true } }));
+        const { repositories: store, fire } = setup(cron.on('0 * * * *', { payload: { full: true } }));
 
         const run = await runOf(store, await fire());
 
@@ -91,7 +91,7 @@ describe('fireCronSubscription', () => {
     });
 
     it('derives the concurrency key from the payload', async () => {
-        const { stores: store, fire } = setup({
+        const { repositories: store, fire } = setup({
             ...cron.on('0 * * * *', { payload: { repo: 'a/b' } }),
             concurrencyKey: (p) => (p as { repo: string }).repo,
         });
@@ -103,15 +103,15 @@ describe('fireCronSubscription', () => {
 
     it('allow sets no concurrency key', async () => {
         const allow = setup(cron.on('0 * * * *', { overlap: 'allow' }));
-        expect((await runOf(allow.stores, await allow.fire())).concurrencyKey).toBeUndefined();
+        expect((await runOf(allow.repositories, await allow.fire())).concurrencyKey).toBeUndefined();
 
         const queueOne = setup(cron.on('0 * * * *', { overlap: 'queue-one' }));
-        expect((await runOf(queueOne.stores, await queueOne.fire())).concurrencyKey).toBe('cron:0 * * * *');
+        expect((await runOf(queueOne.repositories, await queueOne.fire())).concurrencyKey).toBe('cron:0 * * * *');
     });
 
     it('dispatches through the subscription\'s channel', async () => {
         const eu = cronChannel({ name: 'cron-eu' }).on('0 * * * *');
-        const { stores: store, fire } = setup(eu);
+        const { repositories: store, fire } = setup(eu);
 
         const run = await runOf(store, await fire());
 
@@ -138,7 +138,7 @@ describe('fireCronSubscription', () => {
     });
 
     it('ignores the subscription\'s own idempotencyKey', async () => {
-        const { stores: store, fire } = setup({
+        const { repositories: store, fire } = setup({
             ...cron.on('*/5 * * * *', { overlap: 'allow' }),
             idempotencyKey: () => 'fixed',
         });
@@ -146,11 +146,11 @@ describe('fireCronSubscription', () => {
         await fire(T);
         await fire(new Date(T.getTime() + 300_000));
 
-        expect((await store.runs.listRuns({ agent: 'sweep' })).total).toBe(2);
+        expect((await store.runs.find({ agent: 'sweep' })).total).toBe(2);
     });
 
     it('a second firing of the same tick is deduplicated', async () => {
-        const { stores: store, fire } = setup(cron.on('*/5 * * * *', { overlap: 'allow' }));
+        const { repositories: store, fire } = setup(cron.on('*/5 * * * *', { overlap: 'allow' }));
 
         const first = await fire();
         const second = await fire();
@@ -160,7 +160,7 @@ describe('fireCronSubscription', () => {
             deduplicated: true,
             runId: first.dispatched ? first.runId : undefined,
         });
-        expect((await store.runs.listRuns({ agent: 'sweep' })).total).toBe(1);
+        expect((await store.runs.find({ agent: 'sweep' })).total).toBe(1);
     });
 });
 

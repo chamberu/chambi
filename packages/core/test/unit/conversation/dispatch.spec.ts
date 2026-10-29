@@ -15,8 +15,8 @@ import {
 } from 'vitest';
 import {
     Engine,
-    MemoryConversationStore,
-    createMemoryStores,
+    MemoryConversationRepository,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
 import { createChannelContext } from '../../../src/channel/helpers.ts';
@@ -41,11 +41,11 @@ const envelope = {
     payload: 'hello',
 };
 function setup(allowed: boolean | (() => Promise<boolean>) = true, optIn = true) {
-    const store = createMemoryStores();
-    const conversations = new MemoryConversationStore();
+    const store = createMemoryRepositories();
+    const conversations = new MemoryConversationRepository();
     const authorize = vi.fn<(access: ConversationAccess) => boolean | Promise<boolean>>(() => typeof allowed === 'function' ? allowed() : allowed);
     const engine = new Engine({
-        stores: { ...store, conversations },
+        repositories: { ...store, conversations },
         agents: [defineAgent({
             name: 'helper',
             model: {} as LanguageModel,
@@ -57,7 +57,7 @@ function setup(allowed: boolean | (() => Promise<boolean>) = true, optIn = true)
     });
     return {
         engine,
-        stores: store,
+        repositories: store,
         conversations,
         authorize,
         ctx: createChannelContext(engine, channel),
@@ -66,77 +66,77 @@ function setup(allowed: boolean | (() => Promise<boolean>) = true, optIn = true)
 
 describe('trusted conversation intake', () => {
     it('forged_dispatch_binding_dropped', async () => {
-        const { engine, stores: store } = setup();
+        const { engine, repositories: store } = setup();
         const result = await engine.dispatch({
             ...envelope,
             channel: 'chat',
             conversation: { scope: {}, text: 'forged' },
         } as never);
-        const run = await store.runs.getRun(result.runId);
+        const run = await store.runs.findOne(result.runId);
         expect(run).not.toHaveProperty('conversation');
         expect(run?.trigger).not.toHaveProperty('conversation');
     });
     it('channel_name_bound_by_identity', async () => {
-        const { ctx, stores: store } = setup();
+        const { ctx, repositories: store } = setup();
         const result = await ctx.dispatchConversation({ ...envelope, channel: 'forged' } as never, {
             ...target,
             channel: 'forged',
             agent: 'other',
         } as never);
-        const run = await store.runs.getRun(result.runId);
+        const run = await store.runs.findOne(result.runId);
         expect(run?.conversation?.scope.identity).toEqual(identity);
         expect(run?.trigger.channel).toBe('chat');
     });
     it('non_opted_agent_refused', async () => {
-        const { ctx, stores: store } = setup(true, false);
+        const { ctx, repositories: store } = setup(true, false);
         await expect(ctx.dispatchConversation(envelope, target)).rejects.toMatchObject({ code: 'validation_error' });
-        expect((await store.runs.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
     });
     it.each([false, async () => { throw new Error('policy unavailable'); }])('denied_before_conversation_write %s', async (allowed) => {
         const {
             ctx,
             conversations,
-            stores: store,
+            repositories: store,
         } = setup(allowed);
         const resolve = vi.spyOn(conversations, 'resolve');
         await expect(ctx.dispatchConversation(envelope, target)).rejects.toThrow();
         expect(resolve).not.toHaveBeenCalled();
-        expect((await store.runs.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
     });
     it('idempotency_preserves_first_binding_across_reset', async () => {
         const {
             ctx,
-            stores: store,
+            repositories: store,
             engine,
         } = setup();
         const first = await ctx.dispatchConversation({ ...envelope, idempotencyKey: 'event' }, target);
-        const before = await store.runs.getRun(first.runId);
+        const before = await store.runs.findOne(first.runId);
         await engine.resetConversation(identity);
         const second = await ctx.dispatchConversation({ ...envelope, idempotencyKey: 'event' }, { ...target, text: 'retry' });
         expect(second).toEqual({ runId: first.runId, deduplicated: true });
-        expect((await store.runs.getRun(first.runId))?.conversation).toEqual(before?.conversation);
+        expect((await store.runs.findOne(first.runId))?.conversation).toEqual(before?.conversation);
     });
     it('a missing run reservation cannot carry an old event across reset', async () => {
         const {
             ctx,
             engine,
-            stores: store,
+            repositories: store,
             conversations,
         } = setup();
-        vi.spyOn(store.runs, 'createRun').mockRejectedValueOnce(new Error('run write unavailable'));
+        vi.spyOn(store.runs, 'insert').mockRejectedValueOnce(new Error('run write unavailable'));
         await expect(ctx.dispatchConversation({ ...envelope, idempotencyKey: 'failed-event' }, target)).rejects.toThrow('run write unavailable');
         await engine.resetConversation(identity);
         await expect(ctx.dispatchConversation({ ...envelope, idempotencyKey: 'failed-event' }, target)).rejects.toMatchObject({ code: 'invalid_run_state' });
-        expect((await store.runs.listRuns({})).total).toBe(0);
-        expect((await conversations.listItems((await conversations.get(identity))!, { limit: 100, offset: 0 })).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
+        expect((await conversations.findItems((await conversations.findOne(identity))!, { limit: 100, offset: 0 })).total).toBe(0);
     });
     it('generation zero still heals a failed run write without duplicate admission', async () => {
-        const { ctx, stores: store } = setup();
-        vi.spyOn(store.runs, 'createRun').mockRejectedValueOnce(new Error('run write unavailable'));
+        const { ctx, repositories: store } = setup();
+        vi.spyOn(store.runs, 'insert').mockRejectedValueOnce(new Error('run write unavailable'));
         await expect(ctx.dispatchConversation({ ...envelope, idempotencyKey: 'retry' }, target)).rejects.toThrow();
         const retry = await ctx.dispatchConversation({ ...envelope, idempotencyKey: 'retry' }, target);
-        expect((await store.runs.getRun(retry.runId))?.conversation?.scope.generation).toBe(0);
-        expect((await store.runs.listRuns({})).total).toBe(1);
+        expect((await store.runs.findOne(retry.runId))?.conversation?.scope.generation).toBe(0);
+        expect((await store.runs.find({})).total).toBe(1);
     });
     it.each(['idempotencyKey', 'address', 'id'])('malformed trusted routing field %s is rejected before memory writes', async (field) => {
         const { ctx, conversations } = setup(); const resolve = vi.spyOn(conversations, 'resolve');
@@ -167,7 +167,7 @@ describe('trusted conversation intake', () => {
     it('normal_runs_no_memory_queries', async () => {
         const { engine, conversations } = setup();
         const resolve = vi.spyOn(conversations, 'resolve');
-        const get = vi.spyOn(conversations, 'get');
+        const get = vi.spyOn(conversations, 'findOne');
         await engine.dispatch({ ...envelope, channel: 'chat' });
         expect(resolve).not.toHaveBeenCalled();
         expect(get).not.toHaveBeenCalled();
@@ -175,12 +175,12 @@ describe('trusted conversation intake', () => {
     it('scope_clone_not_alias', async () => {
         const {
             ctx,
-            stores: store,
+            repositories: store,
             authorize,
         } = setup();
         authorize.mockImplementation((access) => { access.identity.chat = 'mutated'; return true; });
         const result = await ctx.dispatchConversation(envelope, target);
-        expect((await store.runs.getRun(result.runId))?.conversation?.scope.identity).toEqual(identity);
+        expect((await store.runs.findOne(result.runId))?.conversation?.scope.identity).toEqual(identity);
     });
     it('inspect_unknown_read_only', async () => {
         const { engine, conversations } = setup();
@@ -195,8 +195,8 @@ describe('trusted conversation intake', () => {
             conversation: true,
             instructions: 'x',
         });
-        expect(() => new Engine({ stores: createMemoryStores(), agents: [agent] })).toThrow();
-        const engine = new Engine({ stores: createMemoryStores(), agents: [] });
+        expect(() => new Engine({ repositories: createMemoryRepositories(), agents: [agent] })).toThrow();
+        const engine = new Engine({ repositories: createMemoryRepositories(), agents: [] });
         expect(() => engine.checkAgent(agent)).toThrow();
         await expect(engine.putAgent(agent)).rejects.toThrow();
     });

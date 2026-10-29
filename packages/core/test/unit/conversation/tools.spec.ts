@@ -13,8 +13,8 @@ import {
 } from 'vitest';
 import {
     Engine,
-    MemoryConversationStore,
-    createMemoryStores,
+    MemoryConversationRepository,
+    createMemoryRepositories,
     defineAgent,
     toolContextSchema,
 } from '@chamvi/core';
@@ -54,7 +54,7 @@ const envelope = {
         permissions: [],
     },
 };
-class InspectableConversationStore extends MemoryConversationStore {
+class InspectableConversationRepository extends MemoryConversationRepository {
     operationRecords() {
         return Array.from(this.records.values()).flatMap((record) => Array.from(record.operations.values()));
     }
@@ -85,14 +85,14 @@ function call(toolName: string, input: unknown, toolCallId = 'same'): MockRespon
 }
 function setup(options: {
     responses?: MockResponse[];
-    conversations?: MemoryConversationStore;
+    conversations?: MemoryConversationRepository;
     hooks?: AgentHooks;
     toolPolicy?: ToolPolicy;
     authorize?: (access: ConversationAccess) => boolean;
     factory?: (ctx: ToolContext) => ToolSet;
 } = {}) {
-    const store = createMemoryStores();
-    const conversations = options.conversations ?? new MemoryConversationStore();
+    const store = createMemoryRepositories();
+    const conversations = options.conversations ?? new MemoryConversationRepository();
     const model = mockModel([...(options.responses ?? []), { parts: [{ type: 'text', text: 'done' }] }]);
     let context: ToolContext;
     const channel = { name: 'chat' };
@@ -106,7 +106,7 @@ function setup(options: {
         },
     };
     const engine = new Engine({
-        stores: { ...store, conversations },
+        repositories: { ...store, conversations },
         agents: [defineAgent({
             name: 'helper',
             model,
@@ -123,7 +123,7 @@ function setup(options: {
     engines.push(engine);
     return {
         engine,
-        stores: store,
+        repositories: store,
         conversations,
         model,
         hookErrors,
@@ -136,7 +136,7 @@ async function run(s: ReturnType<typeof setup>, bound = true) {
     await s.engine.start();
     await s.engine.idle();
     expect(s.hookErrors).toEqual([]);
-    expect((await s.stores.runs.getRun(result.runId))?.status).toBe('completed');
+    expect((await s.repositories.runs.findOne(result.runId))?.status).toBe('completed');
     return result.runId;
 }
 
@@ -174,8 +174,8 @@ describe('scoped memory tools', () => {
             },
         });
         const runId = await run(s);
-        const scope = (await s.conversations.get(identity))!;
-        expect(await s.conversations.getNote(scope, 'preference')).toMatchObject({
+        const scope = (await s.conversations.findOne(identity))!;
+        expect(await s.conversations.findOneNote(scope, 'preference')).toMatchObject({
             text: 'original scope',
             source: {
                 runId,
@@ -183,7 +183,7 @@ describe('scoped memory tools', () => {
                 stepIndex: 0,
             },
         });
-        expect(await s.conversations.get({ ...identity, chat: 'other' })).toBeUndefined();
+        expect(await s.conversations.findOne({ ...identity, chat: 'other' })).toBeUndefined();
         expect(accesses.filter((access) => access.operation === 'notes')).toEqual([{
             agent: 'helper',
             operation: 'notes',
@@ -209,10 +209,10 @@ describe('scoped memory tools', () => {
             },
         });
         await run(s);
-        expect((await s.conversations.getNote((await s.conversations.get(identity))!, 'private'))?.text).toBe('saved');
+        expect((await s.conversations.findOneNote((await s.conversations.findOne(identity))!, 'private'))?.text).toBe('saved');
     });
     it('set_remove_replay_once and forgotten_body_absent_from_ledger', async () => {
-        const conversations = new InspectableConversationStore();
+        const conversations = new InspectableConversationRepository();
         const s = setup({
             conversations,
             responses: [call('memory_set', { key: 'private', text: 'secret body' }), call('memory_remove', { key: 'private' }, 'remove')],
@@ -234,14 +234,14 @@ describe('scoped memory tools', () => {
             },
         });
         await run(s);
-        expect(await s.conversations.getNote((await s.conversations.get(identity))!, 'private')).toBeUndefined();
+        expect(await s.conversations.findOneNote((await s.conversations.findOne(identity))!, 'private')).toBeUndefined();
         expect(conversations.operationRecords()).toHaveLength(2);
         expect(JSON.stringify(conversations.operationRecords())).not.toContain('secret body');
     });
     it('reused_call_id_later_step_is_new_operation', async () => {
         const s = setup({ responses: [call('memory_set', { key: 'preference', text: 'first' }), call('memory_set', { key: 'preference', text: 'second' })] });
         await run(s);
-        expect((await s.conversations.getNote((await s.conversations.get(identity))!, 'preference'))?.text).toBe('second');
+        expect((await s.conversations.findOneNote((await s.conversations.findOne(identity))!, 'preference'))?.text).toBe('second');
     });
     it('stale_generation_cannot_replay_note_result after operator reset', async () => {
         const s = setup({ responses: [call('memory_set', { key: 'private', text: 'saved' })] });
@@ -252,7 +252,7 @@ describe('scoped memory tools', () => {
         expect((await s.engine.inspectConversation(identity))?.notes.total).toBe(0);
     });
     it('notes_survive_restart, metadata list is bounded and get is scoped', async () => {
-        const conversations = new MemoryConversationStore();
+        const conversations = new MemoryConversationRepository();
         const writer = setup({ conversations, responses: [call('memory_set', { key: 'preference', text: 'saved preference' })] });
         await run(writer);
         await writer.engine.stop();
@@ -272,7 +272,7 @@ describe('scoped memory tools', () => {
     it('expired_note_not_recalled at the exact expiry', async () => {
         const clock = new ControllableClock();
         const s = setup({
-            conversations: new MemoryConversationStore({ clock }),
+            conversations: new MemoryConversationRepository({ clock }),
             responses: [call('memory_set', {
                 key: 'temporary',
                 text: 'expires',

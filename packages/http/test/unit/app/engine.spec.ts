@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
@@ -30,7 +30,7 @@ import { SseReader } from '../../utils/sse.ts';
 
 function setup() {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const agents = [
         defineAgent({
             name: 'echo',
@@ -47,7 +47,7 @@ function setup() {
     ];
     const hooks = webhookChannel({ auth: testAuth });
     const options = {
-        stores: store,
+        repositories: store,
         agents,
         clock,
         channels: [httpChannel(), hooks],
@@ -65,7 +65,7 @@ function setup() {
     return {
         app,
         engine,
-        stores: store,
+        repositories: store,
         clock,
         options,
     };

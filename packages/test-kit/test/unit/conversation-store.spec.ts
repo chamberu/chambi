@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { MemoryConversationStore } from '@chamvi/core';
-import { describeConversationStoreContract } from '@chamvi/test-kit';
+import { MemoryConversationRepository } from '@chamvi/core';
+import { describeConversationRepositoryContract } from '@chamvi/test-kit';
 
-describeConversationStoreContract((clock) => new MemoryConversationStore({ clock }));
+describeConversationRepositoryContract((clock) => new MemoryConversationRepository({ clock }));

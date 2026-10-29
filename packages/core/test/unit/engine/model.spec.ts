@@ -14,7 +14,7 @@ import {
 import { Engine, defineAgent } from '@chamvi/core';
 import type { IModelResolver, ModelRef } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { createMemoryStores } from '../../../src/store/index.ts';
+import { createMemoryRepositories } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
@@ -45,14 +45,14 @@ async function runAgent(options: {
     models?: IModelResolver
 }) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const agent = defineAgent({
         name: 'ops',
         instructions: 'You operate.',
         ...(options.model === undefined ? {} : { model: options.model }),
     });
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [agent],
         clock,
         claimTtlMs: 30,
@@ -70,8 +70,8 @@ async function runAgent(options: {
     });
     await engine.idle();
     return {
-        run: await store.runs.getRun(runId),
-        steps: await store.steps.listSteps(runId),
+        run: await store.runs.findOne(runId),
+        steps: await store.steps.find(runId),
     };
 }
 

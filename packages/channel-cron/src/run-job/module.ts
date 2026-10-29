@@ -38,7 +38,7 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
         drainTimeoutMs = 30_000,
         signal,
     } = opts;
-    const { clock, stores: store } = engine;
+    const { clock, repositories: store } = engine;
     const subscription = resolveCronSubscription(engine, agent, opts.subscription);
     // a stop that arrived before the job must not recover and execute the store's queued runs
     if (signal?.aborted) return { status: 'skipped', exitCode: 0 };

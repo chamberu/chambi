@@ -15,8 +15,8 @@ import {
 import { jsonSchema } from 'ai';
 import {
     Engine,
-    MemoryConversationStore,
-    createMemoryStores,
+    MemoryConversationRepository,
+    createMemoryRepositories,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -48,7 +48,7 @@ function setup(
     action: (context: ToolContext) => Promise<unknown> = async (ctx) => ctx.channels.findOneOrFail().emit({ body: 'actual reply' }),
     clock?: ControllableClock,
 ) {
-    const store = createMemoryStores({ clock }); const conversations = new MemoryConversationStore({ clock });
+    const store = createMemoryRepositories({ clock }); const conversations = new MemoryConversationRepository({ clock });
     const out = vi.fn<NonNullable<IChannel['out']>>(async () => {}); const other = vi.fn<NonNullable<IChannel['out']>>(async () => {});
     const channel = { name: 'chat', out }; const alternate = {
         name: 'other',
@@ -65,7 +65,7 @@ function setup(
     }, { parts: [{ type: 'text', text: 'model output is not a reply' }] }, { parts: [{ type: 'text', text: 'second result' }] }]);
     const errors: unknown[] = [];
     const engine = new Engine({
-        stores: { ...store, conversations },
+        repositories: { ...store, conversations },
         clock,
         agents: [defineAgent({
             name: 'helper',
@@ -81,7 +81,7 @@ function setup(
     engines.push(engine);
     return {
         engine,
-        stores: store,
+        repositories: store,
         conversations,
         model,
         out,
@@ -100,8 +100,8 @@ async function run(s: ReturnType<typeof setup>) {
     await s.engine.start(); await s.engine.idle(); return runId;
 }
 async function items(s: ReturnType<typeof setup>) {
-    const scope = (await s.conversations.get(identity))!;
-    return (await s.conversations.listItems(scope, { limit: 100, offset: 0 })).data;
+    const scope = (await s.conversations.findOne(identity))!;
+    return (await s.conversations.findItems(scope, { limit: 100, offset: 0 })).data;
 }
 
 describe('source emit journal', () => {
@@ -112,10 +112,10 @@ describe('source emit journal', () => {
             try { await handle.emit({ body: 'invalid key reply', key: '\ud800' }); } catch { rejected = true; }
             await handle.emit({ body: 'legitimate reply', key: '\ufffd' });
         });
-        const get = s.stores.effects.getEffect.bind(s.stores.effects); const put = s.stores.effects.putEffect.bind(s.stores.effects);
+        const get = s.repositories.effects.findOne.bind(s.repositories.effects); const put = s.repositories.effects.save.bind(s.repositories.effects);
         const wire = (key: string) => Buffer.from(key, 'utf8').toString('utf8');
-        vi.spyOn(s.stores.effects, 'getEffect').mockImplementation((key) => get(wire(key)));
-        vi.spyOn(s.stores.effects, 'putEffect').mockImplementation((key, value) => put(wire(key), value));
+        vi.spyOn(s.repositories.effects, 'findOne').mockImplementation((key) => get(wire(key)));
+        vi.spyOn(s.repositories.effects, 'save').mockImplementation((key, value) => put(wire(key), value));
         await run(s);
         expect(rejected).toBe(true);
         expect(s.out.mock.calls.map(([message]) => message.body)).toEqual(['legitimate reply']);
@@ -137,7 +137,7 @@ describe('source emit journal', () => {
 
         // Assert outside the SDK's tool-error handling as well as inside the action.
         const result = await run(s);
-        const steps = await s.stores.steps.listSteps(result);
+        const steps = await s.repositories.steps.find(result);
         const rejected = steps.some((step) => step.kind === 'tool' && step.error !== undefined);
         expect(rejected).toBe(false);
         expect(s.model.doStreamCalls).toHaveLength(2);
@@ -166,10 +166,10 @@ describe('source emit journal', () => {
         } finally {
             gate.resolve(); await draining;
         }
-        expect((await s.stores.runs.getRun(result.runId))?.status).toBe('interrupted');
+        expect((await s.repositories.runs.findOne(result.runId))?.status).toBe('interrupted');
         const pending = (await items(s)).find((item) => item.role === 'assistant')!;
         expect(pending.status).toBe('pending');
-        expect(await s.stores.effects.getEffect(pending.effectKey!)).toBeUndefined();
+        expect(await s.repositories.effects.findOne(pending.effectKey!)).toBeUndefined();
     });
     it('tool_emit_not_run_output_is_remembered and two new runs see prior reply', async () => {
         const s = setup(); await run(s);
@@ -180,7 +180,7 @@ describe('source emit journal', () => {
             address: 'source',
         }, { ...target, text: 'second' });
         await s.engine.idle();
-        expect((await s.stores.runs.getRun(second.runId))?.status).toBe('completed');
+        expect((await s.repositories.runs.findOne(second.runId))?.status).toBe('completed');
         expect((await items(s)).filter((i) => i.role === 'assistant')).toMatchObject([{ text: 'actual reply', status: 'sent' }]);
         const prompt = JSON.stringify(s.model.doStreamCalls[2]?.prompt);
         expect(prompt).toContain('actual reply'); expect(prompt).not.toContain('model output is not a reply');
@@ -201,7 +201,7 @@ describe('source emit journal', () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'second' }] }]);
         const channel = { name: 'chat' };
         const peer = new Engine({
-            stores: { ...first.stores, conversations: first.conversations },
+            repositories: { ...first.repositories, conversations: first.conversations },
             agents: [defineAgent({
                 name: 'helper',
                 model,
@@ -220,18 +220,18 @@ describe('source emit journal', () => {
             address: 'source',
         }, { ...target, text: 'second' });
         await peer.start(); await peer.idle();
-        expect((await first.stores.runs.getRun(second.runId))?.status).toBe('queued');
+        expect((await first.repositories.runs.findOne(second.runId))?.status).toBe('queued');
         expect(model.doStreamCalls).toHaveLength(0);
         gate.resolve(); await draining;
-        expect((await first.stores.runs.getRun(firstResult.runId))?.status).toBe('completed');
+        expect((await first.repositories.runs.findOne(firstResult.runId))?.status).toBe('completed');
         await peer.stop(); await peer.start(); await peer.idle();
-        expect((await first.stores.runs.getRun(second.runId))?.status).toBe('completed');
+        expect((await first.repositories.runs.findOne(second.runId))?.status).toBe('completed');
         expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain('actual reply');
     });
     it('approval_notification_not_recalled', async () => {
         const s = setup(async (ctx) => ctx.channels.findOneOrFail().approve({ title: 'continue?' }));
         const id = await run(s);
-        expect((await s.stores.runs.getRun(id))?.status).toBe('waiting');
+        expect((await s.repositories.runs.findOne(id))?.status).toBe('waiting');
         expect(s.out.mock.calls[0]?.[0].kind).toBe('approval');
         expect((await items(s)).filter((item) => item.role === 'assistant')).toHaveLength(0);
         await s.engine.cancel(id);
@@ -253,7 +253,7 @@ describe('source emit journal', () => {
     });
     it('effect_failure_after_send_stays_uncertain', async () => {
         const s = setup(); const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-        vi.spyOn(s.stores.effects, 'putEffect').mockRejectedValueOnce(new Error('effect write unavailable'));
+        vi.spyOn(s.repositories.effects, 'save').mockRejectedValueOnce(new Error('effect write unavailable'));
         await run(s); expect(s.out).toHaveBeenCalledTimes(1);
         expect((await items(s)).filter((i) => i.role === 'assistant')).toMatchObject([{ status: 'unknown' }]);
         expect(JSON.stringify(log.mock.calls)).not.toContain('actual reply');
@@ -300,7 +300,7 @@ describe('source emit journal', () => {
     });
     it('terminal_capture_failure_keeps_owner until lazy repair', async () => {
         const s = setup(); vi.spyOn(s.conversations, 'endTurn').mockRejectedValueOnce(new Error('release write unavailable'));
-        const id = await run(s); const scope = (await s.conversations.get(identity))!;
+        const id = await run(s); const scope = (await s.conversations.findOne(identity))!;
         expect(await s.conversations.activeRun(scope)).toBe(id);
         expect(s.errors).toHaveLength(1);
         await expect(s.engine.resetConversation(identity)).resolves.toHaveProperty('generation', 1);
@@ -312,7 +312,7 @@ describe('source emit journal', () => {
             payload: 'hello',
             address: 'source',
         }, target);
-        const scope = (await s.conversations.get(identity))!;
+        const scope = (await s.conversations.findOne(identity))!;
         const limits = {
             maxItems: 20,
             maxHistoryBytes: 32768,
@@ -332,7 +332,7 @@ describe('source emit journal', () => {
             target: { channel: 'chat', address: 'source' },
             createdAt: new Date(),
         });
-        await s.stores.effects.putEffect('effect', { channel: 'chat', address: 'source' });
+        await s.repositories.effects.save('effect', { channel: 'chat', address: 'source' });
         await s.engine.cancel(runId);
         expect(await s.conversations.activeRun(scope)).toBeUndefined();
         expect((await items(s)).find((i) => i.id === 'pending')?.status).toBe('sent');
@@ -350,7 +350,7 @@ describe('source emit journal', () => {
         }, target);
         await s.engine.start(); await vi.waitFor(() => expect(s.out).toHaveBeenCalledTimes(1));
         await s.engine.stop();
-        const scope = (await s.conversations.get(identity))!;
+        const scope = (await s.conversations.findOne(identity))!;
         expect(await s.conversations.activeRun(scope)).toBe(result.runId);
         gate.resolve(); await s.engine.idle();
         expect((await items(s)).filter((i) => i.role === 'assistant')).toMatchObject([{ status: 'sent' }]);

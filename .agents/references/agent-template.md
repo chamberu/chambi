@@ -38,8 +38,13 @@ Documentation follow-up in chamvi/agent-template: show `httpModule({ channelRate
 
 Reviewed local template commit 0374e2b. `.env.example:49-50` advertises CHAMVI_GIT_CREDENTIAL_MODE and dedicated Git tools; remove those lines when consuming #59. Keep token and author configuration. No source/test consumer found. Downstream follow-up is separate from the monorepo PR.
 
-## Capability stores compatibility check (2026-10-29)
+## Capability repositories compatibility check (2026-10-29)
 
-Checked current GitHub HEAD `a720d7a6caae5ad7ea8ab84ad92bf8478386d6e4` from a read-only source archive. Reviewed `src/index.ts`, `src/modules.ts`, `src/agents/example.ts`, app/example/entry/env tests and the README. Its `createApp({ model, agents, modules, models? })` use remains valid. No consumer supplies custom stores or conversation options, uses the removed store classes/aggregate interface, or reads the removed engine property/container tokens. Tests reading `config.store.url` and `config.store.migrate` use the unchanged environment configuration shape.
+Checked current GitHub HEAD `a720d7a6caae5ad7ea8ab84ad92bf8478386d6e4` from a read-only source archive. Reviewed `src/index.ts`, `src/modules.ts`, `src/agents/example.ts`, app/example/entry/env tests and the README. Its `createApp({ model, agents, modules, models? })` use remains valid. No consumer supplies custom repositories or conversation options, uses the removed store classes/aggregate interface, or reads the removed engine property/container tokens. Tests reading `config.store.url` and `config.store.migrate` use the unchanged environment configuration shape.
 
-The monorepo now exposes `Stores`, `createMemoryStores()`, `createTypeormStores()`, `Engine.stores`, `storeModule({ stores })` and `AppToken.STORES`; conversation storage is `stores.conversations`, with authorization/limits kept in conversation policy. No downstream source migration is required for the usages above. CLI, env, route, image, model-format and chart contracts are unchanged. No downstream repository was modified, tested, or published for this check.
+The monorepo now exposes `Repositories`, `createMemoryRepositories()`, `createTypeormRepositories()`, `Engine.repositories`, `repositoryModule({ repositories })` and `AppToken.REPOSITORIES`; conversation storage is `repositories.conversations`, with authorization/limits kept in conversation policy. No downstream source migration is required for the usages above. CLI, env, route, image, model-format and chart contracts are unchanged. No downstream repository was modified, tested, or published for this check.
+
+
+## Repository API and database package naming check (2026-10-29)
+
+Rechecked the current GitHub HEAD against the source archive above: unchanged. The renamed persistence API (`IRunRepository`, `Repositories`, `findOne`/`find` and their `OrFail` counterparts) and `@chamvi/store-db` package have no direct consumer in this downstream repository. Database environment settings and `config.store` remain unchanged; the app still supplies its backend by default. No downstream source migration is required for this refactor. This was a read-only source check, not a downstream build or test run.

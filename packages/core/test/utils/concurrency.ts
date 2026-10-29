@@ -8,7 +8,7 @@
 import { jsonSchema } from 'ai';
 import {
     Engine,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -20,7 +20,7 @@ export const flush = () => new Promise<void>((resolve) => { setImmediate(resolve
 
 export function concurrencyHarness() {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const engines: Engine[] = [];
     const releases = new Map<string, () => void>();
     const entered: string[] = [];
@@ -83,7 +83,7 @@ export function concurrencyHarness() {
     }
     function engine(agents: Agent[], options: Partial<EngineOptions> = {}) {
         const instance = new Engine({
-            stores: store,
+            repositories: store,
             clock,
             agents,
             channels: [{ name: 'input' }],
@@ -117,7 +117,7 @@ export function concurrencyHarness() {
     }
     return {
         clock,
-        stores: store,
+        repositories: store,
         engines,
         releases,
         entered,

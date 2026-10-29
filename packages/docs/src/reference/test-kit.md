@@ -1,6 +1,6 @@
 # @chamvi/test-kit
 
-Test helpers for chamvi: a controllable clock, the store and workspace contract suites, a git fixture and an in-process fake GitHub.
+Test helpers for chamvi: a controllable clock, the repository and workspace contract suites, a git fixture and an in-process fake GitHub.
 
 ```bash
 npm install --save-dev @chamvi/test-kit @chamvi/core vitest
@@ -8,19 +8,19 @@ npm install --save-dev @chamvi/test-kit @chamvi/core vitest
 
 `@chamvi/core` and `vitest` are peer dependencies; the workspace contract takes any `IWorkspace` of `@chamvi/sandbox`, typed structurally (`ContractWorkspace`), so the kit does not depend on `@chamvi/sandbox`.
 
-## describeStoreContract
+## describeRepositoryContract
 
 ```ts
-function describeStoreContract(
-    create: (clock: ControllableClock) => Stores | Promise<Stores>,
+function describeRepositoryContract(
+    create: (clock: ControllableClock) => Repositories | Promise<Repositories>,
 ): void;
 ```
 
-Registers the Vitest suite every `Stores` implementation must pass. `create` is called once per test with a fresh `ControllableClock` and must return a fresh, empty store that uses that clock for every expiry decision.
+Registers the Vitest suite every `Repositories` implementation must pass. `create` is called once per test with a fresh `ControllableClock` and must return a fresh, empty repositories that uses that clock for every expiry decision.
 
-<<< @/snippets/store-contract.ts#contract
+<<< @/snippets/repository-contract.ts#contract
 
-See [Writing a Store](/stores/writing-a-store) for what the suite covers.
+See [Writing a Repository](/repositories/writing-a-repository) for what the suite covers.
 
 ## describeWorkspaceContract
 

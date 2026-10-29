@@ -11,12 +11,12 @@ import {
     CONVERSATION_NOTE_KEY_MAX_LENGTH,
     CONVERSATION_NOTE_TEXT_MAX_BYTES,
     DEFAULT_CONVERSATION_LIMITS,
-    MemoryConversationStore,
+    MemoryConversationRepository,
 } from '@chamvi/core';
 import type {
     ConversationIdentity,
     ConversationNoteOperation,
-    IConversationStore,
+    IConversationRepository,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 
@@ -48,9 +48,9 @@ const setOp = (
     text,
 });
 
-describe('MemoryConversationStore', () => {
-    it('implements IConversationStore on the system clock by default', async () => {
-        const store: IConversationStore = new MemoryConversationStore();
+describe('MemoryConversationRepository', () => {
+    it('implements IConversationRepository on the system clock by default', async () => {
+        const store: IConversationRepository = new MemoryConversationRepository();
         const scope = await store.resolve(identity());
         const before = Date.now();
         const begun = await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
@@ -67,17 +67,17 @@ describe('MemoryConversationStore', () => {
     });
 
     it('releases its snapshot at terminal settlement and refuses a retained ended input', async () => {
-        const store = new MemoryConversationStore({ clock: new ControllableClock() });
+        const store = new MemoryConversationRepository({ clock: new ControllableClock() });
         const scope = await store.resolve(identity());
         await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
         await store.endTurn(scope, 'run-a', []);
         await expect(store.beginTurn(scope, 'run-a', 'hello', LIMITS)).rejects.toMatchObject({ code: 'invalid_run_state' });
-        expect((await store.listItems(scope, { limit: 10, offset: 0 })).total).toBe(1);
+        expect((await store.findItems(scope, { limit: 10, offset: 0 })).total).toBe(1);
         expect((await store.beginTurn(scope, 'run-b', 'next', LIMITS)).kind).toBe('ready');
     });
 
     it('refuses a malformed scope or run id before any state change', async () => {
-        const store = new MemoryConversationStore({ clock: new ControllableClock() });
+        const store = new MemoryConversationRepository({ clock: new ControllableClock() });
         const scope = await store.resolve(identity());
         await expect(store.beginTurn({ ...scope, id: 'nope' }, 'run-a', 'hi', LIMITS))
             .rejects.toMatchObject({ code: 'validation_error' });
@@ -85,7 +85,7 @@ describe('MemoryConversationStore', () => {
             .rejects.toMatchObject({ code: 'validation_error' });
         await expect(store.beginTurn(scope, '', 'hi', LIMITS)).rejects.toMatchObject({ code: 'validation_error' });
         await expect(store.beginTurn(scope, 'run-a', '', LIMITS)).rejects.toMatchObject({ code: 'validation_error' });
-        expect((await store.listItems(scope, { limit: 10, offset: 0 })).total).toBe(0);
+        expect((await store.findItems(scope, { limit: 10, offset: 0 })).total).toBe(0);
         // a scope of an identity never resolved here is stale
         const other = { ...scope, id: 'f'.repeat(64) };
         expect(await store.beginTurn(other, 'run-a', 'hi', LIMITS)).toEqual({ kind: 'stale' });
@@ -94,7 +94,7 @@ describe('MemoryConversationStore', () => {
     });
 
     it('validates a note operation of the active run', async () => {
-        const store = new MemoryConversationStore({ clock: new ControllableClock() });
+        const store = new MemoryConversationRepository({ clock: new ControllableClock() });
         const scope = await store.resolve(identity());
         await store.beginTurn(scope, 'run-a', 'hi', LIMITS);
         await expect(store.applyNote(scope, { ...setOp('run-a', 'k', 'v'), kind: 'other' } as never))
@@ -107,12 +107,12 @@ describe('MemoryConversationStore', () => {
             .rejects.toMatchObject({ code: 'validation_error' });
         await expect(store.applyNote(scope, { ...setOp('run-a', 'k', 'v'), expiresAt: new Date(NaN) }))
             .rejects.toMatchObject({ code: 'validation_error' });
-        expect(await store.getNote(scope, 'k')).toBeUndefined();
+        expect(await store.findOneNote(scope, 'k')).toBeUndefined();
     });
 
     it('keeps an operation record whose run became active again during the settled lookup', async () => {
         const clock = new ControllableClock();
-        const store = new MemoryConversationStore({ clock });
+        const store = new MemoryConversationRepository({ clock });
         const scope = await store.resolve(identity());
         const limits = { ...LIMITS, retentionMs: 1000 };
         await store.beginTurn(scope, 'run-a', 'hi', limits);
@@ -132,7 +132,7 @@ describe('MemoryConversationStore', () => {
     });
 
     it('endTurn of a stale generation is a no-op', async () => {
-        const store = new MemoryConversationStore({ clock: new ControllableClock() });
+        const store = new MemoryConversationRepository({ clock: new ControllableClock() });
         const scope = await store.resolve(identity());
         await store.beginTurn(scope, 'run-a', 'hi', LIMITS);
         await store.endTurn({ ...scope, generation: 3 }, 'run-a', []);

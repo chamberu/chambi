@@ -86,7 +86,7 @@ Pick one of the others when you want what chamvi does not have yet: a hosted ser
 | [`@chamvi/core`](./packages/core) | [![npm](https://img.shields.io/npm/v/@chamvi/core)](https://www.npmjs.com/package/@chamvi/core) | Agents, the channel contract, the run engine, checkpoints, effect tools, durable approvals, agent hooks, agent state and the in-memory store |
 | [`@chamvi/http`](./packages/http) | [![npm](https://img.shields.io/npm/v/@chamvi/http)](https://www.npmjs.com/package/@chamvi/http) | REST, server-sent events, an MCP endpoint, the `http`, `mcp` and `webhook` channels and the `/channels/<name>` mount, with bearer, authup and OIDC authentication |
 | [`@chamvi/channel-cron`](./packages/channel-cron) | [![npm](https://img.shields.io/npm/v/@chamvi/channel-cron)](https://www.npmjs.com/package/@chamvi/channel-cron) | The cron channel: fires `cron.on()` subscriptions once per tick across replicas, with overlap policies, timezones and one-shot jobs |
-| [`@chamvi/store-typeorm`](./packages/store-typeorm) | [![npm](https://img.shields.io/npm/v/@chamvi/store-typeorm)](https://www.npmjs.com/package/@chamvi/store-typeorm) | TypeORM store (PostgreSQL): durable runs, leases and agent state across replicas |
+| [`@chamvi/store-db`](./packages/store-db) | [![npm](https://img.shields.io/npm/v/@chamvi/store-db)](https://www.npmjs.com/package/@chamvi/store-db) | TypeORM store (PostgreSQL): durable runs, leases and agent state across replicas |
 | [`@chamvi/github`](./packages/github) | [![npm](https://img.shields.io/npm/v/@chamvi/github)](https://www.npmjs.com/package/@chamvi/github) | GitHub App authentication, the GitHub channel (verified deliveries in, deduplicated by delivery id; issue comments out), and issue, label, comment, search, release and compare tools |
 | [`@chamvi/channel-openclaw`](./packages/channel-openclaw) | [![npm](https://img.shields.io/npm/v/@chamvi/channel-openclaw)](https://www.npmjs.com/package/@chamvi/channel-openclaw) | The OpenClaw channel: messages and approval requests into an OpenClaw chat |
 | [`@chamvi/sandbox`](./packages/sandbox) | [![npm](https://img.shields.io/npm/v/@chamvi/sandbox)](https://www.npmjs.com/package/@chamvi/sandbox) | Sandbox contracts and the workspace manager: one workspace per run and repository, `create_workspace` / `dispose_workspace` tools, cleanup when the run settles |
@@ -112,7 +112,7 @@ ESM only, Node.js `>=22`. `ai@^7` is a peer dependency; use the provider package
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 import {
-    createMemoryStores,
+    createMemoryRepositories,
     Engine,
     consoleChannel,
     defineAgent,
@@ -139,7 +139,7 @@ const triage = defineAgent({
 });
 
 const engine = new Engine({
-    stores: createMemoryStores(),
+    repositories: createMemoryRepositories(),
     agents: [triage],
     // channels are what runs come from and talk to: cron, HTTP, GitHub, OpenClaw, ...
     channels: [consoleChannel()],
@@ -160,7 +160,7 @@ console.log(await engine.getRun(runId)); // status: 'completed', output: the mod
 await engine.drain();
 ```
 
-`createMemoryStores()` keeps everything in process memory; it is for development and tests. Channels, effect tools, approvals, hooks, agent state, budgets and the full option reference are in the [`@chamvi/core` README](./packages/core#readme).
+`createMemoryRepositories()` keeps everything in process memory; it is for development and tests. Channels, effect tools, approvals, hooks, agent state, budgets and the full option reference are in the [`@chamvi/core` README](./packages/core#readme).
 
 ### Give the agent a workspace
 

@@ -22,7 +22,7 @@ import {
     Engine,
     InvalidAgentDefinitionError,
     approve,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -64,7 +64,7 @@ function setup(
     extra: Partial<AgentDefinition> = {},
 ) {
     const clock = new ControllableClock(T);
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const channel = cronChannel();
     const agent = defineAgent({
         name: 'sweep',
@@ -75,14 +75,14 @@ function setup(
     });
     const channels = [channel, http];
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [agent],
         channels,
         clock,
     });
     return {
         clock,
-        stores: store,
+        repositories: store,
         agent,
         channel,
         channels,
@@ -93,7 +93,7 @@ function setup(
 describe('runJob', () => {
     it('returns 0 for a completed run', async () => {
         const {
-            stores: store,
+            repositories: store,
             agent,
             engine,
         } = setup(textModel());
@@ -104,14 +104,14 @@ describe('runJob', () => {
         });
 
         expect(result).toMatchObject({ status: 'completed', exitCode: 0 });
-        const run = await store.runs.getRun(result.runId as string);
+        const run = await store.runs.findOne(result.runId as string);
         expect(run?.trigger.idempotencyKey).toMatch(/@2026-03-01T08:00:00\.000Z$/);
     });
 
     it('takes scheduledAt from the engine clock', async () => {
         const {
             clock,
-            stores: store,
+            repositories: store,
             agent,
             engine,
         } = setup(textModel());
@@ -119,7 +119,7 @@ describe('runJob', () => {
 
         const result = await runJob({ engine, agent });
 
-        const run = await store.runs.getRun(result.runId as string);
+        const run = await store.runs.findOne(result.runId as string);
         expect(run?.trigger.payload).toEqual({ scheduledAt: '2026-03-01T08:07:00.000Z' });
     });
 
@@ -139,7 +139,7 @@ describe('runJob', () => {
 
     it('returns when the run waits for an approval', async () => {
         const {
-            stores: store,
+            repositories: store,
             agent,
             engine,
         } = setup(approvalModel('deploy'), undefined, gated());
@@ -150,7 +150,7 @@ describe('runJob', () => {
         });
 
         expect(result).toMatchObject({ status: 'waiting', exitCode: 0 });
-        expect((await store.runs.getRun(result.runId as string))?.status).toBe('waiting');
+        expect((await store.runs.findOne(result.runId as string))?.status).toBe('waiting');
     });
 
     it('skips under the overlap policy, still running the engine once', async () => {
@@ -183,7 +183,7 @@ describe('runJob', () => {
     it('recovers a run left running by a killed job pod when it skips', async () => {
         const {
             clock,
-            stores: store,
+            repositories: store,
             agent,
             engine,
             channels,
@@ -196,12 +196,12 @@ describe('runJob', () => {
             scheduledAt: T,
         });
         const { runId } = tick as { runId: string };
-        expect(await store.runs.claimRun(runId, 'pod-1', 60_000)).toBe(true);
-        await store.runs.updateRun(runId, { status: 'running' });
+        expect(await store.runs.claim(runId, 'pod-1', 60_000)).toBe(true);
+        await store.runs.update(runId, { status: 'running' });
         clock.advance(15 * 60_000);
 
         const pod2 = new Engine({
-            stores: store,
+            repositories: store,
             agents: [agent],
             channels,
             clock,
@@ -213,13 +213,13 @@ describe('runJob', () => {
         });
 
         expect(result).toEqual({ status: 'skipped', exitCode: 0 });
-        expect((await store.runs.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
     });
 
     it('times out an expired approval left by an earlier job when it skips', async () => {
         const {
             clock,
-            stores: store,
+            repositories: store,
             agent,
             engine,
             channels,
@@ -232,7 +232,7 @@ describe('runJob', () => {
         clock.advance(25 * 60 * 60_000);
 
         const pod2 = new Engine({
-            stores: store,
+            repositories: store,
             agents: [agent],
             channels,
             clock,
@@ -243,13 +243,13 @@ describe('runJob', () => {
         });
 
         expect(second).toEqual({ status: 'skipped', exitCode: 0 });
-        expect((await store.runs.getRun(first.runId as string))?.status).toBe('completed');
+        expect((await store.runs.findOne(first.runId as string))?.status).toBe('completed');
     });
 
     it('returns queued when its run waits behind a run paused for an approval', async () => {
         const {
             clock,
-            stores: store,
+            repositories: store,
             agent,
             engine,
             channels,
@@ -262,7 +262,7 @@ describe('runJob', () => {
         clock.advance(300_000);
 
         const pod2 = new Engine({
-            stores: store,
+            repositories: store,
             agents: [agent],
             channels,
             clock,
@@ -275,20 +275,20 @@ describe('runJob', () => {
 
         expect(second).toMatchObject({ status: 'queued', exitCode: 0 });
         expect(second.runId).not.toBe(first.runId);
-        expect((await store.runs.getRun(second.runId as string))?.status).toBe('queued');
-        expect((await store.runs.getRun(first.runId as string))?.status).toBe('waiting');
+        expect((await store.runs.findOne(second.runId as string))?.status).toBe('queued');
+        expect((await store.runs.findOne(first.runId as string))?.status).toBe('waiting');
         expect(drain).toHaveBeenCalledTimes(1);
     });
 
     it('resolves a run finished by another replica', async () => {
         const {
             clock,
-            stores: store,
+            repositories: store,
             agent,
             channels,
         } = setup(textModel());
         const a = new Engine({
-            stores: store,
+            repositories: store,
             agents: [agent],
             channels,
             clock,
@@ -296,7 +296,7 @@ describe('runJob', () => {
             concurrencyMaxRuns: 0,
         });
         const b = new Engine({
-            stores: store,
+            repositories: store,
             agents: [agent],
             channels,
             clock,
@@ -308,7 +308,7 @@ describe('runJob', () => {
             agent,
             pollMs: 1_000,
         });
-        await vi.waitFor(async () => expect((await store.runs.listRuns({ agent: 'sweep' })).total).toBe(1));
+        await vi.waitFor(async () => expect((await store.runs.find({ agent: 'sweep' })).total).toBe(1));
         await b.start();
         await b.idle();
         clock.advance(1_000);
@@ -320,7 +320,7 @@ describe('runJob', () => {
     it('stops polling once it returned', async () => {
         const {
             clock,
-            stores: store,
+            repositories: store,
             agent,
             engine,
         } = setup(textModel());
@@ -329,7 +329,7 @@ describe('runJob', () => {
         const { promise: gate, resolve: release } = Promise.withResolvers<void>();
         getRun.mockImplementationOnce(async (id) => {
             await gate;
-            return store.runs.getRun(id);
+            return store.runs.findOne(id);
         });
 
         const job = runJob({
@@ -403,14 +403,14 @@ describe('runJob', () => {
 
         const result = await runJob({ ...several, subscription: 'cron:0 * * * *' });
 
-        const run = await several.stores.runs.getRun(result.runId as string);
+        const run = await several.repositories.runs.findOne(result.runId as string);
         expect(run?.trigger.trigger).toBe('cron:0 * * * *');
         expect(run?.trigger.channel).toBe('cron');
     });
 
     it('fires a subscription of another cron channel', async () => {
         const clock = new ControllableClock(T);
-        const store = createMemoryStores({ clock });
+        const store = createMemoryRepositories({ clock });
         const eu = cronChannel({ name: 'cron-eu' });
         const agent = defineAgent({
             name: 'sweep',
@@ -419,7 +419,7 @@ describe('runJob', () => {
             channels: [eu.on('*/5 * * * *')],
         });
         const engine = new Engine({
-            stores: store,
+            repositories: store,
             agents: [agent],
             channels: [eu],
             clock,
@@ -427,7 +427,7 @@ describe('runJob', () => {
 
         const result = await runJob({ engine, agent });
 
-        expect((await store.runs.getRun(result.runId as string))?.trigger.channel).toBe('cron-eu');
+        expect((await store.runs.findOne(result.runId as string))?.trigger.channel).toBe('cron-eu');
     });
 
     it('never starts channels', async () => {

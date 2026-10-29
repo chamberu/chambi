@@ -12,7 +12,7 @@ import type { IClock } from '../clock/index.ts';
 import type { ConversationOptions } from '../conversation/types.ts';
 import type { IModelResolver, ModelRef } from '../model/types.ts';
 import type { Run, Step } from '../run/types.ts';
-import type { Stores } from '../store/types.ts';
+import type { Repositories } from '../repository/types.ts';
 import type { Invoker, TriggerEnvelope } from '../trigger/types.ts';
 
 /**
@@ -60,7 +60,7 @@ export type AgentRunsCancelled = {
 export type EngineEvent = RunEvent | AgentChange | AgentRunsCancelled;
 
 export type EngineOptions = {
-    stores: Stores;
+    repositories: Repositories;
     agents: Agent[];
     /**
      * The channels runs come from and talk to; names unique. start() starts
@@ -80,7 +80,7 @@ export type EngineOptions = {
     models?: IModelResolver;
     /**
      * The conversation capability agents with `conversation: true` need: the
-     * authorizer and the limits. Persistence comes from `stores.conversations`.
+     * authorizer and the limits. Persistence comes from `repositories.conversations`.
      */
     conversations?: ConversationOptions;
     /** Default `${hostname}-${pid}`. */

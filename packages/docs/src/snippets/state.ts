@@ -4,7 +4,7 @@ import { z } from 'zod';
 import {
     ValidationError,
     createAgentState,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
 
@@ -41,7 +41,7 @@ export function createDigest(model: LanguageModel) {
 
 export async function stateOutsideARun() {
     // #region direct
-    const store = createMemoryStores();
+    const store = createMemoryRepositories();
     const state = createAgentState('digest', { loops: loop }, store.state);
 
     await state.set('lastUid', 1042);
@@ -56,7 +56,7 @@ export async function stateOutsideARun() {
 }
 
 export async function invalidDocument() {
-    const state = createAgentState('digest', { loops: loop }, createMemoryStores().state);
+    const state = createAgentState('digest', { loops: loop }, createMemoryRepositories().state);
 
     // #region invalid
     try {

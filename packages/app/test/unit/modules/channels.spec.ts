@@ -6,7 +6,7 @@
  */
 
 import { cron } from '@chamvi/channel-cron';
-import { InvalidAgentDefinitionError, createMemoryStores, defineAgent } from '@chamvi/core';
+import { InvalidAgentDefinitionError, createMemoryRepositories, defineAgent } from '@chamvi/core';
 import type { Agent, IChannel } from '@chamvi/core';
 import { http, webhook } from '@chamvi/http';
 import { ControllableClock } from '@chamvi/test-kit';
@@ -23,9 +23,9 @@ import {
     createApp,
     engineModule,
     httpModule,
+    repositoryModule,
     schedulerModule,
     staticTokensModule,
-    storeModule,
 } from '@chamvi/app';
 import type { IApp } from '@chamvi/app';
 import { TOKEN, TOKENS } from '../../utils/app.ts';
@@ -92,7 +92,7 @@ async function build(options: { agents?: Agent[]; modules?: IModule[] } = {}) {
         agents: options.agents ?? [triage()],
         modules: [
             configModule({ clock, logger }),
-            storeModule(),
+            repositoryModule(),
             staticTokensModule(),
             engineModule(),
             schedulerModule(),
@@ -222,7 +222,7 @@ describe('channels', () => {
             })],
             modules: [
                 configModule({ clock, logger: createRecordingLogger(clock) }),
-                storeModule({ stores: createMemoryStores({ clock }) }),
+                repositoryModule({ repositories: createMemoryRepositories({ clock }) }),
                 contributing('spy', spyChannel('spy', events)),
             ],
         });

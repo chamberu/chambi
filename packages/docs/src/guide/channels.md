@@ -73,7 +73,7 @@ The engine renders the channel, subscription id and payload as a JSON block and 
 
 `invoker` is who started the run. Only a channel sets it, from its authenticated caller (`@chamvi/http` fills it from the principal), never from a payload. It is not part of the rendered block, so the model never sees it. See [Restricting tools per invoker](/guide/tools#restricting-tools-per-invoker).
 
-Runs stored before channels existed (`source` and `thread` in the envelope) read back as `channel` and `address` from both stores.
+Runs stored before channels existed (`source` and `thread` in the envelope) read back as `channel` and `address` from both repositories.
 
 ## Outbound from tools
 
@@ -135,7 +135,7 @@ A dispatch with an [invoker](#the-envelope) claims the key under `<agent>:<chann
 
 Use a key that is stable across redeliveries: a GitHub delivery id, a cron subscription plus its scheduled time, or a key your client sends.
 
-If the store claimed the key but the run was never created (for example `createRun` failed right after the claim), the next dispatch with that key creates the run under the reserved id. `createRun` is insert-if-absent, so concurrent dispatches create it once.
+If the store claimed the key but the run was never created (for example `runs.insert` failed right after the claim), the next dispatch with that key creates the run under the reserved id. `runs.insert` is insert-if-absent, so concurrent dispatches create it once.
 
 ## Concurrency keys
 

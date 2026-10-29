@@ -16,7 +16,7 @@ import {
     AppToken,
     configModule,
     engineModule,
-    storeModule,
+    repositoryModule,
 } from '@chamvi/app';
 import type { GitCredentialSource, IContainer, IModule } from '@chamvi/app';
 import { createModuleHarness } from '@chamvi/app/testing';
@@ -56,7 +56,7 @@ async function harnessWith(modules: IModule[]): Promise<ModuleHarness> {
         })],
         modules: [
             configModule({ logger: createRecordingLogger() }),
-            storeModule(),
+            repositoryModule(),
             engineModule(),
             ...modules,
         ],

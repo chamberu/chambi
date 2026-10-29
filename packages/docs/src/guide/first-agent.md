@@ -52,7 +52,7 @@ npx chamvi start   # production: needs CHAMVI_TOKENS
 export CHAMVI_TOKENS="[{ \"value\": \"$(openssl rand -hex 32)\", \"id\": \"ops\", \"permissions\": [\"*\"] }]"
 ```
 
-Both listen on port 3000 (`PORT`). Without `DATABASE_URL` runs live in memory: a restart loses them (see [Stores](/stores/typeorm) for Postgres).
+Both listen on port 3000 (`PORT`). Without `DATABASE_URL` runs live in memory: a restart loses them (see [Repositories](/repositories/typeorm) for Postgres).
 
 ## 5. The dashboard
 
@@ -66,7 +66,7 @@ The default app has no dashboard. Add an entry that includes `uiModule()` (`npm 
 
 `start` watches `agents/`: a changed folder is reloaded within two poll intervals (`CHAMVI_AGENTS_POLL_MS`, 5 s), and every unsettled run of the agent (`queued`, `running`, `waiting`, `interrupted`) is cancelled, once across replicas. Each such run stores `{ code: 'agent_replaced', message }` as its error, and the app logs `agent reloaded` with the cancelled run ids; deleting the folder does the same with `agent_removed`.
 
-Docs and editor leftovers do not count: `README*`, `CHANGELOG*`, `NOTES*`, `LICENSE*`, `*~`, `*.swp`, `*.swo`, `*.bak`, `*.orig`, `.DS_Store` and dot-files are left out of the folder hash (a `.ts` or `.json` always counts). Settle runs waiting for an approval before you edit an agent, and before you upgrade chamvi. A `run-job` never reloads; see [Jobs never reload](/guide/agent-folders#jobs-never-reload).
+Docs and editor leftovers do not count: `README*`, `CHANGELOG*`, `NOTES*`, `LICENSE*`, `*~`, `*.swp`, `*.swo`, `*.bak`, `*.orig`, `.DS_Repository` and dot-files are left out of the folder hash (a `.ts` or `.json` always counts). Settle runs waiting for an approval before you edit an agent, and before you upgrade chamvi. A `run-job` never reloads; see [Jobs never reload](/guide/agent-folders#jobs-never-reload).
 
 ## 7. Check it in CI
 

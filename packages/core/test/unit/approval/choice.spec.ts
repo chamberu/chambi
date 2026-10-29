@@ -29,7 +29,7 @@ import type {
     IChannel,
 } from '@chamvi/core';
 import { toApprovalDecision } from '../../../src/approval/helpers.ts';
-import { createMemoryStores } from '../../../src/store/index.ts';
+import { createMemoryRepositories } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -65,7 +65,7 @@ const OPTIONS: ApprovalOption[] = [
 
 function setup(model: LanguageModel, channels: IChannel[] = []) {
     const clock = new ControllableClock(new Date(START));
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const decisions: ApprovalDecision[] = [];
     const errors: unknown[] = [];
     const pick = defineTool({
@@ -80,7 +80,7 @@ function setup(model: LanguageModel, channels: IChannel[] = []) {
         },
     });
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [defineAgent({
             name: 'release',
             instructions: 'You release.',
@@ -97,14 +97,14 @@ function setup(model: LanguageModel, channels: IChannel[] = []) {
     engines.push(engine);
     return {
         clock,
-        stores: store,
+        repositories: store,
         engine,
         decisions,
         errors,
     };
 }
 
-async function dispatch(engine: Engine, store: ReturnType<typeof createMemoryStores>) {
+async function dispatch(engine: Engine, store: ReturnType<typeof createMemoryRepositories>) {
     await engine.start();
     const { runId } = await engine.dispatch({
         agent: 'release',
@@ -113,7 +113,7 @@ async function dispatch(engine: Engine, store: ReturnType<typeof createMemorySto
         payload: {},
     });
     await engine.idle();
-    const run = await store.runs.getRun(runId);
+    const run = await store.runs.findOne(runId);
     return { runId, run };
 }
 
@@ -132,7 +132,7 @@ describe('approve() with options', () => {
             ],
             multiple: true,
         }), text('done')]);
-        const { stores: store, engine } = setup(model);
+        const { repositories: store, engine } = setup(model);
         const { run } = await dispatch(engine, store);
         expect(run?.status).toBe('waiting');
         expect(run?.waiting?.options).toEqual([
@@ -148,7 +148,7 @@ describe('approve() with options', () => {
 
     it('keeps a plain wait point free of option keys', async () => {
         const plain = setup(mockModel([ask({ title: 'Deploy?' }), text('done')]));
-        const { run } = await dispatch(plain.engine, plain.stores);
+        const { run } = await dispatch(plain.engine, plain.repositories);
         expect(Object.keys(run?.waiting ?? {})).not.toContain('options');
         expect(Object.keys(run?.waiting ?? {})).not.toContain('multiple');
 
@@ -157,7 +157,7 @@ describe('approve() with options', () => {
             options: OPTIONS,
             multiple: false,
         }), text('done')]));
-        const second = await dispatch(single.engine, single.stores);
+        const second = await dispatch(single.engine, single.repositories);
         expect(second.run?.waiting?.options).toEqual(OPTIONS);
         expect(Object.keys(second.run?.waiting ?? {})).not.toContain('multiple');
     });
@@ -203,16 +203,16 @@ describe('approve() with options', () => {
         ['a label with a C1 control', { options: [{ id: 'a', label: 'a\u0085b' }] }],
         ['a label with a tab', { options: [{ id: 'a', label: 'a\tb' }] }],
     ])('refuses %s as a tool error', async (_, extra) => {
-        const { stores: store, engine } = setup(mockModel([ask({ title: 'Pick?', ...extra }), text('done')]));
+        const { repositories: store, engine } = setup(mockModel([ask({ title: 'Pick?', ...extra }), text('done')]));
         const { runId, run } = await dispatch(engine, store);
         expect(run?.status).toBe('completed');
         expect(run?.waiting).toBeUndefined();
-        const tools = (await store.steps.listSteps(runId)).filter((s) => s.kind === 'tool');
+        const tools = (await store.steps.find(runId)).filter((s) => s.kind === 'tool');
         expect(tools[0]).toMatchObject({ name: 'pick', error: { code: 'validation_error' } });
     });
 
     it('takes multiple: false without options as a plain request', async () => {
-        const { stores: store, engine } = setup(mockModel([ask({ title: 'Deploy?', multiple: false }), text('done')]));
+        const { repositories: store, engine } = setup(mockModel([ask({ title: 'Deploy?', multiple: false }), text('done')]));
         const { run } = await dispatch(engine, store);
         expect(run?.status).toBe('waiting');
         expect(Object.keys(run?.waiting ?? {})).not.toContain('options');
@@ -226,7 +226,7 @@ describe('approve() with options', () => {
             { id: 'feat/x', label: 'branch' },
             { id: 'x'.repeat(128), label: 'long' },
         ];
-        const { stores: store, engine } = setup(mockModel([ask({ title: 'Pick?', options }), text('done')]));
+        const { repositories: store, engine } = setup(mockModel([ask({ title: 'Pick?', options }), text('done')]));
         const { run } = await dispatch(engine, store);
         expect(run?.waiting?.options).toEqual(options);
     });
@@ -234,7 +234,7 @@ describe('approve() with options', () => {
 
 async function paused(request: unknown) {
     const ctx = setup(mockModel([ask(request), text('done')]));
-    const { runId, run } = await dispatch(ctx.engine, ctx.stores);
+    const { runId, run } = await dispatch(ctx.engine, ctx.repositories);
     if (!run?.waiting) throw new Error('not waiting');
     return {
         ...ctx,
@@ -247,7 +247,7 @@ describe('answering an approval with options', () => {
     it('returns the selection in option order', async () => {
         const {
             engine,
-            stores: store,
+            repositories: store,
             runId,
             waiting,
             decisions,
@@ -263,8 +263,8 @@ describe('answering an approval with options', () => {
         });
         await engine.idle();
         expect(decisions).toEqual([{ approved: true, selected: ['a', 'c'] }]);
-        expect(await store.runs.getRun(runId)).toMatchObject({ status: 'completed' });
-        const wait = (await store.steps.listSteps(runId)).find((s) => s.kind === 'wait');
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed' });
+        const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
         expect(wait?.input).toEqual({
             toolCallId: 'c1',
             title: 'Pick?',
@@ -313,7 +313,7 @@ describe('answering an approval with options', () => {
     ])('refuses %s', async (_, request, approved, selected) => {
         const {
             engine,
-            stores: store,
+            repositories: store,
             runId,
             waiting,
         } = await paused(request);
@@ -322,7 +322,7 @@ describe('answering an approval with options', () => {
             approved,
             selected: selected as string[],
         })).rejects.toThrow(ValidationError);
-        const run = await store.runs.getRun(runId);
+        const run = await store.runs.findOne(runId);
         expect(run?.status).toBe('waiting');
         expect(run?.waiting).toEqual(waiting);
     });
@@ -340,7 +340,7 @@ describe('answering an approval with options', () => {
     it('drops an empty selection on a denial', async () => {
         const {
             engine,
-            stores: store,
+            repositories: store,
             runId,
             waiting,
             decisions,
@@ -353,9 +353,9 @@ describe('answering an approval with options', () => {
         });
         await engine.idle();
         expect(decisions).toEqual([{ approved: false, reason: 'none' }]);
-        const effect = await store.effects.getEffect(`approval:${runId}:${waiting.approvalId}`);
+        const effect = await store.effects.findOne(`approval:${runId}:${waiting.approvalId}`);
         expect(effect?.result).toEqual({ approved: false, reason: 'none' });
-        const wait = (await store.steps.listSteps(runId)).find((s) => s.kind === 'wait');
+        const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
         expect(Object.keys(wait?.output as object)).not.toContain('selected');
     });
 
@@ -365,20 +365,20 @@ describe('answering an approval with options', () => {
             clock,
             runId,
             decisions,
-            stores: store,
+            repositories: store,
         } = await paused({ ...SINGLE, timeoutMs: 1000 });
         clock.advance(1000);
         await engine.tick();
         await engine.idle();
         expect(decisions).toEqual([{ approved: false, reason: 'approval timed out' }]);
-        const wait = (await store.steps.listSteps(runId)).find((s) => s.kind === 'wait');
+        const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
         expect(wait?.input).toMatchObject({ options: OPTIONS });
     });
 
     it('answers a plain wait point without a selected key', async () => {
         const {
             engine,
-            stores: store,
+            repositories: store,
             runId,
             waiting,
             decisions,
@@ -386,7 +386,7 @@ describe('answering an approval with options', () => {
         await engine.approve(runId, { approvalId: waiting.approvalId, approved: true });
         await engine.idle();
         expect(decisions).toEqual([{ approved: true }]);
-        const wait = (await store.steps.listSteps(runId)).find((s) => s.kind === 'wait');
+        const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
         expect(wait?.input).toEqual({ toolCallId: 'c1', title: 'Deploy?' });
         expect(Object.keys(wait?.output as object)).not.toContain('selected');
     });
@@ -395,7 +395,7 @@ describe('answering an approval with options', () => {
         const request = { title: 'Deploy?' };
         const {
             clock,
-            stores: store,
+            repositories: store,
             engine,
             decisions,
         } = setup(mockModel([text('done')]));
@@ -410,7 +410,7 @@ describe('answering an approval with options', () => {
             receivedAt: now,
         };
         // a row the code before options wrote: no options or multiple keys
-        await store.runs.createRun({
+        await store.runs.insert({
             id: runId,
             agent: 'release',
             status: 'waiting',
@@ -427,7 +427,7 @@ describe('answering an approval with options', () => {
             createdAt: now,
             updatedAt: now,
         });
-        await store.checkpoints.saveCheckpoint({
+        await store.checkpoints.save({
             runId,
             stepIndex: 0,
             messages: [
@@ -450,8 +450,8 @@ describe('answering an approval with options', () => {
         await engine.idle();
         expect(decisions).toEqual([{ approved: true }]);
         expect(Object.keys(decisions[0]!)).not.toContain('selected');
-        expect(await store.runs.getRun(runId)).toMatchObject({ status: 'completed' });
-        const wait = (await store.steps.listSteps(runId)).find((s) => s.kind === 'wait');
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed' });
+        const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
         expect(wait?.output).toMatchObject({ approvalId: '0:c1:0', approved: true });
         expect(Object.keys(wait?.output as object)).not.toContain('selected');
     });
@@ -492,7 +492,7 @@ describe('delivering an approval with options', () => {
             },
             text('done'),
         ]);
-        const { engine, stores: store } = setup(model, [rec]);
+        const { engine, repositories: store } = setup(model, [rec]);
         await dispatch(engine, store);
         expect(sent).toHaveLength(1);
         expect(sent[0]).toMatchObject({
@@ -520,7 +520,7 @@ describe('delivering an approval with options', () => {
                 plainSent.push(message);
             },
         }]);
-        await dispatch(plain.engine, plain.stores);
+        await dispatch(plain.engine, plain.repositories);
         expect(plainSent).toHaveLength(1);
         expect(Object.keys(plainSent[0]!)).not.toContain('options');
         expect(Object.keys(plainSent[0]!)).not.toContain('multiple');
@@ -538,12 +538,12 @@ describe('replaying an answered approval with options', () => {
     async function replay(first: unknown, second: unknown, answer: { approved: boolean; selected?: string[] }) {
         const clock = new ControllableClock(new Date(START));
         const frozen = new ControllableClock(new Date(START));
-        const store = createMemoryStores({ clock });
+        const store = createMemoryRepositories({ clock });
         const decisions: ApprovalDecision[] = [];
         const { promise: gate, resolve: release } = Promise.withResolvers<void>();
         const make = (model: LanguageModel, engineClock: ControllableClock) => {
             const engine = new Engine({
-                stores: store,
+                repositories: store,
                 clock: engineClock,
                 claimTtlMs: 30,
                 agents: [defineAgent({
@@ -584,7 +584,7 @@ describe('replaying an answered approval with options', () => {
             payload: {},
         });
         await stale.idle();
-        const run = await store.runs.getRun(runId);
+        const run = await store.runs.findOne(runId);
         if (!run?.waiting) throw new Error('not waiting');
         await stale.approve(runId, { approvalId: run.waiting.approvalId, ...answer });
         await vi.waitFor(() => expect(decisions).toHaveLength(1));
@@ -595,7 +595,7 @@ describe('replaying an answered approval with options', () => {
         await fresh.idle();
         release();
         return {
-            stores: store,
+            repositories: store,
             runId,
             decisions,
         };
@@ -609,7 +609,7 @@ describe('replaying an answered approval with options', () => {
 
     it('returns the recorded selection on replay', async () => {
         const {
-            stores: store,
+            repositories: store,
             runId,
             decisions,
         } = await replay(MULTIPLE, MULTIPLE, { approved: true, selected: ['c', 'a'] });
@@ -617,7 +617,7 @@ describe('replaying an answered approval with options', () => {
             { approved: true, selected: ['a', 'c'] },
             { approved: true, selected: ['a', 'c'] },
         ]);
-        expect(await store.runs.getRun(runId)).toMatchObject({ status: 'completed' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed' });
         expect(toApprovalDecision({ approved: true, selected: ['a', 'c'] })).toEqual({ approved: true, selected: ['a', 'c'] });
     });
 

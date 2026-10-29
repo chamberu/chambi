@@ -13,7 +13,7 @@ This guide describes `@chamvi/core` as it is built today. Every sample on these 
 | **Checkpoint** | `Checkpoint` | The message history after a step; a resumed run continues from the latest one |
 | **Tool** | AI SDK `tool()`, `defineTool()`, `defineEffectTool()` | What the model can call. `defineTool()` tools read the run context; effect tools apply at most once per effect key |
 | **State** | `AgentState` | Per-agent key-value data and typed collections that outlive runs |
-| **Store** | `Store` | Runs, steps, checkpoints, keys, locks, effects and state. Pluggable |
+| **Repository** | `Repository` | Runs, steps, checkpoints, keys, locks, effects and state. Pluggable |
 | **Workspace** | `@chamvi/sandbox` | A disposable directory or container a run executes commands in, optionally a checkout of a repository. See [Workspaces & Coding](/guide/workspaces) |
 
 The **App** concept (one app with store, channels, HTTP and UI, booted from env) is [`@chamvi/app`](/guide/app).

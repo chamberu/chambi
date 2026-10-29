@@ -56,9 +56,9 @@ packages:
         -   name: '@chamvi/channel-cron'
             body: The cron channel. Fires cron.on() subscriptions once per tick across replicas, with overlap policies, timezones and one-shot jobs.
             link: /reference/channel-cron
-        -   name: '@chamvi/store-typeorm'
+        -   name: '@chamvi/store-db'
             body: TypeORM store (PostgreSQL) for durable runs across replicas, passing the store contract suite.
-            link: /stores/typeorm
+            link: /repositories/typeorm
         -   name: '@chamvi/http'
             body: REST, server-sent events, an MCP endpoint, the webhook channel and the /channels mount, with bearer, authup and OIDC authentication.
             link: /guide/http
@@ -87,7 +87,7 @@ packages:
 
 cta:
     title: Start with one agent.
-    lead: Define an agent, dispatch a run and watch it settle. In-memory stores need no database, so the quick start runs in a single file.
+    lead: Define an agent, dispatch a run and watch it settle. In-memory repositories need no database, so the quick start runs in a single file.
     command: npm install @chamvi/core ai zod
     actions:
         -   text: Quick start

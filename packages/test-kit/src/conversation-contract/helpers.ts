@@ -10,7 +10,7 @@ import type {
     ConversationItem,
     ConversationNoteOperation,
     ConversationScope,
-    IConversationStore,
+    IConversationRepository,
     ResolvedConversationLimits,
 } from '@chamvi/core';
 import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
@@ -86,7 +86,7 @@ export function makeRemove(runId: string, key: string, toolCallId = `call-rm-${k
 
 /** One whole turn: begin, the given replies emitted and confirmed, end. */
 export async function completeTurn(
-    store: IConversationStore,
+    store: IConversationRepository,
     clock: ControllableClock,
     scope: ConversationScope,
     runId: string,

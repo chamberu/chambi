@@ -2,7 +2,7 @@ import type { LanguageModel } from 'ai';
 import {
     Engine,
     consoleChannel,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
 
@@ -20,7 +20,7 @@ export function createEngine(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        stores: createMemoryStores(),
+        repositories: createMemoryRepositories(),
         agents: [triage, digest],
         // tools reach it with ctx.channels.findOneOrFail('console')
         channels: [consoleChannel()],

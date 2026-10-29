@@ -163,9 +163,9 @@ export function assembleTools(
     }
     const toolContext: ToolContext = {
         run: runContext,
-        state: createAgentState(ctx.agent.name, schema, ctx.stores.state),
-        artifacts: createRunArtifacts(ctx.stores.artifacts, { id: ctx.run.id, agent: ctx.run.agent }, ctx.clock),
-        channels: createToolChannels(runContext, ctx.stores.effects, ctx.engine),
+        state: createAgentState(ctx.agent.name, schema, ctx.repositories.state),
+        artifacts: createRunArtifacts(ctx.repositories.artifacts, { id: ctx.run.id, agent: ctx.run.agent }, ctx.clock),
+        channels: createToolChannels(runContext, ctx.repositories.effects, ctx.engine),
     };
     // before the factory, so inject() works there, in execute and in the effect hooks
     if (ctx.provided) bindProvided(toolContext, ctx.provided);
@@ -188,7 +188,7 @@ export function assembleTools(
 
     if (!toolPolicy) {
         return {
-            tools: wrapToolsForRun(tools, toolContext, ctx.stores.effects, {
+            tools: wrapToolsForRun(tools, toolContext, ctx.repositories.effects, {
                 hooks,
                 onSuspend,
                 stepIndex,
@@ -198,7 +198,7 @@ export function assembleTools(
     }
     const allow = (name: string) => toolPolicy(name, { run: runContext });
     return {
-        tools: wrapToolsForRun(tools, toolContext, ctx.stores.effects, {
+        tools: wrapToolsForRun(tools, toolContext, ctx.repositories.effects, {
             allow,
             hooks,
             onSuspend,

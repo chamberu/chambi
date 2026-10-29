@@ -70,18 +70,18 @@ describe('a folder edited right after its stable poll', () => {
             await writeFile(join(dir, 'agent.ts'), 'import { text } from \'./prompt.ts\';\nexport default { name: \'greeter\', definition: { model: \'test/model\', instructions: text } };\n');
             await writeFile(join(dir, 'prompt.ts'), 'export const text = \'v3\';\n');
         };
-        const runId = await queueRun(setup.stores, setup.clock, 'greeter');
+        const runId = await queueRun(setup.repositories, setup.clock, 'greeter');
         await setup.poll();
 
         expect(setup.engine().getAgent('greeter')?.definition.instructions).toBe('v1');
         expect(setup.issues()).toEqual([]);
-        expect((await setup.stores.runs.getRun(runId))?.status).toBe('queued');
+        expect((await setup.repositories.runs.findOne(runId))?.status).toBe('queued');
 
         await setup.poll();
         expect(setup.engine().getAgent('greeter')?.definition.instructions).toBe('v1');
         await setup.poll();
         expect(setup.engine().getAgent('greeter')?.definition.instructions).toBe('v3');
-        expect((await setup.stores.agentRevisions.getAgentRevision('greeter'))?.hash).toBe(await hashAgentFolder(dir));
-        expect((await setup.stores.runs.getRun(runId))?.status).toBe('cancelled');
+        expect((await setup.repositories.agentRevisions.findOne('greeter'))?.hash).toBe(await hashAgentFolder(dir));
+        expect((await setup.repositories.runs.findOne(runId))?.status).toBe('cancelled');
     });
 });

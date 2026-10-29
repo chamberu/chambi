@@ -3,7 +3,7 @@
 Several engines can share one store. They coordinate through the store alone: run claims are leases, concurrency keys are checked under store locks, and idempotency keys are claimed atomically. There is no leader and no extra service.
 
 ::: warning Durable store required
-`createMemoryStores()` lives in one process, so replicas cannot share it. Running several replicas needs a durable, shared store such as the [TypeORM store](/stores/typeorm).
+`createMemoryRepositories()` lives in one process, so replicas cannot share it. Running several replicas needs a durable, shared store such as the [TypeORM store](/repositories/typeorm).
 :::
 
 ## Local slots
@@ -45,7 +45,7 @@ Note what blocks a key:
 
 ## Claims are leases
 
-A run is executed by the engine that holds its claim. `claimRun(id, owner, claimTtlMs)` takes the lease (default 60 s) and the engine renews it every `claimTtlMs / 3` while the run executes.
+A run is executed by the engine that holds its claim. `repositories.runs.claim(id, owner, claimTtlMs)` takes the lease (default 60 s) and the engine renews it every `claimTtlMs / 3` while the run executes.
 
 - **Owner:** `owner` identifies the replica, by default `<hostname>-<pid>`. Give each replica a distinct owner.
 - **Conditional writes:** every write of a running run checks the status and that this owner still holds the claim.

@@ -9,7 +9,7 @@ import type { ModelMessage } from 'ai';
 import { isObject } from 'smob';
 import { stableHash } from '../../effect/helpers.ts';
 import { ValidationError } from '../../errors/index.ts';
-import { compareCodePoints } from '../../store/memory/helpers.ts';
+import { compareCodePoints } from '../../repository/memory/helpers.ts';
 import {
     CONVERSATION_FIELD_MAX_LENGTH,
     CONVERSATION_LIMITS_MAX,

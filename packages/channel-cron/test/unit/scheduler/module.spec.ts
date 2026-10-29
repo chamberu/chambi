@@ -17,7 +17,7 @@ import type { Agent, ChannelSubscription, IChannel } from '@chamvi/core';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
 } from '@chamvi/core';
 import { assertSchedulable, cron, cronChannel } from '@chamvi/channel-cron';
@@ -45,12 +45,12 @@ describe('createScheduler', () => {
     let schedulers: IScheduler[] = [];
 
     const make = (
-        store: ReturnType<typeof createMemoryStores>,
+        store: ReturnType<typeof createMemoryRepositories>,
         agents: Agent[],
         opts: Partial<SchedulerOptions> = {},
     ) => {
         const engine = new Engine({
-            stores: store,
+            repositories: store,
             agents,
             channels: channels(),
             owner: opts.owner,
@@ -65,7 +65,7 @@ describe('createScheduler', () => {
         return scheduler;
     };
 
-    const runs = async (store: ReturnType<typeof createMemoryStores>) => (await store.runs.listRuns({ agent: 'sweep' })).data;
+    const runs = async (store: ReturnType<typeof createMemoryRepositories>) => (await store.runs.find({ agent: 'sweep' })).data;
 
     beforeEach(() => {
         vi.useFakeTimers({ now: new Date('2026-03-01T07:59:30Z') });
@@ -78,7 +78,7 @@ describe('createScheduler', () => {
     });
 
     it('two replicas on one store dispatch once per tick', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const agents = [agentWith([cron.on('* * * * *', { overlap: 'allow' })])];
         const a = make(store, agents, { owner: 'a' });
         const b = make(store, agents, { owner: 'b' });
@@ -93,7 +93,7 @@ describe('createScheduler', () => {
     });
 
     it('does not fire on start', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const scheduler = make(store, [agentWith([cron.on('* * * * *')])]);
         await scheduler.start();
 
@@ -103,7 +103,7 @@ describe('createScheduler', () => {
     });
 
     it('a restart between ticks dispatches nothing until the next tick', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const agents = [agentWith([cron.on('* * * * *')])];
         const before = make(store, agents, { owner: 'old' });
         await before.start();
@@ -120,7 +120,7 @@ describe('createScheduler', () => {
     });
 
     it('honours the subscription timezone', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const scheduler = make(store, [agentWith([cron.on('0 9 * * *', { timezone: 'Europe/Berlin' })])]);
         await scheduler.start();
 
@@ -131,7 +131,7 @@ describe('createScheduler', () => {
     });
 
     it('ignores subscriptions of other channels', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const scheduler = make(store, [agentWith([otherOn('http'), cronChannel({ name: 'cron-eu' }).on('* * * * *')])]);
         await scheduler.start();
 
@@ -141,7 +141,7 @@ describe('createScheduler', () => {
     });
 
     it('stop() unschedules', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const scheduler = make(store, [agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
         await scheduler.start();
         await scheduler.stop();
@@ -153,7 +153,7 @@ describe('createScheduler', () => {
 
     it('reports a failing lock and keeps ticking', async () => {
         const error = new Error('lock store down');
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const acquire = store.locks.acquire.bind(store.locks);
         vi.spyOn(store.locks, 'acquire')
             .mockRejectedValueOnce(error)
@@ -171,7 +171,7 @@ describe('createScheduler', () => {
     });
 
     it('rejects a cron subscription hubwire cannot schedule', () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const divergent = agentWith([cron.on('0 0 * * 1/2')]);
         expect(() => make(store, [divergent])).toThrow(InvalidAgentDefinitionError);
         expect(() => make(store, [divergent])).toThrow(/sweep.*cron:0 0 \* \* 1\/2/);
@@ -187,9 +187,9 @@ describe('createScheduler', () => {
 
     it('reports a folder agent hubwire cannot schedule instead of throwing', async () => {
         const onError = vi.fn();
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const engine = new Engine({
-            stores: store,
+            repositories: store,
             agents: [],
             channels: channels(),
         });
@@ -231,9 +231,9 @@ describe('createScheduler', () => {
         });
 
         const live = (agents: Agent[], opts: Partial<SchedulerOptions> = {}) => {
-            const store = createMemoryStores();
+            const store = createMemoryRepositories();
             const engine = new Engine({
-                stores: store,
+                repositories: store,
                 agents,
                 channels: channels(),
             });
@@ -245,7 +245,7 @@ describe('createScheduler', () => {
             });
             schedulers.push(scheduler);
             return {
-                stores: store,
+                repositories: store,
                 engine,
                 scheduler,
             };
@@ -253,7 +253,7 @@ describe('createScheduler', () => {
 
         it('schedules an agent added after start', async () => {
             const {
-                stores: store,
+                repositories: store,
                 engine, 
                 scheduler, 
             } = live([another()]);
@@ -267,7 +267,7 @@ describe('createScheduler', () => {
 
         it('starts an agent added before start only once started', async () => {
             const {
-                stores: store,
+                repositories: store,
                 engine, 
                 scheduler, 
             } = live([another()]);
@@ -283,7 +283,7 @@ describe('createScheduler', () => {
 
         it('a replaced agent fires on its new expression only', async () => {
             const {
-                stores: store,
+                repositories: store,
                 engine, 
                 scheduler, 
             } = live([agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
@@ -301,7 +301,7 @@ describe('createScheduler', () => {
         it('a removed agent no longer fires', async () => {
             const onError = vi.fn();
             const {
-                stores: store,
+                repositories: store,
                 engine, 
                 scheduler, 
             } = live([agentWith([cron.on('* * * * *', { overlap: 'allow' })]), another()], { onError });
@@ -317,7 +317,7 @@ describe('createScheduler', () => {
         it('reports a replaced agent hubwire cannot schedule', async () => {
             const onError = vi.fn();
             const {
-                stores: store,
+                repositories: store,
                 engine, 
                 scheduler, 
             } = live([agentWith([cron.on('* * * * *', { overlap: 'allow' })])], { onError });
@@ -336,7 +336,7 @@ describe('createScheduler', () => {
 
         it('stop() ends the subscription', async () => {
             const {
-                stores: store,
+                repositories: store,
                 engine, 
                 scheduler, 
             } = live([another()]);
@@ -352,7 +352,7 @@ describe('createScheduler', () => {
     });
 
     it('rejects an invalid lockTtlMs', () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const agents = [agentWith([cron.on('* * * * *')])];
         expect(() => make(store, agents, { lockTtlMs: 0 })).toThrow(InvalidAgentDefinitionError);
     });

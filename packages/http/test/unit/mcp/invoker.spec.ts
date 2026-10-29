@@ -22,7 +22,7 @@ describe('mcp invoker', () => {
         expect(result.isError).toBeFalsy();
         const { runId } = result.structuredContent as { runId: string };
 
-        expect((await setup.stores.runs.getRun(runId))?.trigger.invoker).toEqual({
+        expect((await setup.repositories.runs.findOne(runId))?.trigger.invoker).toEqual({
             id: 'p:agent:echo:run',
             kind: 'token',
             permissions: ['agent:echo:run'],
@@ -54,7 +54,7 @@ describe('mcp invoker', () => {
         expect(result.isError).toBeFalsy();
         await setup.engine.idle();
 
-        const wait = (await setup.stores.steps.listSteps(runId)).find((s) => s.kind === 'wait');
+        const wait = (await setup.repositories.steps.find(runId)).find((s) => s.kind === 'wait');
         expect((wait?.output as { approver?: unknown }).approver).toEqual({
             id: 'p:agent:gate:approve',
             kind: 'token',

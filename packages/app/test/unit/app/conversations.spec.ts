@@ -5,8 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { MemoryConversationStore, createMemoryStores, defineAgent } from '@chamvi/core';
-import type { Engine, IConversationStore } from '@chamvi/core';
+import { MemoryConversationRepository, createMemoryRepositories, defineAgent } from '@chamvi/core';
+import type { Engine, IConversationRepository } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import type { IContainer } from 'eldin';
 import {
@@ -19,7 +19,7 @@ import {
     AppToken,
     configModule,
     createApp,
-    storeModule,
+    repositoryModule,
 } from '@chamvi/app';
 import type { AppOptions, IApp } from '@chamvi/app';
 import { TOKENS } from '../../utils/app.ts';
@@ -40,7 +40,7 @@ afterEach(async () => {
     apps.length = 0;
 });
 
-function build(conversations?: AppOptions['conversations'], store?: IConversationStore) {
+function build(conversations?: AppOptions['conversations'], store?: IConversationRepository) {
     const clock = new ControllableClock(new Date('2026-10-28T00:00:00Z'));
     const logger = createRecordingLogger(clock);
     let container: IContainer;
@@ -54,7 +54,7 @@ function build(conversations?: AppOptions['conversations'], store?: IConversatio
         ...(conversations !== undefined && { conversations }),
         modules: [
             configModule({ clock, logger }),
-            ...(store ? [storeModule({ stores: { ...createMemoryStores({ clock }), conversations: store } })] : []),
+            ...(store ? [repositoryModule({ repositories: { ...createMemoryRepositories({ clock }), conversations: store } })] : []),
             {
                 name: 'test:capture',
                 async setup(value) { container = value; },
@@ -76,13 +76,13 @@ describe('app conversation capability', () => {
     it('disabled_default_keeps_memory_inactive', async () => {
         const built = build();
         await built.app.check({ env });
-        expect(built.container().resolve(AppToken.STORES).conversations).toBeInstanceOf(MemoryConversationStore);
+        expect(built.container().resolve(AppToken.REPOSITORIES).conversations).toBeInstanceOf(MemoryConversationRepository);
         expect(built.container().has(AppToken.DATA_SOURCE)).toBe(false);
     });
 
     it('custom_store_respected and check_writes_nothing', async () => {
         const calls: PropertyKey[] = [];
-        const custom = new Proxy(new MemoryConversationStore(), {
+        const custom = new Proxy(new MemoryConversationRepository(), {
             get(target, key) {
                 const value = Reflect.get(target, key);
                 return typeof value === 'function' ? (...args: unknown[]) => {
@@ -90,18 +90,18 @@ describe('app conversation capability', () => {
                     return value.apply(target, args);
                 } : value;
             },
-        }) as IConversationStore;
+        }) as IConversationRepository;
         const built = build({ authorize: () => true }, custom);
         await built.app.check({ env });
-        expect(built.container().resolve(AppToken.STORES).conversations!).toBe(custom);
+        expect(built.container().resolve(AppToken.REPOSITORIES).conversations!).toBe(custom);
         expect(calls).toEqual([]);
     });
 
     it('memory_store_warns_no_restart_durability and uses app clock', async () => {
         const built = build({ authorize: () => true });
         await built.app.check({ env });
-        const store = built.container().resolve(AppToken.STORES).conversations!;
-        expect(store).toBeInstanceOf(MemoryConversationStore);
+        const store = built.container().resolve(AppToken.REPOSITORIES).conversations!;
+        expect(store).toBeInstanceOf(MemoryConversationRepository);
         const engine = built.container().resolve(AppToken.ENGINE) as Engine;
         expect(await engine.inspectConversation(identity)).toBeUndefined();
         const scope = await store.resolve(identity);
@@ -122,11 +122,11 @@ describe('app conversation capability', () => {
         const second = build({ authorize: () => false });
         await first.app.check({ env });
         await second.app.check({ env });
-        const firstStore = first.container().resolve(AppToken.STORES).conversations!;
-        const secondStore = second.container().resolve(AppToken.STORES).conversations!;
-        expect(firstStore).not.toBe(secondStore);
-        await firstStore.resolve(identity);
-        expect(await secondStore.get(identity)).toBeUndefined();
+        const firstRepository = first.container().resolve(AppToken.REPOSITORIES).conversations!;
+        const secondRepository = second.container().resolve(AppToken.REPOSITORIES).conversations!;
+        expect(firstRepository).not.toBe(secondRepository);
+        await firstRepository.resolve(identity);
+        expect(await secondRepository.findOne(identity)).toBeUndefined();
     });
 
     it('copies limits before later caller mutation', async () => {

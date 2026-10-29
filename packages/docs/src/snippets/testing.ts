@@ -1,10 +1,10 @@
-import { createMemoryStores } from '@chamvi/core';
+import { createMemoryRepositories } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 
 export async function leaseExpiry() {
     // #region clock
     const clock = new ControllableClock(new Date('2026-01-01T00:00:00Z'));
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
 
     await store.locks.acquire('job', 'replica-a', 1_000); // true
     await store.locks.acquire('job', 'replica-b', 1_000); // false, held by replica-a

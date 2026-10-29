@@ -9,7 +9,7 @@ import { z } from 'zod';
 import {
     Engine,
     approve,
-    createMemoryStores,
+    createMemoryRepositories,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -33,10 +33,10 @@ const capture: IChannel = {
     out: () => Promise.resolve(),
 };
 
-const store = createMemoryStores();
+const store = createMemoryRepositories();
 
 const engine = new Engine({
-    stores: store,
+    repositories: store,
     agents: [
         defineAgent({
             name: 'deploy',
@@ -96,9 +96,9 @@ const engine = new Engine({
     claimTtlMs: 3000,
 });
 
-await store.state.kvSet('digest', 'last_digest_at', '2026-10-21T06:00:12.481Z');
-await store.state.kvSet('digest', 'recipients', ['#maintainers']);
-await store.state.docUpsert('digest', 'sent', '2026-10-21', { issues: 14, channel: '#maintainers' });
+await store.state.set('digest', 'last_digest_at', '2026-10-21T06:00:12.481Z');
+await store.state.set('digest', 'recipients', ['#maintainers']);
+await store.state.upsertDocument('digest', 'sent', '2026-10-21', { issues: 14, channel: '#maintainers' });
 
 const app = createHttpApp({
     engine,

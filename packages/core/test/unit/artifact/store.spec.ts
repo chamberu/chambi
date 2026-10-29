@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { ErrorCode, InvalidRunStateError } from '@chamvi/core';
 import { attachmentIds, createRunArtifacts, storeArtifact } from '../../../src/artifact/module.ts';
-import { createMemoryStores } from '../../../src/store/index.ts';
+import { createMemoryRepositories } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 
 const run = { id: 'run-1', agent: 'vision' };
@@ -20,16 +20,16 @@ const input = (text: string) => ({
 
 describe('storeArtifact', () => {
     it('returns the stored artifact when the run already holds the id', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         const first = await storeArtifact(store.artifacts, run, input('first'), new Date(1), 'run-1.0000');
         const second = await storeArtifact(store.artifacts, run, input('second!'), new Date(2), 'run-1.0000');
         expect(second).toEqual(first);
-        expect(await store.artifacts.listArtifacts('run-1')).toEqual([first]);
-        expect(new TextDecoder().decode(await store.artifacts.readArtifact('run-1.0000'))).toBe('first');
+        expect(await store.artifacts.find('run-1')).toEqual([first]);
+        expect(new TextDecoder().decode(await store.artifacts.read('run-1.0000'))).toBe('first');
     });
 
     it('throws InvalidRunStateError when another run holds the id', async () => {
-        const store = createMemoryStores();
+        const store = createMemoryRepositories();
         await storeArtifact(store.artifacts, { id: 'run-2', agent: 'vision' }, input('x'), new Date(1), 'taken');
         const promise = storeArtifact(store.artifacts, run, input('y'), new Date(1), 'taken');
         await expect(promise).rejects.toBeInstanceOf(InvalidRunStateError);
@@ -38,7 +38,7 @@ describe('storeArtifact', () => {
 
     it('gives tool artifacts random ids', async () => {
         const clock = new ControllableClock(new Date(1));
-        const artifacts = createRunArtifacts(createMemoryStores({ clock }).artifacts, run, clock);
+        const artifacts = createRunArtifacts(createMemoryRepositories({ clock }).artifacts, run, clock);
         const a = await artifacts.put(input('a'));
         const b = await artifacts.put(input('b'));
         expect(a.id).toMatch(/^[0-9a-f-]{36}$/);

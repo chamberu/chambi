@@ -46,18 +46,18 @@ describe('public api', () => {
     });
 
     it.each([
-        'createMemoryStores',
+        'createMemoryRepositories',
         'defineAgent',
         'Engine',
-        'MemoryAgentRevisionStore',
-        'MemoryArtifactStore',
-        'MemoryCheckpointStore',
-        'MemoryEffectStore',
-        'MemoryIdempotencyStore',
-        'MemoryLockStore',
-        'MemoryRunStore',
-        'MemoryStateStore',
-        'MemoryStepStore',
+        'MemoryAgentRevisionRepository',
+        'MemoryArtifactRepository',
+        'MemoryCheckpointRepository',
+        'MemoryEffectRepository',
+        'MemoryIdempotencyRepository',
+        'MemoryLockRepository',
+        'MemoryRunRepository',
+        'MemoryStateRepository',
+        'MemoryStepRepository',
         'defineEffectTool',
         'defineTool',
         'effectMarker',
@@ -65,6 +65,7 @@ describe('public api', () => {
         'ChamviError',
         'BudgetExceededError',
         'ArtifactNotFoundError',
+        'RepositoryNotFoundError',
         'ToolNotAllowedError',
         'ToolDeniedError',
         'IncompleteResponseError',
@@ -123,9 +124,9 @@ describe('public api', () => {
         expect(core.CONVERSATION_NOTE_KEY_MAX_LENGTH).toBe(128);
         expect(core.CONVERSATION_NOTE_TEXT_MAX_BYTES).toBe(2048);
         expect(core.CONVERSATION_NOTES_MAX).toBe(100);
-        expect(core.MemoryConversationStore).toBeTypeOf('function');
-        expectTypeOf<core.MemoryConversationStoreOptions>().toEqualTypeOf<{ clock?: core.IClock }>();
-        expectTypeOf<core.MemoryConversationStore>().toMatchTypeOf<core.IConversationStore>();
+        expect(core.MemoryConversationRepository).toBeTypeOf('function');
+        expectTypeOf<core.MemoryConversationRepositoryOptions>().toEqualTypeOf<{ clock?: core.IClock }>();
+        expectTypeOf<core.MemoryConversationRepository>().toMatchTypeOf<core.IConversationRepository>();
         for (const name of [
             'normalizeConversationLimits',
             'identityId',
@@ -191,9 +192,9 @@ describe('public api', () => {
             }
         >();
         expectTypeOf<core.ConversationNoteOperation>().toHaveProperty('kind').toEqualTypeOf<'set' | 'remove'>();
-        expectTypeOf<core.IConversationStore['get']>()
+        expectTypeOf<core.IConversationRepository['findOne']>()
             .toEqualTypeOf<(identity: core.ConversationIdentity) => Promise<core.ConversationScope | undefined>>();
-        expectTypeOf<core.Stores>().not.toHaveProperty('resolve');
+        expectTypeOf<core.Repositories>().not.toHaveProperty('resolve');
     });
 
     it('exports the trigger key bound', () => {

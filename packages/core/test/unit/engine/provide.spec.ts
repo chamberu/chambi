@@ -26,7 +26,7 @@ import {
 } from '@chamvi/core';
 import type { AgentDefinition, ContextKey, ToolContext } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { createMemoryStores } from '../../../src/store/index.ts';
+import { createMemoryRepositories } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
@@ -50,7 +50,7 @@ const callTool = (toolName: string, input: unknown = {}): MockResponse => ({
 
 function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryStores({ clock });
+    const store = createMemoryRepositories({ clock });
     const errors: unknown[] = [];
     const agent = defineAgent({
         name: 'ops',
@@ -59,7 +59,7 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
         tools,
     });
     const engine = new Engine({
-        stores: store,
+        repositories: store,
         agents: [agent],
         clock,
         claimTtlMs: 30,
@@ -69,13 +69,13 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     });
     engines.push(engine);
     return {
-        stores: store,
+        repositories: store,
         engine,
         errors,
     };
 }
 
-async function runOn(engine: Engine, store: ReturnType<typeof createMemoryStores>) {
+async function runOn(engine: Engine, store: ReturnType<typeof createMemoryRepositories>) {
     const { runId } = await engine.dispatch({
         agent: 'ops',
         trigger: 'http',
@@ -83,11 +83,11 @@ async function runOn(engine: Engine, store: ReturnType<typeof createMemoryStores
         payload: {},
     });
     await engine.idle();
-    return { runId, run: await store.runs.getRun(runId) };
+    return { runId, run: await store.runs.findOne(runId) };
 }
 
-async function toolStep(store: ReturnType<typeof createMemoryStores>, runId: string, name: string) {
-    return (await store.steps.listSteps(runId)).find((s) => s.kind === 'tool' && s.name === name);
+async function toolStep(store: ReturnType<typeof createMemoryRepositories>, runId: string, name: string) {
+    return (await store.steps.find(runId)).find((s) => s.kind === 'tool' && s.name === name);
 }
 
 describe('engine.provide', () => {
@@ -102,7 +102,7 @@ describe('engine.provide', () => {
                 return 'ok';
             },
         });
-        const { engine, stores: store } = setup(mockModel([callTool('use'), text('done')]), { use });
+        const { engine, repositories: store } = setup(mockModel([callTool('use'), text('done')]), { use });
         engine.provide(KEY, value);
         await engine.start();
         const { run } = await runOn(engine, store);
@@ -115,7 +115,7 @@ describe('engine.provide', () => {
         const KEY = defineContextKey<Service>('service');
         const value: Service = { id: 's1' };
         let seen: unknown;
-        const { engine, stores: store } = setup(mockModel([text('done')]), (ctx) => {
+        const { engine, repositories: store } = setup(mockModel([text('done')]), (ctx) => {
             seen = inject(ctx, KEY);
             return {};
         });
@@ -142,7 +142,7 @@ describe('engine.provide', () => {
             },
             execute: async () => 'applied',
         });
-        const { engine, stores: store } = setup(mockModel([callTool('apply'), text('done')]), { apply });
+        const { engine, repositories: store } = setup(mockModel([callTool('apply'), text('done')]), { apply });
         engine.provide(KEY, value);
         await engine.start();
         const { run } = await runOn(engine, store);
@@ -156,7 +156,7 @@ describe('engine.provide', () => {
         const value: Service = { id: 's1' };
         const seen: unknown[] = [];
         const contexts: ToolContext[] = [];
-        const { engine, stores: store } = setup(mockModel([callTool('apply'), text('done')]), (ctx) => {
+        const { engine, repositories: store } = setup(mockModel([callTool('apply'), text('done')]), (ctx) => {
             contexts.push(ctx);
             seen.push(inject(ctx, KEY));
             return {
@@ -196,7 +196,7 @@ describe('engine.provide', () => {
                 return 'ok';
             },
         });
-        const { engine, stores: store } = setup(mockModel([callTool('use'), text('done')]), { use });
+        const { engine, repositories: store } = setup(mockModel([callTool('use'), text('done')]), { use });
         const value: Service = { id: 's1' };
         engine.provide(PROVIDED, value);
         await engine.start();
@@ -209,7 +209,7 @@ describe('engine.provide', () => {
         const a = defineContextKey<Service>('shared');
         const b = defineContextKey<Service>('shared');
         let caught: unknown;
-        const { engine, stores: store } = setup(mockModel([text('done')]), (ctx) => {
+        const { engine, repositories: store } = setup(mockModel([text('done')]), (ctx) => {
             expect(inject(ctx, a)).toEqual({ id: 'a' });
             try {
                 inject(ctx, b);
@@ -229,7 +229,7 @@ describe('engine.provide', () => {
         const KEY = defineContextKey<Service>('service');
         const value: Service = { id: 's1' };
         let seen: unknown;
-        const { engine, stores: store } = setup(mockModel([text('done')]), (ctx) => {
+        const { engine, repositories: store } = setup(mockModel([text('done')]), (ctx) => {
             seen = inject(ctx, KEY);
             return {};
         });
@@ -269,7 +269,7 @@ describe('engine.provide', () => {
             },
         });
         const model = mockModel([callTool('use'), text('done')]);
-        const { engine, stores: store } = setup(model, { use });
+        const { engine, repositories: store } = setup(model, { use });
         await engine.start();
         const { runId, run } = await runOn(engine, store);
         expect(run?.status).toBe('completed');
@@ -292,7 +292,7 @@ describe('engine.provide', () => {
                 return 'applied';
             },
         });
-        const { engine, stores: store } = setup(mockModel([callTool('apply'), text('done')]), { apply });
+        const { engine, repositories: store } = setup(mockModel([callTool('apply'), text('done')]), { apply });
         await engine.start();
         const { runId, run } = await runOn(engine, store);
         expect(run?.status).toBe('completed');
@@ -306,7 +306,7 @@ describe('engine.provide', () => {
         const model = mockModel([text('done')]);
         const {
             engine,
-            stores: store,
+            repositories: store,
             errors,
         } = setup(model, (ctx) => {
             inject(ctx, KEY);
@@ -331,7 +331,7 @@ describe('engine.provide', () => {
                 return inject(context, KEY).secret === 'sekr3t-ctx-value' ? 'ok' : 'wrong';
             },
         });
-        const { engine, stores: store } = setup(mockModel([callTool('use'), text('done')]), { use });
+        const { engine, repositories: store } = setup(mockModel([callTool('use'), text('done')]), { use });
         engine.provide(KEY, { secret: 'sekr3t-ctx-value' });
         await engine.start();
         const { runId, run } = await runOn(engine, store);
@@ -342,9 +342,9 @@ describe('engine.provide', () => {
         expect(Reflect.ownKeys(ctx).map(String).sort()).toEqual(['artifacts', 'channels', 'run', 'state']);
         const secret = 'sekr3t-ctx-value';
         expect(JSON.stringify(ctx.run)).not.toContain(secret);
-        expect(JSON.stringify(await store.steps.listSteps(runId))).not.toContain(secret);
-        expect(JSON.stringify(await store.checkpoints.latestCheckpoint(runId))).not.toContain(secret);
-        expect(JSON.stringify(await store.runs.getRun(runId))).not.toContain(secret);
+        expect(JSON.stringify(await store.steps.find(runId))).not.toContain(secret);
+        expect(JSON.stringify(await store.checkpoints.findOne(runId))).not.toContain(secret);
+        expect(JSON.stringify(await store.runs.findOne(runId))).not.toContain(secret);
     });
 
     it('the same key on two engines', async () => {
@@ -362,8 +362,8 @@ describe('engine.provide', () => {
         second.engine.provide(KEY, two);
         await first.engine.start();
         await second.engine.start();
-        await runOn(first.engine, first.stores);
-        await runOn(second.engine, second.stores);
+        await runOn(first.engine, first.repositories);
+        await runOn(second.engine, second.repositories);
         expect(seen).toHaveLength(2);
         expect(seen[0]).toBe(one);
         expect(seen[1]).toBe(two);

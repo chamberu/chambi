@@ -46,7 +46,7 @@ ESM only, Node.js `>=22`. `@chamvi/core` is a peer dependency; [routup](https://
 
 ```typescript
 import type { LanguageModel } from 'ai';
-import { Engine, createMemoryStores, defineAgent } from '@chamvi/core';
+import { Engine, createMemoryRepositories, defineAgent } from '@chamvi/core';
 import {
     createHttpApp,
     createShutdown,
@@ -66,7 +66,7 @@ export async function createAgentServer(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        stores: createMemoryStores(),
+        repositories: createMemoryRepositories(),
         agents: [echo],
         // REST runs carry channel http, MCP runs channel mcp
         channels: [httpChannel(), mcpChannel()],
@@ -249,14 +249,14 @@ process.once('SIGTERM', () => {
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `engine` | `Engine` | required | Dispatches, cancels and resumes runs; its `stores`, agents and `clock` serve every route (runs, steps and state are read from `engine.stores`, polls, waits and timeouts run on `engine.clock`) |
+| `engine` | `Engine` | required | Dispatches, cancels and resumes runs; its `repositories`, agents and `clock` serve every route (runs, steps and state are read from `engine.repositories`, polls, waits and timeouts run on `engine.clock`) |
 | `agents` | `string[]` | every agent | Names of the engine's agents this app serves (routes, MCP tools, extra routes); the others are unknown to it. A mounted channel serves every agent subscribing to it. A name the engine lacks or given twice throws `InvalidAgentDefinitionError` |
 | `auth` | `Authenticator \| Authenticator[]` | required | The authenticator chain |
 | `basePath` | `string` | none | Prefix of every route, e.g. `/api` |
 | `trustProxy` | routup trust-proxy input | none | Which proxies the client address (and the rate-limit key) trusts |
 | `shutdown` | `IShutdown` | none | Fails `/readyz` and ends streams on shutdown |
 | `bodyLimit` | `number` | `1_048_576` | Bytes a REST or MCP request body may have |
-| `stream.pollMs` | `number` | `2_000` | Store poll of SSE streams |
+| `stream.pollMs` | `number` | `2_000` | Repository poll of SSE streams |
 | `stream.maxOpen` | `number` | `1_000` | Open SSE streams plus waiting MCP `run_<agent>` calls per app; a positive integer, else `createHttpApp` throws `InvalidAgentDefinitionError` |
 | `mcp` | `false \| { name?, version?, maxWaitSeconds? }` | `chamvi`, `0.0.0`, `60` | MCP server info and wait cap; `false` mounts nothing |
 | `cors` | `false \| CorsOptions` | off | `@routup/cors` options |

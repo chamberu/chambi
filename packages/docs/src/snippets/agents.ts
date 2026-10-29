@@ -80,7 +80,7 @@ export function createLabeler() {
 // #region artifacts
 // an effect tool: a recovered run does not store the chart twice
 const saveChart = defineEffectTool({
-    description: 'Renders the points as a PNG chart and stores it with the run.',
+    description: 'Renders the points as a PNG chart and repositories it with the run.',
     inputSchema: z.object({ points: z.array(z.number()) }),
     execute: async ({ points }, { context }) => {
         const artifact = await context.artifacts.put({

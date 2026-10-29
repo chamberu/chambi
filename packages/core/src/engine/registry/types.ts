@@ -7,14 +7,14 @@
 
 import type { IClock } from '../../clock/index.ts';
 import type { Run } from '../../run/types.ts';
-import type { Stores } from '../../store/types.ts';
+import type { Repositories } from '../../repository/types.ts';
 
 /** What a registry cancel stores on the run (`Run.error`). */
 export type CancelReason = { code: string; message: string };
 
 /** What the registry operations need from the engine. */
 export type RegistryContext = {
-    stores: Pick<Stores, 'runs' | 'locks' | 'agentRevisions'>;
+    repositories: Pick<Repositories, 'runs' | 'locks' | 'agentRevisions'>;
     clock: IClock;
     /** The lock is retried every claimTtlMs / 3. */
     claimTtlMs: number;

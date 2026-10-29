@@ -5,8 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { createMemoryStores, defineAgent } from '@chamvi/core';
-import type { Agent, Run, Stores } from '@chamvi/core';
+import { createMemoryRepositories, defineAgent } from '@chamvi/core';
+import type { Agent, Repositories, Run } from '@chamvi/core';
 import { http } from '@chamvi/http';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
@@ -21,7 +21,7 @@ import {
     AppToken,
     configModule,
     createApp,
-    storeModule,
+    repositoryModule,
 } from '@chamvi/app';
 import type { AppCheckResult, IApp, IModule } from '@chamvi/app';
 import {
@@ -50,21 +50,21 @@ afterEach(async () => {
     await dir.remove();
 });
 
-/** A store that records every call that may write (any method not named get*, list* or read*). */
-function recordingStore(store: ReturnType<typeof createMemoryStores>): { stores: Stores; writes: string[] } {
+/** A store that records every call that may write (any method not named find* or read*). */
+function recordingRepository(store: ReturnType<typeof createMemoryRepositories>): { repositories: Repositories; writes: string[] } {
     const writes: string[] = [];
     const record = <T extends object>(target: T): T => new Proxy(target, {
         get(valueTarget, key, receiver) {
             const value: unknown = Reflect.get(valueTarget, key, receiver);
             if (typeof value !== 'function' || typeof key !== 'string') return value;
             return (...args: unknown[]) => {
-                if (!/^(get|list|read)/.test(key)) writes.push(key);
+                if (!/^(find|read)/.test(key)) writes.push(key);
                 return (value as (...a: unknown[]) => unknown).apply(valueTarget, args);
             };
         },
     });
     return {
-        stores: {
+        repositories: {
             runs: record(store.runs),
             steps: record(store.steps),
             checkpoints: record(store.checkpoints),
@@ -82,24 +82,24 @@ function recordingStore(store: ReturnType<typeof createMemoryStores>): { stores:
 
 function build(options: {
     agents?: Agent[]; 
-    stores?: Stores;
+    repositories?: Repositories;
     clock?: ControllableClock;
     modules?: IModule[];
 } = {}) {
     const clock = options.clock ?? new ControllableClock(START);
     const logger = createRecordingLogger(clock);
-    const store = options.stores ?? createMemoryStores({ clock });
+    const store = options.repositories ?? createMemoryRepositories({ clock });
     const app = createApp({
         agents: options.agents ?? [],
         models: { test: provider() },
-        modules: [configModule({ clock, logger }), storeModule({ stores: store }), ...options.modules ?? []],
+        modules: [configModule({ clock, logger }), repositoryModule({ repositories: store }), ...options.modules ?? []],
     });
     apps.push(app);
     return {
         app,
         clock,
         logger,
-        stores: store,
+        repositories: store,
     };
 }
 
@@ -124,7 +124,7 @@ const triage = defineAgent({
 });
 
 /** A run of `agent` parked on an approval. */
-async function parkWaiting(store: Stores, clock: ControllableClock, id: string, agent: string): Promise<void> {
+async function parkWaiting(store: Repositories, clock: ControllableClock, id: string, agent: string): Promise<void> {
     const now = clock.now();
     const run: Run = {
         id,
@@ -150,17 +150,17 @@ async function parkWaiting(store: Stores, clock: ControllableClock, id: string, 
         createdAt: now,
         updatedAt: now,
     };
-    await store.runs.createRun(run);
+    await store.runs.insert(run);
 }
 
 describe('App.check', () => {
     it('resolves no issues for a clean app and starts nothing', async () => {
         const clock = new ControllableClock(START);
-        const store = createMemoryStores({ clock });
+        const store = createMemoryRepositories({ clock });
         const runId = await queueRun(store, clock, 'triage');
         const { app } = build({
             agents: [triage],
-            stores: store,
+            repositories: store,
             clock,
         });
         const { port, env } = await envFor();
@@ -169,12 +169,12 @@ describe('App.check', () => {
 
         const server = await listenOn(port);
         await closeServer(server);
-        expect((await store.runs.getRun(runId))?.status).toBe('queued');
+        expect((await store.runs.findOne(runId))?.status).toBe('queued');
     });
 
     it('writes nothing to the store', async () => {
         const clock = new ControllableClock(START);
-        const memory = createMemoryStores({ clock });
+        const memory = createMemoryRepositories({ clock });
         await writeTree(dir.path, { 'triage/agent.ts': agentFile('v2', 'test/model', 'triage') });
         const stale = {
             agent: 'triage', 
@@ -186,21 +186,21 @@ describe('App.check', () => {
             hash: 'd'.repeat(64), 
             changedAt: START, 
         };
-        await memory.agentRevisions.setAgentRevision(stale);
-        await memory.agentRevisions.setAgentRevision(orphan);
+        await memory.agentRevisions.save(stale);
+        await memory.agentRevisions.save(orphan);
         const queued = await queueRun(memory, clock, 'triage');
         await parkWaiting(memory, clock, 'waiting-run', 'triage');
-        const { stores: store, writes } = recordingStore(memory);
-        const { app } = build({ stores: store, clock });
+        const { repositories: store, writes } = recordingRepository(memory);
+        const { app } = build({ repositories: store, clock });
         const { env } = await envFor({ CHAMVI_AGENTS_DIR: dir.path });
 
         await expect(app.check({ env })).resolves.toEqual({ issues: [] });
 
         expect(writes).toEqual([]);
-        expect((await memory.runs.getRun(queued))?.status).toBe('queued');
-        expect((await memory.runs.getRun('waiting-run'))?.status).toBe('waiting');
-        expect(await memory.agentRevisions.getAgentRevision('triage')).toEqual(stale);
-        expect(await memory.agentRevisions.getAgentRevision('gone')).toEqual(orphan);
+        expect((await memory.runs.findOne(queued))?.status).toBe('queued');
+        expect((await memory.runs.findOne('waiting-run'))?.status).toBe('waiting');
+        expect(await memory.agentRevisions.findOne('triage')).toEqual(stale);
+        expect(await memory.agentRevisions.findOne('gone')).toEqual(orphan);
     });
 
     it('reports a broken folder as an issue', async () => {
