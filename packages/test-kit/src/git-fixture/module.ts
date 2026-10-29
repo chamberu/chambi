@@ -5,7 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { execFile } from 'node:child_process';
 import {
     mkdir,
     mkdtemp,
@@ -20,11 +19,9 @@ import {
     normalize,
 } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
+import { simpleGit } from 'simple-git';
 import { ValidationError } from '@chamvi/core';
 import type { GitFixture } from './types.ts';
-
-const run = promisify(execFile);
 
 /**
  * A temporary git repository with one commit of `files` (paths relative to
@@ -61,8 +58,46 @@ export async function createGitFixture(files: Record<string, string>): Promise<G
         GIT_CONFIG_VALUE_1: 'false',
     };
     const git = async (...args: string[]) => {
-        const { stdout } = await run('git', args, { cwd: path, env });
-        return stdout;
+        const abort = new AbortController();
+        return simpleGit({
+            abort: abort.signal,
+            baseDir: path,
+            trimmed: false,
+            // Preserve the fixture's trusted raw arguments and isolated config overrides.
+            unsafe: {
+                allowUnsafeAlias: true,
+                allowUnsafeAskPass: true,
+                allowUnsafeConfigEnvCount: true,
+                allowUnsafeConfigPaths: true,
+                allowUnsafeCredentialHelper: true,
+                allowUnsafeDiffExternal: true,
+                allowUnsafeDiffTextConv: true,
+                allowUnsafeEditor: true,
+                allowUnsafeFilter: true,
+                allowUnsafeFsMonitor: true,
+                allowUnsafeGpgProgram: true,
+                allowUnsafeGitProxy: true,
+                allowUnsafeHooksPath: true,
+                allowUnsafeMergeDriver: true,
+                allowUnsafePack: true,
+                allowUnsafePager: true,
+                allowUnsafeProtocolOverride: true,
+                allowUnsafeSshCommand: true,
+                allowUnsafeTemplateDir: true,
+            },
+            completion: { onClose: true, onExit: false },
+        }).env(env).outputHandler((_command, stdout, stderr) => {
+            // Match execFile's former 1 MiB allowance per stream and command.
+            for (const stream of [stdout, stderr]) {
+                let bytes = 0;
+                stream.on('data', (chunk: Buffer) => {
+                    bytes += chunk.length;
+                    if (bytes > 1_048_576) {
+                        abort.abort();
+                    }
+                });
+            }
+        }).raw(args);
     };
 
     try {

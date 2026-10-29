@@ -5,7 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import {
     basename,
@@ -13,7 +12,7 @@ import {
     join,
     resolve,
 } from 'node:path';
-import { promisify } from 'node:util';
+import { simpleGit } from 'simple-git';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
 import {
     cleanupTempDir,
@@ -25,7 +24,6 @@ import {
 } from 'skills';
 import type { PrepareSkillsOptions, PreparedSkill } from './types.ts';
 
-const run = promisify(execFile);
 const marker = '.chamvi-skills';
 const ownership = 'chamvi-skills-v1\n';
 // eslint-disable-next-line no-control-regex
@@ -33,6 +31,31 @@ const controls = /[\x00-\x1f\x7f]/u;
 
 function invalid(): never {
     throw new InvalidAgentDefinitionError('Cannot prepare skills: invalid configuration, source, verification or managed directory.');
+}
+
+function readGitMetadata(clone: string, ...args: string[]): Promise<string> {
+    const abort = new AbortController();
+    return simpleGit({
+        abort: abort.signal,
+        trimmed: false,
+        timeout: {
+            block: 30_000,
+            stdOut: false,
+            stdErr: false,
+        },
+        completion: { onClose: true, onExit: false },
+    }).outputHandler((_command, stdout, stderr) => {
+        // Match execFile's former 1 MiB allowance per stream and command.
+        for (const stream of [stdout, stderr]) {
+            let bytes = 0;
+            stream.on('data', (chunk: Buffer) => {
+                bytes += chunk.length;
+                if (bytes > 1_048_576) {
+                    abort.abort();
+                }
+            });
+        }
+    }).raw(['-C', clone, ...args]);
 }
 
 async function inspectTarget(directory: string): Promise<boolean> {
@@ -130,14 +153,14 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
         await inspectTarget(directory);
         stage = await fs.mkdtemp(join(parent, '.chamvi-skills-'));
         clone = await cloneRepo(parsed.url, revision);
-        const { stdout } = await run('git', ['-C', clone, 'rev-parse', '--verify', 'HEAD'], { timeout: 30_000 });
+        const stdout = await readGitMetadata(clone, 'rev-parse', '--verify', 'HEAD');
         if (stdout.trim().toLowerCase() !== revision) {
             invalid();
         }
 
         // Reject committed links before discovery or copying can follow them.
-        const tree = await run('git', ['-C', clone, 'ls-tree', '-r', '-z', 'HEAD'], { timeout: 30_000 });
-        if (tree.stdout.split('\0').some((entry) => entry.startsWith('120000 '))) {
+        const tree = await readGitMetadata(clone, 'ls-tree', '-r', '-z', 'HEAD');
+        if (tree.split('\0').some((entry) => entry.startsWith('120000 '))) {
             invalid();
         }
 

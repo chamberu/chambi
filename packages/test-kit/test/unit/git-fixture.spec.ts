@@ -28,6 +28,27 @@ describe('createGitFixture', () => {
         expect(existsSync(fixture.path)).toBe(false);
     });
 
+    it('preserves raw NULs and newlines, and recovers after a failed command', async () => {
+        const fixture = await createGitFixture({ 'a.txt': 'a\n\n', 'nested/b.txt': 'b' });
+        try {
+            await expect(fixture.git('show', 'HEAD:a.txt')).resolves.toBe('a\n\n');
+            await expect(fixture.git('ls-tree', '-r', '-z', '--name-only', 'HEAD')).resolves.toBe('a.txt\0nested/b.txt\0');
+            await expect(fixture.git('rev-parse', '--verify', 'missing')).rejects.toThrow();
+            await expect(fixture.git('rev-parse', 'HEAD')).resolves.toBe(`${fixture.commit}\n`);
+        } finally {
+            await fixture.cleanup();
+        }
+    });
+
+    it('accepts explicit trusted Git configuration in raw commands', async () => {
+        const fixture = await createGitFixture({ 'a.txt': 'a' });
+        try {
+            await expect(fixture.git('-c', 'alias.fixture-raw=!printf "trusted\\n"', 'fixture-raw')).resolves.toBe('trusted\n');
+        } finally {
+            await fixture.cleanup();
+        }
+    });
+
     it('runs git in the repository with the fixture identity', async () => {
         const fixture = await createGitFixture({ 'a.txt': 'a' });
         try {

@@ -69,6 +69,7 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 - After changes run `npm run build && npm run test && npm run typecheck && npm run lint`. Run `npm run lint:fix` before hand-fixing formatting.
 - Never edit `dist/` (generated, git-ignored). Never hand-edit `.release-please-manifest.json` or package versions; release-please owns them.
 - Keep runtime `dependencies` minimal (the house libraries `@ebec/core`, `smob`, `validup` are fine); tooling belongs in `devDependencies`, and the AI SDK (`ai`) stays a peer dependency.
+- Host-local Git in skills preparation and the test-kit fixture uses direct `simple-git` dependencies with raw, untrimmed output, close-based completion and independent 1 MiB stdout/stderr bounds per command. Metadata reads retain a non-resetting 30 second deadline; fixture commands retain their isolated environment and have no timeout. Sandbox Git stays on `workspace.exec`. See [simple-git.md](references/simple-git.md).
 - New package: add `packages/<name>` (copy `packages/test-kit` layout), a path alias in the root `tsconfig.json`, aliases in its `test/vitest.config.ts` for itself and every workspace package it imports, an entry in `release-please-config.json` (`packages` and the `linked-versions` components) and in `.release-please-manifest.json` at the current version.
 - Errors extend `ChamviError` (`@ebec/core` `BaseError`) and live in `src/errors/`, one file each (see File Organization); never throw a bare `Error` from library code.
 - A new public export goes through its folder's `index.ts` (reached from `src/index.ts`) and must be added to the package's `test/unit/exports.spec.ts`.
@@ -108,5 +109,6 @@ Current references:
 
 - [helm.md](references/helm.md): chamvi/helm, the `agent-app` chart; contract map from the CLI, env, routes, image and sandbox to the chart's templates (see [Downstream Repos](../AGENTS.md#downstream-repos)).
 - [agent-template.md](references/agent-template.md): chamvi/agent-template, the starter app; contract map from the public API, CLI, env and chart values to the template's files and tests.
+- [simple-git.md](references/simple-git.md): host-local metadata and fixture clients, output/deadline bounds and isolated configuration.
 - [vercel-skills.md](references/vercel-skills.md): Vercel Skills source/install SDK, temporary fork root API and optional `@chamvi/skills` ownership, migration tracked in issue 97.
 - [eve.md](references/eve.md): Vercel's eve agent framework (and `@vercel/agent-runs`), the closest competitor; concept map for durability, approvals, channels, sandboxes, coding tools, tracing, evals and compaction.
