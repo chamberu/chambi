@@ -88,13 +88,33 @@ export default createApp({
 
 ## Approved local skills
 
-Import `hashSkillBundle` and `loadSkillBundles` from the optional `@chamvi/skills` package. `hashSkillBundle(directory)` validates and hashes a local passive instruction/reference bundle. After reviewing all its text, pin the exact `{ name, version, directory, sha256 }` in agent configuration and call `loadSkillBundles(approved)`. Append the returned `catalog.instructions` to the agent's instructions and compose `catalog.tools` with its tools, checking for an existing `load_skill` name. Compute the expected digest separately during review, never dynamically at startup.
+Use `createApp({ skills: [common], agents })` for additive defaults on every code and folder agent. Each `defineAgent({ skills: [...] })` adds scoped extras. The engine appends metadata and provides `load_skill` automatically; user tools named `load_skill` are rejected.
 
-The catalog initially reveals approved metadata only. `load_skill({ name })` returns the body; `load_skill({ name, reference: 'references/checklist.md' })` returns one exact approved supporting file. Both are ordinary tool results, subject to existing policy, hooks and durable approvals, and stored in run checkpoints. Unknown frontmatter settings such as `allowed-tools` are ignored; their names appear in `catalog.skills[*].ignoredFields`.
+```ts
+import { createApp } from '@chamvi/app';
+import { gitSkills } from '@chamvi/skills';
 
-Supporting `.yaml` and `.yml` files, including agent metadata, are passive UTF-8 references. Descriptions have surrounding whitespace trimmed before the existing length and control-character checks; internal controls remain invalid.
+const common = gitSkills({
+    source: 'https://github.com/tada5hi/skills.git',
+    revision: '0123456789abcdef0123456789abcdef01234567', // replace with reviewed commit
+    directory: '/tmp/chamvi-skills/common',
+    approved: [{
+        name: 'ponytail',
+        version: '1.0.0',
+        sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', // reviewed digest
+    }],
+});
 
-Catalog content is immutable after setup; changed bytes under an old pin fail when the catalog is recreated. External bundle edits are not automatically watched: update the tracked descriptor pin and reviewed runtime assets together. Bundles grant no tools, scripts, subagents or sandboxing. See [Approved Local Skills](https://chamvi.dev/guide/skills) for the review workflow, supported files, bounds, deployment and compatibility limits, and the [public API](https://chamvi.dev/reference/app#approved-local-skills).
+export default createApp({ agents, skills: [common] });
+```
+
+Replace illustrative pins after independently reviewing all bundle text. `gitSkills` is a pure factory from the skills main entry. Startup prepares required sources before `engineCreated`, channels, HTTP or model work. Verification failures abort startup; failed hot reloads retain the old agent. `app.check()` validates static headers without loading providers or installing sources, so remote verification is deferred. Migrate skips preparation.
+
+For already deployed files, `loadSkillBundle(descriptor)` returns a ready snapshot. `hashSkillBundle(directory)` is a separate review aid, never approval. The manual `loadSkillBundles(approved)` catalog remains supported: append its instructions and compose its tools explicitly, checking for a `load_skill` collision. Helpers belong to `@chamvi/skills`, with no compatibility app exports.
+
+Runtime Git sources require `@chamvi/skills`, Node >=22.20, Git (absent from the base Node 24 image), writable managed directories/tmp, source credentials/network and startup probe time for cloning and verification. Stop joins cleanup and may wait for a noncancelable clone. Prebuilt snapshots need readable runtime assets only.
+
+Snapshots are immutable. Saved load results retain original checkpoint bytes; pending/future loads after a pin upgrade use the current verified snapshot. Global changes do not change folder hashes: finish or cancel unsettled runs before upgrades when mixed-version disclosure is unacceptable. Tracked agent extra-pin edits use existing revision cancellation. Skills grant no tools, scripts, subagents or permissions. See [Approved Skills](https://chamvi.dev/guide/skills) and the [skills API](https://chamvi.dev/reference/skills).
 
 ## Environment
 

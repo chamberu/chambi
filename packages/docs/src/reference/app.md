@@ -205,53 +205,9 @@ The real module lifecycle without `start()` and a port, over exactly `options.mo
 
 ## Approved local skills
 
-Synchronous, opt-in helpers from the optional `@chamvi/skills` package. See [Approved Local Skills](/guide/skills) for review, digest framing, file bounds and deployment.
+`AppOptions.skills?: readonly SkillInput[]` forwards additive defaults for every code and folder agent. An agent's `skills` adds extras. Inputs are ready snapshots or `ISkillSource` providers; core supplies the contracts and app has no dependency on `@chamvi/skills`. Startup verifies before `engineCreated`, channels, HTTP and model execution. `check()` skips providers and defers content verification; `migrate()` skips preparation. See [Approved skills](/guide/skills) for lifecycle and replay semantics.
 
-```ts
-// Filesystem helpers are imported from @chamvi/skills.
-function hashSkillBundle(directory: string): string;
-function loadSkillBundles(approved: readonly ApprovedSkill[]): SkillCatalog;
-
-type ApprovedSkill = {
-    name: string;
-    version: string;
-    directory: string;
-    sha256: string;
-};
-
-type SkillMetadata = {
-    readonly name: string;
-    readonly description: string;
-    readonly version: string;
-    readonly sha256: string;
-    readonly ignoredFields: readonly string[];
-};
-
-type SkillCatalog = {
-    readonly skills: readonly SkillMetadata[];
-    readonly instructions: string;
-    readonly tools: ToolSet; // unchanged AI SDK type
-};
-
-type LoadedSkill = {
-    name: string;
-    version: string;
-    sha256: string;
-    reference: string | null;
-    content: string;
-    references: string[];
-};
-```
-
-`hashSkillBundle` validates and hashes all supported files; it is a review aid, not approval. `loadSkillBundles` verifies every explicit absolute directory and lowercase full digest before publishing an immutable catalog. Invalid descriptors, metadata, files, bounds, unstable reads or pin mismatches throw `InvalidAgentDefinitionError` with source-relative diagnostics and no file bodies. Names are unique; at most 16 bundles are allowed. Empty input returns empty `skills`, `instructions` and `tools`. Importing the package does no bundle I/O.
-
-`skills` descriptions have surrounding whitespace trimmed before the 1,024-character and control-character checks; internal controls remain invalid. Supporting `.yaml` and `.yml` files are passive UTF-8 text references, with the same file and bundle bounds.
-
-`instructions` contains sorted, escaped approved name/description/version/digest metadata, without bodies, references or host paths. `skills` additionally exposes ignored frontmatter field names in `ignoredFields`; `allowed-tools`, `model` and other extra fields do not take effect.
-
-`tools.load_skill` accepts `{ name: string, reference?: string }`. It returns `LoadedSkill` with the body (`reference: null`) or one exact approved reference, plus the sorted supporting-path list in either form. `SKILL.md` is available only through the body form. Unknown names, invalid/unknown paths and malformed inputs raise `ValidationError` without filesystem access. References can be loaded directly and are never followed automatically. Repeated/parallel calls read the same private snapshot through normal tool policy, hooks, approvals and checkpointing.
-
-Compose instructions and tools explicitly; check for a `load_skill` collision before spreading tool sets. Runtime file edits cannot change an existing catalog, and changed bytes under an old pin fail on recreation. Update reviewed files and the tracked pin together; external directories are not automatically watched. These helpers grant no permissions or additional tools.
+Filesystem review/loading and Git preparation are exported by [`@chamvi/skills`](/reference/skills). App exports no filesystem helpers. Use `loadSkillBundle()` for a ready snapshot or `gitSkills()` for an engine-owned source; the manual `loadSkillBundles()` catalog remains supported by the skills package.
 
 ## Agent folders
 

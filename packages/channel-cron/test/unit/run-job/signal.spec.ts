@@ -17,6 +17,7 @@ import {
     MemoryStore,
     defineAgent,
 } from '@chamvi/core';
+import type { SkillInput } from '@chamvi/core';
 import type { RunJobResult } from '@chamvi/channel-cron';
 import { cron, cronChannel, runJob } from '@chamvi/channel-cron';
 import { ControllableClock } from '@chamvi/test-kit';
@@ -36,7 +37,7 @@ function hangingModel() {
     });
 }
 
-function setup() {
+function setup(skills?: SkillInput[]) {
     const clock = new ControllableClock(T);
     const store = new MemoryStore({ clock });
     const agent = defineAgent({
@@ -50,6 +51,7 @@ function setup() {
         agents: [agent],
         channels: [cronChannel()],
         clock,
+        skills,
     });
     return {
         clock,
@@ -87,6 +89,56 @@ async function abortWhileRunning(ctx: ReturnType<typeof setup>) {
 }
 
 describe('runJob with a signal', () => {
+    it('caller cancellation during skill preparation preserves queued status and skips model execution', async () => {
+        const entered = Promise.withResolvers<AbortSignal>();
+        const release = Promise.withResolvers<void>();
+        const ctx = setup([{
+            skills: [],
+            async load({ signal }) {
+                entered.resolve(signal);
+                await release.promise;
+                signal.throwIfAborted();
+                return [];
+            },
+        }]);
+        const controller = new AbortController();
+        const job = runJob({
+            engine: ctx.engine,
+            agent: ctx.agent,
+            signal: controller.signal,
+        });
+        const signal = await entered.promise;
+        controller.abort();
+        expect(signal.aborted).toBe(true);
+        release.resolve();
+        await expect(job).resolves.toMatchObject({ status: 'queued', exitCode: 0 });
+    });
+
+    it('independent verification errors still reject when the caller also cancels', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const failure = new Error('independent verification error');
+        const ctx = setup([{
+            skills: [],
+            async load() {
+                entered.resolve();
+                await release.promise;
+                throw failure;
+            },
+        }]);
+        const controller = new AbortController();
+        const job = runJob({
+            engine: ctx.engine,
+            agent: ctx.agent,
+            signal: controller.signal,
+        });
+        const rejection = expect(job).rejects.toBe(failure);
+        await entered.promise;
+        controller.abort();
+        release.resolve();
+        await rejection;
+    });
+
     it('returns the stored status after the drain when aborted while waiting', async () => {
         const ctx = setup();
 

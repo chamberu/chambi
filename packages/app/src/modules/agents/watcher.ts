@@ -118,17 +118,20 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
 
         try {
             check(loaded.agent);
+            engine.checkAgent(loaded.agent);
         } catch (error) {
             record(name, relativize(messageOf(error), root));
             return 'done';
         }
 
+        if (role === 'check') {
+            return 'done';
+        }
+
+        // Verification is fatal during boot; polling reports failures and retains the old agent.
+        await engine.prepare({ agents: [loaded.agent], signal });
+
         try {
-            if (role === 'check') {
-                // read-only: what putAgent would refuse, nothing registered or written
-                engine.checkAgent(loaded.agent);
-                return 'done';
-            }
             // a marker from before HASH_IGNORE_PATTERNS holds the same content: moved, never a cancel
             const formerRevision = await formerAgentFolderHash(join(root, name), hash);
             await engine.putAgent(loaded.agent, {

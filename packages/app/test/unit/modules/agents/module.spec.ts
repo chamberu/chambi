@@ -41,6 +41,7 @@ import type { AppMode, IApp } from '@chamvi/app';
 import {
     TOKEN,
     TOKENS,
+    deferred,
     hangingModel,
     rejectionOf,
 } from '../../../utils/app.ts';
@@ -599,7 +600,7 @@ describe('agentsModule', () => {
         expect(changes).toEqual([]);
     });
 
-    it('stop waits for a reload in flight', async () => {
+    it('stop joins a reload in flight without publishing the canceled candidate', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const {
             harness,
@@ -612,18 +613,36 @@ describe('agentsModule', () => {
         await harness.setup();
         await watch();
 
-        await writeFile(
-            join(folder(), 'agent.ts'),
-            `await new Promise((resolve) => setTimeout(resolve, 200));\n${agentFile('v2')}`,
-        );
-        const v2 = await hashAgentFolder(folder());
-        await poll();
-        clock.advance(POLL_MS);
-        const current = engine();
-        await harness.stop();
+        const v1 = engine().agentRevision('greeter');
+        const entered = deferred();
+        const release = deferred();
+        let loaded = false;
+        vi.stubGlobal('chamviReload', async () => {
+            entered.resolve();
+            await release.promise;
+            loaded = true;
+        });
+        try {
+            await writeFile(join(folder(), 'agent.ts'), `await globalThis.chamviReload();\n${agentFile('v2')}`);
+            await poll();
+            clock.advance(POLL_MS);
+            await entered.promise;
+            const current = engine();
+            let stopped = false;
+            const stopping = harness.stop().then(() => { stopped = true; });
+            await new Promise<void>((resolve) => { setImmediate(resolve); });
+            expect(stopped).toBe(false);
+            expect(loaded).toBe(false);
+            release.resolve();
+            await stopping;
 
-        expect(current.agentRevision('greeter')).toBe(v2);
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(v2);
+            expect(loaded).toBe(true);
+            expect(current.agentRevision('greeter')).toBe(v1);
+            expect((await store.getAgentRevision('greeter'))?.hash).toBe(v1);
+        } finally {
+            release.resolve();
+            vi.unstubAllGlobals();
+        }
     });
 
     it('stop ends the polling', async () => {

@@ -977,6 +977,7 @@ export class Engine implements IContextProvider {
      */
     async tick(): Promise<void> {
         const now = this.clock.now().getTime();
+        let resumed = false;
         const { data } = await this.store.listRuns({ status: [RunStatus.WAITING] });
         for (const listed of data) {
             if (!listed.waiting) continue;
@@ -994,12 +995,18 @@ export class Engine implements IContextProvider {
                     { approved: false, reason: APPROVAL_TIMED_OUT },
                     () => new InvalidRunStateError(`Run "${run.id}" moved on to another approval.`),
                 );
+                resumed = true;
             } catch (error) {
                 // answered meanwhile (approve, another replica)
                 if (!(error instanceof InvalidRunStateError)) {
                     this.onError(error, listed);
                 }
             }
+        }
+
+        // A one-shot job may drain next; finish admission of resumed approvals first.
+        if (resumed && this.started) {
+            await this.queue.pump();
         }
     }
 

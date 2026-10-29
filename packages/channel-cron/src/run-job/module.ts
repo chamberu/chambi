@@ -59,7 +59,9 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
         // recovery, the queue and the approval tick also run when the tick was skipped
         // checked again after start: a stop that arrived meanwhile must not deny approvals or notify
         // a one-shot job never starts channels (cron schedules, sockets)
-        if (!signal?.aborted) await engine.start({ channels: false });
+        if (!signal?.aborted) {
+            await engine.start({ channels: false, signal });
+        }
         if (!signal?.aborted) await engine.tick();
         if (tick.dispatched && !signal?.aborted) {
             const { runId } = tick;
@@ -90,10 +92,12 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
             });
         }
     } catch (error) {
-        // the engine was started: shut it down before reporting
-        settled = true;
-        await engine.drain({ timeoutMs: drainTimeoutMs }).catch(() => {});
-        throw error;
+        // Matching caller cancellation follows the ordinary drain/status path.
+        if (!signal?.aborted || error !== signal.reason) {
+            settled = true;
+            await engine.drain({ timeoutMs: drainTimeoutMs }).catch(() => {});
+            throw error;
+        }
     } finally {
         settled = true;
         timer?.clear();

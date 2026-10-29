@@ -25,7 +25,8 @@ import type { EngineModuleOptions } from './types.ts';
  * model, the resolver (which refuses an agent whose model cannot resolve) and
  * every `CHANNELS` contribution (two of one name, or a subscription of a
  * channel nobody contributed, is InvalidAgentDefinitionError),
- * registers `ENGINE`, runs the `engineCreated` hooks and, in start mode,
+ * prepares skills with the app signal (a check skips providers), registers
+ * `ENGINE`, runs the `engineCreated` hooks and, in start mode,
  * registers its start step (run once every module's `onReady` checked its
  * configuration): `engine.start()`, which starts the channels; a job starts
  * the engine without them. `teardown` drains it (which stops the channels
@@ -84,6 +85,7 @@ export class EngineModule implements IModule {
         const engine = new Engine({
             store: container.resolve(AppToken.STORE),
             agents: [...context.agents],
+            ...(context.skills !== undefined && { skills: context.skills }),
             ...(this.model !== undefined && { model: this.model }),
             ...(this.models !== undefined && { models: this.models }),
             channels: container.resolveAll(AppToken.CHANNELS),
@@ -94,13 +96,19 @@ export class EngineModule implements IModule {
             onError: (error, run) => logger.error('engine error', error, { run: run?.id, agent: run?.agent }),
         });
         this.engine = engine;
+
+        if (!context.check) {
+            await engine.prepare({ signal: context.signal });
+            context.signal.throwIfAborted();
+        }
+
         container.register(AppToken.ENGINE, { useValue: engine });
 
         await runHooks(container, 'engineCreated', engine);
 
         if (context.mode === 'start') {
             // started once every onReady checked its configuration (authenticators, routes); starts the channels
-            registerStartStep(container, ModuleName.ENGINE, () => engine.start());
+            registerStartStep(container, ModuleName.ENGINE, () => engine.start({ signal: context.signal }));
         }
     }
 

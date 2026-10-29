@@ -1,10 +1,45 @@
 # @chamvi/skills
 
-Optional setup/build preparation for explicitly selected Git skill sources. Requires Git and Node >=22.20; the runtime packages retain their existing Node floor.
+Optional filesystem verification and startup or setup/build preparation for explicitly selected Git skill sources. Requires Git and Node >=22.20; the runtime packages retain their existing Node floor.
 
 ```bash
 npm install @chamvi/skills @chamvi/core
 ```
+
+## Runtime contracts
+
+The passive contracts are exported by `@chamvi/core` (also through app):
+
+<<< ../../../core/src/skill/types.ts{ts}
+
+## gitSkills
+
+```ts
+import { gitSkills } from '@chamvi/skills';
+
+function gitSkills(options: GitSkillsOptions): ISkillSource;
+```
+
+<<< ../../../skills/src/source/types.ts{ts}
+
+This pure factory copies source configuration and reviewed headers. Pass its result to app/engine `skills` defaults or an agent's extra `skills`. Engine preparation verifies exactly the declared identities before publishing immutable results. No `/module` entry or app module is needed. See [Approved skills](/guide/skills) for startup ordering, cancellation, deployment and replay limits.
+
+## Local snapshots and manual catalogs
+
+```ts
+type ApprovedSkill = {
+    name: string;
+    version: string;
+    directory: string; // absolute runtime path
+    sha256: string; // independently reviewed lowercase full digest
+};
+
+function hashSkillBundle(directory: string): string;
+function loadSkillBundle(approved: ApprovedSkill): Skill;
+function loadSkillBundles(approved: readonly ApprovedSkill[]): SkillCatalog;
+```
+
+The singular loader verifies and returns a ready snapshot for first-class `skills` arrays. The plural loader returns the supported manual catalog (`skills`, metadata-only `instructions`, `tools`); callers compose it explicitly and guard `load_skill` collisions. Hashing is a separate review aid and never grants approval. All helpers read only when explicitly called; imports do no I/O. Bundle bounds and digest framing are in the [guide](/guide/skills#bundle-format-and-bounds).
 
 ## prepareSkills
 
@@ -28,6 +63,8 @@ Review and record content hashes independently, then verify staged copies before
 
 <<< ../../../skills/test/fixtures/readme-example.ts{ts}
 
-The app owns source/commit configuration, role profiles and reviewed pins. Combine selected names and pins before constructing one catalog. Append `catalog.instructions` to role instructions and compose `catalog.tools` explicitly, checking for a `load_skill` collision. Run preparation in a setup/build task; keep runtime startup on already deployed assets. See [Approved local skills](/guide/skills) for runtime validation, permissions and deployment.
+The app owns source/commit configuration, role profiles and reviewed pins. Combine selected names and pins before constructing one manual catalog. Append `catalog.instructions` to role instructions and compose `catalog.tools` explicitly, checking for a `load_skill` collision. This manual workflow may run in a setup/build task with already deployed assets. For runtime installation, prefer `gitSkills()` and let the engine own preparation and cancellation. See [Approved local skills](/guide/skills) for runtime validation, permissions and deployment.
 
 Chamvi owns the temporary commit-pinned backend. Consumers do not import its SDK, fork or types. Backend replacement criteria are tracked in [issue #97](https://github.com/chamvi/chamvi/issues/97).
+
+`signal` is optional for `prepareSkills`. Cancellation is checked around clone/copy/verification phases and before promotion. Native Git metadata commands receive it; SDK cloning is awaited to actual settlement before cleanup. Promotion/rollback is completed once entered. Stop may wait for cloning; no bounded-fast-shutdown guarantee is made. Git providers require runtime Git (absent from the base Node 24 image), writable corpus/tmp space, source credentials/network and sufficient startup probe time. Prebuilt local snapshots need only the deployed readable bundle files.

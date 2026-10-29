@@ -12,6 +12,7 @@ import type {
     IClock,
     IStore,
     ModelRef,
+    SkillInput,
 } from '@chamvi/core';
 import type {
     AgentIssue,
@@ -47,6 +48,8 @@ export type AppContext = {
     providers?: Readonly<Record<string, ProviderConfig>>;
     /** createApp's agents (the code agents); the live set is `engine.listAgents()`. */
     agents: readonly Agent[];
+    /** createApp's additive skill defaults; check and migrate never load sources. */
+    skills?: readonly SkillInput[];
     /**
      * `IApp.check()` (mode `start`): every module sets up and checks as for a
      * start, but nothing writes the store and no start step runs. Of the
@@ -87,7 +90,7 @@ export type GitCredentialSource = {
 
 export interface ILifecycleHook {
     readonly name: string;
-    /** After `new Engine(...)`, before `engine.start()` (start, job and a check). */
+    /** After verified preparation, before `engine.start()` (start and job); a check skips preparation. */
     engineCreated?(engine: Engine): void | Promise<void>;
     /** start only: after engine.start() (which starts the channels), before serve(). */
     started?(): void | Promise<void>;

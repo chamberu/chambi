@@ -1,10 +1,41 @@
 # @chamvi/skills
 
-Prepare explicitly selected, commit-pinned skill sources for Chamvi's verified local runtime loader. This optional package requires Git and Node >=22.20.
+Verify passive skill bundles and prepare explicitly selected, commit-pinned sources for Chamvi agents. This optional package requires Git and Node >=22.20.
 
 ```bash
 npm install @chamvi/skills @chamvi/core
 ```
+
+Use `gitSkills()` from the main entry for first-class engine/app defaults or agent extras:
+
+```ts
+import { Engine, MemoryStore, defineAgent } from '@chamvi/core';
+import { gitSkills } from '@chamvi/skills';
+
+const common = gitSkills({
+    source: 'https://github.com/tada5hi/skills.git',
+    revision: '0123456789abcdef0123456789abcdef01234567', // reviewed commit
+    directory: '/tmp/chamvi-skills/common',
+    approved: [{
+        name: 'ponytail',
+        version: '1.0.0',
+        sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    }],
+});
+const engine = new Engine({
+    store: new MemoryStore(),
+    model: yourLanguageModel,
+    skills: [common],
+    agents: [defineAgent({ name: 'reviewer', instructions: 'Review the requested scope.' })],
+});
+await engine.start();
+```
+
+Replace the illustrative commit/digest with independently reviewed pins and `yourLanguageModel` with an AI SDK model. `gitSkills` copies configuration without I/O. Startup verifies required sources before recovery, channels and model work. The engine automatically appends metadata and supplies scoped `load_skill`; an agent's `skills` adds extras to defaults. `loadSkillBundle(descriptor)` returns a ready verified snapshot for the same arrays. Filesystem helpers belong to this package; no app module or `/module` entry is needed.
+
+Startup installation requires this package and Git in the runtime image, writable managed corpus/tmp paths, source network/credentials and startup probe time. The base Node 24 image does not include Git. Check/migrate do not invoke skill providers; check defers remote verification. Stop joins cleanup and may wait for a noncancelable clone. Prebuilt local snapshots avoid runtime Git/network requirements. Global pin upgrades do not change folder hashes: saved load results keep original bytes, while pending/future loads use current snapshots. Finish or cancel unsettled runs before global upgrades if mixed-version disclosure is unacceptable.
+
+The manual catalog workflow remains supported:
 
 Call `prepareSkills({ source, revision, names, directory, verify? })` in an explicit setup/build task. The source is a local Git repository, Git URL or repository shorthand; revision is a full 40-character commit. The result is an ordered readonly list of `{ name, description, path }`, with absolute paths. Source configuration, role choices and independently reviewed content pins belong to your application.
 
@@ -36,6 +67,6 @@ Review complete source bundles and record their hashes separately before invokin
 
 Preparation verifies the actual cloned commit and requires the entire committed source tree to be symlink-free, including unrelated or unselected paths. It rejects source links before discovery/copying and fails closed if Git tree inspection fails. It rejects missing/duplicate names, copies supporting assets through the source SDK and invokes every verifier on staged records before replacing output. Verifiers must throw to reject and return no value on success; boolean comparisons are refused. The output is a dedicated managed corpus: a root `.chamvi-skills` marker permits later replacement, including removing old selections. Symlink targets and nonempty unowned targets are refused. Same-target preparations fail while a sibling guard exists; after a crash, remove the guard only after confirming no preparation remains active. A failed verifier or promotion keeps/restores old output; a backup survives if filesystem failure also prevents restoration.
 
-Importing the package performs no preparation. It never changes cwd, invokes the skills CLI or executes source scripts. Preparation grants no tools, runtime approval or sandbox mounts. Runtime loading still rejects scripts and unsupported assets. Git LFS files remain pointers; reviewed hashes detect omitted/changed source bytes. Copy prepared assets explicitly into runtime images and keep runtime startup on deployed bytes.
+Importing the package performs no preparation. It never changes cwd, invokes the skills CLI or executes source scripts. Preparation grants no tools, runtime approval or sandbox mounts. Runtime loading still rejects scripts and unsupported assets. Git LFS files remain pointers; reviewed hashes detect omitted/changed source bytes. For the manual build workflow, copy prepared assets explicitly into runtime images. Runtime installation uses the engine-owned `gitSkills` provider.
 
 The source backend is private to Chamvi. Consumers import only Chamvi APIs and keep their source/profile/pin configuration when the backend changes. See the [skills preparation reference](https://chamvi.dev/reference/skills), [runtime guide](https://chamvi.dev/guide/skills) and [backend migration issue97](https://github.com/chamvi/chamvi/issues/97).

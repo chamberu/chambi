@@ -1,27 +1,35 @@
-# Approved Local Skills
+# Approved Skills
 
-An agent can opt into reviewed local instruction/reference bundles with `loadSkillBundles()` from `@chamvi/app`. Its initial instructions contain only approved metadata. The fixed `load_skill` tool returns a body or one reference when needed, through normal tool results and checkpoints. Importing the package does no bundle filesystem work.
+Configure `createApp({ skills })` or `new Engine({ skills })` with reviewed defaults for every agent. An agent's `skills` adds extras. Inputs are immutable ready `Skill` snapshots or `ISkillSource` providers. The engine automatically adds metadata instructions and one scoped `load_skill` tool, so another agent's extras stay private. No user tools or state are required.
 
 ## Review and pin
 
-1. Review the complete bundle, including its description, body, references and license. Metadata is instruction-bearing text too.
-2. Compute its digest separately with `hashSkillBundle('/opt/approved-skills/security-audit/1.0.0')`. The helper synchronously validates the passive bundle and returns a lowercase SHA-256. It identifies bytes; it does not approve them.
-3. Commit the exact name, release identifier, absolute runtime directory and reviewed digest in the agent configuration. Never compute the expected `sha256` dynamically at startup: that would accept whatever content happens to be present.
-4. Construct the catalog explicitly, append its instructions, and compose its tools with the agent's existing tools.
+1. Review every bundle's description, body, references and license. Metadata is instruction-bearing text too.
+2. Compute its digest separately with `hashSkillBundle(directory)` from `@chamvi/skills`. This validates supported passive files and identifies their bytes; computing a hash grants no approval.
+3. Record the exact name, version, full source commit and independently reviewed digest. Never compute expected pins dynamically at startup.
+4. Use `gitSkills()` for startup preparation, or `loadSkillBundle()` for an already deployed local snapshot. Filesystem helpers live in optional `@chamvi/skills`; core and app have no dependency on that package.
 
 <<< ../snippets/skills.ts
 
-The digest in this example is illustrative; replace it with the reviewed digest. `existingTools` represents tools the consuming agent already provides. Check for a `load_skill` name collision before composing: object spread silently overwrites duplicate names. For a per-execution tool factory, spread `catalog.tools` alongside the existing factory's result.
+The commit and digests above are illustrative. Replace them with reviewed pins. `gitSkills` is a pure factory: imports and source declaration do no installation. `loadSkillBundle` reads and verifies the local directory when explicitly called, returning a ready snapshot. Supply several ready snapshots/providers in the same `skills` array; never merge independent `load_skill` tools. Effective selections allow at most 16 unique names. Conflicting names or content reject, while identical snapshots deduplicate. A user tool named `load_skill`, including a factory-produced tool, is rejected when first-class skills are configured.
 
-`loadSkillBundles()` synchronously verifies every descriptor before returning any catalog. Invalid configuration, unsupported content, unstable files or a pin mismatch throw `InvalidAgentDefinitionError` with source-relative diagnostics that omit file bodies. `catalog.skills` exposes name, description, version, digest and `ignoredFields`; catalog instructions include only the first four, sorted by name, with escaped metadata and no bodies, references or absolute host paths. An empty approved list returns empty metadata, instructions and tools.
+For direct engine use, pass the same source and ready snapshot to core:
+
+<<< ../snippets/skills-engine.ts
+
+## Startup preparation
+
+`Engine.prepare({ signal?, agents? })` prepares defaults and registered agents, plus optional candidates without registration or store writes. `Engine.start({ signal? })` also waits for preparation before recovery, queue execution or channel startup. Successful provider results are memoized per engine. Failed/canceled attempts may be deliberately retried after their owned work settles; no unverified fallback is used.
+
+App startup prepares defaults and code agents before exposing the engine or running `engineCreated` hooks. It then statically checks and prepares folder candidates before registering revisions. Required verification failure aborts setup before channels, HTTP serving or model work. Ordinary folder syntax/model/channel failures remain load issues. A failed hot reload reports an error and keeps the old agent and revision. Store setup may already have occurred before verification.
+
+`app.check()` and `chamvi start --check` are static and read-only: no skill provider calls, installation, network or configuration writes. They check declared headers and collisions, and defer remote content verification until startup. Explicit I/O performed by application imports, including a top-level `loadSkillBundle`, remains application-owned. Migrate skips skill preparation. App run-job mode prepares during setup; direct cron `runJob` passes caller cancellation into engine startup and retains its normal stored-status/exit-code mapping.
 
 ## Prepare a pinned external source
 
-Use optional [`@chamvi/skills`](/reference/skills) in an explicit setup/build task to prepare a selected Git source. The application owns the source URL, full commit, role choices and separately reviewed bundle pins. The entire committed source tree must be symlink-free, including unselected paths; preparation rejects source links before discovery or copying. A common profile can select `ponytail` and `codebase-design`; a maintainer profile can add `generate-commit-message`, `investigate-pr-comments`, `create-pull-request` and `release-please-version-bump`. Combine the selected names and pins before creating one catalog, rather than merging independent `load_skill` tools.
+`gitSkills({ source, revision, directory, approved })` from the skills main entry selects exactly the reviewed names and verifies their staged contents before replacing the managed corpus. The full cloned commit must match the pin and the entire committed source must be symlink-free, including unselected paths. Unsupported scripts/assets require a separately reviewed passive adaptation. Source credentials and configuration belong to the operator.
 
-Pass a `verify` callback that checks `hashSkillBundle(skill.path)` against each recorded pin. Every callback runs on staged copies before managed output is replaced. Keep role descriptors/pins in tracked agent configuration so a reviewed upgrade changes that agent's revision. Copy the prepared corpus explicitly into the runtime image and use `loadSkillBundles()` on those deployed bytes; do not download or install sources on agent import/startup.
-
-Preparation copies text and supporting assets. It never enables tools, executes scripts or mounts files into sandboxes. Sources containing scripts or other unsupported assets require a separately reviewed passive adaptation before runtime loading. The source backend remains private to Chamvi; consumer configuration and API stay unchanged when it moves to an official SDK release.
+For explicit setup/build workflows, `prepareSkills()` remains available with a staged `verify` callback. `loadSkillBundles(approved)` remains the manual catalog API: append `catalog.instructions` and compose `catalog.tools` yourself, checking for an existing `load_skill`. Do not combine a manual catalog tool with first-class skills on the same agent. The [skills reference](/reference/skills) includes the unchanged manual consumer example.
 
 ## Bundle format and bounds
 
@@ -75,17 +83,21 @@ References are never followed automatically and Markdown URLs never fetch anythi
 
 ## Restart and deployment
 
-The catalog privately snapshots reviewed bytes during setup. Later disk edits cannot change an existing catalog. Recreating it after a restart or approval pause verifies the pin again; changed bytes under the old pin fail closed before newer content can be used. Upgrade by reviewing the new complete bundle and changing its tracked descriptor digest together with the deployed files.
+The engine privately snapshots verified bytes during preparation. Later disk edits cannot change an existing catalog. Recreating it after a restart or approval pause verifies the pin again; changed bytes under the old pin fail closed before newer content can be used. Upgrade by reviewing the new complete bundle and changing its tracked descriptor digest together with the deployed files.
 
 Keep source directories immutable and not attacker-writable during setup. Bounded no-follow reads, file identity checks and repeated inventories detect ordinary changes; portable filesystem checks do not provide a security boundary against a malicious concurrent host writer.
 
-External bundle directories are not automatically watched and do not automatically change an agent revision. Keep the descriptor in tracked agent configuration and apply upgrades through the existing reload/restart workflow. Agent-folder hashing is not a substitute for the full bundle pin. Bundle files are runtime assets: copy them explicitly into the final app image at their configured absolute paths, readable by uid 1000. Deployment and run-job images must contain the same reviewed bytes.
+Global skill configuration changes and external bundle directories are not automatically watched and do not change folder hashes. Saved load results retain their original checkpoint bytes and identity; after a reviewed pin upgrade, pending or future loads use the current verified snapshot. Existing replay-on-current-definition semantics remain: to avoid mixed-version disclosure, finish or explicitly cancel unsettled runs before changing global pins. Tracked agent extra-pin edits use existing revision cancellation. No stronger recovery identity is added. Keep the descriptor in tracked agent configuration and apply upgrades through the existing reload/restart workflow. Agent-folder hashing is not a substitute for the full bundle pin. Bundle files are runtime assets: copy them explicitly into the final app image at their configured absolute paths, readable by uid 1000. Deployment and run-job images must contain the same reviewed bytes.
+
+Startup Git providers require `@chamvi/skills` as a runtime dependency, Node >=22.20, Git, source network access/credentials, temporary space and a writable managed corpus directory. The base `ghcr.io/chamvi/node:24` image currently has no Git; install it in a derived runtime image when using Git sources. A read-only root needs explicit writable mounts, for example `/tmp/chamvi-skills` on the chart's `/tmp` volume. Give each independent corpus a distinct directory; same-target concurrent preparation is refused. Both Deployment and CronJob images need this configuration.
+
+Cloning and verification add startup latency before HTTP/probes are available. Size startup probes and termination grace accordingly. Stop aborts preparation and joins actual cleanup; the source SDK cannot cancel an in-flight clone, so stop may wait for clone settlement. Promotion/rollback completes before cancellation is reported. A prebuilt local snapshot avoids startup network and Git requirements.
 
 ## Policy and compatibility
 
 Skills supply ordinary tool-result content under the agent's role instructions and operator policy. They do not add tools, permissions, network access, scripts, subagents or authorization to publish findings. Existing configured tools may act on this text, so passive loading provides no sandbox. Credential separation, sandbox isolation and private disclosure remain separate requirements for a security agent.
 
-This is separate from scoped repository instructions: repository instructions and issue text cannot approve a bundle or turn an arbitrary workspace file into a skill. The runtime performs no workspace auto-discovery, marketplace installation, source URL fetch or dynamic tool registration.
+This is separate from scoped repository instructions: repository instructions and issue text cannot approve a bundle or turn an arbitrary workspace file into a skill. The runtime performs no workspace auto-discovery, marketplace search or dynamic capability grants. Only explicitly configured pinned sources are fetched during preparation.
 
 Complex third-party skills require an explicitly reviewed adaptation to this passive subset. Cloudflare's security audit methodology, for example, does not become a compatible automated workflow merely by loading its text: script validation, isolation and independent subagents require separately supported capabilities. Future delegation and untrusted-content controls do not gain new APIs here.
 
