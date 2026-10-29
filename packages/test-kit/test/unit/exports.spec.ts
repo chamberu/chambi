@@ -15,6 +15,10 @@ describe('public api', () => {
         'createGitFixture',
         'describeStoreContract',
         'describeWorkspaceContract',
+        'mockModel',
+        'textModel',
+        'approvalModel',
+        'failingModel',
     ])('exports %s', (name) => {
         expect(kit).toHaveProperty(name);
         expect(kit[name as keyof typeof kit]).toBeTypeOf('function');

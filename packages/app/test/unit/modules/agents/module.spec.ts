@@ -15,7 +15,7 @@ import {
     defineAgent,
 } from '@chamvi/core';
 import type { Agent, IStore } from '@chamvi/core';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, mockModel, textModel } from '@chamvi/test-kit';
 import { customProvider } from 'ai';
 import {
     afterEach,
@@ -50,7 +50,6 @@ import { createTempDir, writeTree } from '../../../utils/folder.ts';
 import { buildHarness } from '../../../utils/harness.ts';
 import type { Harness } from '../../../utils/harness.ts';
 import { createRecordingLogger } from '../../../utils/logger.ts';
-import { mockModel, textModel } from '../../../utils/model.ts';
 import { freePort } from '../../../utils/port.ts';
 
 const START = new Date('2026-10-22T00:00:00Z');

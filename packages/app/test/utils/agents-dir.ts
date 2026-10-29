@@ -11,7 +11,7 @@ import {
     defineAgent,
 } from '@chamvi/core';
 import type { Agent, IStore } from '@chamvi/core';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, mockModel, textModel } from '@chamvi/test-kit';
 import { customProvider } from 'ai';
 import type { AppMode, IModule  } from '@chamvi/app';
 import {
@@ -26,7 +26,6 @@ import { hangingModel } from './app.ts';
 import { buildHarness } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { createRecordingLogger } from './logger.ts';
-import { mockModel, textModel } from './model.ts';
 
 export const START = new Date('2026-10-22T00:00:00Z');
 export const POLL_MS = 1_000;

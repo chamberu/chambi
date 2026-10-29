@@ -127,7 +127,7 @@ Every module is a folder with `module.ts`, `types.ts`, `asserts.ts`, `constants.
 | `model/` | `ModelRef`, `IModelResolver`, `ModelCheckOptions` (`types.ts`, public region) and the internal `ModelContext`; `checkAgentModel()`, `resolveModel()` (public) and `checkDefaultModel()` (`module.ts`); `toLanguageModel()` (`asserts.ts`, internal: the one resolution path of the engine and `resolveModel`); `MODEL_CONTEXT` (`constants.ts`, internal, key `model`) |
 | `clock/` | `IClock`, `systemClock` |
 
-`src/index.ts` re-exports each folder's `index.ts`. `@chamvi/test-kit` (`packages/test-kit/src`) holds `clock/` (`ControllableClock`), `store-contract/` (`describeStoreContract`), `workspace-contract/` (`describeWorkspaceContract`, `WorkspaceContractFactory`), `git-fixture/` (`createGitFixture`, `GitFixture`) and `github-fake/` (`createFakeGithub` in `module.ts`, `FakeGithub`, `FakeGithubOptions`, `FakeRequest`, `FakeRoute*`, `JwtClaims` in `types.ts`, the repository routes and `abortable()` in `asserts.ts`).
+`src/index.ts` re-exports each folder's `index.ts`. `@chamvi/test-kit` (`packages/test-kit/src`) holds `model/` (`mockModel`, `textModel`, `approvalModel`, `failingModel`, `MockPart`, `MockResponse`), `clock/` (`ControllableClock`), `store-contract/` (`describeStoreContract`), `workspace-contract/` (`describeWorkspaceContract`, `WorkspaceContractFactory`), `git-fixture/` (`createGitFixture`, `GitFixture`) and `github-fake/` (`createFakeGithub` in `module.ts`, `FakeGithub`, `FakeGithubOptions`, `FakeRequest`, `FakeRoute*`, `JwtClaims` in `types.ts`, the repository routes and `abortable()` in `asserts.ts`).
 
 ## Cron Channel Module Map (`packages/channel-cron/src`)
 

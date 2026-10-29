@@ -25,6 +25,7 @@ import {
 } from 'vitest';
 
 const deadlines = vi.hoisted(() => [] as number[]);
+const events = vi.hoisted(() => [] as string[]);
 
 vi.mock('node:child_process', async (importOriginal) => {
     const childProcess = await importOriginal<typeof ChildProcess>();
@@ -35,7 +36,9 @@ vi.mock('node:child_process', async (importOriginal) => {
         value: (file: string, args: string[], options: ExecFileOptions) => {
             if (options.timeout === 30_000) {
                 deadlines.push(options.timeout);
-                return run(file, args, { ...options, timeout: 1_000 });
+                const pending = run(file, args, { ...options, timeout: 1_000 });
+                pending.child.once('close', () => { events.push(`${args[2]}:close`); });
+                return pending;
             }
             return run(file, args, options);
         },
@@ -45,7 +48,14 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 vi.mock('skills', async (importOriginal) => {
     const sdk = await importOriginal<typeof SkillsSDK>();
-    return { ...sdk, discoverSkills: vi.fn(sdk.discoverSkills) };
+    return {
+        ...sdk,
+        discoverSkills: vi.fn(sdk.discoverSkills),
+        cleanupTempDir: async (directory: string) => {
+            events.push('cleanup');
+            return sdk.cleanupTempDir(directory);
+        },
+    };
 });
 
 const roots: string[] = [];
@@ -56,6 +66,7 @@ afterEach(async () => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     deadlines.length = 0;
+    events.length = 0;
     await Promise.all(fixtures.map((fixture) => fixture.cleanup()));
     await Promise.all(roots.map((root) => fs.rm(root, { recursive: true, force: true })));
     fixtures.length = 0;
@@ -113,6 +124,13 @@ if (command === ${JSON.stringify(command)}) {
                 }
             }, 10);
         }
+    } else if (mode === 'delayed-signal') {
+        process.on('SIGTERM', () => {
+            fs.writeFileSync(${JSON.stringify(join(root, 'terminated'))}, 'SIGTERM');
+            setTimeout(() => process.exit(0), 300);
+        });
+        fs.writeFileSync(${JSON.stringify(join(root, 'pid'))}, String(process.pid));
+        setTimeout(() => process.exit(0), 3000);
     } else if (mode === 'signal') {
         if (command === 'rev-parse') process.stdout.write(${JSON.stringify(fixture.commit)} + String.fromCharCode(10));
         fs.writeFileSync(${JSON.stringify(join(root, 'pid'))}, String(process.pid));
@@ -219,4 +237,37 @@ it.each(['rev-parse', 'ls-tree'])('aborts native metadata %s and joins terminati
     await expect(fs.stat(started.directory)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
     expect((await fs.readdir(root)).sort()).toEqual(['bin', 'corpus', 'pid', 'started']);
+});
+
+
+it.each(['rev-parse', 'ls-tree'])('joins delayed SIGTERM %s close before checkout cleanup and preparation settlement', async (command) => {
+    const { root, options } = await setup(command, 'delayed-signal');
+    events.length = 0;
+    const controller = new AbortController();
+    const reason = new Error('cancel delayed metadata');
+    const pending = prepareSkills({ ...options, signal: controller.signal }).finally(() => { events.push('settled'); });
+    const rejected = expect(pending).rejects.toBe(reason);
+    await vi.waitFor(() => expect(fs.readFile(join(root, 'pid'), 'utf8')).resolves.toMatch(/^\d+$/u), { timeout: 5_000 });
+    const pid = Number(await fs.readFile(join(root, 'pid'), 'utf8'));
+    const started = JSON.parse(await fs.readFile(join(root, 'started'), 'utf8'));
+    controller.abort(reason);
+    await vi.waitFor(() => expect(fs.readFile(join(root, 'terminated'), 'utf8')).resolves.toBe('SIGTERM'));
+    const duringTermination = {
+        settled: events.includes('settled'),
+        cleaned: events.includes('cleanup'),
+        checkoutExists: await fs.stat(started.directory).then(() => true, () => false),
+    };
+    // Always join the finite fake process before asserting, including the red run.
+    await vi.waitFor(() => expect(events).toContain(`${command}:close`));
+    await rejected;
+    expect(duringTermination).toEqual({
+        settled: false,
+        cleaned: false,
+        checkoutExists: true,
+    });
+    expect(events.indexOf(`${command}:close`)).toBeLessThan(events.indexOf('cleanup'));
+    expect(events.indexOf('cleanup')).toBeLessThan(events.indexOf('settled'));
+    expect(() => process.kill(pid, 0)).toThrow();
+    await expect(fs.stat(started.directory)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
 });

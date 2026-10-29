@@ -18,15 +18,14 @@ import {
 import type { Agent, AgentDefinition } from '@chamvi/app';
 import { loadSkillBundles } from '@chamvi/skills';
 import type { ApprovedSkill } from '@chamvi/skills';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, mockModel } from '@chamvi/test-kit';
 import {
     afterEach,
     describe,
     expect,
     it,
 } from 'vitest';
-import { mockModel } from '../../utils/model.ts';
-import type { MockResponse } from '../../utils/model.ts';
+import type { MockResponse } from '@chamvi/test-kit';
 import { approvedSkill, cleanupSkills } from '../../utils/skills.ts';
 
 const engines: Engine[] = [];

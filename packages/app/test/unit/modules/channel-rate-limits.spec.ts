@@ -8,7 +8,7 @@
 import { defineAgent } from '@chamvi/core';
 import type { IChannel } from '@chamvi/core';
 import { http } from '@chamvi/http';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, textModel } from '@chamvi/test-kit';
 import {
     afterEach,
     describe,
@@ -29,7 +29,6 @@ import { TOKEN, TOKENS } from '../../utils/app.ts';
 import { buildHarness } from '../../utils/harness.ts';
 import type { Harness } from '../../utils/harness.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { textModel } from '../../utils/model.ts';
 import { freePort } from '../../utils/port.ts';
 
 const harnesses: Harness[] = [];

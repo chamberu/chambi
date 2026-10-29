@@ -23,7 +23,7 @@ import {
     createApp,
     isApp,
 } from '@chamvi/app';
-import { textModel } from '../../utils/model.ts';
+import { textModel } from '@chamvi/test-kit';
 
 const agent = defineAgent({
     name: 'sweep',

@@ -13,7 +13,7 @@ import {
 } from '@chamvi/core';
 import type { Agent, Engine } from '@chamvi/core';
 import { http } from '@chamvi/http';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, approvalModel, textModel } from '@chamvi/test-kit';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
 import {
@@ -39,7 +39,6 @@ import { createStoppedError } from '../../../../src/module/helpers.ts';
 import { buildHarness } from '../../../utils/harness.ts';
 import type { Harness } from '../../../utils/harness.ts';
 import { createRecordingLogger } from '../../../utils/logger.ts';
-import { approvalModel, textModel } from '../../../utils/model.ts';
 import {
     closeServer,
     freePort,

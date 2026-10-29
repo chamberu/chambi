@@ -21,7 +21,7 @@ import type {
     IChannel,
     ModelRef,
 } from '@chamvi/core';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, approvalModel, textModel } from '@chamvi/test-kit';
 import { customProvider, generateText, jsonSchema } from 'ai';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
@@ -43,7 +43,6 @@ import type { AppMode, ILifecycleHook } from '@chamvi/app';
 import { buildHarness } from '../../../utils/harness.ts';
 import type { Harness } from '../../../utils/harness.ts';
 import { createRecordingLogger } from '../../../utils/logger.ts';
-import { approvalModel, textModel } from '../../../utils/model.ts';
 
 
 function agentWith(model: Agent['definition']['model'], extra: Partial<Parameters<typeof defineAgent>[0]> = {}): Agent {

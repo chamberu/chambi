@@ -19,12 +19,22 @@
 ## Installation
 
 ```bash
-npm install --save-dev @chamvi/test-kit @chamvi/core vitest
+npm install --save-dev @chamvi/test-kit @chamvi/core ai vitest
 ```
 
-`@chamvi/core` and `vitest` are peer dependencies. The workspace contract takes any `IWorkspace` of `@chamvi/sandbox` (typed structurally as `ContractWorkspace`, so the kit does not depend on `@chamvi/sandbox`).
+`@chamvi/core`, `ai` (v7) and `vitest` are peer dependencies. The workspace contract takes any `IWorkspace` of `@chamvi/sandbox` (typed structurally as `ContractWorkspace`, so the kit does not depend on `@chamvi/sandbox`).
 
 ## Usage
+
+### Scripted models
+
+`mockModel(responses)` provides one scripted AI SDK model for generation and streaming. Each `MockResponse` contains text or tool-call `parts` and optional token usage. `textModel(text)`, `approvalModel(toolName, input)` and `failingModel()` cover common test flows.
+
+```ts
+import { textModel } from '@chamvi/test-kit';
+
+const model = textModel('done');
+```
 
 ### Store contract
 

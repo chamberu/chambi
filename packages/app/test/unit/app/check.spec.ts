@@ -8,7 +8,7 @@
 import { MemoryStore, defineAgent } from '@chamvi/core';
 import type { Agent, IStore, Run } from '@chamvi/core';
 import { http } from '@chamvi/http';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, textModel } from '@chamvi/test-kit';
 import {
     afterEach,
     beforeEach,
@@ -32,7 +32,6 @@ import {
 import { TOKENS, rejectionOf } from '../../utils/app.ts';
 import { createTempDir, writeTree } from '../../utils/folder.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { textModel } from '../../utils/model.ts';
 import { closeServer, freePort, listenOn } from '../../utils/port.ts';
 
 const START = new Date('2026-10-26T00:00:00Z');

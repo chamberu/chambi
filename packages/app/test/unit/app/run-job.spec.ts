@@ -12,7 +12,7 @@ import {
     defineAgent,
 } from '@chamvi/core';
 import type { Agent } from '@chamvi/core';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, failingModel, textModel } from '@chamvi/test-kit';
 import type { IModule } from 'orkos';
 import {
     afterEach,
@@ -39,7 +39,6 @@ import {
 import { hangingModel, rejectionOf } from '../../utils/app.ts';
 import { createTempDir, writeTree } from '../../utils/folder.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { failingModel, textModel } from '../../utils/model.ts';
 
 const DRAIN_MS = 1_000;
 const POLL_MS = 1_000;

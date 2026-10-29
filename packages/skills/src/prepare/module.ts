@@ -28,6 +28,17 @@ const run = promisify(execFile);
 const marker = '.chamvi-skills';
 const ownership = 'chamvi-skills-v1\n';
 
+async function gitMetadata(args: string[], signal?: AbortSignal) {
+    const pending = run('git', args, { timeout: 30_000, signal });
+    // Abort rejects before close; cleanup must wait for the actual process and streams.
+    const closed = new Promise<void>((done) => { pending.child.once('close', () => done()); });
+    try {
+        return await pending;
+    } finally {
+        await closed;
+    }
+}
+
 async function inspectTarget(directory: string): Promise<boolean> {
     const stat = await fs.lstat(directory).catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') {
@@ -90,14 +101,14 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
         clone = await cloneRepo(parsed.url, revision);
         // The SDK clone has no signal; join it before cleanup and never copy canceled work.
         signal?.throwIfAborted();
-        const { stdout } = await run('git', ['-C', clone, 'rev-parse', '--verify', 'HEAD'], { timeout: 30_000, signal });
+        const { stdout } = await gitMetadata(['-C', clone, 'rev-parse', '--verify', 'HEAD'], signal);
         if (stdout.trim().toLowerCase() !== revision) {
             invalid();
         }
 
         signal?.throwIfAborted();
         // Reject committed links before discovery or copying can follow them.
-        const tree = await run('git', ['-C', clone, 'ls-tree', '-r', '-z', 'HEAD'], { timeout: 30_000, signal });
+        const tree = await gitMetadata(['-C', clone, 'ls-tree', '-r', '-z', 'HEAD'], signal);
         if (tree.stdout.split('\0').some((entry) => entry.startsWith('120000 '))) {
             invalid();
         }

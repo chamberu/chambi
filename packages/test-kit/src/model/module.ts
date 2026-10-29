@@ -15,19 +15,7 @@ import type {
 import { simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 
-export type MockPart =    | { type: 'text'; text: string } |
-    {
-        type: 'tool-call';
-        toolName: string;
-        input: unknown;
-        toolCallId?: string;
-    };
-
-export type MockResponse = {
-    /** One model turn: any mix of text and (parallel) tool calls. */
-    parts: MockPart[];
-    usage?: { inputTokens: number; outputTokens: number };
-};
+import type { MockResponse } from './types.ts';
 
 const DEFAULT_USAGE = { inputTokens: 1, outputTokens: 1 };
 
