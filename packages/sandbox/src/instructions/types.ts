@@ -6,6 +6,7 @@
  */
 
 import type { IClock } from '@chamvi/core';
+import type { InspectionStatusKind, InstructionDiagnosticCode } from './constants.ts';
 
 /** One instruction file, read whole: an entrypoint (`AGENTS.md`, `CLAUDE.md`) or a file one includes. */
 export type RepositoryInstructionSource = {
@@ -21,8 +22,7 @@ export type RepositoryInstructionSource = {
     includedBy: string[];
 };
 
-export type RepositoryInstructionDiagnosticCode = 'missing-include' | 'unreadable' | 'invalid-utf8' | 'outside-workspace' |
-    'unsupported-file' | 'cycle' | 'limit';
+export type RepositoryInstructionDiagnosticCode = `${InstructionDiagnosticCode}`;
 
 /** Why a file, directory or reference was skipped; any diagnostic makes the result incomplete. */
 export type RepositoryInstructionDiagnostic = {
@@ -55,11 +55,11 @@ export type ReadRepositoryInstructionsOptions = {
 };
 
 /** What the discovery script observed for one path. */
-export type InspectionStatus = { kind: 'absent' | 'file' | 'dir' | 'special' } |
+export type InspectionStatus = { kind: `${InspectionStatusKind.ABSENT | InspectionStatusKind.FILE | InspectionStatusKind.DIR | InspectionStatusKind.SPECIAL}` } |
     /** Component `at` (1-based) is a symbolic link. */
-    { kind: 'link'; at: number } |
+    { kind: `${InspectionStatusKind.LINK}`; at: number } |
     /** Component `at` (1-based) cannot be looked up: its parent is no searchable directory. */
-    { kind: 'denied'; at: number };
+    { kind: `${InspectionStatusKind.DENIED}`; at: number };
 
 /** What the discovery script read for one path. */
 export type ReadOutcome = InspectionStatus |

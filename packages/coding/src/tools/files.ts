@@ -157,16 +157,18 @@ async function readWorkspaceFile(
     workspace: IWorkspace,
     artifacts: IRunArtifacts,
     input: {
-        path: string; 
-        offset: number; 
-        limit: number; 
-        encoding: Encoding 
+        path: string;
+        offset: number;
+        limit: number;
+        encoding: Encoding;
+        repositoryInstructions: boolean;
+        signal: AbortSignal;
     },
 ): Promise<ReadFileOutput> {
     const {
-        path, 
-        offset, 
-        limit, 
+        path,
+        offset,
+        limit,
     } = input;
     const bytes = await workspace.readBytes(path);
     if (input.encoding === 'base64') {
@@ -212,7 +214,11 @@ async function readWorkspaceFile(
     if (offset > Math.max(totalLines, 1)) {
         throw new ValidationError(`offset ${offset} is past the end of ${path}, which has ${totalLines} lines.`);
     }
-    return sliceResult(path, lines.slice(offset - 1, offset - 1 + limit), offset, totalLines, false);
+    const result = sliceResult(path, lines.slice(offset - 1, offset - 1 + limit), offset, totalLines, false);
+    if (input.repositoryInstructions) {
+        result.instructions = await readRepositoryInstructions(workspace, [path], { signal: input.signal });
+    }
+    return result;
 }
 
 export function readFileTool(workspaces: CodingWorkspaces, repositoryInstructions = true): Tool<ReadFileInput, ReadFileOutput> {
@@ -268,16 +274,14 @@ export function readFileTool(workspaces: CodingWorkspaces, repositoryInstruction
                 });
             }
 
-            const result = await readWorkspaceFile(workspace, context.artifacts, {
+            return readWorkspaceFile(workspace, context.artifacts, {
                 path,
                 offset,
                 limit,
                 encoding,
+                repositoryInstructions,
+                signal: signalOf(abortSignal, context),
             });
-            if (repositoryInstructions && 'startLine' in result) {
-                result.instructions = await readRepositoryInstructions(workspace, [path], { signal: signalOf(abortSignal, context) });
-            }
-            return result;
         },
     });
 }

@@ -135,6 +135,15 @@ describe('public api', () => {
 
     it('exports the repository instruction constants', () => {
         expect(sandbox.INSTRUCTION_FILES).toEqual(['AGENTS.md', 'CLAUDE.md']);
+        expect(sandbox.INSTRUCTION_SOURCE_MAX_BYTES).toBe(32_768);
+        expect(sandbox.INSTRUCTION_TOTAL_MAX_BYTES).toBe(131_072);
+        expect(sandbox.INSTRUCTION_SOURCES_MAX).toBe(32);
+        expect(sandbox.INSTRUCTION_INCLUDE_DEPTH_MAX).toBe(8);
+        expect(sandbox.INSTRUCTION_PATHS_MAX).toBe(32);
+        expect(sandbox.INSTRUCTION_DIRECTORIES_MAX).toBe(64);
+        expect(sandbox.INSTRUCTION_REFERENCES_MAX).toBe(512);
+        expect(sandbox.INSTRUCTION_DIAGNOSTICS_MAX).toBe(64);
+        expect(sandbox.INSTRUCTION_PATH_MAX_BYTES).toBe(4_096);
         expect(sandbox.INSTRUCTION_DIAGNOSTICS_MAX_BYTES).toBe(8_192);
         expect(sandbox.INSTRUCTION_REQUEST_TIMEOUT_MS).toBe(30_000);
         expect(sandbox.INSTRUCTION_EXEC_TIMEOUT_MS).toBe(5_000);

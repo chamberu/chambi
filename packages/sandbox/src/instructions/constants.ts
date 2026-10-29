@@ -5,6 +5,25 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+export enum InstructionDiagnosticCode {
+    MISSING_INCLUDE = 'missing-include',
+    UNREADABLE = 'unreadable',
+    INVALID_UTF8 = 'invalid-utf8',
+    OUTSIDE_WORKSPACE = 'outside-workspace',
+    UNSUPPORTED_FILE = 'unsupported-file',
+    CYCLE = 'cycle',
+    LIMIT = 'limit',
+}
+
+export enum InspectionStatusKind {
+    ABSENT = 'absent',
+    FILE = 'file',
+    DIR = 'dir',
+    SPECIAL = 'special',
+    LINK = 'link',
+    DENIED = 'denied',
+}
+
 /** The entrypoint file names, in the order each directory is read. */
 export const INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md'] as const;
 
