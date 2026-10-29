@@ -24,3 +24,16 @@ Compatibility was verified against the unchanged selected `tada5hi/skills` profi
 Migration is tracked in [chamvi/chamvi#97](https://github.com/chamvi/chamvi/issues/97), with [upstream PR #1430](https://github.com/vercel-labs/skills/pull/1430) and [issue #2455](https://github.com/vercel-labs/skills/issues/2455). Replace the internal backend with an official release when suitable, rerun the unchanged public consumer fixture and remove the temporary fork pin. Consumers should need only a normal Chamvi version update. The optional adapter is implemented in `packages/skills/src/prepare/`, with a typed consumer fixture (imports migrated to `@chamvi/skills`) in `packages/skills/test/fixtures/readme-example.ts`. Local Git and real Engine tests cover preparation through verified runtime use. Application source remains unchanged until the framework is released.
 
 First-class integration (2026-10-29): pure main-entry `gitSkills` creates a core `ISkillSource` for engine-owned startup verification; singular `loadSkillBundle` supplies ready snapshots. App forwards generic inputs without depending on skills. Runtime providers need the optional package, Node >=22.20, Git, writable corpus/tmp and source credentials/network. Manual setup/build and catalog composition remain supported. The SDK clone has no AbortSignal: await settlement and cleanup on cancellation rather than detaching work; startup probe/shutdown budgets must allow it.
+
+Delivery evidence (2026-10-29, production baseline `ffec9bdc`): the controller completed anonymous packed installs
+with a fresh empty cache and lifecycle scripts disabled against exact fork `6c80a94543b91a27df7445f40dfea7a61e0a5e9f`.
+Logs `/tmp/chamvi-first-class-consumer.log` and `/tmp/chamvi-first-class-consumer-node22.log` cover Node 24 and 22.21.1:
+import-only migration of the frozen original consumer fixture (SHA-256
+`830086665b51f6fcf7d32b40c26c42eb81cde7140cec385d64420a2dc0f657b9`), own Chamvi declaration surface,
+app-free/inert main import, typed first-class App/Engine APIs and the exact six selected skills from
+`233532ce04af00916c026f97a3f6097ee7f189df` (two globals/four maintainer extras, metadata-only initial prompt,
+exact checkpointed bodies). Integration delivery reused this evidence because it changed no production source.
+`packages/skills/test/unit/source/engine.spec.ts` adds real local-Git Engine startup/scoping and old-content-pin
+failure before recovery, followed by approval replay that retains the saved original body and loads the upgraded
+reference. Existing manual-catalog tests remain intact. The issue 97 boundary/acceptance update is drafted locally
+at `/tmp/chamvi-first-class-issue97.md` for controller publication after review; agents-dev is untouched.

@@ -108,7 +108,7 @@ const common = gitSkills({
 export default createApp({ agents, skills: [common] });
 ```
 
-Replace illustrative pins after independently reviewing all bundle text. `gitSkills` is a pure factory from the skills main entry. Startup prepares required sources before `engineCreated`, channels, HTTP or model work. Verification failures abort startup; failed hot reloads retain the old agent. `app.check()` validates static headers without loading providers or installing sources, so remote verification is deferred. Migrate skips preparation.
+Replace illustrative pins after independently reviewing all bundle text. `gitSkills` is a pure factory from the skills main entry. Startup prepares globals and code-agent sources before `engineCreated`; folder-agent extras prepare afterwards, before channels, HTTP or model work. Verification failures abort startup; failed hot reloads retain the old agent. `app.check()` validates static headers without loading providers or installing sources, so remote verification is deferred. Migrate skips preparation.
 
 For already deployed files, `loadSkillBundle(descriptor)` returns a ready snapshot. `hashSkillBundle(directory)` is a separate review aid, never approval. The manual `loadSkillBundles(approved)` catalog remains supported: append its instructions and compose its tools explicitly, checking for a `load_skill` collision. Helpers belong to `@chamvi/skills`, with no compatibility app exports.
 

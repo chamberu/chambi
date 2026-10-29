@@ -48,6 +48,18 @@ Verification recorded in the isolated downstream handoff: `npm ci`, lint fix, bu
 
 ## First-class skills deployment requirements (2026-10-29, unreleased)
 
-The filesystem helpers move from app to optional `@chamvi/skills`; `gitSkills` is exported from its main entry, with no `/module` entry or app dependency. `createApp({ skills })` forwards defaults to every code/folder agent and prepares before hooks/channels/HTTP/model execution. `start --check` skips skill providers, installation and remote content verification. Manual prebuilt catalogs remain supported.
+The filesystem helpers move from app to optional `@chamvi/skills`; `gitSkills` is exported from its main entry, with no `/module` entry or app dependency. `createApp({ skills })` forwards defaults to every code/folder agent and prepares globals/code sources before `engineCreated`, then folder extras before channels/HTTP/model execution. `start --check` skips skill providers, installation and remote content verification. Manual prebuilt catalogs remain supported.
 
-Startup Git sources change the optional deployment path: install `@chamvi/skills` and Git in the runtime image (the base Node 24 image has no Git), use Node >=22.20, provide writable corpus/tmp mounts under uid 1000, source network access/credentials, and startup-probe time for clone/verification latency. Stop joins a noncancelable clone before cleanup, so size termination grace accordingly. A read-only root can use an explicit directory on the writable `/tmp` volume. Deployment and CronJob configurations must agree. Prebuilt local snapshots remain compatible with readable assets only. Downstream implementation/commit/test evidence is recorded by the delivery task; this section states requirements, not a newly verified downstream release contract.
+Startup Git sources change the optional deployment path: install `@chamvi/skills` and Git in the runtime image (the base Node 24 image has no Git), use Node >=22.20, provide writable corpus/tmp mounts under uid 1000, source network access/credentials, and startup-probe time for clone/verification latency. Stop joins a noncancelable clone before cleanup, so size termination grace accordingly. A read-only root can use an explicit directory on the writable `/tmp` volume. Deployment and CronJob configurations must agree. Prebuilt local snapshots remain compatible with readable assets only. This remains an unreleased optional integration, not a newly published downstream contract.
+
+Delivery check against monorepo `ffec9bdc` and starter follow-up `03de2648faf87a60316a41c03dd5f1aab23eab8c`
+(local continuation of [PR 8](https://github.com/chamvi/agent-template/pull/8)): reviewed `README.md`,
+`.agents/deployment.md`, `Dockerfile`, `package.json`, `scripts/image-smoke.sh`, and the existing Flux/kind values.
+Docs now show main-entry imports and runtime installation, App globals/agent extras, the optional Node >=22.20 floor,
+Git installation after the pinned runtime FROM with final uid 1000, writable `/tmp` corpora, source/auth app egress,
+startup budget (existing probe values), static preflight, cleanup ownership and reviewed upgrades. Default source,
+dependency lockfile, Dockerfile, manifests and embedded agent example stay unchanged because adoption is opt-in.
+`npm run lint:fix`, build, test (13 files/51 tests), typecheck and lint passed against the existing installed lockfile
+(no reinstall was needed). Logs: `/tmp/chamvi-first-class-template-{lint-fix,build,test,typecheck,lint}.log`.
+Tests include the real CLI/app/HTTP and deployment documentation contracts with fake models. No live cluster,
+Docker image build/smoke, push or publication was performed; remote skills are not enabled in the default smoke fixture.

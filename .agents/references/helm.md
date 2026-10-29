@@ -52,6 +52,18 @@ Verification recorded in the isolated downstream handoff: `make generate`, `make
 
 ## First-class skills deployment requirements (2026-10-29, unreleased)
 
-The filesystem helpers move from app to optional `@chamvi/skills`; `gitSkills` is exported from its main entry, with no `/module` entry or app dependency. `createApp({ skills })` forwards defaults to every code/folder agent and prepares before hooks/channels/HTTP/model execution. `start --check` skips skill providers, installation and remote content verification. Manual prebuilt catalogs remain supported.
+The filesystem helpers move from app to optional `@chamvi/skills`; `gitSkills` is exported from its main entry, with no `/module` entry or app dependency. `createApp({ skills })` forwards defaults to every code/folder agent and prepares globals/code sources before `engineCreated`, then folder extras before channels/HTTP/model execution. `start --check` skips skill providers, installation and remote content verification. Manual prebuilt catalogs remain supported.
 
-Startup Git sources change the optional deployment path: install `@chamvi/skills` and Git in the runtime image (the base Node 24 image has no Git), use Node >=22.20, provide writable corpus/tmp mounts under uid 1000, source network access/credentials, and startup-probe time for clone/verification latency. Stop joins a noncancelable clone before cleanup, so size termination grace accordingly. A read-only root can use an explicit directory on the writable `/tmp` volume. Deployment and CronJob configurations must agree. Prebuilt local snapshots remain compatible with readable assets only. Downstream implementation/commit/test evidence is recorded by the delivery task; this section states requirements, not a newly verified downstream release contract.
+Startup Git sources change the optional deployment path: install `@chamvi/skills` and Git in the runtime image (the base Node 24 image has no Git), use Node >=22.20, provide writable corpus/tmp mounts under uid 1000, source network access/credentials, and startup-probe time for clone/verification latency. Stop joins a noncancelable clone before cleanup, so size termination grace accordingly. A read-only root can use an explicit directory on the writable `/tmp` volume. Deployment and CronJob configurations must agree. Prebuilt local snapshots remain compatible with readable assets only. This remains an unreleased optional integration, not a newly published downstream contract.
+
+Delivery check against monorepo `ffec9bdc` and Helm follow-up `2354ffb54977c1c2224092981c1a477310b573de`
+(local continuation of [PR 10](https://github.com/chamvi/helm/pull/10)): reviewed
+`charts/agent-app/templates/{_helpers.tpl,deployment.yaml,cronjob.yaml,sandbox-networkpolicy.yaml}`,
+`values.yaml` probe fields, README source/generated docs and `.agents/references/chamvi.md`.
+The docs now show main-entry `gitSkills`, globals/extras, explicit runtime Git installation while restoring uid 1000,
+distinct `/tmp/chamvi-skills/{common,maintainer}` corpora, source/auth app egress, existing startup probe timing
+(example 150 failures at 2 seconds), read-only preflight and clone-settlement shutdown. No template/schema/value
+changes were needed. `make generate`, `make test` and post-commit `make drift` passed: 15 Helm suites/82 tests,
+42 Python cases (40 passed, 2 existing `AGENT_APP_CI_IMAGE`-gated skips), five renders and 59 referenced values paths.
+Logs: `/tmp/chamvi-first-class-helm-{test,drift}.log`. Generation emitted only the existing amd64-on-arm64 image
+warning. No live cluster, published-app fixture image, push or publication was performed.

@@ -204,9 +204,13 @@ it.each(['rev-parse', 'ls-tree'])('rejects silent nonzero %s before discovery an
 it.each(['rev-parse', 'ls-tree'])('rejects external SIGTERM of %s before discovery and preserves the previous corpus', async (command) => {
     const { root, options } = await setup(command, 'signal');
     const rejected = expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
-    await vi.waitFor(() => expect(fs.readFile(join(root, 'pid'), 'utf8')).resolves.toMatch(/^\d+$/u));
-    process.kill(Number(await fs.readFile(join(root, 'pid'), 'utf8')), 'SIGTERM');
-    await rejected;
+    try {
+        // Cloning and earlier metadata commands can precede this child's ready marker under load.
+        await vi.waitFor(() => expect(fs.readFile(join(root, 'pid'), 'utf8')).resolves.toMatch(/^\d+$/u), { timeout: 5_000 });
+        process.kill(Number(await fs.readFile(join(root, 'pid'), 'utf8')), 'SIGTERM');
+    } finally {
+        await rejected;
+    }
     expect(discoverSkills).not.toHaveBeenCalled();
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
     expect((await fs.readdir(root)).sort()).toEqual(['bin', 'corpus', 'pid', 'started']);
