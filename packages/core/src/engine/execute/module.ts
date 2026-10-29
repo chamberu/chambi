@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { bindConversationRun } from '../../conversation/module.ts';
+import { bindConversationRun } from '../../conversation/context.ts';
 import { ToolLoopAgent, isStepCount } from 'ai';
 import type {
     LanguageModel,
@@ -149,9 +149,9 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         return;
     }
     const {
-        tools, 
-        activeTools, 
-        toolsContext, 
+        tools,
+        activeTools,
+        toolsContext,
     } = assembled;
 
     const responseMessages: ModelMessage[] = [];
@@ -367,15 +367,15 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 await ctx.finish({ status: RunStatus.CANCELLED, usage });
             } else if (timeout?.signal.aborted) {
                 await ctx.finish({
-                    status: RunStatus.FAILED, 
-                    usage, 
-                    error: toRunError(timeout.signal.reason), 
+                    status: RunStatus.FAILED,
+                    usage,
+                    error: toRunError(timeout.signal.reason),
                 });
             } else {
                 await ctx.finish({
-                    status: RunStatus.FAILED, 
-                    usage, 
-                    error: toRunError(error), 
+                    status: RunStatus.FAILED,
+                    usage,
+                    error: toRunError(error),
                 });
             }
             return;
@@ -386,9 +386,9 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             timeout?.clear();
             if (outcome === 'failed' && fatal) {
                 await ctx.finish({
-                    status: RunStatus.FAILED, 
-                    usage, 
-                    error: toRunError(fatal.error), 
+                    status: RunStatus.FAILED,
+                    usage,
+                    error: toRunError(fatal.error),
                 });
             } else {
                 await ctx.pause(suspended[0]!, usage);

@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { conversationFor, dispatchConversation } from '../conversation/module.ts';
+import { conversationFor, dispatchConversation } from '../conversation/context.ts';
 import { isObject } from 'smob';
 import { requestApproval } from '../approval/request.ts';
 import type { ApprovalDecision, ApprovalRequestInput } from '../approval/types.ts';
@@ -147,9 +147,9 @@ function createChannelHandle(
         const effectKey = message.key !== undefined ?
             `${prefix}key:${message.key}` :
             `${prefix}${stableHash({
-                address: target, 
-                title: message.title, 
-                body: message.body, 
+                address: target,
+                title: message.title,
+                body: message.body,
             })}`;
         const key = message.key ?? effectKey;
         const captured = { ...message };

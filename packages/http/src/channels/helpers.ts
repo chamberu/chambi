@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { ChannelContext, Engine, IChannel } from '@chamvi/core';
+import type { Engine, IChannel } from '@chamvi/core';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
 import type { WebhookTarget } from './types.ts';
 
@@ -20,14 +20,6 @@ export function markWebhookChannel(channel: object): void {
 export function isWebhookChannel(channel: unknown): boolean {
     // WeakSet.has answers false for a non-object
     return WEBHOOK_CHANNELS.has(channel as object);
-}
-
-/**
- * The context a mounted channel's `in` gets: its dispatch always carries
- * the channel's own name.
- */
-export function createChannelContext(engine: Engine, channel: IChannel<any, any>): ChannelContext {
-    return engine.channelContext(channel);
 }
 
 /**

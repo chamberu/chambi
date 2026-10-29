@@ -40,3 +40,17 @@ export const CONVERSATION_LIMITS_MAX: ResolvedConversationLimits = Object.freeze
     retentionMs: 31_536_000_000,
     maxStoredItems: 10_000,
 });
+
+/** The access an authorizer is asked to grant. */
+export enum ConversationOperation {
+    DISPATCH = 'dispatch',
+    RECALL = 'recall',
+    NOTES = 'notes',
+}
+
+/** The outcome of trying to reserve a conversation turn. */
+export enum ConversationTurnKind {
+    READY = 'ready',
+    BUSY = 'busy',
+    STALE = 'stale',
+}

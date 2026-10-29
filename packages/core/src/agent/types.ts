@@ -112,7 +112,10 @@ export type AgentDefinition<S extends StateSchema = StateSchema> = {
      * EngineOptions.conversations); runs that come with no conversation still
      * execute as before. Omitted or false: no conversation behaviour.
      */
-    conversation?: boolean;
+    conversation?: boolean | {
+        /** Stable memory identity across agent renames; default is the agent name. */
+        key: string;
+    };
 };
 
 export type Agent<S extends StateSchema = StateSchema> = {

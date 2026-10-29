@@ -36,6 +36,82 @@ describePostgres('schema', () => {
         await expect(assertSchemaMatchesMetadata(ds)).resolves.toBeUndefined();
     });
 
+    it('stores fixed conversation fields as columns and only frozen messages as JSONB', async () => {
+        const ds = await create();
+        const runner = ds.createQueryRunner();
+        try {
+            const names = [
+                TableName.CONVERSATIONS,
+                TableName.CONVERSATION_TURNS,
+                TableName.CONVERSATION_ITEMS,
+                TableName.CONVERSATION_NOTES,
+                TableName.CONVERSATION_OPERATIONS,
+            ];
+            const tables = await runner.getTables(names);
+            expect(tables.flatMap((table) => table.columns.filter((column) => column.type === 'jsonb')
+                .map((column) => `${table.name}.${column.name}`))).toEqual([`${TableName.CONVERSATION_TURNS}.messages`]);
+            for (const name of [TableName.RUNS, TableName.CHECKPOINTS]) {
+                const table = await runner.getTable(name);
+                expect(table?.findColumnByName('conversation')).toBeUndefined();
+                expect(table?.findColumnByName('conversation_scope_id')?.type).toBe('character varying');
+            }
+            for (const name of names.slice(1)) {
+                const table = tables.find((entry) => entry.name === name)!;
+                expect(table.foreignKeys).toHaveLength(1);
+                expect(table.foreignKeys[0]).toMatchObject({
+                    columnNames: ['scope_id'],
+                    referencedTableName: TableName.CONVERSATIONS,
+                    referencedColumnNames: ['id'],
+                });
+            }
+        } finally {
+            await runner.release();
+        }
+    });
+
+    it('rejects orphaned conversation rows while retaining historical generations', async () => {
+        const ds = await create();
+        const { TypeormConversationStore } = await import('@chamvi/store-typeorm');
+        const { DEFAULT_CONVERSATION_LIMITS } = await import('@chamvi/core');
+        const store = new TypeormConversationStore({ dataSource: ds });
+        const identity = {
+            agent: 'helper',
+            channel: 'chat',
+            account: 'main',
+            chat: 'room',
+            audience: 'direct',
+        };
+        const scope = await store.resolve(identity);
+        await store.beginTurn(scope, 'run', 'hello', DEFAULT_CONVERSATION_LIMITS);
+        await store.applyNote(scope, {
+            kind: 'set',
+            id: 'op',
+            inputHash: 'hash',
+            key: 'topic',
+            text: 'hello',
+            source: {
+                runId: 'run',
+                toolCallId: 'call',
+                stepIndex: 0,
+            },
+        });
+        const ownedTables = [
+            TableName.CONVERSATION_ITEMS,
+            TableName.CONVERSATION_NOTES,
+            TableName.CONVERSATION_OPERATIONS,
+            TableName.CONVERSATION_TURNS,
+        ];
+        for (const table of ownedTables) {
+            await expect(ds.query(`UPDATE "${table}" SET scope_id = $1`, ['b'.repeat(64)]))
+                .rejects.toMatchObject({ driverError: { code: '23503' } });
+        }
+        await store.endTurn(scope, 'run', []);
+        await store.reset(identity, { keepNotes: true });
+        expect((await store.listItems(scope, { limit: 10, offset: 0 })).total).toBe(1);
+        await expect(ds.query('DELETE FROM chamvi_conversations WHERE id = $1', [scope.id]))
+            .rejects.toMatchObject({ driverError: { code: '23503' } });
+    });
+
     it('creates the GIN index on docs', async () => {
         const ds = await create();
         const rows: { indexdef: string }[] = await ds.query(

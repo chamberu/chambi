@@ -49,6 +49,7 @@
     },
     "license": "Apache-2.0",
     "dependencies": {
+        "smob": "^1.6.2",
         "typeorm-extension": "^4.3.0"
     },
     "devDependencies": {

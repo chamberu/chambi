@@ -185,6 +185,7 @@ describe('scoped memory tools', () => {
         });
         expect(await s.conversations.get({ ...identity, chat: 'other' })).toBeUndefined();
         expect(accesses.filter((access) => access.operation === 'notes')).toEqual([{
+            agent: 'helper',
             operation: 'notes',
             identity,
             invoker: envelope.invoker,

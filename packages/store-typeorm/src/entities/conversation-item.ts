@@ -8,11 +8,13 @@
 import {
     Column,
     Entity,
+    ForeignKey,
     Index,
     PrimaryGeneratedColumn,
 } from 'typeorm';
 import type { ConversationItem } from '@chamvi/core';
-import { JSON_VALUE_TRANSFORMER, TableName } from './constants.ts';
+import { TableName } from './constants.ts';
+import { ConversationEntity } from './conversation.ts';
 
 @Index(['scopeId', 'generation', 'id'], { unique: true })
 @Index(['scopeId', 'generation', 'createdAt', 'seq'])
@@ -26,6 +28,7 @@ export class ConversationItemEntity {
         length: 64,
         collation: 'C',
     })
+    @ForeignKey(() => ConversationEntity, 'id')
     scopeId!: string;
     @Column({ type: 'integer' })
     generation!: number;
@@ -39,6 +42,28 @@ export class ConversationItemEntity {
     runId!: string;
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
-    @Column({ type: 'jsonb', transformer: JSON_VALUE_TRANSFORMER })
-    item!: ConversationItem;
+    @Column({ type: 'text' })
+    role!: ConversationItem['role'];
+    @Column({ type: 'text' })
+    text!: string;
+    @Column({ type: 'text' })
+    status!: ConversationItem['status'];
+    @Column({
+        name: 'effect_key',
+        type: 'text',
+        nullable: true,
+    })
+    effectKey!: string | null;
+    @Column({
+        name: 'target_channel',
+        type: 'text',
+        nullable: true,
+    })
+    targetChannel!: string | null;
+    @Column({
+        name: 'target_address',
+        type: 'text',
+        nullable: true,
+    })
+    targetAddress!: string | null;
 }

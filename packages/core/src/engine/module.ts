@@ -9,13 +9,16 @@ import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { pid } from 'node:process';
 import type { Agent } from '../agent/types.ts';
+import { conversationKey } from '../agent/asserts.ts';
 import { approvalDecisionKey, assertSelectionShape, toSelection } from '../approval/helpers.ts';
 import { assertArtifactInput } from '../artifact/helpers.ts';
 import { attachmentIds, storeArtifact } from '../artifact/module.ts';
 import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
 import { assertChannelName, assertDefaultAddress, createChannelContext } from '../channel/helpers.ts';
 import type { ChannelContext, IChannel } from '../channel/types.ts';
-import { Conversations, bindConversationIntake } from '../conversation/module.ts';
+import { Conversations } from '../conversation/module.ts';
+import { bindConversationIntake } from '../conversation/context.ts';
+import { ConversationOperation } from '../conversation/constants.ts';
 import {
     assertConversationIdentity,
     assertConversationText,
@@ -200,9 +203,11 @@ export class Engine implements IContextProvider {
             const capability = this.conversationCapability();
             const copied = structuredClone(target);
             const input = structuredClone(envelope);
-            if (this.agents.get(input.agent)?.definition.conversation !== true) throw new ValidationError('The agent has not enabled conversations.');
+            const agent = this.agents.get(input.agent);
+            const key = agent && conversationKey(agent.definition);
+            if (key === undefined) throw new ValidationError('The agent has not enabled conversations.');
             const identity: ConversationIdentity = {
-                agent: input.agent,
+                agent: key,
                 channel: channel.name,
                 account: copied?.account,
                 chat: copied?.chat,
@@ -214,7 +219,7 @@ export class Engine implements IContextProvider {
                 if (input[field] !== undefined) assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
             }
             const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
-            await capability.allow('dispatch', identity, invoker);
+            await capability.allow(ConversationOperation.DISPATCH, identity, input.agent, invoker);
             // Validate caller keys before resolve can create any conversation rows.
             assertTriggerKey('idempotency key', input.idempotencyKey);
             assertTriggerKey('concurrency key', input.concurrencyKey);
@@ -226,12 +231,12 @@ export class Engine implements IContextProvider {
             };
             if (input.concurrencyKey !== undefined && input.concurrencyKey !== conversationConcurrencyKey(proposed)) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
             const scope = await capability.store.resolve(identity);
-            const key = conversationConcurrencyKey(scope);
-            if (input.concurrencyKey !== undefined && input.concurrencyKey !== key) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+            const concurrencyKey = conversationConcurrencyKey(scope);
+            if (input.concurrencyKey !== undefined && input.concurrencyKey !== concurrencyKey) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
             return this.createRun({
                 ...input,
                 channel: channel.name,
-                concurrencyKey: key,
+                concurrencyKey,
             }, undefined, { scope, text: copied.text });
         });
         for (const agent of opts.agents) this.assertRegistrable(agent);
@@ -279,9 +284,9 @@ export class Engine implements IContextProvider {
         delete safe.conversation;
         delete safe.parent;
         const {
-            attachments, 
-            invoker, 
-            ...rest 
+            attachments,
+            invoker,
+            ...rest
         } = safe as DispatchEnvelope;
         // before any store write: an invalid attachment stores nothing
         if (attachments !== undefined && !Array.isArray(attachments)) {
@@ -304,7 +309,11 @@ export class Engine implements IContextProvider {
 
         if (trigger.idempotencyKey !== undefined) {
             const claimed = await this.store.claimKey(
-                idempotencyScope(conversation ? { ...trigger, channel: `${trigger.channel}:conversation:${conversation.scope.id}` } : trigger),
+                idempotencyScope(conversation ? {
+                    ...trigger,
+                    agent: conversation.scope.identity.agent,
+                    channel: `${trigger.channel}:conversation:${conversation.scope.id}`,
+                } : trigger),
                 trigger.idempotencyKey,
                 runId,
                 IDEMPOTENCY_TTL_MS,
@@ -476,17 +485,17 @@ export class Engine implements IContextProvider {
     async putAgent(
         agent: Agent,
         options: {
-            revision?: string; 
-            formerRevision?: string; 
-            reload?: boolean 
+            revision?: string;
+            formerRevision?: string;
+            reload?: boolean
         } = {},
     ): Promise<'added' | 'replaced' | 'unchanged'> {
         this.assertRegistrable(agent);
         const { name } = agent;
         const {
-            revision, 
-            formerRevision, 
-            reload = true, 
+            revision,
+            formerRevision,
+            reload = true,
         } = options;
         const registered = this.agents.has(name);
         if (registered && this.agents.get(name) === agent && this.revisions.get(name) === revision) return 'unchanged';
@@ -518,9 +527,9 @@ export class Engine implements IContextProvider {
         this.agents.set(name, agent);
         this.revisions.set(name, revision);
         this.emit({
-            type: 'agents.changed', 
-            name, 
-            kind, 
+            type: 'agents.changed',
+            name,
+            kind,
         });
         return kind;
     }
@@ -1099,7 +1108,9 @@ export class Engine implements IContextProvider {
         let conversation;
         if (run.conversation) {
             const capability = this.conversationCapability();
-            if (agent.definition.conversation !== true) throw new InvalidRunStateError('The agent has disabled conversations.');
+            const key = conversationKey(agent.definition);
+            if (key === undefined) throw new InvalidRunStateError('The agent has disabled conversations.');
+            if (key !== run.conversation.scope.identity.agent) throw new InvalidRunStateError('The agent conversation key has changed.');
             const admitted = await capability.admit(structuredClone(run), this.store);
             if (admitted.kind === 'busy') {
                 this.queue.defer(run.id);
@@ -1296,7 +1307,7 @@ export class Engine implements IContextProvider {
             }
         }
         assertHandoffSubscription(agent);
-        if (agent.definition.conversation === true && !this.conversations) throw new InvalidAgentDefinitionError('The agent enables conversations but the engine has no conversation capability.');
+        if (conversationKey(agent.definition) !== undefined && !this.conversations) throw new InvalidAgentDefinitionError('The agent enables conversations but the engine has no conversation capability.');
     }
 
     protected registry(): RegistryContext {

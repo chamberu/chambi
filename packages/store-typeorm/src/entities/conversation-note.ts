@@ -8,11 +8,12 @@
 import {
     Column,
     Entity,
+    ForeignKey,
     Index,
     PrimaryColumn,
 } from 'typeorm';
-import type { ConversationNote } from '@chamvi/core';
-import { JSON_VALUE_TRANSFORMER, TableName } from './constants.ts';
+import { TableName } from './constants.ts';
+import { ConversationEntity } from './conversation.ts';
 
 @Index(['expiresAt'])
 @Entity({ name: TableName.CONVERSATION_NOTES })
@@ -23,13 +24,28 @@ export class ConversationNoteEntity {
         length: 64,
         collation: 'C',
     })
+    @ForeignKey(() => ConversationEntity, 'id')
     scopeId!: string;
     @PrimaryColumn({ type: 'integer' })
     generation!: number;
     @PrimaryColumn({ type: 'text', collation: 'C' })
     key!: string;
-    @Column({ type: 'jsonb', transformer: JSON_VALUE_TRANSFORMER })
-    note!: ConversationNote;
+    @Column({ type: 'text' })
+    text!: string;
+    @Column({
+        name: 'run_id',
+        type: 'text',
+        collation: 'C',
+    })
+    runId!: string;
+    @Column({ name: 'tool_call_id', type: 'text' })
+    toolCallId!: string;
+    @Column({ name: 'step_index', type: 'integer' })
+    stepIndex!: number;
+    @Column({ name: 'created_at', type: 'timestamp with time zone' })
+    createdAt!: Date;
+    @Column({ name: 'updated_at', type: 'timestamp with time zone' })
+    updatedAt!: Date;
     @Column({
         name: 'expires_at',
         type: 'timestamp with time zone',

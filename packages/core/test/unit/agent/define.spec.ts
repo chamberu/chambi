@@ -136,7 +136,12 @@ describe('defineAgent', () => {
             name: 'a',
             conversation: true,
         }).definition.conversation).toBe(true);
-        for (const value of ['true', 1, 0, null, {}, []]) {
+        expect(defineAgent({
+            ...base,
+            name: 'a',
+            conversation: { key: 'stable-helper' },
+        }).definition.conversation).toEqual({ key: 'stable-helper' });
+        for (const value of ['true', 1, 0, null, {}, [], { key: '' }, { key: ' ' }, { key: 3 }, { key: 'x'.repeat(256) }, { key: 'bad\u0000key' }, { key: '\ud800' }]) {
             expect(() => defineAgent({
                 ...base,
                 name: 'a',
@@ -144,6 +149,6 @@ describe('defineAgent', () => {
             }), String(value))
                 .toThrow(InvalidAgentDefinitionError);
         }
-        expectTypeOf<AgentDefinition['conversation']>().toEqualTypeOf<boolean | undefined>();
+        expectTypeOf<AgentDefinition['conversation']>().toEqualTypeOf<boolean | { key: string } | undefined>();
     });
 });

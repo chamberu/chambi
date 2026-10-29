@@ -117,14 +117,9 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
             id: `item-${index}`,
             runId: 'writer',
             createdAt: s.clock.now(),
-            item: {
-                id: `item-${index}`,
-                role: 'user' as const,
-                text: 'input',
-                runId: 'writer',
-                createdAt: s.clock.now(),
-                status: 'sent' as const,
-            },
+            role: 'user' as const,
+            text: 'input',
+            status: 'sent' as const,
         }));
         await dataSource.getRepository(ConversationItemEntity).insert(items.map((item) => asValues<ConversationItemEntity>(item)));
         const queries = vi.spyOn(dataSource.logger, 'logQuery');

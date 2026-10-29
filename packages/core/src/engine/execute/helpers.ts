@@ -22,7 +22,7 @@ import { assertNoNeedsApproval, assertToolsContext } from '../../agent/asserts.t
 import { toFilePart } from '../../artifact/helpers.ts';
 import { createRunArtifacts } from '../../artifact/module.ts';
 import { createToolChannels } from '../../channel/helpers.ts';
-import { checkConversation, conversationFor } from '../../conversation/module.ts';
+import { checkConversation, conversationFor } from '../../conversation/context.ts';
 import { bindProvided } from '../../context/helpers.ts';
 import { validateToolInput } from '../../effect/helpers.ts';
 import { wrapToolsForRun } from '../../effect/wrap.ts';

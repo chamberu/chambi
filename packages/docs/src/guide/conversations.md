@@ -12,9 +12,15 @@ Enable both the app capability and `conversation: true` on the agent. A required
 
 Without `conversations`, the app creates no conversation store. Enabling the agent without the app capability is a configuration error. The default conversation store uses the same selected PostgreSQL DataSource as the run store. With no selected DataSource it uses `MemoryConversationStore` and warns: a process restart loses history and notes, and replicas do not share them. PostgreSQL is required for the default restart-durable production setup.
 
+## Keep memory when renaming an agent
+
+Use `conversation: { key: 'support' }` to give memory a stable identifier. Keep the same key when changing `name`. To retain history first created with `conversation: true`, use the previous agent name as the key. Channel, account, chat and audience must still match. A different key starts separate history; it does not copy or migrate the old history. Change a key only after draining existing turns: queued runs bound to its previous key fail safely.
+
+The authorizer receives `access.agent` as the actual agent name and `access.identity.agent` as the memory key. Check permissions using the actual agent and authenticated caller. Choosing a key grants no access by itself. Operator identity arguments also use the memory key in their `agent` field. Deliberately giving multiple agents the same key shares their memory under the policy you provide.
+
 ## Trusted intake and two messages
 
-A channel adapter must authenticate and normalize the incoming event before calling `dispatchConversation`. Scope is the exact tuple of agent, channel, account alias, chat and explicit audience. The engine derives its concurrency key; omit `concurrencyKey` unless it matches that canonical key. Use the adapter's stable event ID as the idempotency key. Within the existing idempotency reservation lifetime, duplicate delivery remains a duplicate after reset when its original run exists. A rare failed run creation can leave an idempotency reservation without a run. Generation-zero retries can heal it. After any reset or deletion, the engine cannot prove that reservation's original generation and refuses to heal it into current memory. It requires explicit operator recovery or reservation expiry; retrying the same event does not automatically recover it.
+A channel adapter must authenticate and normalize the incoming event before calling `dispatchConversation`. Scope is the exact tuple of memory key, channel, account alias, chat and explicit audience. The memory key defaults to the agent name. The engine derives its concurrency key; omit `concurrencyKey` unless it matches that canonical key. Use the adapter's stable event ID as the idempotency key. Within the existing idempotency reservation lifetime, duplicate delivery remains a duplicate after reset when its original run exists. A rare failed run creation can leave an idempotency reservation without a run. Generation-zero retries can heal it. After any reset or deletion, the engine cannot prove that reservation's original generation and refuses to heal it into current memory. It requires explicit operator recovery or reservation expiry; retrying the same event does not automatically recover it.
 
 <<< @/snippets/conversations.ts#intake
 
@@ -66,3 +72,17 @@ Normal app migrations install conversation tables even when recall is disabled. 
 Pass `conversations: { authorize, store: customStore }` to use an `IConversationStore`. A custom store owns its schema, connection and shutdown lifecycle. The app does not initialize, migrate or close it. A replacement store module must register `AppToken.CONVERSATIONS` when the capability is enabled. With the built-in store module, an injected DataSource remains caller-owned, just as it does for run storage.
 
 The existing app drain waits for engine executions and conversation journal/reconciliation writes before closing its owned DataSource. Run admission and conversation writes use separate stores and transactions: no cross-store atomicity is promised. Runs are created before conversation ownership is claimed, and restart reconciliation repairs terminal ownership safely.
+
+## PostgreSQL records
+
+Fixed fields use ordinary columns. Conversation-owned records reference their parent conversation with foreign keys. Only the frozen AI SDK messages need JSONB.
+
+| Record | Purpose |
+|---|---|
+| Conversation | Identity, reset generation and current turn owner |
+| Item | Accepted input or a reply with its delivery status |
+| Note | Current explicitly saved text |
+| Turn | Context frozen before the first model call, reused after a crash |
+| Note operation | Metadata receipt committed atomically with a note edit, preventing duplicate edits on retry |
+
+The turn record exists before a checkpoint can be written. The note receipt must commit in the same transaction as its edit. Existing checkpoints and effects cannot provide those guarantees across independently configured stores. Run and checkpoint bindings retain scalar provenance without foreign keys to the conversation store, which may use another backend.

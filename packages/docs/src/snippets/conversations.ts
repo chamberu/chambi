@@ -20,7 +20,7 @@ export function conversationApp(model: LanguageModel, chat: IChannel, authorize:
     const helper = defineAgent({
         name: 'helper',
         model,
-        conversation: true,
+        conversation: { key: 'helper' }, // keep this key when renaming the agent
         instructions: 'Help the user. Send answers with reply. Save notes only when explicitly asked.',
         channels: [{
             channel: chat.name,

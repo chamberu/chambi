@@ -8,11 +8,13 @@
 import {
     Column,
     Entity,
+    ForeignKey,
     Index,
     PrimaryColumn,
 } from 'typeorm';
 import type { ConversationSnapshot } from '@chamvi/core';
 import { JSON_VALUE_TRANSFORMER, TableName } from './constants.ts';
+import { ConversationEntity } from './conversation.ts';
 
 @Index(['scopeId', 'createdAt', 'runId'])
 @Entity({ name: TableName.CONVERSATION_TURNS })
@@ -23,6 +25,7 @@ export class ConversationTurnEntity {
         length: 64,
         collation: 'C',
     })
+    @ForeignKey(() => ConversationEntity, 'id')
     scopeId!: string;
     @PrimaryColumn({ type: 'integer' })
     generation!: number;
@@ -33,7 +36,21 @@ export class ConversationTurnEntity {
     })
     runId!: string;
     @Column({ type: 'jsonb', transformer: JSON_VALUE_TRANSFORMER })
-    snapshot!: ConversationSnapshot;
+    messages!: ConversationSnapshot['messages'];
+    @Column({
+        name: 'item_ids',
+        type: 'text',
+        array: true,
+    })
+    itemIds!: string[];
+    @Column({
+        name: 'note_keys',
+        type: 'text',
+        array: true,
+    })
+    noteKeys!: string[];
+    @Column({ type: 'integer' })
+    omitted!: number;
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
 }

@@ -13,9 +13,9 @@ import { stableHash } from '../effect/helpers.ts';
 import { ValidationError } from '../errors/index.ts';
 import { defineTool } from '../tool/define.ts';
 import type { ToolContext } from '../tool/types.ts';
-import { CONVERSATION_NOTE_KEY_MAX_LENGTH, CONVERSATION_NOTE_TEXT_MAX_BYTES } from './constants.ts';
+import { CONVERSATION_NOTE_KEY_MAX_LENGTH, CONVERSATION_NOTE_TEXT_MAX_BYTES, ConversationOperation  } from './constants.ts';
 import { assertConversationText, assertPage } from './helpers.ts';
-import { checkConversation, conversationFor } from './module.ts';
+import { checkConversation, conversationFor } from './context.ts';
 
 /** Whether this execution has a trusted conversation binding; public run fields are not authority. */
 export function hasConversation(ctx: ToolContext): boolean {
@@ -25,7 +25,7 @@ export function hasConversation(ctx: ToolContext): boolean {
 async function boundConversation(ctx: ToolContext) {
     const bound = conversationFor(ctx.run);
     if (!bound) throw new ValidationError('This run has no conversation scope.');
-    await checkConversation(ctx.run, 'notes');
+    await checkConversation(ctx.run, ConversationOperation.NOTES);
     return bound;
 }
 

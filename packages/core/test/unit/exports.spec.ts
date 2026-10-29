@@ -121,6 +121,7 @@ describe('public api', () => {
         }>();
         expectTypeOf<core.ConversationBinding>().toEqualTypeOf<{ scope: core.ConversationScope; text: string }>();
         expectTypeOf<core.ConversationAccess>().toEqualTypeOf<{
+            agent: string;
             operation: 'dispatch' | 'recall' | 'notes';
             identity: core.ConversationIdentity;
             invoker?: core.Invoker;
@@ -288,6 +289,21 @@ describe('public api', () => {
         expect(core).not.toHaveProperty('bindProvided');
         expect(core).not.toHaveProperty('providedOf');
         expect(core).not.toHaveProperty('registerContextKey');
+    });
+
+    it('exports conversation operation and turn enums with literal-compatible types', () => {
+        expect(core.ConversationOperation).toEqual({
+            DISPATCH: 'dispatch',
+            RECALL: 'recall',
+            NOTES: 'notes',
+        });
+        expect(core.ConversationTurnKind).toEqual({
+            READY: 'ready',
+            BUSY: 'busy',
+            STALE: 'stale',
+        });
+        expectTypeOf<core.ConversationOperationLiteral>().toEqualTypeOf<'dispatch' | 'recall' | 'notes'>();
+        expectTypeOf<core.BeginTurnResult['kind']>().toEqualTypeOf<'ready' | 'busy' | 'stale'>();
     });
 
     it('exports the RunStatus enum', () => {

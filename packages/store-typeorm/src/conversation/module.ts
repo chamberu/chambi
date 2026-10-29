@@ -52,22 +52,67 @@ function scopeOf(row: ConversationEntity): ConversationScope {
     return {
         id: row.id,
         generation: row.generation,
-        identity: structuredClone(row.identity),
+        identity: {
+            agent: row.agent,
+            channel: row.channel,
+            account: row.account,
+            chat: row.chat,
+            audience: row.audience,
+        },
     };
 }
 
 function itemOf(row: ConversationItemEntity): ConversationItem {
-    return { ...row.item, createdAt: row.createdAt };
+    return {
+        id: row.id,
+        role: row.role,
+        text: row.text,
+        runId: row.runId,
+        createdAt: row.createdAt,
+        status: row.status,
+        ...(row.effectKey === null ? {} : { effectKey: row.effectKey }),
+        ...(row.targetChannel === null ? {} : { target: { channel: row.targetChannel, address: row.targetAddress! } }),
+    };
+}
+
+function itemValues(item: ConversationItem) {
+    return {
+        id: item.id,
+        role: item.role,
+        text: item.text,
+        runId: item.runId,
+        createdAt: item.createdAt,
+        status: item.status,
+        effectKey: item.effectKey ?? null,
+        targetChannel: item.target?.channel ?? null,
+        targetAddress: item.target?.address ?? null,
+    };
 }
 
 function noteOf(row: ConversationNoteEntity): ConversationNote {
-    const note = {
-        ...row.note,
-        createdAt: new Date(row.note.createdAt),
-        updatedAt: new Date(row.note.updatedAt),
+    return {
+        key: row.key,
+        text: row.text,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        source: {
+            runId: row.runId,
+            toolCallId: row.toolCallId,
+            stepIndex: row.stepIndex,
+        },
+        ...(row.expiresAt === null ? {} : { expiresAt: row.expiresAt }),
     };
-    if (row.expiresAt) note.expiresAt = row.expiresAt;
-    return note;
+}
+
+function noteValues(note: ConversationNote) {
+    return {
+        key: note.key,
+        text: note.text,
+        ...note.source,
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+        expiresAt: note.expiresAt ?? null,
+    };
 }
 
 /** Every write takes the identity row lock before any owned rows, across connections. */
@@ -86,7 +131,11 @@ export class TypeormConversationStore implements IConversationStore {
         await this.dataSource.getRepository(ConversationEntity).createQueryBuilder().insert()
             .values(asValues<ConversationEntity>({
                 id,
-                identity: structuredClone(identity),
+                agent: identity.agent,
+                channel: identity.channel,
+                account: identity.account,
+                chat: identity.chat,
+                audience: identity.audience,
                 generation: 0,
                 activeRunId: null,
             })).orIgnore().execute();
@@ -135,7 +184,18 @@ export class TypeormConversationStore implements IConversationStore {
             const existing = await manager.findOneBy(ConversationTurnEntity, { ...where, runId });
             if (existing) {
                 await manager.update(ConversationEntity, { id: row.id }, { activeRunId: runId });
-                return { kind: 'ready', snapshot: { ...existing.snapshot, createdAt: existing.createdAt } };
+                return {
+                    kind: 'ready',
+                    snapshot: {
+                        scope: scopeOf(row),
+                        runId,
+                        createdAt: existing.createdAt,
+                        messages: existing.messages,
+                        itemIds: existing.itemIds,
+                        noteKeys: existing.noteKeys,
+                        omitted: existing.omitted,
+                    },
+                };
             }
             await this.trim(manager, row, limits);
             const items = await manager.find(ConversationItemEntity, { where, order: { seq: 'ASC' } });
@@ -157,17 +217,17 @@ export class TypeormConversationStore implements IConversationStore {
             };
             await manager.getRepository(ConversationItemEntity).insert(asValues<ConversationItemEntity>({
                 ...where,
-                id: item.id,
-                runId,
-                createdAt: now,
-                item,
+                ...itemValues(item),
             }));
             await manager.update(ConversationEntity, { id: row.id }, { activeRunId: runId });
             await manager.getRepository(ConversationTurnEntity).insert(asValues<ConversationTurnEntity>({
                 ...where,
                 runId,
                 createdAt: now,
-                snapshot,
+                messages: snapshot.messages,
+                itemIds: snapshot.itemIds,
+                noteKeys: snapshot.noteKeys,
+                omitted: snapshot.omitted,
             }));
             await this.trimCount(manager, row.id, row.generation, row.activeRunId, limits.maxStoredItems);
             return { kind: 'ready', snapshot };
@@ -184,8 +244,7 @@ export class TypeormConversationStore implements IConversationStore {
             if (!row || row.generation !== scope.generation || row.activeRunId !== runId) return;
             const pending = await this.pending(manager, scope, runId);
             for (const entry of pending) {
-                entry.item.status = confirmedEmitIds.includes(entry.id) ? 'sent' : 'unknown';
-                await manager.update(ConversationItemEntity, { seq: entry.seq }, asValues<ConversationItemEntity>({ item: entry.item }));
+                await manager.update(ConversationItemEntity, { seq: entry.seq }, { status: confirmedEmitIds.includes(entry.id) ? 'sent' : 'unknown' });
             }
             await manager.update(ConversationEntity, { id: row.id }, { activeRunId: null });
         });
@@ -204,16 +263,14 @@ export class TypeormConversationStore implements IConversationStore {
             };
             const previous = await manager.findOneBy(ConversationItemEntity, where);
             if (previous) {
-                if (!isSameEmit(previous.item, item)) throw new ValidationError('A conversation item of this id exists with other content.');
+                if (!isSameEmit(itemOf(previous), item)) throw new ValidationError('A conversation item of this id exists with other content.');
                 return;
             }
             const createdAt = this.clock.now();
-            const stored = { ...structuredClone(item), createdAt };
             await manager.getRepository(ConversationItemEntity).insert(asValues<ConversationItemEntity>({
                 ...where,
-                runId: item.runId,
+                ...itemValues(item),
                 createdAt,
-                item: stored,
             }));
         });
     }
@@ -229,9 +286,8 @@ export class TypeormConversationStore implements IConversationStore {
             }) : null;
             if (!entry) throw new InvalidRunStateError('The run does not hold the conversation turn.');
             this.owner(current, entry.runId);
-            if (entry.item.status === 'pending') {
-                entry.item.status = 'sent';
-                await manager.update(ConversationItemEntity, { seq: entry.seq }, asValues<ConversationItemEntity>({ item: entry.item }));
+            if (entry.status === 'pending') {
+                await manager.update(ConversationItemEntity, { seq: entry.seq }, { status: 'sent' });
             }
         });
     }
@@ -245,7 +301,7 @@ export class TypeormConversationStore implements IConversationStore {
             },
             order: { seq: 'ASC' },
         });
-        return items.filter((entry) => entry.item.status === 'pending');
+        return items.filter((entry) => entry.status === 'pending');
     }
 
     async pendingEmits(scope: ConversationScope, runId: string): Promise<ConversationItem[]> {
@@ -298,7 +354,17 @@ export class TypeormConversationStore implements IConversationStore {
             const previous = await manager.findOneBy(ConversationOperationEntity, { ...where, id: operation.id });
             if (previous) {
                 if (previous.runId !== operation.source.runId || previous.inputHash !== operation.inputHash) throw new ValidationError('The note operation was already applied with another input.');
-                return previous.result.kind === 'set' ? { ...previous.result, updatedAt: new Date(previous.result.updatedAt) } : previous.result;
+                return previous.kind === 'set' ?
+                    {
+                        kind: 'set',
+                        key: previous.key,
+                        updatedAt: previous.createdAt,
+                    } :
+                    {
+                        kind: 'remove',
+                        key: previous.key,
+                        removed: previous.removed!,
+                    };
             }
             const now = this.clock.now();
             assertNoteOperationContent(operation, now);
@@ -311,15 +377,13 @@ export class TypeormConversationStore implements IConversationStore {
                     key: operation.key,
                     text: operation.text,
                     source: structuredClone(operation.source),
-                    createdAt: prior ? new Date(prior.note.createdAt) : now,
+                    createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
                 };
                 if (operation.expiresAt !== undefined) note.expiresAt = operation.expiresAt;
                 await manager.getRepository(ConversationNoteEntity).upsert(asValues<ConversationNoteEntity>({
                     ...where,
-                    key: note.key,
-                    note,
-                    expiresAt: note.expiresAt ?? null,
+                    ...noteValues(note),
                 }), ['scopeId', 'generation', 'key']);
                 result = {
                     kind: 'set',
@@ -339,7 +403,9 @@ export class TypeormConversationStore implements IConversationStore {
                 id: operation.id,
                 runId: operation.source.runId,
                 inputHash: operation.inputHash,
-                result,
+                kind: result.kind,
+                key: result.key,
+                removed: result.kind === 'remove' ? result.removed : null,
                 createdAt: now,
             }));
             return result;
@@ -361,9 +427,7 @@ export class TypeormConversationStore implements IConversationStore {
                 await manager.getRepository(ConversationNoteEntity).insert(asValues<ConversationNoteEntity>({
                     scopeId: row.id,
                     generation: row.generation,
-                    key: note.key,
-                    note,
-                    expiresAt: note.expiresAt ?? null,
+                    ...noteValues(note),
                 }));
             }
             return scopeOf(row);

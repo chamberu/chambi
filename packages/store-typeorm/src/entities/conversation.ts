@@ -6,8 +6,7 @@
  */
 
 import { Column, Entity, PrimaryColumn } from 'typeorm';
-import type { ConversationIdentity } from '@chamvi/core';
-import { JSON_VALUE_TRANSFORMER, TableName } from './constants.ts';
+import { TableName } from './constants.ts';
 
 @Entity({ name: TableName.CONVERSATIONS })
 export class ConversationEntity {
@@ -17,8 +16,16 @@ export class ConversationEntity {
         collation: 'C',
     })
     id!: string;
-    @Column({ type: 'jsonb', transformer: JSON_VALUE_TRANSFORMER })
-    identity!: ConversationIdentity;
+    @Column({ type: 'text', collation: 'C' })
+    agent!: string;
+    @Column({ type: 'text', collation: 'C' })
+    channel!: string;
+    @Column({ type: 'text', collation: 'C' })
+    account!: string;
+    @Column({ type: 'text', collation: 'C' })
+    chat!: string;
+    @Column({ type: 'text', collation: 'C' })
+    audience!: string;
     @Column({ type: 'integer' })
     generation!: number;
     @Column({

@@ -31,7 +31,6 @@ import type {
 
 /** Run properties that map one to one onto a RunEntity property. */
 const RUN_PROPERTIES: ReadonlySet<string> = new Set([
-    'conversation',
     'agent',
     'status',
     'trigger',
@@ -57,7 +56,17 @@ export function toRunValues(patch: Partial<Run>): QueryDeepPartialEntity<RunEnti
 
     for (const key of Object.keys(patch)) {
         const value = patch[key as keyof Run];
-        if (key === 'claim') {
+        if (key === 'conversation') {
+            const { conversation } = patch;
+            values.conversationScopeId = conversation?.scope.id ?? null;
+            values.conversationGeneration = conversation?.scope.generation ?? null;
+            values.conversationAgent = conversation?.scope.identity.agent ?? null;
+            values.conversationChannel = conversation?.scope.identity.channel ?? null;
+            values.conversationAccount = conversation?.scope.identity.account ?? null;
+            values.conversationChat = conversation?.scope.identity.chat ?? null;
+            values.conversationAudience = conversation?.scope.identity.audience ?? null;
+            values.conversationText = conversation?.text ?? null;
+        } else if (key === 'claim') {
             const claim = value as Run['claim'];
             values.claimOwner = claim ? claim.owner : null;
             values.claimExpiresAt = claim ? claim.expiresAt : null;
@@ -102,7 +111,9 @@ export function toCheckpointValues(cp: Checkpoint): QueryDeepPartialEntity<Check
         stepIndex: cp.stepIndex,
         messages: cp.messages,
         finishReason: cp.finishReason ?? null,
-        conversation: cp.conversation ?? null,
+        conversationScopeId: cp.conversation?.scopeId ?? null,
+        conversationGeneration: cp.conversation?.generation ?? null,
+        conversationSnapshotRunId: cp.conversation?.snapshotRunId ?? null,
         createdAt: cp.createdAt,
     };
 
@@ -167,7 +178,22 @@ export function toRun(entity: RunEntity): Run {
         updatedAt: entity.updatedAt,
     };
 
-    if (entity.conversation != null) run.conversation = structuredClone(entity.conversation);
+    if (entity.conversationScopeId !== null) {
+        run.conversation = {
+            scope: {
+                id: entity.conversationScopeId,
+                generation: entity.conversationGeneration!,
+                identity: {
+                    agent: entity.conversationAgent!,
+                    channel: entity.conversationChannel!,
+                    account: entity.conversationAccount!,
+                    chat: entity.conversationChat!,
+                    audience: entity.conversationAudience!,
+                },
+            },
+            text: entity.conversationText!,
+        };
+    }
     if (entity.concurrencyKey !== null) run.concurrencyKey = entity.concurrencyKey;
     if (entity.address !== null) run.address = entity.address;
     if (entity.output !== null) run.output = entity.output;
@@ -208,7 +234,13 @@ export function toCheckpoint(entity: CheckpointEntity): Checkpoint {
         messages: entity.messages,
         createdAt: entity.createdAt,
     };
-    if (entity.conversation != null) checkpoint.conversation = structuredClone(entity.conversation);
+    if (entity.conversationScopeId !== null) {
+        checkpoint.conversation = {
+            scopeId: entity.conversationScopeId,
+            generation: entity.conversationGeneration!,
+            snapshotRunId: entity.conversationSnapshotRunId!,
+        };
+    }
     if (entity.finishReason !== null) checkpoint.finishReason = entity.finishReason;
 
     return checkpoint;

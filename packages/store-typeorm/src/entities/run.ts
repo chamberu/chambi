@@ -27,16 +27,16 @@ export class RunEntity {
     id!: string;
 
     @Column({
-        name: 'agent', 
-        type: 'varchar', 
-        length: 64, 
+        name: 'agent',
+        type: 'varchar',
+        length: 64,
     })
     agent!: string;
 
     @Column({
-        name: 'status', 
-        type: 'varchar', 
-        length: 16, 
+        name: 'status',
+        type: 'varchar',
+        length: 16,
     })
     status!: RunStatusLiteral;
 
@@ -65,7 +65,7 @@ export class RunEntity {
     address!: string | null;
 
     @Column({
-        name: 'output', 
+        name: 'output',
         type: 'jsonb',
         nullable: true,
         transformer: OPTIONAL_JSON_TRANSFORMER,
@@ -73,7 +73,7 @@ export class RunEntity {
     output!: unknown;
 
     @Column({
-        name: 'error', 
+        name: 'error',
         type: 'jsonb',
         nullable: true,
         transformer: OPTIONAL_JSON_TRANSFORMER,
@@ -88,7 +88,7 @@ export class RunEntity {
     usage!: Usage;
 
     @Column({
-        name: 'waiting', 
+        name: 'waiting',
         type: 'jsonb',
         nullable: true,
         transformer: OPTIONAL_JSON_TRANSFORMER,
@@ -104,25 +104,68 @@ export class RunEntity {
     claimOwner!: string | null;
 
     @Column({
-        name: 'claim_expires_at', 
-        type: 'timestamp with time zone', 
-        nullable: true, 
+        name: 'claim_expires_at',
+        type: 'timestamp with time zone',
+        nullable: true,
     })
     claimExpiresAt!: Date | null;
 
     @Column({
-        name: 'cancel_requested', 
-        type: 'boolean', 
-        nullable: true, 
+        name: 'cancel_requested',
+        type: 'boolean',
+        nullable: true,
     })
     cancelRequested!: boolean | null;
 
     @Column({
-        type: 'jsonb',
+        name: 'conversation_scope_id',
+        type: 'varchar',
+        length: 64,
         nullable: true,
-        transformer: OPTIONAL_JSON_TRANSFORMER,
     })
-    conversation!: Run['conversation'] | null;
+    conversationScopeId!: string | null;
+    @Column({
+        name: 'conversation_generation',
+        type: 'integer',
+        nullable: true,
+    })
+    conversationGeneration!: number | null;
+    @Column({
+        name: 'conversation_agent',
+        type: 'text',
+        nullable: true,
+    })
+    conversationAgent!: string | null;
+    @Column({
+        name: 'conversation_channel',
+        type: 'text',
+        nullable: true,
+    })
+    conversationChannel!: string | null;
+    @Column({
+        name: 'conversation_account',
+        type: 'text',
+        nullable: true,
+    })
+    conversationAccount!: string | null;
+    @Column({
+        name: 'conversation_chat',
+        type: 'text',
+        nullable: true,
+    })
+    conversationChat!: string | null;
+    @Column({
+        name: 'conversation_audience',
+        type: 'text',
+        nullable: true,
+    })
+    conversationAudience!: string | null;
+    @Column({
+        name: 'conversation_text',
+        type: 'text',
+        nullable: true,
+    })
+    conversationText!: string | null;
 
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
@@ -131,16 +174,16 @@ export class RunEntity {
     updatedAt!: Date;
 
     @Column({
-        name: 'started_at', 
-        type: 'timestamp with time zone', 
-        nullable: true, 
+        name: 'started_at',
+        type: 'timestamp with time zone',
+        nullable: true,
     })
     startedAt!: Date | null;
 
     @Column({
-        name: 'finished_at', 
-        type: 'timestamp with time zone', 
-        nullable: true, 
+        name: 'finished_at',
+        type: 'timestamp with time zone',
+        nullable: true,
     })
     finishedAt!: Date | null;
 }

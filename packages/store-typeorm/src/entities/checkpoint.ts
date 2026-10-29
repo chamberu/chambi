@@ -11,23 +11,36 @@ import {
     PrimaryColumn,
 } from 'typeorm';
 import type { Checkpoint } from '@chamvi/core';
-import { JSON_VALUE_TRANSFORMER, OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
+import { JSON_VALUE_TRANSFORMER, TableName } from './constants.ts';
 
 @Entity({ name: TableName.CHECKPOINTS })
 export class CheckpointEntity {
     @PrimaryColumn({
-        name: 'run_id', 
-        type: 'varchar', 
-        length: 128, 
+        name: 'run_id',
+        type: 'varchar',
+        length: 128,
     })
     runId!: string;
 
     @Column({
-        type: 'jsonb',
+        name: 'conversation_scope_id',
+        type: 'varchar',
+        length: 64,
         nullable: true,
-        transformer: OPTIONAL_JSON_TRANSFORMER,
     })
-    conversation!: Checkpoint['conversation'] | null;
+    conversationScopeId!: string | null;
+    @Column({
+        name: 'conversation_generation',
+        type: 'integer',
+        nullable: true,
+    })
+    conversationGeneration!: number | null;
+    @Column({
+        name: 'conversation_snapshot_run_id',
+        type: 'text',
+        nullable: true,
+    })
+    conversationSnapshotRunId!: string | null;
 
     @Column({ name: 'step_index', type: 'integer' })
     stepIndex!: number;

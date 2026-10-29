@@ -62,21 +62,24 @@ import type {
 
 /** An invoker without its `permissions`: a reader must not learn another principal's grants. */
 function viewInvoker(invoker: Invoker): InvokerView {
-    const view: InvokerView & { permissions?: unknown } = { ...invoker };
-    delete view.permissions;
-    return view;
+    return {
+        id: invoker.id,
+        kind: invoker.kind,
+        ...(invoker.name !== undefined ? { name: invoker.name } : {}),
+    };
 }
 
 /**
- * Drops the internal `claim` (owner and lease expiry) and the invoker's
- * `permissions` from a run.
+ * Drops the internal claim, conversation binding and invoker permissions.
  */
 export function serializeRun(run: Run): RunView {
-    const view: RunView & { claim?: unknown; conversation?: unknown } = { ...run };
+    const view = { ...run };
     delete view.claim;
     delete view.conversation;
-    if (run.trigger.invoker) view.trigger = { ...run.trigger, invoker: viewInvoker(run.trigger.invoker) };
-    return view;
+    return {
+        ...view,
+        trigger: run.trigger.invoker ? { ...run.trigger, invoker: viewInvoker(run.trigger.invoker) } : run.trigger,
+    };
 }
 
 /** A step as it leaves the package: a `wait` step's approver without its `permissions`. */

@@ -14,7 +14,7 @@ import {
     NAME_MAX_LENGTH,
     NAME_PATTERN,
 } from './constants.ts';
-import { assertNoNeedsApproval, assertToolsContext } from './asserts.ts';
+import { assertNoNeedsApproval, assertToolsContext, conversationKey } from './asserts.ts';
 import type { Agent, AgentDefinition } from './types.ts';
 
 export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefinition<S>): Agent<S> {
@@ -29,9 +29,7 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
     }
 
     assertConcurrencyMaxRuns(def.concurrencyMaxRuns, `Agent "${def.name}" concurrencyMaxRuns`);
-    if (def.conversation !== undefined && typeof def.conversation !== 'boolean') {
-        throw new InvalidAgentDefinitionError(`Agent "${def.name}" has a conversation option that is no boolean.`);
-    }
+    conversationKey(def);
 
     const seen = new Set<string>();
     for (const subscription of def.channels ?? []) {

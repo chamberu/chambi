@@ -6,17 +6,19 @@
  */
 
 import type { ModelMessage } from 'ai';
+import type { ConversationOperation, ConversationTurnKind } from './constants.ts';
 import type { IClock } from '../clock/index.ts';
 import type { Invoker } from '../trigger/types.ts';
 
 /**
- * Who a conversation is with, as the trusted channel names it: the agent, the
+ * Who a conversation is with, as the trusted channel names it: the memory key, the
  * channel, an account alias on that channel, the chat and an explicit
  * audience. Each field is a non-blank string of at most
  * CONVERSATION_FIELD_MAX_LENGTH UTF-16 code units without control characters
  * or lone surrogates. The scope id is the sha256 of its canonical JSON.
  */
 export type ConversationIdentity = {
+    /** Stable memory key from the agent configuration; defaults to its name. */
     agent: string;
     channel: string;
     account: string;
@@ -74,9 +76,13 @@ export type ResolvedConversationLimits = {
     readonly [K in keyof ConversationLimits]-?: number;
 };
 
+export type ConversationOperationLiteral = `${ConversationOperation}`;
+
 /** The question an authorizer answers before a conversation is dispatched, recalled or its notes touched. */
 export type ConversationAccess = {
-    operation: 'dispatch' | 'recall' | 'notes';
+    /** Actual agent name, independently of the stable identity.agent memory key. */
+    agent: string;
+    operation: ConversationOperationLiteral;
     identity: ConversationIdentity;
     invoker?: Invoker;
 };
@@ -168,13 +174,13 @@ export type ConversationSnapshot = {
 };
 
 export type BeginTurnResult = {
-    kind: 'ready';
+    kind: `${ConversationTurnKind.READY}`;
     snapshot: ConversationSnapshot;
 } | {
-    kind: 'busy';
+    kind: `${ConversationTurnKind.BUSY}`;
     runId: string;
 } | {
-    kind: 'stale';
+    kind: `${ConversationTurnKind.STALE}`;
 };
 
 export type MemoryConversationStoreOptions = {

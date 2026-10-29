@@ -7,6 +7,7 @@
 
 import type { ModelMessage } from 'ai';
 import { createHash } from 'node:crypto';
+import { isObject } from 'smob';
 import {
     CONVERSATION_FIELD_MAX_LENGTH,
     CONVERSATION_LIMITS_MAX,
@@ -23,10 +24,6 @@ import type {
     ConversationSnapshot,
     ResolvedConversationLimits,
 } from '@chamvi/core';
-
-function isObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function compareCodePoints(a: string, b: string): number {
     const aa = Array.from(a, (v) => v.codePointAt(0)!);
