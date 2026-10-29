@@ -55,11 +55,12 @@ chamvi's own commands never run from the cache: every workspace command starts w
 
 The coding tools are not yours to edit, so the approval for `bash` sits in the agent's `beforeToolExecution` hook: `approve()` there pauses the run (keeping its workspaces on this replica) until someone answers, and a refused command reaches the model as a `ToolDeniedError` tool error. See [Approvals & Hooks](/guide/approvals#gating-tools-you-did-not-write).
 
-`workspaces.tools()` gives the model five tools; `codingTools(workspaces)` adds eleven more. Every tool resolves its workspace with the calling run's id, so a run can only reach its own workspaces.
+`workspaces.tools()` gives the model six tools by default; `codingTools(workspaces)` adds eleven more. Every tool resolves its workspace with the calling run's id, so a run can only reach its own workspaces.
 
 | Tool | Package | What it does |
 |---|---|---|
 | `create_workspace` | sandbox | `{ repo?, ref?, image? }`: a checkout of `repo` at `ref` with its history and the default branch beside it (`defaultBranch`), or an empty git repository, in the image asked for; the same repository again returns the same workspace (`reused: true`) |
+| `read_repository_instructions` | sandbox | `{ paths?, workspace? }`: current guidance for root and requested ancestors, with provenance and diagnostics; omitted when the manager disables collection |
 | `dispose_workspace` | sandbox | `{ workspace? }`: disposes one workspace |
 | `git_fetch` | sandbox | `{ remote?, refspec? }`: fetches with the run's credentials, every branch into `origin/*` by default |
 | `git_pull` | sandbox | `{ remote?, branch?, rebase? }`: fetches a branch and merges it, or rebases onto it; conflicts come back in the result |
@@ -81,6 +82,32 @@ The coding tools take an optional `workspace` id; omitted, they use the run's on
 With [`@chamvi/app`](/guide/app#modules), `sandboxModule()` (`@chamvi/sandbox/module`) builds the manager, attaches and closes it and provides it on the engine: a tools factory takes it with `injectSandboxContext(ctx)` and builds `manager.tools()` and `codingTools(manager)` per execution, without importing the module instance (see [Context](/guide/tools#context-shared-instances-for-tools)). A hand-built engine calls `provideSandboxContext(engine, manager)` once after `new Engine()`.
 
 A run may hold `maxWorkspacesPerRun` (3) workspaces at once; raise it on the manager (`createWorkspaceManager({ maxWorkspacesPerRun })`), and the tool error says so. Repositories are `owner/name` (GitHub) or an `https:` URL without credentials, query or fragment; `allowRepo` narrows them, `allowFileRepos` adds `file:///absolute/path` for development. Refs are plain branch, tag or commit names that git can never read as an option or a range.
+
+## Repository instructions
+
+A repository-backed `create_workspace` returns root `instructions` alongside its workspace metadata; a repo-less create returns `instructions: null`. `read_file` attaches applicable `instructions` to ordinary UTF-8 workspace text results. Images, base64 reads and HOME logs have no attachment. The context is delivered in ordinary tool messages, so the model receives it and existing steps and checkpoints retain it across approval pauses and restarts.
+
+For `packages/api/src/a.ts`, discovery reads entrypoints in root, `packages`, `packages/api` and `packages/api/src`, without scanning siblings. An existing directory includes its own guidance; a missing target uses its parent. Directories are ordered root first, then depth and JavaScript string order, with `AGENTS.md` before `CLAUDE.md` in each. A standalone `@relative/path` line expands a guide depth-first in textual order, relative to the including file; `..` must stay inside the workspace. Surrounding whitespace is allowed, whitespace within the path is not. Inline `@` text, Markdown links and matching backtick/tilde fences of three or more characters do not expand includes. Absolute paths, URLs, home paths, NUL and escapes are refused.
+
+Every source records its canonical `path`, exact-byte `sha256`, redacted UTF-8 `content`, entrypoint-directory `scopes` and `includedBy` parent paths. Included files inherit the entrypoint scope; deduplication retains all scopes and parents. `commit` is the recorded checkout commit or `null`, and `paths` lists normalized accepted targets. Hashes describe original bytes before redaction, so they need not match the redacted content. The collector preserves provenance instead of deciding which conflicting prose wins.
+
+Before direct writes or shell work in a new subtree, obtain context for that path. For example, the model makes these tool calls in order (using the id from `create_workspace`):
+
+```text
+read_repository_instructions({ paths: ['packages/api/src/new.ts'], workspace: 'workspace-id' })
+// Examine sources and diagnostics; resolve incomplete guidance before continuing.
+bash({ command: 'git diff -- packages/api/src/new.ts', workspace: 'workspace-id' })
+```
+
+This works before `new.ts` exists. Include paths for every subtree a command will touch; shell state or `cwd` alone does not collect guidance. Downstream agent prompts should request this workflow and stop for incomplete guidance that could change the task.
+
+A source is returned whole or omitted: at most 32 KiB each, 128 KiB together and 32 sources, 8 include edges deep. Each request permits 32 target paths, 64 distinct ancestor directories including root, 512 attempted inspections/include references and 4096 UTF-8 bytes per path. Diagnostics are capped at 64 entries and 8 KiB of paths and messages; the request at 30 seconds, each exec at 5 seconds. Missing optional entrypoints are normal. Missing includes, unreadable files, invalid UTF-8, refused paths, cycles and bounds produce diagnostics and `complete: false`. Cancellation, workspace/transport failures, malformed responses and missing inspection capabilities are tool errors. See the [sandbox reference](/reference/sandbox#repository-instructions) for diagnostic codes and exact public interfaces.
+
+Each create (including reuse or adoption after recovery), explicit context call and applicable file read re-collects the current worktree. Changes to instruction files appear on the next collection; older checkpointed messages keep their original content. There is no cross-call cache or transactionally frozen checkout.
+
+Two independent options default to `true`: `createWorkspaceManager({ provider, repositoryInstructions: false })` disables automatic root collection (`instructions: null`) and removes the explicit tool; `codingTools(manager, { repositoryInstructions: false })` omits text-read attachments. Disabling only one leaves the other enabled. `sandboxModule({ repositoryInstructions: false })` forwards the manager option; there is no environment variable. These flags control delivery, not filesystem access.
+
+Repository text is development guidance, not operator authorization. A system prompt does not enforce permissions; guidance cannot enable tools, credential access, skill installation or publication. `write_file`, `edit_file`, `multi_edit` and arbitrary `bash` do not enforce instruction scope, and bash bypasses file-tool-only enforcement. Discovery runs fixed framework scripts, never repository programs or commands from Markdown, and refuses observed symlink components (including in-workspace aliases), special files, `.git` paths and escapes. These are best-effort checks against the observed filesystem; concurrent changes can race them. Strict race-free confinement is deferred to [#92](https://github.com/chamvi/chamvi/issues/92).
 
 ## Git and credentials
 

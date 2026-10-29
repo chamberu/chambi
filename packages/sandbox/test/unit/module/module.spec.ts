@@ -334,6 +334,19 @@ describe('sandboxModule: image allow-list', () => {
 });
 
 describe('sandboxModule', () => {
+    it('forwards the repository instruction delivery option', () => {
+        const enabled = sandboxModule({ env: {} });
+        const disabled = sandboxModule({ env: {}, repositoryInstructions: false });
+
+        expect(enabled.manager.tools()).toHaveProperty('read_repository_instructions');
+        expect(disabled.manager.tools()).not.toHaveProperty('read_repository_instructions');
+    });
+
+    it('rejects a nonboolean repository instruction delivery option', () => {
+        expect(() => sandboxModule({ env: {}, repositoryInstructions: 'false' } as unknown as SandboxModuleOptions))
+            .toThrow(InvalidAgentDefinitionError);
+    });
+
     it('local by default, exposes the manager synchronously', async () => {
         const module = new RecordingSandboxModule({ env: {} });
         expect(module.name).toBe('chamvi:sandbox');

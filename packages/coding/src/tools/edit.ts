@@ -157,7 +157,8 @@ function applyEdit(document: EditDocument, edit: Required<Edit>, path: string, l
 export function editFileTool(workspaces: CodingWorkspaces, queue: FileQueue): Tool<EditFileInput, EditFileResult> {
     return defineTool<EditFileInput, EditFileResult>({
         description: 'Replace an exact string in a file of the workspace. oldString must match the file exactly (whitespace included) and only once, ' +
-            'unless replaceAll is true; add surrounding lines to make it unique. For several changes to one file use multi_edit.',
+            'unless replaceAll is true; add surrounding lines to make it unique. For several changes to one file use multi_edit. ' +
+            'Before editing in a new subtree, obtain its repository guidance with read_file or read_repository_instructions (when available).',
         inputSchema: objectSchema<EditFileInput>({ path: FILE_PATH_PROPERTY, ...EDIT_PROPERTIES }, ['path', 'oldString', 'newString']),
         execute: async (input, { context }) => {
             const body = inputObject(input);
@@ -178,7 +179,8 @@ export function editFileTool(workspaces: CodingWorkspaces, queue: FileQueue): To
 export function multiEditTool(workspaces: CodingWorkspaces, queue: FileQueue): Tool<MultiEditInput, MultiEditResult> {
     return defineTool<MultiEditInput, MultiEditResult>({
         description: 'Apply several exact-string edits to one file of the workspace, in order, each on the result of the ones before ' +
-            '(the rules of edit_file per edit). Every edit must match: when one fails, nothing is written.',
+            '(the rules of edit_file per edit). Every edit must match: when one fails, nothing is written. ' +
+            'Before editing in a new subtree, obtain its repository guidance with read_file or read_repository_instructions (when available).',
         inputSchema: objectSchema<MultiEditInput>({
             path: FILE_PATH_PROPERTY,
             edits: {

@@ -525,7 +525,10 @@ export function createWorkspaceManager(options: WorkspaceManagerOptions): IWorks
         attach,
         tools: () => {
             tools ??= {
-                ...createWorkspaceTools(manager, { image: offersImage(options.provider, options.allowImage) }),
+                ...createWorkspaceTools(manager, {
+                    image: offersImage(options.provider, options.allowImage),
+                    repositoryInstructions: options.repositoryInstructions !== false,
+                }),
                 ...createGitTools({
                     manager,
                     lookup: async (url, access, runId, signal) => credentials?.lookup(url, access, runId, signal),

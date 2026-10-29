@@ -61,6 +61,7 @@ describe('README example', () => {
             'list_files',
             'multi_edit',
             'read_file',
+            'read_repository_instructions',
             'write_file',
         ]);
         expect(agent.definition.hooks?.beforeToolExecution).toBeTypeOf('function');
