@@ -8,10 +8,12 @@
 import {
     Column,
     Entity,
-    ForeignKey,
     Index,
+    JoinColumn,
+    ManyToOne,
     PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 import type { ConversationItem } from '@chamvi/core';
 import { TableName } from './constants.ts';
 import { ConversationEntity } from './conversation.ts';
@@ -29,7 +31,6 @@ export class ConversationItemEntity {
         length: 64,
         collation: 'C',
     })
-    @ForeignKey(() => ConversationEntity, 'id')
     scopeId!: string;
     @Column({ type: 'integer' })
     generation!: number;
@@ -37,10 +38,10 @@ export class ConversationItemEntity {
     id!: string;
     @Column({
         name: 'run_id',
-        type: 'text',
+        type: 'varchar',
+        length: 128,
         collation: 'C',
     })
-    @ForeignKey(() => RunEntity, 'id')
     runId!: string;
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
@@ -69,4 +70,19 @@ export class ConversationItemEntity {
         nullable: true,
     })
     targetAddress!: string | null;
+    @ManyToOne(() => ConversationEntity, {
+        nullable: false,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+    })
+    @JoinColumn({ name: 'scope_id', referencedColumnName: 'id' })
+    conversation?: Relation<ConversationEntity>;
+
+    @ManyToOne(() => RunEntity, {
+        nullable: false,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+    })
+    @JoinColumn({ name: 'run_id', referencedColumnName: 'id' })
+    run?: Relation<RunEntity>;
 }

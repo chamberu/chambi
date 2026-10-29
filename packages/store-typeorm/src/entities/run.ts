@@ -8,10 +8,12 @@
 import {
     Column,
     Entity,
-    ForeignKey,
     Index,
+    JoinColumn,
+    ManyToOne,
     PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 import type { Run, RunStatusLiteral, Usage } from '@chamvi/core';
 import { OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
 import { ConversationEntity } from './conversation.ts';
@@ -125,7 +127,6 @@ export class RunEntity {
         length: 64,
         nullable: true,
     })
-    @ForeignKey(() => ConversationEntity, 'id')
     conversationScopeId!: string | null;
     @Column({
         name: 'conversation_generation',
@@ -189,4 +190,11 @@ export class RunEntity {
         nullable: true,
     })
     finishedAt!: Date | null;
+    @ManyToOne(() => ConversationEntity, {
+        nullable: true,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+    })
+    @JoinColumn({ name: 'conversation_scope_id', referencedColumnName: 'id' })
+    conversation?: Relation<ConversationEntity> | null;
 }

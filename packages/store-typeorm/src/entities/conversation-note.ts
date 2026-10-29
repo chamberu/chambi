@@ -8,10 +8,12 @@
 import {
     Column,
     Entity,
-    ForeignKey,
     Index,
+    JoinColumn,
+    ManyToOne,
     PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 import { TableName } from './constants.ts';
 import { ConversationEntity } from './conversation.ts';
 import { RunEntity } from './run.ts';
@@ -25,7 +27,6 @@ export class ConversationNoteEntity {
         length: 64,
         collation: 'C',
     })
-    @ForeignKey(() => ConversationEntity, 'id')
     scopeId!: string;
     @PrimaryColumn({ type: 'integer' })
     generation!: number;
@@ -35,10 +36,10 @@ export class ConversationNoteEntity {
     text!: string;
     @Column({
         name: 'run_id',
-        type: 'text',
+        type: 'varchar',
+        length: 128,
         collation: 'C',
     })
-    @ForeignKey(() => RunEntity, 'id')
     runId!: string;
     @Column({ name: 'tool_call_id', type: 'text' })
     toolCallId!: string;
@@ -54,4 +55,19 @@ export class ConversationNoteEntity {
         nullable: true,
     })
     expiresAt!: Date | null;
+    @ManyToOne(() => ConversationEntity, {
+        nullable: false,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+    })
+    @JoinColumn({ name: 'scope_id', referencedColumnName: 'id' })
+    conversation?: Relation<ConversationEntity>;
+
+    @ManyToOne(() => RunEntity, {
+        nullable: false,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+    })
+    @JoinColumn({ name: 'run_id', referencedColumnName: 'id' })
+    run?: Relation<RunEntity>;
 }

@@ -63,6 +63,7 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 - Option misconfiguration in any package's factory (`createHttpApp`, `createScheduler`, `staticTokens`, ...) throws core `InvalidAgentDefinitionError`: it covers app definitions, not only agents.
 - validup has no built-in validators: build them with `defineValidator`, fail with `createValidupError` (an ebec issue code, never a bare `Error`) and reuse them (`packages/http/src/request/validators.ts`), never pull in zod for request validation (zod stays a dev dependency for specs).
 - Persistence code uses TypeORM repositories and their query builders (`insert().orIgnore()`, `orUpdate()` with an overwrite condition, `update().where().returning()`, find options). Raw SQL only where the ORM cannot express a statement, with a one-line comment saying why.
+- Entity links use TypeORM relationship decorators (`@ManyToOne` or `@OneToOne`) with `@JoinColumn`. Map scalar IDs to the same join columns when store code needs direct ID access; generate the database constraints from those relationships.
 
 ## Workflow
 

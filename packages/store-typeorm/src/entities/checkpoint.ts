@@ -8,9 +8,12 @@
 import {
     Column,
     Entity,
-    ForeignKey,
+    JoinColumn,
+    ManyToOne,
+    OneToOne,
     PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 import type { Checkpoint } from '@chamvi/core';
 import { JSON_VALUE_TRANSFORMER, TableName } from './constants.ts';
 import { RunEntity } from './run.ts';
@@ -23,7 +26,6 @@ export class CheckpointEntity {
         type: 'varchar',
         length: 128,
     })
-    @ForeignKey(() => RunEntity, 'id')
     runId!: string;
 
     @Column({
@@ -32,7 +34,6 @@ export class CheckpointEntity {
         length: 64,
         nullable: true,
     })
-    @ForeignKey(() => ConversationEntity, 'id')
     conversationScopeId!: string | null;
     @Column({
         name: 'conversation_generation',
@@ -62,4 +63,19 @@ export class CheckpointEntity {
 
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
+    @OneToOne(() => RunEntity, {
+        nullable: false,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+    })
+    @JoinColumn({ name: 'run_id', referencedColumnName: 'id' })
+    run?: Relation<RunEntity>;
+
+    @ManyToOne(() => ConversationEntity, {
+        nullable: true,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+    })
+    @JoinColumn({ name: 'conversation_scope_id', referencedColumnName: 'id' })
+    conversation?: Relation<ConversationEntity> | null;
 }

@@ -11,6 +11,12 @@ import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
 import { TypeormConversationStore, TypeormStore } from '@chamvi/store-typeorm';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import { seedRun } from '../../utils/conversation.ts';
+import {
+    CheckpointEntity,
+    ConversationEntity,
+    ConversationOperationEntity,
+    RunEntity,
+} from '../../../src/entities/index.ts';
 
 const IDENTITY = {
     agent: 'helper',
@@ -92,6 +98,51 @@ describePostgres('relational integrity', () => {
         expect((await runs.latestCheckpoint('run'))?.conversation).toEqual({ scopeId: scope.id, generation: scope.generation });
         await expect(ds.query('DELETE FROM chamvi_conversations WHERE id = $1', [scope.id]))
             .rejects.toMatchObject({ driverError: { code: '23503' } });
+    });
+
+    it('loads related runs and conversations through normal TypeORM relations', async () => {
+        ds = await createTestDataSource();
+        const conversations = new TypeormConversationStore({ dataSource: ds });
+        const runs = new TypeormStore({ dataSource: ds });
+        const scope = await conversations.resolve(IDENTITY);
+        await seedRun(ds, 'run', { conversation: { scope, text: 'input' } });
+        await conversations.beginTurn(scope, 'run', 'input', DEFAULT_CONVERSATION_LIMITS);
+        await conversations.applyNote(scope, {
+            kind: 'set',
+            id: 'op',
+            inputHash: 'hash',
+            key: 'key',
+            text: 'note',
+            source: {
+                runId: 'run',
+                toolCallId: 'call',
+                stepIndex: 0,
+            },
+        });
+        await runs.saveCheckpoint({
+            runId: 'run',
+            stepIndex: 0,
+            messages: [],
+            createdAt: new Date(),
+            conversation: { scopeId: scope.id, generation: scope.generation },
+        });
+        const checkpoint = await ds.getRepository(CheckpointEntity).findOneOrFail({ where: { runId: 'run' }, relations: { run: true, conversation: true } });
+        expect(checkpoint.run?.id).toBe('run');
+        expect(checkpoint.conversation?.id).toBe(scope.id);
+        const operation = await ds.getRepository(ConversationOperationEntity).findOneOrFail({
+            where: {
+                scopeId: scope.id,
+                id: 'op',
+                generation: scope.generation,
+            },
+            relations: { run: true, conversation: true },
+        });
+        expect(operation.run?.id).toBe('run');
+        expect(operation.conversation?.id).toBe(scope.id);
+        const run = await ds.getRepository(RunEntity).findOneOrFail({ where: { id: 'run' }, relations: { conversation: true } });
+        expect(run.conversation?.id).toBe(scope.id);
+        const conversation = await ds.getRepository(ConversationEntity).findOneOrFail({ where: { id: scope.id }, relations: { activeRun: true } });
+        expect(conversation.activeRun?.id).toBe('run');
     });
 
     it('refuses an unknown run without inserting input or taking ownership', async () => {

@@ -8,9 +8,11 @@
 import {
     Column,
     Entity,
-    ForeignKey,
+    JoinColumn,
+    ManyToOne,
     PrimaryColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 import type { ConversationSnapshot } from '@chamvi/core';
 import { OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
 import { RunEntity } from './run.ts';
@@ -37,10 +39,10 @@ export class ConversationEntity {
     generation!: number;
     @Column({
         name: 'active_run_id',
-        type: 'text',
+        type: 'varchar',
+        length: 128,
         nullable: true,
     })
-    @ForeignKey(() => RunEntity, 'id')
     activeRunId!: string | null;
     @Column({
         name: 'snapshot_messages',
@@ -75,4 +77,11 @@ export class ConversationEntity {
         nullable: true,
     })
     snapshotOmitted!: number | null;
+    @ManyToOne(() => RunEntity, {
+        nullable: true,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+    })
+    @JoinColumn({ name: 'active_run_id', referencedColumnName: 'id' })
+    activeRun?: Relation<RunEntity> | null;
 }

@@ -8,10 +8,12 @@
 import {
     Column,
     Entity,
-    ForeignKey,
     Index,
+    JoinColumn,
+    ManyToOne,
     PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { Relation } from 'typeorm';
 import type { Step } from '@chamvi/core';
 import { OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
 import { RunEntity } from './run.ts';
@@ -27,7 +29,6 @@ export class StepEntity {
         type: 'varchar', 
         length: 128, 
     })
-    @ForeignKey(() => RunEntity, 'id')
     runId!: string;
 
     @Column({ name: 'step_index', type: 'integer' })
@@ -77,4 +78,11 @@ export class StepEntity {
 
     @Column({ name: 'finished_at', type: 'timestamp with time zone' })
     finishedAt!: Date;
+    @ManyToOne(() => RunEntity, {
+        nullable: false,
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+    })
+    @JoinColumn({ name: 'run_id', referencedColumnName: 'id' })
+    run?: Relation<RunEntity>;
 }
