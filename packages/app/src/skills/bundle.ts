@@ -48,7 +48,10 @@ function inspectInventory(directory: string): SkillBundleInventory {
         const current = pending.pop()!;
         const absolute = join(directory, current.path);
         const identity = fs.lstatSync(absolute, { bigint: true });
-        if (!identity.isDirectory()) invalidSkill(current.path || '.', 'expected a regular directory without symlinks');
+        if (!identity.isDirectory()) {
+            invalidSkill(current.path || '.', 'expected a regular directory without symlinks');
+        }
+
         entries.set(current.path, identity);
         const handle = fs.opendirSync(absolute);
         try {
@@ -58,29 +61,49 @@ function inspectInventory(directory: string): SkillBundleInventory {
                 if (child.name.startsWith('.') || child.name.includes('\\') || SKILL_CONTROL_PATTERN.test(child.name)) {
                     invalidSkill(current.path || '.', 'hidden or invalid paths are unsupported');
                 }
-                if (entries.has(path) || pending.some((entry) => entry.path === path)) invalidSkill(path, 'duplicate decoded inventory path');
-                if (entries.size + pending.length >= SKILL_MAX_INVENTORY_ENTRIES) invalidSkill('.', 'inventory exceeds 1024 entries');
+
+                if (entries.has(path) || pending.some((entry) => entry.path === path)) {
+                    invalidSkill(path, 'duplicate decoded inventory path');
+                }
+
+                if (entries.size + pending.length >= SKILL_MAX_INVENTORY_ENTRIES) {
+                    invalidSkill('.', 'inventory exceeds 1024 entries');
+                }
+
                 const stat = fs.lstatSync(join(directory, path), { bigint: true });
                 if (stat.isDirectory()) {
-                    if (current.depth >= SKILL_MAX_DIRECTORY_DEPTH) invalidSkill(path, 'directory nesting exceeds 64 levels');
+                    if (current.depth >= SKILL_MAX_DIRECTORY_DEPTH) {
+                        invalidSkill(path, 'directory nesting exceeds 64 levels');
+                    }
+
                     pending.push({ path, depth: current.depth + 1 });
                 } else if (stat.isFile()) {
-                    if (++files > SKILL_MAX_FILES) invalidSkill('.', 'bundle exceeds 64 regular files');
+                    if (++files > SKILL_MAX_FILES) {
+                        invalidSkill('.', 'bundle exceeds 64 regular files');
+                    }
+
                     if (!['.md', '.txt', '.json'].includes(extname(path)) && !['LICENSE', 'NOTICE'].includes(basename(path))) {
                         invalidSkill(path, 'unsupported file type');
                     }
+
                     entries.set(path, stat);
                 } else {
                     invalidSkill(path, 'symlinks and special files are unsupported');
                 }
+
                 child = handle.readSync();
             }
         } finally {
             handle.closeSync();
         }
-        if (!sameIdentity(identity, fs.lstatSync(absolute, { bigint: true }))) invalidSkill(current.path || '.', 'directory changed during inspection');
+        if (!sameIdentity(identity, fs.lstatSync(absolute, { bigint: true }))) {
+            invalidSkill(current.path || '.', 'directory changed during inspection');
+        }
     }
-    if (!entries.get('SKILL.md')?.isFile()) invalidSkill('SKILL.md', 'root file is required');
+    if (!entries.get('SKILL.md')?.isFile()) {
+        invalidSkill('SKILL.md', 'root file is required');
+    }
+
     return entries;
 }
 
@@ -88,22 +111,32 @@ function readBoundedFile(directory: string, path: string, expected: BigIntStats)
     const limit = path === 'SKILL.md' ?
         SKILL_MAX_FRONTMATTER_BYTES + SKILL_MAX_BODY_BYTES + 10 :
         SKILL_MAX_REFERENCE_BYTES;
-    if (expected.size > BigInt(limit)) invalidSkill(path, 'file exceeds its byte limit');
+    if (expected.size > BigInt(limit)) {
+        invalidSkill(path, 'file exceeds its byte limit');
+    }
+
     const descriptor = fs.openSync(join(directory, path), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
     try {
         const before = fs.fstatSync(descriptor, { bigint: true });
-        if (!before.isFile() || !sameIdentity(expected, before)) invalidSkill(path, 'file changed before reading');
+        if (!before.isFile() || !sameIdentity(expected, before)) {
+            invalidSkill(path, 'file changed before reading');
+        }
+
         const buffer = Buffer.alloc(Number(before.size) + 1);
         let length = 0;
         let count = fs.readSync(descriptor, buffer, length, buffer.length - length, null);
         while (count > 0) {
             length += count;
-            if (length === buffer.length) invalidSkill(path, 'file grew during reading');
+            if (length === buffer.length) {
+                invalidSkill(path, 'file grew during reading');
+            }
+
             count = fs.readSync(descriptor, buffer, length, buffer.length - length, null);
         }
         if (BigInt(length) !== before.size || !sameIdentity(before, fs.fstatSync(descriptor, { bigint: true }))) {
             invalidSkill(path, 'file changed during reading');
         }
+
         return buffer.subarray(0, length);
     } finally {
         fs.closeSync(descriptor);
@@ -121,7 +154,10 @@ function readSnapshot(directory: string) {
         const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
         let total = 0;
         for (const [path, identity] of files) {
-            if (BigInt(total) + identity.size > BigInt(SKILL_MAX_TOTAL_BYTES)) invalidSkill('.', 'bundle exceeds 1 MiB');
+            if (BigInt(total) + identity.size > BigInt(SKILL_MAX_TOTAL_BYTES)) {
+                invalidSkill('.', 'bundle exceeds 1 MiB');
+            }
+
             const buffer = readBoundedFile(root, path, identity);
             total += buffer.length;
             let content: string;
@@ -130,7 +166,10 @@ function readSnapshot(directory: string) {
             } catch {
                 invalidSkill(path, 'file must be valid UTF-8 text');
             }
-            if (content.includes('\0')) invalidSkill(path, 'binary content is unsupported');
+            if (content.includes('\0')) {
+                invalidSkill(path, 'binary content is unsupported');
+            }
+
             contents.set(path, content);
             const pathBytes = Buffer.from(path);
             hash.update(`${pathBytes.length}:`).update(pathBytes).update(`${buffer.length}:`).update(buffer);
@@ -139,6 +178,7 @@ function readSnapshot(directory: string) {
         if (before.size !== after.size || [...before].some(([path, identity]) => !after.has(path) || !sameIdentity(identity, after.get(path)!))) {
             invalidSkill('.', 'bundle changed during loading');
         }
+
         const document = parseSkillDocument(contents.get('SKILL.md')!);
         contents.delete('SKILL.md');
         return {
@@ -147,7 +187,10 @@ function readSnapshot(directory: string) {
             contents,
         };
     } catch (error) {
-        if (error instanceof InvalidAgentDefinitionError) throw error;
+        if (error instanceof InvalidAgentDefinitionError) {
+            throw error;
+        }
+
         return invalidSkill('.', 'cannot read a stable passive bundle');
     }
 }
@@ -164,8 +207,14 @@ export function readSkillBundle(descriptor: ApprovedSkill): SkillBundle {
         sha256,
         contents,
     } = readSnapshot(descriptor.directory);
-    if (document.name !== descriptor.name) invalidSkill('SKILL.md', 'name does not match the approved descriptor');
-    if (sha256 !== descriptor.sha256) invalidSkill('.', 'sha256 does not match the approved pin');
+    if (document.name !== descriptor.name) {
+        invalidSkill('SKILL.md', 'name does not match the approved descriptor');
+    }
+
+    if (sha256 !== descriptor.sha256) {
+        invalidSkill('.', 'sha256 does not match the approved pin');
+    }
+
     return Object.freeze({
         metadata: Object.freeze({
             name: document.name,

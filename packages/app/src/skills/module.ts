@@ -16,10 +16,14 @@ export function loadSkillBundles(approved: readonly ApprovedSkill[]): SkillCatal
     if (!Array.isArray(approved) || approved.length > SKILL_MAX_BUNDLES) {
         invalidSkill('.', 'catalog must be an array of at most 16 approved bundles');
     }
+
     const names = new Set<string>();
     for (const descriptor of approved) {
         validateApprovedSkill(descriptor);
-        if (names.has(descriptor.name)) invalidSkill('.', 'duplicate approved skill name');
+        if (names.has(descriptor.name)) {
+            invalidSkill('.', 'duplicate approved skill name');
+        }
+
         names.add(descriptor.name);
     }
     const bundles = approved.map(readSkillBundle).sort((a, b) => compareSkillPaths(a.metadata.name, b.metadata.name));

@@ -33,18 +33,31 @@ export function validateSkillDirectory(directory: string): void {
 }
 
 export function validateApprovedSkill(descriptor: ApprovedSkill): void {
-    if (!isObject(descriptor) || typeof descriptor.name !== 'string' || !SKILL_NAME_PATTERN.test(descriptor.name)) {
+    if (!isObject(descriptor)) {
         invalidSkill('.', 'invalid approved skill name');
     }
+
+    if (typeof descriptor.name !== 'string' || !SKILL_NAME_PATTERN.test(descriptor.name)) {
+        invalidSkill('.', 'invalid approved skill name');
+    }
+
     const { version, sha256 } = descriptor;
-    if (typeof version !== 'string' || !version.trim() || version.length > 128 ||
-        SKILL_CONTROL_PATTERN.test(version) || /[\s*^~<>=|]/.test(version) || /(?:^|\.)x(?:\.|$)/i.test(version) ||
-        /^(latest|main|master|head)$/i.test(version)) {
+    if (typeof version !== 'string' || !version.trim() || version.length > 128) {
         invalidSkill('.', 'version must be an exact release identifier');
     }
+
+    if (SKILL_CONTROL_PATTERN.test(version) || /[\s*^~<>=|]/.test(version)) {
+        invalidSkill('.', 'version must be an exact release identifier');
+    }
+
+    if (/(?:^|\.)x(?:\.|$)/i.test(version) || /^(latest|main|master|head)$/i.test(version)) {
+        invalidSkill('.', 'version must be an exact release identifier');
+    }
+
     if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256)) {
         invalidSkill('.', 'sha256 must be a lowercase full digest');
     }
+
     validateSkillDirectory(descriptor.directory);
 }
 
@@ -55,14 +68,25 @@ export function compareSkillPaths(a: string, b: string): number {
 
 export function parseSkillDocument(content: string): ParsedSkillDocument {
     const opening = /^---\r?\n/.exec(content);
-    if (!opening) invalidSkill('SKILL.md', 'initial YAML frontmatter is required');
+    if (!opening) {
+        invalidSkill('SKILL.md', 'initial YAML frontmatter is required');
+    }
+
     const rest = content.slice(opening[0].length);
     const closing = /^---(?:\r?\n|$)/m.exec(rest);
-    if (!closing) invalidSkill('SKILL.md', 'frontmatter closing delimiter is required');
+    if (!closing) {
+        invalidSkill('SKILL.md', 'frontmatter closing delimiter is required');
+    }
+
     const frontmatter = rest.slice(0, closing.index);
     const body = rest.slice(closing.index + closing[0].length);
-    if (Buffer.byteLength(frontmatter) > SKILL_MAX_FRONTMATTER_BYTES) invalidSkill('SKILL.md', 'frontmatter exceeds 4 KiB');
-    if (Buffer.byteLength(body) > SKILL_MAX_BODY_BYTES) invalidSkill('SKILL.md', 'body exceeds 64 KiB');
+    if (Buffer.byteLength(frontmatter) > SKILL_MAX_FRONTMATTER_BYTES) {
+        invalidSkill('SKILL.md', 'frontmatter exceeds 4 KiB');
+    }
+
+    if (Buffer.byteLength(body) > SKILL_MAX_BODY_BYTES) {
+        invalidSkill('SKILL.md', 'body exceeds 64 KiB');
+    }
 
     try {
         const document = parseDocument(frontmatter, {
@@ -76,6 +100,7 @@ export function parseSkillDocument(content: string): ParsedSkillDocument {
         if (document.errors.length || document.warnings.length || !isMap(document.contents)) {
             invalidSkill('SKILL.md', 'invalid YAML frontmatter');
         }
+
         visit(document, {
             Alias: () => invalidSkill('SKILL.md', 'YAML aliases are unsupported'),
             Node: (_key, node) => {
@@ -90,12 +115,19 @@ export function parseSkillDocument(content: string): ParsedSkillDocument {
             },
         });
         const metadata: unknown = document.toJS({ maxAliasCount: 0 });
-        if (!isObject(metadata)) invalidSkill('SKILL.md', 'metadata must be a mapping');
+        if (!isObject(metadata)) {
+            invalidSkill('SKILL.md', 'metadata must be a mapping');
+        }
+
         const { name, description } = metadata;
-        if (typeof name !== 'string' || !SKILL_NAME_PATTERN.test(name)) invalidSkill('SKILL.md', 'invalid skill name');
+        if (typeof name !== 'string' || !SKILL_NAME_PATTERN.test(name)) {
+            invalidSkill('SKILL.md', 'invalid skill name');
+        }
+
         if (typeof description !== 'string' || !description.trim() || description.length > 1024 || SKILL_CONTROL_PATTERN.test(description)) {
             invalidSkill('SKILL.md', 'description must be nonblank text of at most 1024 characters without controls');
         }
+
         return {
             name,
             description,
@@ -103,7 +135,10 @@ export function parseSkillDocument(content: string): ParsedSkillDocument {
             body,
         };
     } catch (error) {
-        if (error instanceof InvalidAgentDefinitionError) throw error;
+        if (error instanceof InvalidAgentDefinitionError) {
+            throw error;
+        }
+
         return invalidSkill('SKILL.md', 'invalid YAML frontmatter');
     }
 }
