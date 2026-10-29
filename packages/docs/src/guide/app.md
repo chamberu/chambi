@@ -48,7 +48,7 @@ Modules are [orkos](https://github.com/tada5hi/orkos) `IModule`s on an [eldin](h
 | Module | Does |
 |---|---|
 | `configModule()` | Reads every variable once ([environment](/reference/app#environment)) and registers the config, the clock and the JSON line logger |
-| `repositoryModule()` | `createTypeormRepositories()` over `DATABASE_URL`, migrated unless `CHAMVI_MIGRATE=false`, plus hourly `purgeExpired()` on the idempotency and lock roles; without `DATABASE_URL` in-memory repositories from `createMemoryRepositories()` (warned outside dev) |
+| `repositoryModule()` | `createDatabaseRepositories()` over `DATABASE_URL`, migrated unless `CHAMVI_MIGRATE=false`, plus hourly `purgeExpired()` on the idempotency and lock roles; without `DATABASE_URL` in-memory repositories from `createMemoryRepositories()` (warned outside dev) |
 | `staticTokensModule()` | The `staticTokens()` authenticator from `CHAMVI_TOKENS` |
 | `engineModule()` | Reads the [model settings](/guide/models) (env, `chamvi.json`, code) into the default model and the provider resolver, builds the `Engine` (which checks every agent's model) with every contributed channel (`AppToken.CHANNELS`) and starts it, which starts the channels |
 | `agentsModule()` | Loads the [agent folders](/guide/agent-folders) of `CHAMVI_AGENTS_DIR` (else `./agents` when it exists) before the engine starts and watches them; an app with no agent at all starts with a warning |

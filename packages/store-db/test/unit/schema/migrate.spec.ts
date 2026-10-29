@@ -72,9 +72,9 @@ describePostgres('schema', () => {
 
     it('rejects orphaned conversation rows while retaining historical generations', async () => {
         const ds = await create();
-        const { TypeormConversationRepository } = await import('@chamvi/store-db');
+        const { DatabaseConversationRepository } = await import('@chamvi/store-db');
         const { DEFAULT_CONVERSATION_LIMITS } = await import('@chamvi/core');
-        const store = new TypeormConversationRepository({ dataSource: ds });
+        const store = new DatabaseConversationRepository({ dataSource: ds });
         const identity = {
             agent: 'helper',
             channel: 'chat',

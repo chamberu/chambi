@@ -11,7 +11,7 @@ import type { DataSource, Repository } from 'typeorm';
 import { EffectEntity } from '../entities/index.ts';
 import { asValues } from '../repository/helpers.ts';
 
-export class TypeormEffectRepository implements IEffectRepository {
+export class DatabaseEffectRepository implements IEffectRepository {
     protected dataSource: DataSource;
 
     constructor(opts: { dataSource: DataSource }) {

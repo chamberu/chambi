@@ -16,7 +16,7 @@ import {
 import { InvalidRunStateError, RunNotFoundError } from '@chamvi/core';
 import type { Run } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormRunRepository } from '@chamvi/store-db';
+import { DatabaseRunRepository } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres, truncateRepository } from '../../utils/database.ts';
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
@@ -40,10 +40,10 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     };
 }
 
-describePostgres('TypeormRunRepository runs', () => {
+describePostgres('DatabaseRunRepository runs', () => {
     let dataSource: DataSource;
     let clock: ControllableClock;
-    let store: TypeormRunRepository;
+    let store: DatabaseRunRepository;
 
     beforeAll(async () => {
         dataSource = await createTestDataSource();
@@ -52,7 +52,7 @@ describePostgres('TypeormRunRepository runs', () => {
     beforeEach(async () => {
         await truncateRepository(dataSource);
         clock = new ControllableClock(new Date(10_000));
-        store = new TypeormRunRepository({ dataSource, clock });
+        store = new DatabaseRunRepository({ dataSource, clock });
     });
 
     afterAll(async () => {

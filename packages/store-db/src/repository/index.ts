@@ -6,4 +6,4 @@
  */
 
 export * from './module.ts';
-export type { TypeormRepositories, TypeormRepositoriesOptions } from './types.ts';
+export type { DatabaseRepositories, DatabaseRepositoriesOptions } from './types.ts';

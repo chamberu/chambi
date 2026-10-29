@@ -10,14 +10,14 @@ import type { IClock, ILockRepository } from '@chamvi/core';
 import { LessThanOrEqual } from 'typeorm';
 import type { DataSource, Repository } from 'typeorm';
 import { LockEntity } from '../entities/index.ts';
-import type { TypeormRepositoriesOptions } from '../repository/types.ts';
+import type { DatabaseRepositoriesOptions } from '../repository/types.ts';
 
-export class TypeormLockRepository implements ILockRepository {
+export class DatabaseLockRepository implements ILockRepository {
     protected dataSource: DataSource;
 
     protected clock: IClock;
 
-    constructor(opts: TypeormRepositoriesOptions) {
+    constructor(opts: DatabaseRepositoriesOptions) {
         this.dataSource = opts.dataSource;
         this.clock = opts.clock ?? systemClock;
     }

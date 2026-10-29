@@ -16,7 +16,7 @@ export async function startScheduling(model: LanguageModel) {
     });
 
     // createMemoryRepositories is per process; with several replicas, pass one shared store
-    // (e.g. createTypeormRepositories) so its lock fires each tick once across them
+    // (e.g. createDatabaseRepositories) so its lock fires each tick once across them
     const engine = new Engine({
         repositories: createMemoryRepositories(),
         agents: [sweep],

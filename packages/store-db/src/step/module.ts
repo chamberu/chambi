@@ -11,7 +11,7 @@ import type { DataSource, Repository } from 'typeorm';
 import { StepEntity } from '../entities/index.ts';
 import { toStep, toStepValues } from '../repository/helpers.ts';
 
-export class TypeormStepRepository implements IStepRepository {
+export class DatabaseStepRepository implements IStepRepository {
     protected dataSource: DataSource;
 
     constructor(opts: { dataSource: DataSource }) {

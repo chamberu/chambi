@@ -7,11 +7,11 @@
 
 import type { DataSource } from 'typeorm';
 import type { ConversationScope, ResolvedConversationLimits, Run } from '@chamvi/core';
-import { TypeormConversationRepository, TypeormRunRepository } from '@chamvi/store-db';
+import { DatabaseConversationRepository, DatabaseRunRepository } from '@chamvi/store-db';
 
 export async function seedRun(dataSource: DataSource, id: string, overrides: Partial<Run> = {}): Promise<void> {
     const now = new Date('2026-10-28T00:00:00.000Z');
-    await new TypeormRunRepository({ dataSource }).insert({
+    await new DatabaseRunRepository({ dataSource }).insert({
         id,
         agent: 'helper',
         status: 'running',
@@ -31,7 +31,7 @@ export async function seedRun(dataSource: DataSource, id: string, overrides: Par
 }
 
 /** Valid lifecycle fixtures create the run before its conversation turn, as Engine does. */
-export class SeededConversationRepository extends TypeormConversationRepository {
+export class SeededConversationRepository extends DatabaseConversationRepository {
     override async beginTurn(scope: ConversationScope, runId: string, text: string, limits: ResolvedConversationLimits) {
         await seedRun(this.dataSource, runId);
         return super.beginTurn(scope, runId, text, limits);

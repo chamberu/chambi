@@ -15,7 +15,7 @@ import {
 import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
 import type { ConversationIdentity } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormRunRepository } from '@chamvi/store-db';
+import { DatabaseRunRepository } from '@chamvi/store-db';
 import { SeededConversationRepository } from '../../utils/conversation.ts';
 import { ConversationEntity, ConversationOperationEntity } from '../../../src/entities/index.ts';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
@@ -186,7 +186,7 @@ describePostgres('conversation transactions across connections', () => {
 
     it('deletion_cascades_owned_rows_not_runs', async () => {
         const scope = await first.resolve(IDENTITY);
-        const audit = new TypeormRunRepository({ dataSource });
+        const audit = new DatabaseRunRepository({ dataSource });
         const now = new Date();
         await audit.insert({
             id: 'retained',

@@ -10,14 +10,14 @@ import type { IClock, IIdempotencyRepository } from '@chamvi/core';
 import { LessThanOrEqual } from 'typeorm';
 import type { DataSource, Repository } from 'typeorm';
 import { IdempotencyKeyEntity } from '../entities/index.ts';
-import type { TypeormRepositoriesOptions } from '../repository/types.ts';
+import type { DatabaseRepositoriesOptions } from '../repository/types.ts';
 
-export class TypeormIdempotencyRepository implements IIdempotencyRepository {
+export class DatabaseIdempotencyRepository implements IIdempotencyRepository {
     protected dataSource: DataSource;
 
     protected clock: IClock;
 
-    constructor(opts: TypeormRepositoriesOptions) {
+    constructor(opts: DatabaseRepositoriesOptions) {
         this.dataSource = opts.dataSource;
         this.clock = opts.clock ?? systemClock;
     }

@@ -12,7 +12,7 @@ import type { DataSource, Repository } from 'typeorm';
 import { DocEntity, KvEntity } from '../entities/index.ts';
 import { asValues } from '../repository/helpers.ts';
 
-export class TypeormStateRepository implements IStateRepository {
+export class DatabaseStateRepository implements IStateRepository {
     protected dataSource: DataSource;
 
     constructor(opts: { dataSource: DataSource }) {

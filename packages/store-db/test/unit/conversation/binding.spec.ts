@@ -7,7 +7,7 @@
 
 import type { DataSource } from 'typeorm';
 import { afterEach, expect, it } from 'vitest';
-import { createTypeormRepositories } from '@chamvi/store-db';
+import { createDatabaseRepositories } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import { seedRun } from '../../utils/conversation.ts';
 
@@ -16,7 +16,7 @@ describePostgres('conversation audit binding persistence', () => {
     afterEach(async () => { if (dataSource?.isInitialized) await dataSource.destroy(); });
     it('round trips Run binding and real Checkpoint provenance', async () => {
         dataSource = await createTestDataSource();
-        const repositories = createTypeormRepositories({ dataSource });
+        const repositories = createDatabaseRepositories({ dataSource });
         const now = new Date();
         const identity = {
             agent: 'helper',
@@ -64,7 +64,7 @@ describePostgres('conversation audit binding persistence', () => {
 
     it('updates and clears checkpoint provenance only when replacing the latest checkpoint', async () => {
         dataSource = await createTestDataSource();
-        const repositories = createTypeormRepositories({ dataSource });
+        const repositories = createDatabaseRepositories({ dataSource });
         await seedRun(dataSource, 'run');
         const scope = await repositories.conversations.resolve({
             agent: 'helper',

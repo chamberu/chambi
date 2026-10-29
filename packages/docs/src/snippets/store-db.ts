@@ -3,7 +3,7 @@ import { Engine, defineAgent } from '@chamvi/core';
 import {
     STORE_ENTITIES,
     STORE_MIGRATIONS,
-    createTypeormRepositories,
+    createDatabaseRepositories,
     migrateStore,
 } from '@chamvi/store-db';
 import { DataSource } from 'typeorm';
@@ -25,7 +25,7 @@ export async function createEngine(model: LanguageModel) {
     await dataSource.initialize();
     await migrateStore(dataSource);
 
-    const repositories = createTypeormRepositories({ dataSource });
+    const repositories = createDatabaseRepositories({ dataSource });
     const engine = new Engine({
         repositories,
         agents: [triage],

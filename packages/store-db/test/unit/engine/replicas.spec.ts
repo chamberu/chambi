@@ -22,7 +22,7 @@ import {
 import { z } from 'zod';
 import { Engine, defineAgent } from '@chamvi/core';
 import type { EngineOptions } from '@chamvi/core';
-import { createTypeormRepositories } from '@chamvi/store-db';
+import { createDatabaseRepositories } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres, truncateRepository } from '../../utils/database.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -82,7 +82,7 @@ describePostgres('two engines sharing TypeORM repositories', () => {
         model: LanguageModel,
         opts: Partial<EngineOptions> & { tools?: () => ToolSet } = {},
     ) {
-        const repositories = createTypeormRepositories({ dataSource });
+        const repositories = createDatabaseRepositories({ dataSource });
         const errors: unknown[] = [];
         const agent = defineAgent({
             name: 'triage',

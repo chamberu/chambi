@@ -27,14 +27,14 @@ import {
 import type { DataSource, FindOptionsWhere, Repository } from 'typeorm';
 import { RunEntity } from '../entities/index.ts';
 import { toEntity, toRun, toRunValues } from '../repository/helpers.ts';
-import type { TypeormRepositoriesOptions } from '../repository/types.ts';
+import type { DatabaseRepositoriesOptions } from '../repository/types.ts';
 
-export class TypeormRunRepository implements IRunRepository {
+export class DatabaseRunRepository implements IRunRepository {
     protected dataSource: DataSource;
 
     protected clock: IClock;
 
-    constructor(opts: TypeormRepositoriesOptions) {
+    constructor(opts: DatabaseRepositoriesOptions) {
         this.dataSource = opts.dataSource;
         this.clock = opts.clock ?? systemClock;
     }

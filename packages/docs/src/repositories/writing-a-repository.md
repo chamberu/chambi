@@ -1,6 +1,6 @@
 # Writing a Repository
 
-Implement the capability interfaces from `@chamvi/core` and assemble them into a plain `Repositories` object. Pass it to `new Engine({ repositories, agents })`. A backend can expose its own assembly factory, as `createMemoryRepositories()` and `createTypeormRepositories()` do.
+Implement the capability interfaces from `@chamvi/core` and assemble them into a plain `Repositories` object. Pass it to `new Engine({ repositories, agents })`. A backend can expose its own assembly factory, as `createMemoryRepositories()` and `createDatabaseRepositories()` do.
 
 ## Prove it with the contract suite
 

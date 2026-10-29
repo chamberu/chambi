@@ -14,12 +14,12 @@ import {
     it,
 } from 'vitest';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormIdempotencyRepository } from '@chamvi/store-db';
+import { DatabaseIdempotencyRepository } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres, truncateRepository } from '../../utils/database.ts';
 
-describePostgres('TypeormIdempotencyRepository idempotency keys', () => {
+describePostgres('DatabaseIdempotencyRepository idempotency keys', () => {
     let dataSource: DataSource;
-    let store: TypeormIdempotencyRepository;
+    let store: DatabaseIdempotencyRepository;
 
     beforeAll(async () => {
         dataSource = await createTestDataSource();
@@ -27,7 +27,7 @@ describePostgres('TypeormIdempotencyRepository idempotency keys', () => {
 
     beforeEach(async () => {
         await truncateRepository(dataSource);
-        store = new TypeormIdempotencyRepository({ dataSource, clock: new ControllableClock(new Date(10_000)) });
+        store = new DatabaseIdempotencyRepository({ dataSource, clock: new ControllableClock(new Date(10_000)) });
     });
 
     afterAll(async () => {

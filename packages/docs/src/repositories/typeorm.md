@@ -12,7 +12,7 @@ npm install @chamvi/store-db typeorm pg
 
 <<< @/snippets/store-db.ts#setup
 
-`createTypeormRepositories({ dataSource, clock? })` assembles all capabilities, including conversations, over the same `DataSource`. Each role is a separate class: `TypeormRunRepository`, `TypeormStepRepository`, `TypeormCheckpointRepository`, `TypeormIdempotencyRepository`, `TypeormLockRepository`, `TypeormEffectRepository`, `TypeormStateRepository`, `TypeormArtifactRepository`, `TypeormAgentRevisionRepository` and `TypeormConversationRepository`. The repositories take an initialized `DataSource` and never initialize or destroy it. The database must exist; create it beforehand, for example with `createDatabase()` from `typeorm-extension`.
+`createDatabaseRepositories({ dataSource, clock? })` assembles all capabilities, including conversations, over the same `DataSource`. Each role is a separate class: `DatabaseRunRepository`, `DatabaseStepRepository`, `DatabaseCheckpointRepository`, `DatabaseIdempotencyRepository`, `DatabaseLockRepository`, `DatabaseEffectRepository`, `DatabaseStateRepository`, `DatabaseArtifactRepository`, `DatabaseAgentRevisionRepository` and `DatabaseConversationRepository`. The repositories take an initialized `DataSource` and never initialize or destroy it. The database must exist; create it beforehand, for example with `createDatabase()` from `typeorm-extension`.
 
 On shutdown, drain the engine before destroying the data source:
 

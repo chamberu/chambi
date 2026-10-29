@@ -24,7 +24,7 @@ This changes the storage API. `IStore`, `MemoryStore` and `TypeormStore` are rem
 | Previous API | Separate repositories API |
 |---|---|
 | `new MemoryStore(options)` | `createMemoryRepositories(options)` |
-| `new TypeormStore(options)` | `createTypeormRepositories(options)` |
+| `new TypeormStore(options)` | `createDatabaseRepositories(options)` |
 | `new Engine({ store, agents })` | `new Engine({ repositories, agents })` |
 | `engine.store.getRun(id)` | `engine.repositories.runs.findOne(id)` |
 | `storeModule({ store })` | `repositoryModule({ repositories })` |

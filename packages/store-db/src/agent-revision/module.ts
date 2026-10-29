@@ -11,7 +11,7 @@ import type { DataSource, Repository } from 'typeorm';
 import { AgentRevisionEntity } from '../entities/index.ts';
 import { asValues, toAgentRevision } from '../repository/helpers.ts';
 
-export class TypeormAgentRevisionRepository implements IAgentRevisionRepository {
+export class DatabaseAgentRevisionRepository implements IAgentRevisionRepository {
     protected dataSource: DataSource;
 
     constructor(opts: { dataSource: DataSource }) {

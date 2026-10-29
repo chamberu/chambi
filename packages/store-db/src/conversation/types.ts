@@ -8,7 +8,7 @@
 import type { IClock } from '@chamvi/core';
 import type { DataSource } from 'typeorm';
 
-export type TypeormConversationRepositoryOptions = {
+export type DatabaseConversationRepositoryOptions = {
     dataSource: DataSource;
     clock?: IClock;
 };

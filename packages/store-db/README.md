@@ -32,9 +32,9 @@
 
 ## Why @chamvi/store-db?
 
-`createMemoryRepositories()` from `@chamvi/core` loses every queued run, waiting approval and checkpoint with the process, and it cannot be shared between replicas. `createTypeormRepositories()` provides the same `Repositories` capabilities in Postgres and passes the same `describeRepositoryContract` suite, so the engine behaves the same on both.
+`createMemoryRepositories()` from `@chamvi/core` loses every queued run, waiting approval and checkpoint with the process, and it cannot be shared between replicas. `createDatabaseRepositories()` provides the same `Repositories` capabilities in Postgres and passes the same `describeRepositoryContract` suite, so the engine behaves the same on both.
 
-| Concern | `createMemoryRepositories()` | `createTypeormRepositories()` |
+| Concern | `createMemoryRepositories()` | `createDatabaseRepositories()` |
 |---|---|---|
 | **Restarts** | Everything is gone | Runs, steps, checkpoints, effects and state stay in Postgres; `recover()` picks interrupted runs up |
 | **Replicas** | One process only | Claims, idempotency keys and locks are single statements built with TypeORM's query builder, atomic across processes |
@@ -62,7 +62,7 @@ import { Engine, defineAgent } from '@chamvi/core';
 import {
     STORE_ENTITIES,
     STORE_MIGRATIONS,
-    createTypeormRepositories,
+    createDatabaseRepositories,
     migrateStore,
 } from '@chamvi/store-db';
 import { DataSource } from 'typeorm';
@@ -83,7 +83,7 @@ export async function startEngine(model: LanguageModel) {
     await dataSource.initialize();
     await migrateStore(dataSource);
 
-    const repositories = createTypeormRepositories({ dataSource });
+    const repositories = createDatabaseRepositories({ dataSource });
     const engine = new Engine({
         repositories,
         agents: [triage],
@@ -130,15 +130,15 @@ Each role's `purgeExpired(now?)` deletes its rows expired at `now` (default: the
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `createTypeormRepositories()` | function | Assembles all `Repositories` capabilities over one data source, including conversations |
+| `createDatabaseRepositories()` | function | Assembles all `Repositories` capabilities over one data source, including conversations |
 | `migrateStore` | function | Runs the migrations under the advisory lock `MIGRATION_LOCK_NAME` |
 | `STORE_ENTITIES` | array | The entity classes for the data source's `entities` |
 | `STORE_MIGRATIONS` | array | The migrations for the data source's `migrations` |
 | `MIGRATION_LOCK_NAME` | constant | `'chamvi:migrations'` |
 
-Types: `TypeormRepositoriesOptions`, `TypeormRepositories`.
+Types: `DatabaseRepositoriesOptions`, `DatabaseRepositories`.
 
-Each capability is also available as its own class: `TypeormRunRepository`, `TypeormStepRepository`, `TypeormCheckpointRepository`, `TypeormIdempotencyRepository`, `TypeormLockRepository`, `TypeormEffectRepository`, `TypeormStateRepository`, `TypeormArtifactRepository`, `TypeormAgentRevisionRepository` and `TypeormConversationRepository`. Constructors take `{ dataSource }`; runs, idempotency, locks and conversations also accept `clock`. Use the same data source for all roles so their foreign keys share one database.
+Each capability is also available as its own class: `DatabaseRunRepository`, `DatabaseStepRepository`, `DatabaseCheckpointRepository`, `DatabaseIdempotencyRepository`, `DatabaseLockRepository`, `DatabaseEffectRepository`, `DatabaseStateRepository`, `DatabaseArtifactRepository`, `DatabaseAgentRevisionRepository` and `DatabaseConversationRepository`. Constructors take `{ dataSource }`; runs, idempotency, locks and conversations also accept `clock`. Use the same data source for all roles so their foreign keys share one database.
 
 ## Notes
 

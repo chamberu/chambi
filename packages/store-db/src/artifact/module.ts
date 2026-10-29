@@ -11,7 +11,7 @@ import type { DataSource, Repository } from 'typeorm';
 import { ArtifactEntity } from '../entities/index.ts';
 import { toArtifact, toArtifactValues } from '../repository/helpers.ts';
 
-export class TypeormArtifactRepository implements IArtifactRepository {
+export class DatabaseArtifactRepository implements IArtifactRepository {
     protected dataSource: DataSource;
 
     constructor(opts: { dataSource: DataSource }) {

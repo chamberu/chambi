@@ -139,7 +139,7 @@ Modules are orkos `IModule`s on an eldin container. The built-in ones are always
 | Module | Name | Entry | Does |
 |---|---|---|---|
 | `configModule()` | `chamvi:config` | `@chamvi/app` | reads the config, registers `CONFIG`, `CLOCK`, `LOGGER` |
-| `repositoryModule({ url?, repositories?, dataSource? })` | `chamvi:store` | `@chamvi/app` | `createTypeormRepositories()` over `DATABASE_URL` (migrated), else `createMemoryRepositories()`; registers `AppToken.REPOSITORIES` and schedules purgeable roles |
+| `repositoryModule({ url?, repositories?, dataSource? })` | `chamvi:store` | `@chamvi/app` | `createDatabaseRepositories()` over `DATABASE_URL` (migrated), else `createMemoryRepositories()`; registers `AppToken.REPOSITORIES` and schedules purgeable roles |
 | `staticTokensModule({ tokens? })` | `chamvi:static-tokens` | `@chamvi/app` | the static-token authenticator from `CHAMVI_TOKENS` |
 | `engineModule({ owner?, claimTtlMs? })` | `chamvi:engine` | `@chamvi/app` | checks the model strings, builds the `Engine` with every contributed channel (`CHANNELS`) and starts it (which starts the channels) |
 | `schedulerModule({ owner?, lockTtlMs? })` | `chamvi:scheduler` | `@chamvi/app` | the `cron` channel (`cronChannel()` of `@chamvi/channel-cron`; in start mode it fires only with `CHAMVI_SCHEDULER`) |

@@ -6,30 +6,30 @@
  */
 
 import type { Repositories } from '@chamvi/core';
-import { TypeormRunRepository } from '../run/index.ts';
-import { TypeormStepRepository } from '../step/index.ts';
-import { TypeormCheckpointRepository } from '../checkpoint/index.ts';
-import { TypeormIdempotencyRepository } from '../idempotency/index.ts';
-import { TypeormLockRepository } from '../lock/index.ts';
-import { TypeormEffectRepository } from '../effect/index.ts';
-import { TypeormStateRepository } from '../state/index.ts';
-import { TypeormArtifactRepository } from '../artifact/index.ts';
-import { TypeormAgentRevisionRepository } from '../agent-revision/index.ts';
-import { TypeormConversationRepository } from '../conversation/index.ts';
-import type { TypeormRepositoriesOptions } from './types.ts';
+import { DatabaseRunRepository } from '../run/index.ts';
+import { DatabaseStepRepository } from '../step/index.ts';
+import { DatabaseCheckpointRepository } from '../checkpoint/index.ts';
+import { DatabaseIdempotencyRepository } from '../idempotency/index.ts';
+import { DatabaseLockRepository } from '../lock/index.ts';
+import { DatabaseEffectRepository } from '../effect/index.ts';
+import { DatabaseStateRepository } from '../state/index.ts';
+import { DatabaseArtifactRepository } from '../artifact/index.ts';
+import { DatabaseAgentRevisionRepository } from '../agent-revision/index.ts';
+import { DatabaseConversationRepository } from '../conversation/index.ts';
+import type { DatabaseRepositoriesOptions } from './types.ts';
 
 /** Assemble capability repositories over one initialized PostgreSQL data source. */
-export function createTypeormRepositories(opts: TypeormRepositoriesOptions) {
+export function createDatabaseRepositories(opts: DatabaseRepositoriesOptions) {
     return {
-        runs: new TypeormRunRepository(opts),
-        steps: new TypeormStepRepository(opts),
-        checkpoints: new TypeormCheckpointRepository(opts),
-        idempotency: new TypeormIdempotencyRepository(opts),
-        locks: new TypeormLockRepository(opts),
-        effects: new TypeormEffectRepository(opts),
-        state: new TypeormStateRepository(opts),
-        artifacts: new TypeormArtifactRepository(opts),
-        agentRevisions: new TypeormAgentRevisionRepository(opts),
-        conversations: new TypeormConversationRepository(opts),
+        runs: new DatabaseRunRepository(opts),
+        steps: new DatabaseStepRepository(opts),
+        checkpoints: new DatabaseCheckpointRepository(opts),
+        idempotency: new DatabaseIdempotencyRepository(opts),
+        locks: new DatabaseLockRepository(opts),
+        effects: new DatabaseEffectRepository(opts),
+        state: new DatabaseStateRepository(opts),
+        artifacts: new DatabaseArtifactRepository(opts),
+        agentRevisions: new DatabaseAgentRevisionRepository(opts),
+        conversations: new DatabaseConversationRepository(opts),
     } satisfies Repositories;
 }

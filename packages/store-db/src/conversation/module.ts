@@ -49,7 +49,7 @@ import {
     isSameEmit,
     userItemId,
 } from '@chamvi/core/conversation/persistence';
-import type { TypeormConversationRepositoryOptions } from './types.ts';
+import type { DatabaseConversationRepositoryOptions } from './types.ts';
 
 const ENDED_TURN = {
     activeRunId: null,
@@ -128,12 +128,12 @@ function noteValues(note: ConversationNote) {
 }
 
 /** Every write takes the identity row lock before any owned rows, across connections. */
-export class TypeormConversationRepository implements IConversationRepository {
+export class DatabaseConversationRepository implements IConversationRepository {
     protected dataSource;
 
     protected clock;
 
-    constructor(options: TypeormConversationRepositoryOptions) {
+    constructor(options: DatabaseConversationRepositoryOptions) {
         this.dataSource = options.dataSource;
         this.clock = options.clock ?? systemClock;
     }

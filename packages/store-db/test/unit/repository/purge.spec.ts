@@ -13,10 +13,10 @@ import {
     it,
 } from 'vitest';
 import { ControllableClock } from '@chamvi/test-kit';
-import { createTypeormRepositories } from '@chamvi/store-db';
+import { createDatabaseRepositories } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 
-describePostgres('createTypeormRepositories purgeExpired', () => {
+describePostgres('createDatabaseRepositories purgeExpired', () => {
     let dataSource: DataSource;
 
     beforeAll(async () => {
@@ -29,7 +29,7 @@ describePostgres('createTypeormRepositories purgeExpired', () => {
 
     it('removes expired keys and locks only, never effects', async () => {
         const clock = new ControllableClock(new Date(0));
-        const store = createTypeormRepositories({ dataSource, clock });
+        const store = createDatabaseRepositories({ dataSource, clock });
 
         await store.idempotency.claim('s', 'k1', 'r1', 1_000);
         await store.idempotency.claim('s', 'k2', 'r2', 5_000);

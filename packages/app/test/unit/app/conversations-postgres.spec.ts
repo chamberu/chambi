@@ -15,7 +15,7 @@ import {
 import { jsonSchema } from 'ai';
 import { defineAgent, defineTool, memoryTools } from '@chamvi/core';
 import type { IChannel } from '@chamvi/core';
-import { STORE_ENTITIES, STORE_MIGRATIONS, TypeormConversationRepository } from '@chamvi/store-db';
+import { DatabaseConversationRepository, STORE_ENTITIES, STORE_MIGRATIONS } from '@chamvi/store-db';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
     AppToken,
@@ -62,7 +62,7 @@ describePostgres('app conversation PostgreSQL lifecycle', () => {
         cleanup.push(() => harness.stop());
         await harness.setup();
         const conversations = harness.container.resolve(AppToken.REPOSITORIES).conversations!;
-        expect(conversations).toBeInstanceOf(TypeormConversationRepository);
+        expect(conversations).toBeInstanceOf(DatabaseConversationRepository);
         await conversations.resolve(identity);
         expect(await dataSource.query('SELECT count(*)::int AS count FROM chamvi_conversations')).toEqual([{ count: 1 }]);
         await harness.stop();

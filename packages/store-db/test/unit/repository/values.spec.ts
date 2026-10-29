@@ -15,14 +15,14 @@ import {
 } from 'vitest';
 import type { Checkpoint } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { createTypeormRepositories } from '@chamvi/store-db';
-import type { TypeormRepositories } from '@chamvi/store-db';
+import { createDatabaseRepositories } from '@chamvi/store-db';
+import type { DatabaseRepositories } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres, truncateRepository } from '../../utils/database.ts';
 import { seedRun } from '../../utils/conversation.ts';
 
-describePostgres('createTypeormRepositories values', () => {
+describePostgres('createDatabaseRepositories values', () => {
     let dataSource: DataSource;
-    let store: TypeormRepositories;
+    let store: DatabaseRepositories;
 
     beforeAll(async () => {
         dataSource = await createTestDataSource();
@@ -30,7 +30,7 @@ describePostgres('createTypeormRepositories values', () => {
 
     beforeEach(async () => {
         await truncateRepository(dataSource);
-        store = createTypeormRepositories({ dataSource, clock: new ControllableClock(new Date(10_000)) });
+        store = createDatabaseRepositories({ dataSource, clock: new ControllableClock(new Date(10_000)) });
     });
 
     afterAll(async () => {

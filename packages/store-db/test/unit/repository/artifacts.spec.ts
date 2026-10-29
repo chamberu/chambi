@@ -14,7 +14,7 @@ import {
     it,
 } from 'vitest';
 import type { Artifact } from '@chamvi/core';
-import { TypeormArtifactRepository } from '@chamvi/store-db';
+import { DatabaseArtifactRepository } from '@chamvi/store-db';
 import { ArtifactEntity } from '../../../src/entities/index.ts';
 import { createTestDataSource, describePostgres, truncateRepository } from '../../utils/database.ts';
 
@@ -29,9 +29,9 @@ const artifact = (id: string, overrides: Partial<Artifact> = {}): Artifact => ({
     ...overrides,
 });
 
-describePostgres('TypeormArtifactRepository artifacts', () => {
+describePostgres('DatabaseArtifactRepository artifacts', () => {
     let dataSource: DataSource;
-    let store: TypeormArtifactRepository;
+    let store: DatabaseArtifactRepository;
 
     beforeAll(async () => {
         dataSource = await createTestDataSource();
@@ -39,7 +39,7 @@ describePostgres('TypeormArtifactRepository artifacts', () => {
 
     beforeEach(async () => {
         await truncateRepository(dataSource);
-        store = new TypeormArtifactRepository({ dataSource });
+        store = new DatabaseArtifactRepository({ dataSource });
     });
 
     afterAll(async () => {

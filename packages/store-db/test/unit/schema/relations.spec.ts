@@ -8,7 +8,7 @@
 import type { DataSource } from 'typeorm';
 import { afterEach, expect, it } from 'vitest';
 import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
-import { TypeormConversationRepository, createTypeormRepositories } from '@chamvi/store-db';
+import { DatabaseConversationRepository, createDatabaseRepositories } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import { seedRun } from '../../utils/conversation.ts';
 import { TableName } from '../../../src/entities/constants.ts';
@@ -43,8 +43,8 @@ describePostgres('relational integrity', () => {
 
     it('rejects dangling run and scope references and preserves referenced parents', async () => {
         ds = await createTestDataSource();
-        const conversations = new TypeormConversationRepository({ dataSource: ds });
-        const repositories = createTypeormRepositories({ dataSource: ds });
+        const conversations = new DatabaseConversationRepository({ dataSource: ds });
+        const repositories = createDatabaseRepositories({ dataSource: ds });
         const scope = await conversations.resolve(IDENTITY);
         await seedRun(ds, 'run', { conversation: { scope, text: 'input' } });
         await conversations.beginTurn(scope, 'run', 'input', DEFAULT_CONVERSATION_LIMITS);
@@ -103,8 +103,8 @@ describePostgres('relational integrity', () => {
 
     it('loads related runs and conversations through normal TypeORM relations', async () => {
         ds = await createTestDataSource();
-        const conversations = new TypeormConversationRepository({ dataSource: ds });
-        const repositories = createTypeormRepositories({ dataSource: ds });
+        const conversations = new DatabaseConversationRepository({ dataSource: ds });
+        const repositories = createDatabaseRepositories({ dataSource: ds });
         const scope = await conversations.resolve(IDENTITY);
         await seedRun(ds, 'run', { conversation: { scope, text: 'input' } });
         await conversations.beginTurn(scope, 'run', 'input', DEFAULT_CONVERSATION_LIMITS);
@@ -173,7 +173,7 @@ describePostgres('relational integrity', () => {
 
     it('refuses an unknown run without inserting input or taking ownership', async () => {
         ds = await createTestDataSource();
-        const store = new TypeormConversationRepository({ dataSource: ds });
+        const store = new DatabaseConversationRepository({ dataSource: ds });
         const scope = await store.resolve(IDENTITY);
         await expect(store.beginTurn(scope, 'missing', 'input', DEFAULT_CONVERSATION_LIMITS))
             .rejects.toMatchObject({ driverError: { code: '23503' } });

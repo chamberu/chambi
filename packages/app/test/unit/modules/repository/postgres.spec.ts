@@ -10,7 +10,7 @@ import { createServer } from 'node:net';
 import type { AddressInfo, Socket } from 'node:net';
 import { inspect } from 'node:util';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
-import { STORE_ENTITIES, STORE_MIGRATIONS, TypeormRunRepository } from '@chamvi/store-db';
+import { DatabaseRunRepository, STORE_ENTITIES, STORE_MIGRATIONS } from '@chamvi/store-db';
 import { ControllableClock } from '@chamvi/test-kit';
 import { DataSource, QueryFailedError } from 'typeorm';
 import {
@@ -176,7 +176,7 @@ describePostgres('repositoryModule on Postgres', () => {
 
         const dataSource = harness.container.resolve(AppToken.DATA_SOURCE);
         expect(await tableExists(dataSource, 'chamvi_runs')).toBe(true);
-        expect(harness.container.resolve(AppToken.REPOSITORIES).runs).toBeInstanceOf(TypeormRunRepository);
+        expect(harness.container.resolve(AppToken.REPOSITORIES).runs).toBeInstanceOf(DatabaseRunRepository);
 
         await harness.stop();
         expect(dataSource.isInitialized).toBe(false);
@@ -198,7 +198,7 @@ describePostgres('repositoryModule on Postgres', () => {
         await harness.setup();
 
         const store = harness.container.resolve(AppToken.REPOSITORIES);
-        expect(store.runs).toBeInstanceOf(TypeormRunRepository);
+        expect(store.runs).toBeInstanceOf(DatabaseRunRepository);
         await expect(store.runs.find({})).rejects.toThrow();
         await harness.stop();
     });
@@ -208,7 +208,7 @@ describePostgres('repositoryModule on Postgres', () => {
         const { harness } = build({ env: { DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x' }, store: { url } });
         await harness.setup();
 
-        expect(harness.container.resolve(AppToken.REPOSITORIES).runs).toBeInstanceOf(TypeormRunRepository);
+        expect(harness.container.resolve(AppToken.REPOSITORIES).runs).toBeInstanceOf(DatabaseRunRepository);
         await harness.stop();
     });
 
@@ -280,7 +280,7 @@ describePostgres('repositoryModule on Postgres', () => {
 
             expect(harness.container.resolve(AppToken.DATA_SOURCE)).toBe(dataSource);
             const store = harness.container.resolve(AppToken.REPOSITORIES);
-            expect(store.runs).toBeInstanceOf(TypeormRunRepository);
+            expect(store.runs).toBeInstanceOf(DatabaseRunRepository);
             await expect(store.runs.find({})).resolves.toMatchObject({ total: 0 });
 
             await harness.stop();
@@ -353,7 +353,7 @@ describePostgres('repositoryModule on Postgres', () => {
 
         const { harness } = build({ check: true, env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'false' } });
         await harness.setup();
-        expect(harness.container.resolve(AppToken.REPOSITORIES).runs).toBeInstanceOf(TypeormRunRepository);
+        expect(harness.container.resolve(AppToken.REPOSITORIES).runs).toBeInstanceOf(DatabaseRunRepository);
         await harness.stop();
     });
 });

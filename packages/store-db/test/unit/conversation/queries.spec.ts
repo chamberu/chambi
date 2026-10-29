@@ -14,7 +14,7 @@ import {
 } from 'vitest';
 import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { TypeormConversationRepository } from '@chamvi/store-db';
+import { DatabaseConversationRepository } from '@chamvi/store-db';
 import { ConversationItemEntity } from '../../../src/entities/index.ts';
 import { asValues } from '../../../src/repository/helpers.ts';
 import { seedRun } from '../../utils/conversation.ts';
@@ -30,7 +30,7 @@ describePostgres('conversation query bounds', () => {
     async function setup() {
         dataSource = await createTestDataSource();
         const clock = new ControllableClock(new Date('2026-10-28T00:00:00.000Z'));
-        const store = new TypeormConversationRepository({ dataSource, clock });
+        const store = new DatabaseConversationRepository({ dataSource, clock });
         const scope = await store.resolve({
             agent: 'helper',
             channel: 'chat',

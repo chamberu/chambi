@@ -12,7 +12,7 @@ import type { DataSource, Repository } from 'typeorm';
 import { CheckpointEntity } from '../entities/index.ts';
 import { toCheckpoint, toCheckpointValues } from '../repository/helpers.ts';
 
-export class TypeormCheckpointRepository implements ICheckpointRepository {
+export class DatabaseCheckpointRepository implements ICheckpointRepository {
     protected dataSource: DataSource;
 
     constructor(opts: { dataSource: DataSource }) {

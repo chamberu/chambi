@@ -42,7 +42,7 @@ Reviewed local template commit 0374e2b. `.env.example:49-50` advertises CHAMVI_G
 
 Checked current GitHub HEAD `a720d7a6caae5ad7ea8ab84ad92bf8478386d6e4` from a read-only source archive. Reviewed `src/index.ts`, `src/modules.ts`, `src/agents/example.ts`, app/example/entry/env tests and the README. Its `createApp({ model, agents, modules, models? })` use remains valid. No consumer supplies custom repositories or conversation options, uses the removed store classes/aggregate interface, or reads the removed engine property/container tokens. Tests reading `config.store.url` and `config.store.migrate` use the unchanged environment configuration shape.
 
-The monorepo now exposes `Repositories`, `createMemoryRepositories()`, `createTypeormRepositories()`, `Engine.repositories`, `repositoryModule({ repositories })` and `AppToken.REPOSITORIES`; conversation storage is `repositories.conversations`, with authorization/limits kept in conversation policy. No downstream source migration is required for the usages above. CLI, env, route, image, model-format and chart contracts are unchanged. No downstream repository was modified, tested, or published for this check.
+The monorepo now exposes `Repositories`, `createMemoryRepositories()`, `createDatabaseRepositories()`, `Engine.repositories`, `repositoryModule({ repositories })` and `AppToken.REPOSITORIES`; conversation storage is `repositories.conversations`, with authorization/limits kept in conversation policy. No downstream source migration is required for the usages above. CLI, env, route, image, model-format and chart contracts are unchanged. No downstream repository was modified, tested, or published for this check.
 
 
 ## Repository API and database package naming check (2026-10-29)

@@ -69,7 +69,7 @@ export class RepositoryModule implements IModule {
                 throw new InvalidAgentDefinitionError('repositoryModule({ dataSource }) needs an initialized data source.');
             }
             container.register(AppToken.DATA_SOURCE, { useValue: this.options.dataSource });
-            repositories = await this.typeormRepositories(context, this.options.dataSource, clock, migrate);
+            repositories = await this.databaseRepositories(context, this.options.dataSource, clock, migrate);
         } else if (typeof url === 'string') {
             repositories = await this.connect(container, logger, context, url, clock, migrate);
         } else {
@@ -147,7 +147,7 @@ export class RepositoryModule implements IModule {
 
         // orkos never tears down a module whose setup threw, so close what was opened here
         try {
-            const repositories = await this.typeormRepositories(context, dataSource, clock, migrate);
+            const repositories = await this.databaseRepositories(context, dataSource, clock, migrate);
             this.created = dataSource;
             return repositories;
         } catch (error) {
@@ -156,9 +156,9 @@ export class RepositoryModule implements IModule {
         }
     }
 
-    protected async typeormRepositories(context: AppContext, dataSource: DataSource, clock: IClock, migrate: boolean): Promise<Repositories> {
+    protected async databaseRepositories(context: AppContext, dataSource: DataSource, clock: IClock, migrate: boolean): Promise<Repositories> {
         const {
-            createTypeormRepositories,
+            createDatabaseRepositories,
             migrateStore, 
             pendingMigrations, 
         } = await import('@chamvi/store-db');
@@ -179,7 +179,7 @@ export class RepositoryModule implements IModule {
         }
 
         throwIfStopped(context);
-        return createTypeormRepositories({ dataSource, clock });
+        return createDatabaseRepositories({ dataSource, clock });
     }
 }
 

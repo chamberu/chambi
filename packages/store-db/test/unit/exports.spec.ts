@@ -12,17 +12,17 @@ describe('public api', () => {
     it.each([
         'migrateStore',
         'pendingMigrations',
-        'createTypeormRepositories',
-        'TypeormRunRepository',
-        'TypeormStepRepository',
-        'TypeormCheckpointRepository',
-        'TypeormIdempotencyRepository',
-        'TypeormLockRepository',
-        'TypeormEffectRepository',
-        'TypeormStateRepository',
-        'TypeormArtifactRepository',
-        'TypeormAgentRevisionRepository',
-        'TypeormConversationRepository',
+        'createDatabaseRepositories',
+        'DatabaseRunRepository',
+        'DatabaseStepRepository',
+        'DatabaseCheckpointRepository',
+        'DatabaseIdempotencyRepository',
+        'DatabaseLockRepository',
+        'DatabaseEffectRepository',
+        'DatabaseStateRepository',
+        'DatabaseArtifactRepository',
+        'DatabaseAgentRevisionRepository',
+        'DatabaseConversationRepository',
     ])('exports %s', (name) => {
         expect(pkg).toHaveProperty(name);
         expect(pkg[name as keyof typeof pkg]).toBeTypeOf('function');
