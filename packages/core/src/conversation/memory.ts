@@ -22,11 +22,10 @@ import {
     assertRunId,
     buildSnapshotContent,
     identityId,
-    isExpired,
-    isNoteActive,
     isSameEmit,
     userItemId,
-} from './helpers.ts';
+} from './persistence/module.ts';
+import { isExpired, isNoteActive } from './helpers.ts';
 import type {
     BeginTurnResult,
     ConversationIdentity,

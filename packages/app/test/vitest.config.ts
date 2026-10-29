@@ -21,6 +21,7 @@ export default defineConfig({
         // the sources, not dist
         alias: [
             { find: /^@chamvi\/core$/, replacement: fileURLToPath(new URL('../../core/src/index.ts', import.meta.url)) },
+            { find: /^@chamvi\/core\/conversation\/persistence$/, replacement: fileURLToPath(new URL('../../core/src/conversation/persistence/index.ts', import.meta.url)) },
             { find: /^@chamvi\/http$/, replacement: fileURLToPath(new URL('../../http/src/index.ts', import.meta.url)) },
             { find: /^@chamvi\/channel-cron$/, replacement: fileURLToPath(new URL('../../channel-cron/src/index.ts', import.meta.url)) },
             { find: /^@chamvi\/store-typeorm$/, replacement: fileURLToPath(new URL('../../store-typeorm/src/index.ts', import.meta.url)) },

@@ -17,6 +17,8 @@ Only `test/unit/**/*.{test,spec}.{js,ts}` is picked up; a new test directory nee
 
 ## Conventions
 
+- Regressions should exercise distinct transport payloads and accepted domain input, real relation navigation plus foreign-key rejection, and configured query/retention bounds. Keep shared store contracts across adapters; do not infer these guarantees from test totals or schema equality alone.
+
 - Tests import the public API by package name (`@chamvi/core`, `@chamvi/test-kit`); each `vitest.config.ts` aliases them to the packages' `src/index.ts`, so tests run against sources, not `dist`. Internals (e.g. `src/effect/helpers.ts`, `src/store/index.ts`) are imported by relative path.
 - Assert the expected behaviour from the module contract, not what the implementation happens to do; a failing test may be a real bug.
 - Use `MemoryStore` and `mockModel(responses)` (`test/utils/mock-model.ts`, scripted `MockResponse`s per model call) instead of mocking internals. Prefer fakes over `vi.mock()`.

@@ -22,9 +22,9 @@ import { ConversationOperation } from '../conversation/constants.ts';
 import {
     assertConversationIdentity,
     assertConversationText,
-    conversationConcurrencyKey,
     identityId,
-} from '../conversation/helpers.ts';
+} from '../conversation/persistence/module.ts';
+import { conversationConcurrencyKey } from '../conversation/helpers.ts';
 import type {
     ConversationBinding,
     ConversationIdentity,

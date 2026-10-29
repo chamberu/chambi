@@ -14,7 +14,7 @@ import { ValidationError } from '../errors/index.ts';
 import { defineTool } from '../tool/define.ts';
 import type { ToolContext } from '../tool/types.ts';
 import { CONVERSATION_NOTE_KEY_MAX_LENGTH, CONVERSATION_NOTE_TEXT_MAX_BYTES, ConversationOperation  } from './constants.ts';
-import { assertConversationText, assertPage } from './helpers.ts';
+import { assertConversationText, assertPage } from './persistence/module.ts';
 import { checkConversation, conversationFor } from './context.ts';
 
 /** Whether this execution has a trusted conversation binding; public run fields are not authority. */

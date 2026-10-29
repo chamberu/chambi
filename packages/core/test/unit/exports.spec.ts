@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { readFileSync } from 'node:fs';
 import {
     describe,
     expect,
@@ -12,8 +13,38 @@ import {
     it,
 } from 'vitest';
 import * as core from '@chamvi/core';
+import * as persistence from '@chamvi/core/conversation/persistence';
 
 describe('public api', () => {
+    it('publishes conversation persistence separately from the agent api', () => {
+        const manifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+        expect(manifest.exports['./conversation/persistence']).toEqual({
+            types: './dist/conversation/persistence.d.mts',
+            import: './dist/conversation/persistence.mjs',
+        });
+    });
+
+    it('exposes only store persistence rules from its dedicated entry', () => {
+        const names = [
+            'assertConversationScope',
+            'assertConversationText',
+            'assertEmitItem',
+            'assertNoteOperationContent',
+            'assertNoteOperationShape',
+            'assertPage',
+            'assertRunId',
+            'buildSnapshotContent',
+            'identityId',
+            'isSameEmit',
+            'userItemId',
+        ];
+        expect(Object.keys(persistence).sort()).toEqual(names);
+        for (const name of names) {
+            expect(persistence[name as keyof typeof persistence]).toBeTypeOf('function');
+            expect(core).not.toHaveProperty(name);
+        }
+    });
+
     it.each([
         'defineAgent',
         'Engine',

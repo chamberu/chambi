@@ -11,6 +11,7 @@ import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
 import { TypeormConversationStore, TypeormStore } from '@chamvi/store-typeorm';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import { seedRun } from '../../utils/conversation.ts';
+import { TableName } from '../../../src/entities/constants.ts';
 import {
     CheckpointEntity,
     ConversationEntity,
@@ -143,6 +144,31 @@ describePostgres('relational integrity', () => {
         expect(run.conversation?.id).toBe(scope.id);
         const conversation = await ds.getRepository(ConversationEntity).findOneOrFail({ where: { id: scope.id }, relations: { activeRun: true } });
         expect(conversation.activeRun?.id).toBe('run');
+        const now = new Date();
+        await runs.appendStep({
+            runId: 'run',
+            index: 0,
+            kind: 'tool',
+            startedAt: now,
+            finishedAt: now,
+        });
+        // These IDs reserve runs before createRun; every other local run/scope ID must be queryable.
+        const reservations = new Set([`${TableName.ARTIFACTS}.runId`, `${TableName.IDEMPOTENCY_KEYS}.runId`]);
+        for (const metadata of ds.entityMetadatas) {
+            for (const column of metadata.columns) {
+                let parent: string | undefined;
+                if (/runId$/i.test(column.propertyName)) parent = TableName.RUNS;
+                else if (/scopeId$/i.test(column.propertyName)) parent = TableName.CONVERSATIONS;
+                if (!parent || reservations.has(`${metadata.tableName}.${column.propertyName}`)) continue;
+                const relation = metadata.relations.find((entry) => entry.joinColumns.includes(column));
+                expect(relation, `${metadata.name}.${column.propertyName} needs an owning TypeORM relation`).toBeDefined();
+                if (!relation) continue;
+                expect(relation.inverseEntityMetadata.tableName).toBe(parent);
+                const entity = await ds.getRepository(metadata.target).createQueryBuilder('entity')
+                    .leftJoinAndSelect(`entity.${relation.propertyName}`, 'parent').getOne();
+                expect(entity?.[relation.propertyName]).toMatchObject({ id: entity?.[column.propertyName] });
+            }
+        }
     });
 
     it('refuses an unknown run without inserting input or taking ownership', async () => {

@@ -11,6 +11,7 @@
             "@chamvi/cli": ["./packages/cli/src/index.ts"],
             "@chamvi/coding": ["./packages/coding/src/index.ts"],
             "@chamvi/core": ["./packages/core/src/index.ts"],
+            "@chamvi/core/conversation/persistence": ["./packages/core/src/conversation/persistence/index.ts"],
             "@chamvi/github": ["./packages/github/src/index.ts"],
             "@chamvi/github/module": ["./packages/github/src/module/index.ts"],
             "@chamvi/http": ["./packages/http/src/index.ts"],

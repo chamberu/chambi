@@ -42,6 +42,7 @@ export type ConversationTarget = {
     account: string;
     chat: string;
     audience: string;
+    /** Accepted user text used for the current model message and future transcript recall. */
     text: string;
 };
 

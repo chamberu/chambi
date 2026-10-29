@@ -14,7 +14,7 @@ Without `conversations`, the app creates no conversation store. Enabling the age
 
 ## Keep memory when renaming an agent
 
-Use `conversation: { key: 'support' }` to give memory a stable identifier. Keep the same key when changing `name`. To retain history first created with `conversation: true`, use the previous agent name as the key. Channel, account, chat and audience must still match. A different key starts separate history; it does not copy or migrate the old history. Change a key only after draining existing turns: queued runs bound to its previous key fail safely.
+Use `conversation: { key: 'support' }` to give memory a stable identifier. Keep the same key when changing `name`. To retain history first created with `conversation: true`, use the previous agent name as the key. Channel, account, chat and audience must still match. A different key starts separate history; it does not copy or migrate the old history. Before renaming an agent or changing its key, finish or explicitly cancel its queued, waiting and interrupted runs. The stable key preserves memory; existing runs retain their original agent name and are not reassigned. Queued runs bound to a changed key fail safely.
 
 The authorizer receives `access.agent` as the actual agent name and `access.identity.agent` as the memory key. Check permissions using the actual agent and authenticated caller. Choosing a key grants no access by itself. Operator identity arguments also use the memory key in their `agent` field. Deliberately giving multiple agents the same key shares their memory under the policy you provide.
 
@@ -26,7 +26,7 @@ A channel adapter must authenticate and normalize the incoming event before call
 
 Call `firstMessage` on a started engine. Stop the app normally, then start a new instance using the same PostgreSQL database and registered channel configuration. Call `nextMessage` on that new engine. Accepted prior input and confirmed replies are available as recent context; a `memory_set` note also survives the restart. The model chooses whether to call a tool, so explicit instructions and tool permissions still matter.
 
-Use the exact registered channel object with `engine.channelContext(chat)`. Channel names supplied by arbitrary callers do not grant this capability. The adapter supplies accepted plain text explicitly; raw Chat SDK payloads or HTTP request bodies are not trusted identities. Ordinary `engine.dispatch()` and handoffs discard forged conversation bindings. Built-in HTTP intake does not enable conversation recall by accepting account/chat fields.
+Use the exact registered channel object with `engine.channelContext(chat)`. Channel names supplied by arbitrary callers do not grant this capability. Bound runs send the accepted `text` as the current user message, with their attachments. The original event payload remains available to tools and audit records. The adapter supplies accepted plain text explicitly; raw Chat SDK payloads or HTTP request bodies are not trusted identities. Ordinary `engine.dispatch()` and handoffs discard forged conversation bindings. Built-in HTTP intake does not enable conversation recall by accepting account/chat fields.
 
 For a private chat, the policy should check the authenticated caller's access to the account and chat. For a group, choose an audience that represents the actual authorized membership or view, and recheck it when membership changes. Do not reuse a private audience for a group or infer authorization from a concurrency key. The policy runs before admission and again for recall/resume and memory-tool calls. A later denial cannot retract content already sent to providers or tools.
 
@@ -51,6 +51,8 @@ Each run gets an immutable snapshot before its first model step. A resumed run k
 | Transcript retention | 30 days | 365 days |
 | Stored items per generation | 1,000 | 10,000 |
 
+`maxStoredItems` is enforced during admission and explicit pruning. Active turn records remain protected; a large settled turn can remain above this cap until the next admission or prune. Recall has its own item and byte bounds.
+
 Configured limits must be positive integers. A note key holds 1–128 code units without controls; a note body holds at most 2,048 UTF-8 bytes. At most 100 live notes exist per scope; list requests return at most 50. Notes persist until removed unless given an expiry. Set/remove return metadata, and replay records retain no note body.
 
 Expired notes disappear from reads; a new turn trims expired history. Explicit `engine.pruneConversations()` removes inactive retained data and settled note-operation replay records. The app adds no retention timer: arrange explicit pruning in your operator job. Active/recoverable replay records stay protected, and a settlement lookup failure retains records and surfaces the error.
@@ -69,7 +71,7 @@ Deletion is not erasure of every copy. Runs retain trigger/payload and conversat
 
 Normal app migrations install conversation tables even when recall is disabled. `chamvi start --check` validates configuration and connects read-only: it creates no conversation identity and runs no migrations. Existing migration flags keep their ordinary behavior.
 
-Pass `conversations: { authorize, store: customStore }` to use an `IConversationStore`. A custom store owns its schema, connection and shutdown lifecycle. The built-in TypeORM run and conversation stores must use the same DataSource; mixing them with another backend is unsupported. The app does not initialize, migrate or close it. A replacement store module must register `AppToken.CONVERSATIONS` when the capability is enabled. With the built-in store module, an injected DataSource remains caller-owned, just as it does for run storage.
+Pass `conversations: { authorize, store: customStore }` to use an `IConversationStore`. Store adapters reuse `@chamvi/core/conversation/persistence` for canonical identity validation, hashing and recall selection. A custom store owns its schema, connection and shutdown lifecycle. The built-in TypeORM run and conversation stores must use the same DataSource; mixing them with another backend is unsupported. The app does not initialize, migrate or close it. A replacement store module must register `AppToken.CONVERSATIONS` when the capability is enabled. With the built-in store module, an injected DataSource remains caller-owned, just as it does for run storage.
 
 The existing app drain waits for engine executions and conversation journal/reconciliation writes before closing its owned DataSource. With the built-in PostgreSQL stores, run and conversation records must share the same database. Their foreign keys enforce this relationship. Admission and conversation writes still use separate transactions; no cross-transaction atomicity is promised. Runs are created before conversation ownership is claimed, and restart reconciliation repairs terminal ownership safely.
 

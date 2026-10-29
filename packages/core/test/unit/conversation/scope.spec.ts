@@ -28,11 +28,10 @@ import type {
     Run,
 } from '@chamvi/core';
 import {
-    assertConversationText,
     conversationConcurrencyKey,
-    identityId,
     normalizeConversationLimits,
 } from '../../../src/conversation/helpers.ts';
+import { assertConversationText, identityId } from '@chamvi/core/conversation/persistence';
 
 const identity: ConversationIdentity = {
     agent: 'assistant',

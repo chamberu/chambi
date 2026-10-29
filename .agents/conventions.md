@@ -67,6 +67,11 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 
 ## Workflow
 
+- Before implementation, trace the complete input-to-output flow and inspect an existing analogous module. Reuse its patterns and installed library mechanisms; introduce a new seam only for concrete callers that need it.
+- For persistence changes, map every stored identifier to its parent or document the lifecycle reason it can precede/outlive that parent. Generate migrations from entity metadata and verify both database integrity and normal ORM relationship loading.
+- Keep domain validation, identity and selection rules in one implementation shared by store adapters. Adapter code owns queries and transactions.
+- Review the whole feature, including callers and configuration, after local fixes. Report design/convention findings separately from test results; passing checks alone do not establish completion.
+
 - After changes run `npm run build && npm run test && npm run typecheck && npm run lint`. Run `npm run lint:fix` before hand-fixing formatting.
 - Never edit `dist/` (generated, git-ignored). Never hand-edit `.release-please-manifest.json` or package versions; release-please owns them.
 - Keep runtime `dependencies` minimal (the house libraries `@ebec/core`, `smob`, `validup` are fine); tooling belongs in `devDependencies`, and the AI SDK (`ai`) stays a peer dependency.

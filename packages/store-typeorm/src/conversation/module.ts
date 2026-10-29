@@ -25,6 +25,7 @@ import type {
 } from '@chamvi/core';
 import { In, LessThanOrEqual, Not } from 'typeorm';
 import type { EntityManager, Repository } from 'typeorm';
+import { isObject } from 'smob';
 import {
     ConversationEntity,
     ConversationItemEntity,
@@ -44,7 +45,7 @@ import {
     identityId,
     isSameEmit,
     userItemId,
-} from './helpers/index.ts';
+} from '@chamvi/core/conversation/persistence';
 import type { TypeormConversationStoreOptions } from './types.ts';
 
 const ENDED_TURN = {
@@ -224,14 +225,15 @@ export class TypeormConversationStore implements IConversationStore {
                 throw new InvalidRunStateError('The conversation turn has already ended.');
             }
             await this.trim(manager, row, limits);
-            const items = await manager.find(ConversationItemEntity, { where, order: { seq: 'ASC' } });
+            const { items, total } = await this.recallItems(manager, scope, limits);
             const notes = await this.readNotes(manager, scope);
             const now = this.clock.now();
             const snapshot: ConversationSnapshot = {
                 scope: scopeOf(row),
                 runId,
                 createdAt: now,
-                ...buildSnapshotContent(items.map(itemOf).filter((item) => item.status === 'sent'), notes, limits),
+                ...buildSnapshotContent(items, notes, limits),
+                omitted: total - items.length,
             };
             const item: ConversationItem = {
                 id: userItemId(runId),
@@ -256,6 +258,35 @@ export class TypeormConversationStore implements IConversationStore {
             await this.trimCount(manager, row.id, row.generation, row.activeRunId, limits.maxStoredItems);
             return { kind: 'ready', snapshot };
         });
+    }
+
+    protected async recallItems(manager: EntityManager, scope: ConversationScope, limits: ResolvedConversationLimits) {
+        const where = {
+            scopeId: scope.id,
+            generation: scope.generation,
+            status: 'sent' as const,
+        };
+        const total = await manager.countBy(ConversationItemEntity, where);
+        let items: ConversationItem[] = [];
+        let bytes = 0;
+        let before: string | undefined;
+        while (items.length < limits.maxItems && bytes < limits.maxHistoryBytes) {
+            const query = manager.withRepository(this.items).createQueryBuilder('item')
+                .where(where)
+                // Find options cannot compare a text column's UTF-8 byte length.
+                .andWhere('octet_length(item.text) <= :maxBytes', { maxBytes: limits.maxHistoryBytes - bytes })
+                .orderBy('item.seq', 'DESC').take(100);
+            if (before !== undefined) query.andWhere('item.seq < :before', { before });
+            const page = await query.getMany();
+            if (page.length === 0) break;
+            before = page[page.length - 1]!.seq;
+            // Newer selected records keep priority; previously skipped records cannot fit a smaller remaining budget.
+            const candidates = [...page.reverse().map(itemOf), ...items];
+            const selected = new Set(buildSnapshotContent(candidates, [], limits).itemIds);
+            items = candidates.filter((item) => selected.has(item.id));
+            bytes = items.reduce((sum, item) => sum + Buffer.byteLength(item.text, 'utf8'), 0);
+        }
+        return { items, total };
     }
 
     async endTurn(scope: ConversationScope, runId: string, confirmedEmitIds: string[]): Promise<void> {
@@ -437,21 +468,18 @@ export class TypeormConversationStore implements IConversationStore {
     }
 
     async reset(identity: ConversationIdentity, options: { keepNotes: boolean }): Promise<ConversationScope> {
-        if (!options || typeof options.keepNotes !== 'boolean') throw new ValidationError('The reset options need keepNotes as a boolean.');
+        if (!isObject(options) || typeof options.keepNotes !== 'boolean') throw new ValidationError('The reset options need keepNotes as a boolean.');
         const scope = await this.resolve(identity);
         return this.locked(scope.id, async (manager, row) => {
             if (!row || row.activeRunId !== null) throw new InvalidRunStateError('The conversation has an active turn and cannot be reset.');
-            const notes = options.keepNotes ? await this.readNotes(manager, scopeOf(row)) : [];
             row.generation += 1;
             await manager.update(ConversationEntity, { id: row.id }, { generation: row.generation, ...ENDED_TURN });
-            await manager.delete(ConversationNoteEntity, { scopeId: row.id });
-            if (!options.keepNotes) await manager.delete(ConversationOperationEntity, { scopeId: row.id });
-            for (const note of notes) {
-                await manager.withRepository(this.notes).insert(asValues<ConversationNoteEntity>({
-                    scopeId: row.id,
-                    generation: row.generation,
-                    ...noteValues(note),
-                }));
+            if (options.keepNotes) {
+                await manager.delete(ConversationNoteEntity, { scopeId: row.id, expiresAt: LessThanOrEqual(this.clock.now()) });
+                await manager.update(ConversationNoteEntity, { scopeId: row.id }, { generation: row.generation });
+            } else {
+                await manager.delete(ConversationNoteEntity, { scopeId: row.id });
+                await manager.delete(ConversationOperationEntity, { scopeId: row.id });
             }
             return scopeOf(row);
         });
@@ -474,6 +502,7 @@ export class TypeormConversationStore implements IConversationStore {
         let excess = await manager.countBy(ConversationItemEntity, where) - max;
         while (excess > 0) {
             const candidates = await manager.find(ConversationItemEntity, {
+                select: { seq: true },
                 where: { ...where, ...(activeRunId === null ? {} : { runId: Not(activeRunId) }) },
                 order: { seq: 'ASC' },
                 take: Math.min(excess, 100),
@@ -488,6 +517,7 @@ export class TypeormConversationStore implements IConversationStore {
         const before = new Date(this.clock.now().getTime() - limits.retentionMs);
         for (;;) {
             const expired = await manager.find(ConversationItemEntity, {
+                select: { seq: true },
                 where: {
                     scopeId: row.id,
                     createdAt: LessThanOrEqual(before),

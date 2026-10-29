@@ -288,6 +288,16 @@ export function describeConversationStoreContract(
             expect(await store.get(makeIdentity('never'))).toBeUndefined();
         });
 
+        it('reset_rejects_array_options_without_advancing_generation', async () => {
+            const {
+                store,
+                identity,
+                scope,
+            } = await setup();
+            await expect(store.reset(identity, Object.assign([], { keepNotes: true }))).rejects.toMatchObject(INVALID);
+            expect(await store.get(identity)).toEqual(scope);
+        });
+
         it('reset_refuses_active', async () => {
             const {
                 store,

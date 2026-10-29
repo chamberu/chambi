@@ -52,11 +52,11 @@ export function renderTrigger(envelope: TriggerEnvelope): string {
 }
 
 /**
- * The run's first message: the rendered trigger, followed by a file part per
- * attachment that holds the artifact marker (hydrated to bytes for the model).
+ * The run's first message: accepted conversation text or the rendered trigger,
+ * followed by artifact markers for attachments (hydrated to bytes for the model).
  */
-export function initialMessage(envelope: TriggerEnvelope): ModelMessage {
-    const text = renderTrigger(envelope);
+export function initialMessage(envelope: TriggerEnvelope, acceptedText?: string): ModelMessage {
+    const text = acceptedText ?? renderTrigger(envelope);
     if (!envelope.attachments?.length) return { role: 'user', content: text };
     return {
         role: 'user',

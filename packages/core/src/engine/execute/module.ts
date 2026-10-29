@@ -70,7 +70,10 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     const budget = resolveBudget(agent);
     const checkpoint = await store.latestCheckpoint(run.id);
     // stored form: file parts hold artifact markers; the model gets a hydrated copy
-    let initial: ModelMessage[] = checkpoint?.messages ?? [...(ctx.conversation?.snapshot.messages ?? []), initialMessage(run.trigger)];
+    let initial: ModelMessage[] = checkpoint?.messages ?? [
+        ...(ctx.conversation?.snapshot.messages ?? []),
+        initialMessage(run.trigger, ctx.conversation ? run.conversation?.text : undefined),
+    ];
     const usage: Usage = { ...run.usage };
     let stepIndex = checkpoint ? checkpoint.stepIndex + 1 : 0;
     let stepSeq = (await store.listSteps(run.id)).length;

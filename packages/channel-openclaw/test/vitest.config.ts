@@ -8,6 +8,7 @@ export default defineConfig({
             { find: /^@chamvi\/app$/, replacement: fileURLToPath(new URL('../../app/src/index.ts', import.meta.url)) },
             { find: /^@chamvi\/app\/testing$/, replacement: fileURLToPath(new URL('../../app/src/testing/index.ts', import.meta.url)) },
             { find: /^@chamvi\/core$/, replacement: fileURLToPath(new URL('../../core/src/index.ts', import.meta.url)) },
+            { find: /^@chamvi\/core\/conversation\/persistence$/, replacement: fileURLToPath(new URL('../../core/src/conversation/persistence/index.ts', import.meta.url)) },
             { find: /^@chamvi\/http$/, replacement: fileURLToPath(new URL('../../http/src/index.ts', import.meta.url)) },
             { find: /^@chamvi\/channel-openclaw$/, replacement: fileURLToPath(new URL('../src/index.ts', import.meta.url)) },
             { find: /^@chamvi\/channel-openclaw\/module$/, replacement: fileURLToPath(new URL('../src/module/index.ts', import.meta.url)) },

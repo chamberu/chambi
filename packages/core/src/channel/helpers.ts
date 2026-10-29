@@ -10,7 +10,8 @@ import { isObject } from 'smob';
 import { requestApproval } from '../approval/request.ts';
 import type { ApprovalDecision, ApprovalRequestInput } from '../approval/types.ts';
 import { currentToolCall } from '../effect/frame.ts';
-import { assertConversationText, matchesEmitReceipt } from '../conversation/helpers.ts';
+import { matchesEmitReceipt } from '../conversation/helpers.ts';
+import { assertConversationText } from '../conversation/persistence/module.ts';
 import { stableHash } from '../effect/helpers.ts';
 import type { Engine } from '../engine/module.ts';
 import {

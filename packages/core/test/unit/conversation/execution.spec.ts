@@ -95,6 +95,31 @@ async function run(s: ReturnType<typeof setup>, text = 'current') {
 }
 
 describe('conversation execution admission', () => {
+    it.each([false, true])('uses accepted conversation text as the current input, keeping attachments (%s)', async (withAttachment) => {
+        const s = setup();
+        const text = 'What is 2 + 2?';
+        const payload = { eventId: 'opaque-transport-event', privateRouting: 'transport-only' };
+        const { runId } = await s.ctx.dispatchConversation({
+            ...envelope,
+            payload,
+            ...(withAttachment ? { attachments: [{ mediaType: 'text/plain', data: new TextEncoder().encode('attachment') }] } : {}),
+        }, { ...target, text });
+        await s.engine.start();
+        await s.engine.idle();
+        expect((await s.store.getRun(runId))?.status).toBe('completed');
+        expect((await s.store.getRun(runId))?.trigger.payload).toEqual(payload);
+        const prompt = JSON.stringify(s.model.doStreamCalls[0]?.prompt);
+        expect(prompt).toContain(text);
+        expect(prompt).not.toContain('opaque-transport-event');
+        expect(prompt).not.toContain('transport-only');
+        const first = (await s.store.latestCheckpoint(runId))?.messages[0];
+        expect(first?.role).toBe('user');
+        expect(first?.content).toEqual(withAttachment ? [
+            { type: 'text', text },
+            expect.objectContaining({ type: 'file', mediaType: 'text/plain' }),
+        ] : text);
+    });
+
     it('an approval keeps its conversation ordered while freeing the shared agent execution cap', async () => {
         const action = defineTool({
             inputSchema: jsonSchema<{}>({ type: 'object' }),

@@ -19,7 +19,8 @@ import type { IStore } from '../store/types.ts';
 import { InvalidAgentDefinitionError, InvalidRunStateError, ValidationError } from '../errors/index.ts';
 import { ConversationOperation, ConversationTurnKind } from './constants.ts';
 import { RunStatus } from '../run/constants.ts';
-import { assertPage, matchesEmitReceipt, normalizeConversationLimits } from './helpers.ts';
+import { matchesEmitReceipt, normalizeConversationLimits } from './helpers.ts';
+import { assertPage } from './persistence/module.ts';
 
 function settled(run: Run | undefined): boolean {
     return !run || run.status === RunStatus.COMPLETED || run.status === RunStatus.FAILED || run.status === RunStatus.CANCELLED;
