@@ -67,6 +67,15 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 - Persistence code uses TypeORM repositories and their query builders (`insert().orIgnore()`, `orUpdate()` with an overwrite condition, `update().where().returning()`, find options). Raw SQL only where the ORM cannot express a statement, with a one-line comment saying why.
 - Entity links use TypeORM relationship decorators (`@ManyToOne` or `@OneToOne`) with `@JoinColumn`. Map scalar IDs to the same join columns when store code needs direct ID access; generate the database constraints from those relationships.
 
+## Database Migrations
+
+Migrations live in `packages/store-db/src/migrations/` (PostgreSQL), with the ordered chain registered in `STORE_MIGRATIONS` in `packages/store-db/src/schema/constants.ts`.
+
+- **One named migration per feature during development; released migrations are immutable.** Before amending or consolidating an existing migration, verify against release tags / the last release-PR merge that it has not shipped. Changes to a released schema need a new migration.
+- **Bundle the release window's unreleased migrations into one migration before the release PR merges.** Consolidate at release time, not at each feature merge. Keep the earliest timestamp so ordering against the released chain holds, preserve the combined `up()` behaviour and reverse-order `down()` behaviour, and never fold changes into a released migration.
+- Update the migrations barrel, `STORE_MIGRATIONS`, tests and any other references to the pre-bundle names together. Verify a fresh database, an upgrade from the last released schema with existing data, and a rollback/reapply of the bundled migration before release.
+- Anyone who already ran the pre-bundle migrations must recreate their disposable development database or reconcile its migration history manually; do not reset a production database to accommodate consolidation.
+
 ## Workflow
 
 - Before implementation, trace the complete input-to-output flow and inspect an existing analogous module. Reuse its patterns and installed library mechanisms; introduce a new seam only for concrete callers that need it.
