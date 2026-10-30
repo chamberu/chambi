@@ -5,7 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { RunNotFoundError } from '@chamvi/core';
 import type {
     Run,
     RunDelta,
@@ -136,7 +135,7 @@ export async function streamRun(event: IAppEvent, ctx: HttpContext, runId: strin
     /** Sends the steps not sent yet, then ends: the settled run was the last word. */
     async function settle(): Promise<void> {
         try {
-            const steps = await ctx.store.listSteps(runId);
+            const steps = await ctx.store.steps.find(runId);
             sendSteps(steps);
             cleanup();
         } catch (error) {
@@ -173,7 +172,7 @@ export async function streamRun(event: IAppEvent, ctx: HttpContext, runId: strin
     async function poll(): Promise<void> {
         if (ended) return;
         try {
-            const run = await ctx.store.getRun(runId);
+            const run = await ctx.store.runs.findOne(runId);
             if (ended) return;
             if (!run) {
                 cleanup();
@@ -187,7 +186,7 @@ export async function streamRun(event: IAppEvent, ctx: HttpContext, runId: strin
                 await settle();
                 return;
             }
-            if (changed && sendSteps(await ctx.store.listSteps(runId))) sent = true;
+            if (changed && sendSteps(await ctx.store.steps.find(runId))) sent = true;
             if (!sent) write({ event: 'ping', data: '' });
         } catch (error) {
             fail(error);
@@ -206,9 +205,8 @@ export async function streamRun(event: IAppEvent, ctx: HttpContext, runId: strin
     let run: Run | undefined;
     let steps: Step[];
     try {
-        run = await ctx.store.getRun(runId);
-        if (!run) throw new RunNotFoundError(runId);
-        steps = await ctx.store.listSteps(runId);
+        run = await ctx.store.runs.findOneOrFail(runId);
+        steps = await ctx.store.steps.find(runId);
     } catch (error) {
         // nothing was written yet: the error handler answers instead
         cleanup();

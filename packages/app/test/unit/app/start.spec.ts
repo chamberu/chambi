@@ -9,7 +9,7 @@ import { cron } from '@chamvi/channel-cron';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { http } from '@chamvi/http';
@@ -223,7 +223,7 @@ describe('App.start', () => {
                 instructions: 'x',
                 channels: [http.on(), cron.on('*/5 * * * *')],
             });
-            const store = new MemoryStore();
+            const store = createMemoryStore();
             // another replica's run, waiting in the shared store
             const other = new Engine({
                 store,
@@ -255,7 +255,7 @@ describe('App.start', () => {
             expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
             expect(error.message).toContain('No authenticator');
             expect(ctx.calls()).toBe(0);
-            expect((await ctx.store.getRun(ctx.runId))?.status).toBe('queued');
+            expect((await ctx.store.runs.findOne(ctx.runId))?.status).toBe('queued');
         });
 
         it('an app without the http module still starts the engine', async () => {
@@ -269,7 +269,7 @@ describe('App.start', () => {
             await app.start({ env });
 
             await vi.waitFor(async () => {
-                expect((await ctx.store.getRun(ctx.runId))?.status).toBe('completed');
+                expect((await ctx.store.runs.findOne(ctx.runId))?.status).toBe('completed');
             });
         });
 
@@ -327,7 +327,7 @@ describe('App.start', () => {
             expect(await rejectionOf(app.start({ env }))).toBeInstanceOf(InvalidAgentDefinitionError);
             expect(started).toEqual([]);
             expect(ctx.calls()).toBe(0);
-            expect((await ctx.store.getRun(ctx.runId))?.status).toBe('queued');
+            expect((await ctx.store.runs.findOne(ctx.runId))?.status).toBe('queued');
         });
 
         it('a scheduler definition error', async () => {
@@ -340,7 +340,7 @@ describe('App.start', () => {
 
             expect(await rejectionOf(app.start({ env }))).toBeInstanceOf(InvalidAgentDefinitionError);
             expect(ctx.calls()).toBe(0);
-            expect((await ctx.store.getRun(ctx.runId))?.status).toBe('queued');
+            expect((await ctx.store.runs.findOne(ctx.runId))?.status).toBe('queued');
         });
     });
 });

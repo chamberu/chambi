@@ -16,7 +16,7 @@ import { z } from 'zod';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -34,7 +34,7 @@ afterEach(() => {
 
 function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     const { clock, gh } = createGithubFixture();
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const errors: unknown[] = [];
     const engine = new Engine({
         store,
@@ -58,7 +58,7 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     };
 }
 
-async function run(engine: Engine, store: MemoryStore) {
+async function run(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
     const { runId } = await engine.dispatch({
         agent: 'triage',
         trigger: 'http',
@@ -66,7 +66,7 @@ async function run(engine: Engine, store: MemoryStore) {
         payload: {},
     });
     await engine.idle();
-    return store.getRun(runId);
+    return store.runs.findOne(runId);
 }
 
 describe('github context', () => {

@@ -24,7 +24,7 @@ async function pausedGate(overrides: TestAppOverrides = {}, agent = 'gate') {
     const { runId } = await response.json() as { runId: string };
     await ctx.engine.start();
     await ctx.engine.idle();
-    const run = await ctx.store.getRun(runId);
+    const run = await ctx.store.runs.findOne(runId);
     expect(run?.status).toBe('waiting');
     return {
         ...ctx,
@@ -50,7 +50,7 @@ describe('POST /runs/:id/approve', () => {
         expect(response.status).toBe(202);
         expect(await response.json()).toEqual({ runId, status: 'queued' });
         await engine.idle();
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
 
         const detail = await (await call(app, 'GET', `/runs/${runId}`, { token: approver })).json() as {
             steps: Array<{ kind: string; output: unknown }>;
@@ -82,9 +82,9 @@ describe('POST /runs/:id/approve', () => {
         });
         expect(response.status).toBe(202);
         await engine.idle();
-        const steps = await store.listSteps(runId);
+        const steps = await store.steps.find(runId);
         expect(steps.find((step) => step.kind === 'wait')?.output).toMatchObject({ approved: false, reason: 'not now' });
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
         await engine.drain();
     });
 
@@ -101,7 +101,7 @@ describe('POST /runs/:id/approve', () => {
         });
         expect(response.status).toBe(409);
         expect((await response.json()).code).toBe('invalid_run_state');
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         await engine.drain();
     });
 
@@ -156,7 +156,7 @@ describe('POST /runs/:id/approve', () => {
         });
         expect(response.status).toBe(403);
         expect((await response.json()).message).toBe('Missing permission "agent:gate:approve".');
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         await engine.drain();
     });
 
@@ -194,7 +194,7 @@ describe('POST /runs/:id/approve', () => {
         } = await pausedGate();
         const response = await call(app, 'POST', `/runs/${runId}/approve`, { token: ADMIN_TOKEN, body });
         expect(response.status).toBe(400);
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         await engine.drain();
     });
 
@@ -222,7 +222,7 @@ describe('POST /runs/:id/approve', () => {
         });
         expect(response.status).toBe(202);
         await engine.idle();
-        const run = await store.getRun(runId);
+        const run = await store.runs.findOne(runId);
         expect(run?.status).toBe('completed');
         const detail = await (await call(app, 'GET', `/runs/${runId}`, { token: ADMIN_TOKEN })).json();
         const wait = detail.steps.find((s: { kind: string }) => s.kind === 'wait');
@@ -241,7 +241,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app, 
             engine, 
-            store, 
+            store,
             runId, 
             waiting,
         } = await pausedGate({}, agent);
@@ -251,7 +251,7 @@ describe('POST /runs/:id/approve', () => {
         });
         expect(response.status).toBe(400);
         expect((await response.json()).code).toBe('validation_error');
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         await engine.drain();
     });
 
@@ -265,7 +265,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app, 
             engine, 
-            store, 
+            store,
             runId, 
             waiting,
         } = await pausedGate({}, 'choose');
@@ -281,7 +281,7 @@ describe('POST /runs/:id/approve', () => {
         const json = await response.json();
         expect(json.code).toBe('validation_error');
         expect(JSON.stringify(json.issues)).toContain('selected');
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         await engine.drain();
     });
 });

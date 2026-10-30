@@ -1,6 +1,6 @@
 # @chamvi/core
 
-The public API of `@chamvi/core`, taken from `packages/core/src/index.ts`. Contract interfaces carry an `I` prefix (`IStore`, `IClock`, `IChannel`, `IAgentState`); data shapes are unprefixed types.
+The public API of `@chamvi/core`, taken from `packages/core/src/index.ts`. Contract interfaces carry an `I` prefix (`IRunRepository`, `IClock`, `IChannel`, `IAgentState`); data shapes are unprefixed types.
 
 ```ts
 import { Engine, defineAgent } from '@chamvi/core';
@@ -40,7 +40,7 @@ function requireToolPermission(opts?: RequireToolPermissionOptions): ToolPolicy;
 
 ```ts
 function consoleChannel(options?: ConsoleChannelOptions): IChannel;           // out only, name 'console'
-function normalizeEnvelope(raw: Record<string, unknown>): TriggerEnvelope;    // for stores: legacy source/thread read back as channel/address
+function normalizeEnvelope(raw: Record<string, unknown>): TriggerEnvelope;    // for repositories: legacy source/thread read back as channel/address
 function assertTriggerKey(name: string, value: string | undefined): void;     // 255 characters, no NUL
 ```
 
@@ -134,15 +134,13 @@ The `RunStatus` enum, whose values `RunStatusLiteral` is built from:
 
 <<< ../../../core/src/run/constants.ts{ts}
 
-## Stores
+## Stores and repositories
 
 ```ts
-class MemoryStore implements IStore {
-    constructor(opts?: { clock?: IClock });
-}
+function createMemoryStore(options?: MemoryStoreOptions): IStore & { conversations: IConversationRepository };
 ```
 
-`IStore` and its parts (`IRunStore`, `IStepStore`, `ICheckpointStore`, `IIdempotencyStore`, `ILockStore`, `IEffectStore`, `IStateStore`, `IArtifactStore`, `IAgentRevisionStore`) are listed on the [Store Contract](/stores/) page.
+The `IStore` aggregate and its capability interfaces (`IRunRepository`, `IStepRepository`, `ICheckpointRepository`, `IIdempotencyRepository`, `ILockRepository`, `IEffectRepository`, `IStateRepository`, `IArtifactRepository`, `IAgentRevisionRepository`) are listed on the [Repository Contract](/repositories/) page.
 
 ## Artifacts
 
@@ -215,7 +213,7 @@ function effectMarker(effectKey: string): string; // '<!-- chamvi:effect=<key> -
 function wrapToolsForRun(
     tools: ToolSet,
     ctx: ToolContext,
-    store: IEffectStore,
+    store: IEffectRepository,
     options?: { allow?: (toolName: string) => boolean; hooks?: AgentHooks },
 ): ToolSet;
 
@@ -248,7 +246,7 @@ const APPROVAL_OPTIONS_DETAIL_MAX_LENGTH: 100_000; // all details of one request
 function createAgentState<S extends StateSchema = StateSchema>(
     agent: string,
     schema: S | undefined,
-    store: IStateStore,
+    store: IStateRepository,
 ): IAgentState<S>;
 
 function createStateTools<S extends StateSchema>(schema: S): ToolSet; // the tools read context.state

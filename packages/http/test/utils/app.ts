@@ -8,8 +8,8 @@
 import { z } from 'zod';
 import {
     Engine,
-    MemoryStore,
     approve,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -78,7 +78,7 @@ export function createTestApp(overrides: TestAppOverrides = {}) {
     const channels = testChannels();
     const hooks = channels.find((channel) => channel.name === 'webhook')!;
     const engine = engineOverride ?? new Engine({
-        store: storeOverride ?? new MemoryStore({ clock }),
+        store: storeOverride ?? createMemoryStore({ clock }),
         agents: agentsOverride ?? [
             defineAgent({
                 name: 'echo',
@@ -189,7 +189,7 @@ export function pickTool() {
 
 /** The approval id the run's current wait point waits on. */
 export async function approvalIdOf(store: IStore, runId: string): Promise<string> {
-    const waiting = (await store.getRun(runId))?.waiting;
+    const waiting = (await store.runs.findOne(runId))?.waiting;
     if (!waiting) throw new Error(`run ${runId} is not waiting`);
     return waiting.approvalId;
 }

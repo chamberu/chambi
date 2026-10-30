@@ -35,7 +35,7 @@ describe('a NUL character', () => {
         const { app, store } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { [key]: 'a\u0000b' } });
         expect(response.status).toBe(400);
-        expect((await store.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
     });
 
     it('in a key a webhook derives from the payload answers 400', async () => {
@@ -60,7 +60,7 @@ describe('a NUL character', () => {
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, tool, args);
         expect(result.isError).toBe(true);
-        expect((await store.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
         await client.close();
     });
 });

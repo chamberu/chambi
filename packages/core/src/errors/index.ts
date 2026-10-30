@@ -16,6 +16,7 @@ export * from './context-not-provided.ts';
 export * from './fatal-tool.ts';
 export * from './incomplete-response.ts';
 export * from './lease-lost.ts';
+export * from './repository-not-found.ts';
 export * from './run-not-found.ts';
 export * from './run-state.ts';
 export * from './sandbox.ts';

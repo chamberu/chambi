@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IClock } from '../clock/index.ts';
 import { InvalidRunStateError } from '../errors/index.ts';
-import type { IArtifactStore } from '../store/types.ts';
+import type { IArtifactRepository } from '../repository/types.ts';
 import { ARTIFACT_URI_PREFIX } from './constants.ts';
 import { assertArtifactInput } from './helpers.ts';
 import type {
@@ -25,7 +25,7 @@ import type {
  * returned, so the caller never names metadata the store does not hold.
  */
 export async function storeArtifact(
-    store: IArtifactStore,
+    store: IArtifactRepository,
     run: { id: string; agent: string },
     input: ArtifactInput,
     createdAt: Date,
@@ -40,8 +40,8 @@ export async function storeArtifact(
         size: input.data.byteLength,
         createdAt,
     };
-    if (await store.putArtifact(artifact, input.data)) return artifact;
-    const stored = await store.getArtifact(id);
+    if (await store.insert(artifact, input.data)) return artifact;
+    const stored = await store.findOne(id);
     if (stored?.runId !== run.id) throw new InvalidRunStateError(`The artifact id "${id}" belongs to another run.`);
     return stored;
 }
@@ -59,7 +59,7 @@ export function attachmentIds(runId: string, count: number): string[] {
 
 /** The artifacts of one run, as tools get them. */
 export function createRunArtifacts(
-    store: IArtifactStore,
+    store: IArtifactRepository,
     run: { id: string; agent: string },
     clock: IClock,
 ): IRunArtifacts {
@@ -69,14 +69,14 @@ export function createRunArtifacts(
             return storeArtifact(store, run, input, clock.now());
         },
         async get(id) {
-            const artifact = await store.getArtifact(id);
+            const artifact = await store.findOne(id);
             if (artifact?.runId !== run.id) return undefined;
-            const data = await store.readArtifact(id);
+            const data = await store.read(id);
             if (!data) return undefined;
             return { artifact, data };
         },
         list() {
-            return store.listArtifacts(run.id);
+            return store.find(run.id);
         },
     };
 }

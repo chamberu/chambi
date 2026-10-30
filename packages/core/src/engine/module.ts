@@ -9,12 +9,28 @@ import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { pid } from 'node:process';
 import type { Agent } from '../agent/types.ts';
+import { conversationKey } from '../agent/asserts.ts';
 import { approvalDecisionKey, assertSelectionShape, toSelection } from '../approval/helpers.ts';
 import { assertArtifactInput } from '../artifact/helpers.ts';
 import { attachmentIds, storeArtifact } from '../artifact/module.ts';
 import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
 import { assertChannelName, assertDefaultAddress, createChannelContext } from '../channel/helpers.ts';
-import type { IChannel } from '../channel/types.ts';
+import type { ChannelContext, IChannel } from '../channel/types.ts';
+import { Conversations } from '../conversation/module.ts';
+import { bindConversationIntake } from '../conversation/context.ts';
+import { ConversationOperation } from '../conversation/constants.ts';
+import {
+    assertConversationIdentity,
+    assertConversationText,
+    identityId,
+} from '../conversation/persistence/module.ts';
+import { conversationConcurrencyKey } from '../conversation/helpers.ts';
+import type {
+    ConversationBinding,
+    ConversationIdentity,
+    ConversationInspection,
+    ConversationScope,
+} from '../conversation/types.ts';
 import { systemClock } from '../clock/index.ts';
 import type { IClock } from '../clock/index.ts';
 import { contextKeyName, isContextKey } from '../context/helpers.ts';
@@ -27,7 +43,6 @@ import {
     InvalidAgentDefinitionError,
     InvalidRunStateError,
     LeaseLostError,
-    RunNotFoundError,
     ValidationError,
 } from '../errors/index.ts';
 import { RunStatus } from '../run/constants.ts';
@@ -43,7 +58,7 @@ import { assertHandoffSubscription } from '../handoff/helpers.ts';
 import { MODEL_CONTEXT } from '../model/constants.ts';
 import { checkAgentModel, checkDefaultModel } from '../model/module.ts';
 import type { IModelResolver, ModelContext, ModelRef } from '../model/types.ts';
-import type { IStore } from '../store/types.ts';
+import type { IStore } from '../repository/types.ts';
 import { idempotencyScope, toInvoker } from '../trigger/helpers.ts';
 import { assertTriggerKey } from '../trigger/key.ts';
 import type { TriggerEnvelope, TriggerParent } from '../trigger/types.ts';
@@ -76,7 +91,7 @@ import type {
 type ApprovalDecisionInput = Omit<ApprovalAnswer, 'approvalId'>;
 
 export class Engine implements IContextProvider {
-    /** The store runs, steps and state live in; packages built on the engine read through it. */
+    /** Persistence capabilities, independently replaceable by packages built on the engine. */
     readonly store: IStore;
 
     protected readonly agents: Map<string, Agent>;
@@ -106,6 +121,8 @@ export class Engine implements IContextProvider {
 
 
     protected readonly queue: RunQueue;
+
+    protected readonly conversations?: Conversations;
 
     protected readonly claimTtlMs: number;
 
@@ -139,6 +156,8 @@ export class Engine implements IContextProvider {
      */
     protected readonly deliveries = new Set<Promise<void>>();
 
+    protected readonly deliveryControllers = new Set<AbortController>();
+
     protected started = false;
 
     protected draining = false;
@@ -150,6 +169,17 @@ export class Engine implements IContextProvider {
 
     constructor(opts: EngineOptions) {
         this.store = opts.store;
+        if (opts.conversations !== undefined) {
+            if (!opts.store.conversations) {
+                throw new InvalidAgentDefinitionError('Conversations need store.conversations.');
+            }
+            this.conversations = new Conversations(
+                opts.conversations,
+                opts.store.conversations,
+                opts.store.runs,
+                opts.store.effects,
+            );
+        }
         this.agents = new Map(opts.agents.map((a) => [a.name, a]));
         const channels = opts.channels ?? [];
         this.channels = new Map();
@@ -179,6 +209,47 @@ export class Engine implements IContextProvider {
             agentModel: (name: string) => this.agents.get(name)?.definition.model,
         } satisfies ModelContext);
         this.provided.set(HANDOFF_CONTEXT, this.createHandoffHost());
+        bindConversationIntake(this, async (channel, envelope, target) => {
+            if (this.channels.get(channel.name) !== channel) throw new ValidationError('Conversation intake needs the registered channel object.');
+            const capability = this.conversationCapability();
+            const copied = structuredClone(target);
+            const input = structuredClone(envelope);
+            const agent = this.agents.get(input.agent);
+            const key = agent && conversationKey(agent.definition);
+            if (key === undefined) throw new ValidationError('The agent has not enabled conversations.');
+            const identity: ConversationIdentity = {
+                agent: key,
+                channel: channel.name,
+                account: copied?.account,
+                chat: copied?.chat,
+                audience: copied?.audience,
+            };
+            assertConversationIdentity(identity);
+            assertConversationText(copied?.text, capability.limits.maxItemBytes);
+            for (const field of ['id', 'idempotencyKey', 'concurrencyKey', 'address'] as const) {
+                if (input[field] !== undefined) assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
+            }
+            const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
+            await capability.allow(ConversationOperation.DISPATCH, identity, input.agent, invoker);
+            // Validate caller keys before resolve can create any conversation rows.
+            assertTriggerKey('idempotency key', input.idempotencyKey);
+            assertTriggerKey('concurrency key', input.concurrencyKey);
+            const current = await capability.repository.findOne(identity);
+            const proposed = current ?? {
+                id: identityId(identity),
+                generation: 0,
+                identity,
+            };
+            if (input.concurrencyKey !== undefined && input.concurrencyKey !== conversationConcurrencyKey(proposed)) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+            const scope = await capability.repository.resolve(identity);
+            const concurrencyKey = conversationConcurrencyKey(scope);
+            if (input.concurrencyKey !== undefined && input.concurrencyKey !== concurrencyKey) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+            return this.createRun({
+                ...input,
+                channel: channel.name,
+                concurrencyKey,
+            }, undefined, { scope, text: copied.text });
+        });
         for (const agent of opts.agents) this.assertRegistrable(agent);
         // eslint-disable-next-line no-console
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));
@@ -203,8 +274,9 @@ export class Engine implements IContextProvider {
 
     async dispatch(envelope: DispatchEnvelope): Promise<{ runId: string; deduplicated: boolean }> {
         // a JS caller may pass a parent anyway: dropped, so nobody forges lineage
-        const rest: DispatchEnvelope & { parent?: unknown } = { ...envelope };
+        const rest: DispatchEnvelope & { parent?: unknown; conversation?: unknown } = { ...envelope };
         delete rest.parent;
+        delete rest.conversation;
         return this.createRun(rest);
     }
 
@@ -212,13 +284,21 @@ export class Engine implements IContextProvider {
      * dispatch()'s body; `parent` comes only from this argument (the
      * hand-off host), never from the envelope.
      */
-    protected async createRun(envelope: DispatchEnvelope, parent?: TriggerParent): Promise<{ runId: string; deduplicated: boolean }> {
+    protected async createRun(
+        envelope: DispatchEnvelope,
+        parent?: TriggerParent,
+        conversation?: ConversationBinding,
+    ): Promise<{ runId: string; deduplicated: boolean }> {
         if (!this.agents.has(envelope.agent)) throw new AgentNotFoundError(envelope.agent);
+        // Also strip forged fields from handoff and internal envelope spreads.
+        const safe: DispatchEnvelope & { conversation?: unknown; parent?: unknown } = { ...envelope };
+        delete safe.conversation;
+        delete safe.parent;
         const {
-            attachments, 
-            invoker, 
-            ...rest 
-        } = envelope;
+            attachments,
+            invoker,
+            ...rest
+        } = safe as DispatchEnvelope;
         // before any store write: an invalid attachment stores nothing
         if (attachments !== undefined && !Array.isArray(attachments)) {
             throw new ValidationError('The attachments must be an array.');
@@ -239,14 +319,26 @@ export class Engine implements IContextProvider {
         let runId: string = randomUUID();
 
         if (trigger.idempotencyKey !== undefined) {
-            const claimed = await this.store.claimKey(
-                idempotencyScope(trigger),
+            const claimed = await this.store.idempotency.claim(
+                idempotencyScope(conversation ? {
+                    ...trigger,
+                    agent: conversation.scope.identity.agent,
+                    channel: `${trigger.channel}:conversation:${conversation.scope.id}`,
+                } : trigger),
                 trigger.idempotencyKey,
                 runId,
                 IDEMPOTENCY_TTL_MS,
             );
             if (!claimed.created) {
-                if (await this.store.getRun(claimed.runId)) return { runId: claimed.runId, deduplicated: true };
+                const original = await this.store.runs.findOne(claimed.runId);
+                if (original) {
+                    if (conversation && original.conversation?.scope.id !== conversation.scope.id) throw new ValidationError('The duplicate run belongs to another conversation.');
+                    return { runId: claimed.runId, deduplicated: true };
+                }
+                // shortcut: post-reset reservations cannot heal, persist generations when automatic recovery is required.
+                if (conversation && conversation.scope.generation > 0) {
+                    throw new InvalidRunStateError('The reserved conversation run is missing and its original generation cannot be proven after reset.');
+                }
                 // the key's run was never created (createRun failed after the claim, or is
                 // still in flight): create it under the reserved id; createRun decides the race
                 runId = claimed.runId;
@@ -259,7 +351,13 @@ export class Engine implements IContextProvider {
             const ids = attachmentIds(runId, attachments.length);
             trigger.attachments = [];
             for (const [i, attachment] of attachments.entries()) {
-                trigger.attachments.push(await storeArtifact(this.store, { id: runId, agent: trigger.agent }, attachment, now, ids[i]));
+                trigger.attachments.push(await storeArtifact(
+                    this.store.artifacts,
+                    { id: runId, agent: trigger.agent },
+                    attachment,
+                    now,
+                    ids[i],
+                ));
             }
         }
 
@@ -274,10 +372,39 @@ export class Engine implements IContextProvider {
             createdAt: now,
             updatedAt: now,
         };
-        if (!await this.store.createRun(run)) return { runId, deduplicated: true };
+        if (conversation) run.conversation = structuredClone(conversation);
+        if (!await this.store.runs.insert(run)) return { runId, deduplicated: true };
         this.emit({ type: 'run.updated', run });
         if (this.started) void this.queue.pump();
         return { runId, deduplicated: false };
+    }
+
+    protected conversationCapability(): Conversations {
+        if (!this.conversations) throw new ValidationError('Conversation capability is disabled.');
+        return this.conversations;
+    }
+
+    /** Privileged in-process operator APIs; audit run/checkpoint copies survive deletion. */
+    inspectConversation(identity: ConversationIdentity, query?: { limit?: number; offset?: number }): Promise<ConversationInspection | undefined> {
+        return this.conversationCapability().inspect(structuredClone(identity), query);
+    }
+
+    async resetConversation(identity: ConversationIdentity, options: { keepNotes?: boolean } = {}): Promise<ConversationScope> {
+        const capability = this.conversationCapability();
+        const copied = structuredClone(identity);
+        await capability.repair(copied);
+        return capability.repository.reset(copied, { keepNotes: options.keepNotes ?? false });
+    }
+
+    async deleteConversation(identity: ConversationIdentity): Promise<void> {
+        const capability = this.conversationCapability();
+        const copied = structuredClone(identity);
+        await capability.repair(copied);
+        await capability.repository.delete(copied);
+    }
+
+    pruneConversations(): Promise<void> {
+        return this.conversationCapability().prune();
     }
 
     /**
@@ -288,7 +415,7 @@ export class Engine implements IContextProvider {
         const chains = new Map<string, Promise<unknown>>();
         return {
             getAgent: (name) => this.agents.get(name),
-            effects: this.store,
+            effects: this.store.effects,
             dispatch: (envelope, parent) => this.createRun(envelope, parent),
             serial: (runId, fn) => {
                 const previous = chains.get(runId) ?? Promise.resolve();
@@ -333,6 +460,12 @@ export class Engine implements IContextProvider {
         return this.agents.values().toArray();
     }
 
+    /** Gives a transport a context for the exact registered channel object. */
+    channelContext(channel: IChannel): ChannelContext {
+        if (this.channels.get(channel.name) !== channel) throw new ValidationError('The channel object is not registered.');
+        return createChannelContext(this, channel);
+    }
+
     /** The registered channel of that name. */
     getChannel(name: string): IChannel | undefined {
         return this.channels.get(name);
@@ -369,17 +502,17 @@ export class Engine implements IContextProvider {
     async putAgent(
         agent: Agent,
         options: {
-            revision?: string; 
-            formerRevision?: string; 
-            reload?: boolean 
+            revision?: string;
+            formerRevision?: string;
+            reload?: boolean
         } = {},
     ): Promise<'added' | 'replaced' | 'unchanged'> {
         this.assertRegistrable(agent);
         const { name } = agent;
         const {
-            revision, 
-            formerRevision, 
-            reload = true, 
+            revision,
+            formerRevision,
+            reload = true,
         } = options;
         const registered = this.agents.has(name);
         if (registered && this.agents.get(name) === agent && this.revisions.get(name) === revision) return 'unchanged';
@@ -411,9 +544,9 @@ export class Engine implements IContextProvider {
         this.agents.set(name, agent);
         this.revisions.set(name, revision);
         this.emit({
-            type: 'agents.changed', 
-            name, 
-            kind, 
+            type: 'agents.changed',
+            name,
+            kind,
         });
         return kind;
     }
@@ -457,7 +590,7 @@ export class Engine implements IContextProvider {
     }
 
     getRun(id: string): Promise<Run | undefined> {
-        return this.store.getRun(id);
+        return this.store.runs.findOne(id);
     }
 
     on<T extends EngineEvent['type']>(event: T, listener: (e: Extract<EngineEvent, { type: T }>) => void): () => void {
@@ -542,7 +675,7 @@ export class Engine implements IContextProvider {
      * on every poll. Resolves the number of runs requeued.
      */
     async recover(): Promise<number> {
-        const { data } = await this.store.listRuns({ status: [RunStatus.RUNNING, RunStatus.INTERRUPTED] });
+        const { data } = await this.store.runs.find({ status: [RunStatus.RUNNING, RunStatus.INTERRUPTED] });
         let requeued = 0;
         for (const run of data) {
             const execution = this.executions.get(run.id);
@@ -556,13 +689,13 @@ export class Engine implements IContextProvider {
             }
             try {
                 // atomic: fails while another owner's claim is live
-                if (!await this.store.claimRun(run.id, this.owner, this.claimTtlMs)) continue;
+                if (!await this.store.runs.claim(run.id, this.owner, this.claimTtlMs)) continue;
             } catch (error) {
                 this.onError(error, run);
                 continue;
             }
             try {
-                const queued = await this.store.updateRun(run.id, {
+                const queued = await this.store.runs.update(run.id, {
                     status: RunStatus.QUEUED,
                     claim: undefined,
                     updatedAt: this.clock.now(),
@@ -571,7 +704,7 @@ export class Engine implements IContextProvider {
                 this.emit({ type: 'run.updated', run: queued });
             } catch (error) {
                 // the run settled since it was listed: drop the claim just taken
-                await this.store.updateRun(run.id, { claim: undefined }, { expectOwner: this.owner })
+                await this.store.runs.update(run.id, { claim: undefined }, { expectOwner: this.owner })
                     .catch(() => {});
                 if (!(error instanceof InvalidRunStateError)) this.onError(error, run);
             }
@@ -597,24 +730,29 @@ export class Engine implements IContextProvider {
             // keepAlive: the process must not exit before the leftovers are marked interrupted
             timer = this.clock.setTimeout(() => resolve(true), opts.timeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS, { keepAlive: true });
         });
-        const settled = await Promise.race([this.queue.idle().then(() => false as const), timedOut]);
-        timer?.clear();
-        if (!settled) return;
+        try {
+            const settled = await Promise.race([this.idle().then(() => false as const), timedOut]);
+            if (!settled) return;
 
-        while (this.executions.size > 0) {
-            const pending = this.executions.values().toArray();
-            for (const execution of pending) {
-                execution.stop ??= 'drain';
-                execution.controller.abort();
+            while (this.executions.size > 0) {
+                const pending = this.executions.values().toArray();
+                for (const execution of pending) {
+                    execution.stop ??= 'drain';
+                    execution.controller.abort();
+                }
+                await Promise.all(pending.map((execution) => execution.done));
             }
-            await Promise.all(pending.map((execution) => execution.done));
+            for (const controller of this.deliveryControllers) controller.abort();
+            await this.idle();
+        } finally {
+            timer?.clear();
         }
-        await this.idle();
     }
 
     /** Resolves when nothing runs, nothing more can be started and no approval delivery is in flight. */
     async idle(): Promise<void> {
         await this.queue.idle();
+        await this.conversations?.idle();
         while (this.deliveries.size > 0) {
             await Promise.all(this.deliveries);
             await this.queue.idle();
@@ -651,15 +789,14 @@ export class Engine implements IContextProvider {
                 throw new InvalidRunStateError(`Run "${runId}" lost its claim while being cancelled; it is no longer executing here.`);
             }
             // the abort cannot stop a pause that was already writing: cancel the run it left waiting
-            const run = await this.store.getRun(runId);
+            const run = await this.store.runs.findOne(runId);
             if (run?.status === RunStatus.WAITING || run?.status === RunStatus.QUEUED) {
                 await this.cancelStored(runId, [run.status], execution.cancelReason);
             }
             return;
         }
         for (let attempt = 0; ; attempt++) {
-            const run = await this.store.getRun(runId);
-            if (!run) throw new RunNotFoundError(runId);
+            const run = await this.store.runs.findOneOrFail(runId);
 
             const { status } = run;
             if (status !== RunStatus.QUEUED && status !== RunStatus.WAITING && status !== RunStatus.RUNNING && status !== RunStatus.INTERRUPTED) {
@@ -669,7 +806,7 @@ export class Engine implements IContextProvider {
                 if (status === RunStatus.QUEUED || status === RunStatus.WAITING) {
                     await this.cancelStored(runId, [status], reason);
                 } else {
-                    const updated = await this.store.updateRun(runId, {
+                    const updated = await this.store.runs.update(runId, {
                         cancelRequested: true,
                         ...(reason && { error: reason }),
                         updatedAt: this.clock.now(),
@@ -686,8 +823,9 @@ export class Engine implements IContextProvider {
 
     /** Settles a run nobody executes (`expectStatus`) as cancelled, storing `reason` as its error. */
     protected async cancelStored(runId: string, expectStatus: Run['status'][], reason?: CancelReason): Promise<void> {
+        await this.conversations?.idle(runId);
         const now = this.clock.now();
-        const updated = await this.store.updateRun(
+        const updated = await this.store.runs.update(
             runId,
             {
                 status: RunStatus.CANCELLED,
@@ -699,6 +837,7 @@ export class Engine implements IContextProvider {
             { expectStatus },
         );
         this.emit({ type: 'run.updated', run: updated });
+        await this.reconcileConversation(updated);
     }
 
     /**
@@ -715,8 +854,7 @@ export class Engine implements IContextProvider {
             ...(answer.approver !== undefined ? { approver: toInvoker(answer.approver, 'approver') } : {}),
         };
         assertSelectionShape(answer.selected);
-        const run = await this.store.getRun(runId);
-        if (!run) throw new RunNotFoundError(runId);
+        const run = await this.store.runs.findOneOrFail(runId);
         if (run.status !== RunStatus.WAITING || !run.waiting) {
             throw new InvalidRunStateError(`Run "${run.id}" is ${run.status} and not waiting for an approval.`);
         }
@@ -743,7 +881,7 @@ export class Engine implements IContextProvider {
      */
     async tick(): Promise<void> {
         const now = this.clock.now().getTime();
-        const { data } = await this.store.listRuns({ status: [RunStatus.WAITING] });
+        const { data } = await this.store.runs.find({ status: [RunStatus.WAITING] });
         for (const listed of data) {
             if (!listed.waiting) continue;
             if (listed.waiting.expiresAt.getTime() > now) {
@@ -752,7 +890,7 @@ export class Engine implements IContextProvider {
             }
             try {
                 // the listing may be stale by now: the run could wait on a newer approval
-                const run = await this.store.getRun(listed.id);
+                const run = await this.store.runs.findOne(listed.id);
                 if (run?.status !== RunStatus.WAITING || !run.waiting || run.waiting.expiresAt.getTime() > now) continue;
                 await this.answer(
                     run,
@@ -788,7 +926,7 @@ export class Engine implements IContextProvider {
         stale: () => Error,
     ): Promise<void> {
         const now = this.clock.now();
-        const transitioned = await this.store.updateRun(run.id, {
+        const transitioned = await this.store.runs.update(run.id, {
             status: RunStatus.QUEUED,
             claim: { owner: this.owner, expiresAt: new Date(now.getTime() + this.claimTtlMs) },
             updatedAt: now,
@@ -800,7 +938,7 @@ export class Engine implements IContextProvider {
             if (transitioned.waiting?.approvalId !== waiting.approvalId) {
                 throw stale();
             }
-            await this.store.putEffect(approvalDecisionKey(run.id, waiting.approvalId), {
+            await this.store.effects.save(approvalDecisionKey(run.id, waiting.approvalId), {
                 approved: decision.approved,
                 ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
                 ...(decision.approver ? { approver: decision.approver } : {}),
@@ -808,7 +946,7 @@ export class Engine implements IContextProvider {
             });
             const step: Step = {
                 runId: run.id,
-                index: (await this.store.listSteps(run.id)).length,
+                index: (await this.store.steps.find(run.id)).length,
                 kind: 'wait',
                 name: waiting.toolName,
                 input: {
@@ -828,16 +966,16 @@ export class Engine implements IContextProvider {
                 startedAt: run.updatedAt,
                 finishedAt: now,
             };
-            await this.store.appendStep(step);
+            await this.store.steps.insert(step);
             this.emit({ type: 'step.appended', step });
-            queued = await this.store.updateRun(run.id, {
+            queued = await this.store.runs.update(run.id, {
                 waiting: undefined,
                 claim: undefined,
                 updatedAt: this.clock.now(),
             }, { expectStatus: [RunStatus.QUEUED] });
         } catch (error) {
             // undo, so the wait point (still on the run) stays answerable
-            await this.store.updateRun(run.id, {
+            await this.store.runs.update(run.id, {
                 status: RunStatus.WAITING,
                 claim: undefined,
                 updatedAt: this.clock.now(),
@@ -854,6 +992,7 @@ export class Engine implements IContextProvider {
      * wait point, so tokens handed out earlier stay valid.
      */
     protected async pause(run: Run, request: ApprovalRequest, usage: Usage): Promise<void> {
+        await this.conversations?.idle(run.id);
         const now = this.clock.now();
         const { timeoutMs, ...asked } = request;
         const waiting: WaitPoint = run.waiting?.approvalId === request.approvalId ?
@@ -915,16 +1054,18 @@ export class Engine implements IContextProvider {
         const isCurrent = (current: Run | undefined) => current?.status === RunStatus.WAITING &&
             current.waiting?.approvalId === waiting.approvalId;
         const controller = new AbortController();
+        this.deliveryControllers.add(controller);
         const timer = this.clock.setTimeout(() => controller.abort(new ChamviError({
             message: `Channel "${channel.name}" did not deliver approval "${waiting.approvalId}" within ${this.claimTtlMs}ms.`,
             code: ErrorCode.TIMEOUT,
         })), this.claimTtlMs);
         try {
-            acquired = await this.store.acquire(lockKey, attempt, this.claimTtlMs);
+            acquired = await this.store.locks.acquire(lockKey, attempt, this.claimTtlMs);
             if (!acquired) return;
             // another attempt may have delivered it since `run` was read
-            const current = await this.store.getRun(run.id);
+            const current = await this.store.runs.findOne(run.id);
             if (!isCurrent(current) || current?.waiting?.notifiedAt) return;
+            controller.signal.throwIfAborted();
             const aborted = new Promise<never>((_, reject) => {
                 if (controller.signal.aborted) reject(controller.signal.reason);
                 controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
@@ -946,19 +1087,21 @@ export class Engine implements IContextProvider {
                 aborted,
             ]);
             // answered meanwhile: nothing left to record
-            if (!isCurrent(await this.store.getRun(run.id))) return;
-            const notified = await this.store.updateRun(
+            if (!isCurrent(await this.store.runs.findOne(run.id))) return;
+            controller.signal.throwIfAborted();
+            const notified = await this.store.runs.update(
                 run.id,
                 { waiting: { ...waiting, notifiedAt: this.clock.now() } },
                 { expectStatus: [RunStatus.WAITING] },
             );
             this.emit({ type: 'run.updated', run: notified });
         } catch (error) {
-            if (!(error instanceof InvalidRunStateError)) this.onError(error, run);
+            if (!(error instanceof InvalidRunStateError) && (!this.draining || !controller.signal.aborted)) this.onError(error, run);
         } finally {
+            this.deliveryControllers.delete(controller);
             timer.clear();
             if (acquired) {
-                await this.store.release(lockKey, attempt).catch((releaseError: unknown) => this.onError(releaseError, run));
+                await this.store.locks.release(lockKey, attempt).catch((releaseError: unknown) => this.onError(releaseError, run));
             }
         }
     }
@@ -985,8 +1128,33 @@ export class Engine implements IContextProvider {
             if (released) this.emit({ type: 'run.updated', run: released });
             return;
         }
+        let conversation;
+        if (run.conversation) {
+            const capability = this.conversationCapability();
+            const key = conversationKey(agent.definition);
+            if (key === undefined) throw new InvalidRunStateError('The agent has disabled conversations.');
+            if (key !== run.conversation.scope.identity.agent) throw new InvalidRunStateError('The agent conversation key has changed.');
+            const admitted = await capability.admit(structuredClone(run));
+            if (admitted.kind === 'busy') {
+                this.queue.defer(run.id);
+                const released = await this.ownedUpdate(run.id, {
+                    status: RunStatus.QUEUED,
+                    claim: undefined,
+                    startedAt: undefined,
+                });
+                if (released) this.emit({ type: 'run.updated', run: released });
+                return;
+            }
+            if (!await this.ownsRun(run.id)) return;
+            if (signal.aborted) {
+                await this.finish(run.id, { status: RunStatus.CANCELLED });
+                return;
+            }
+            conversation = { capability, snapshot: admitted.snapshot };
+        }
         await executeRun({
             engine: this,
+            conversation,
             run,
             agent,
             model: agent.definition.model ?? this.model,
@@ -1018,7 +1186,7 @@ export class Engine implements IContextProvider {
     protected async prepareStart(): Promise<(run: Run) => boolean> {
         const folder = this.revisions.values().some((revision) => revision !== undefined);
         const markers = folder ?
-            new Map((await this.store.listAgentRevisions()).map((marker) => [marker.agent, marker.hash])) :
+            new Map((await this.store.agentRevisions.find()).map((marker) => [marker.agent, marker.hash])) :
             new Map<string, string>();
         return (run) => {
             if (run.cancelRequested) return true;
@@ -1033,7 +1201,7 @@ export class Engine implements IContextProvider {
         if (this.syncing.has(name)) return false;
         const revision = this.revisions.get(name);
         if (revision === undefined) return true;
-        return (await this.store.getAgentRevision(name))?.hash === revision;
+        return (await this.store.agentRevisions.findOne(name))?.hash === revision;
     }
 
     /** A throwing execution fails the run (and releases its claim) instead of leaking. */
@@ -1064,6 +1232,8 @@ export class Engine implements IContextProvider {
      * `cancelled`; after a lost lease nothing is written and undefined resolves.
      */
     protected async finish(id: string, patch: Partial<Run>): Promise<Run | undefined> {
+        // Another replica may repair a terminal owner immediately after this write.
+        await this.conversations?.idle(id);
         const execution = this.executions.get(id);
         const stop = execution?.stop;
         if (stop === 'lease-lost') return undefined;
@@ -1089,8 +1259,22 @@ export class Engine implements IContextProvider {
             };
         if (settled.usage === undefined) delete settled.usage;
         const updated = await this.ownedUpdate(id, settled);
-        if (updated) this.emit({ type: 'run.updated', run: updated });
+        if (updated) {
+            this.emit({ type: 'run.updated', run: updated });
+            await this.reconcileConversation(updated);
+        }
         return updated;
+    }
+
+    protected async reconcileConversation(run: Run): Promise<void> {
+        if (!run.conversation || !['completed', 'failed', 'cancelled'].includes(run.status)) return;
+        try {
+            await this.conversationCapability().reconcile(run.conversation.scope, run.id);
+            this.queue.retryDeferred();
+            if (this.started) void this.queue.pump();
+        } catch (error) {
+            this.onError(error, run);
+        }
     }
 
     /**
@@ -1099,7 +1283,7 @@ export class Engine implements IContextProvider {
      */
     protected async ownedUpdate(id: string, patch: Partial<Run>): Promise<Run | undefined> {
         try {
-            return await this.store.updateRun(id, patch, { expectStatus: [RunStatus.RUNNING], expectOwner: this.owner });
+            return await this.store.runs.update(id, patch, { expectStatus: [RunStatus.RUNNING], expectOwner: this.owner });
         } catch (error) {
             if (error instanceof InvalidRunStateError && !await this.ownsRun(id)) return undefined;
             throw error;
@@ -1108,7 +1292,7 @@ export class Engine implements IContextProvider {
 
     /** Whether this engine still holds the run's claim; aborts its execution when not. */
     protected async ownsRun(id: string): Promise<boolean> {
-        const run = await this.store.getRun(id);
+        const run = await this.store.runs.findOne(id);
         if (run?.claim?.owner === this.owner) return true;
         this.loseLease(id);
         return false;
@@ -1147,6 +1331,7 @@ export class Engine implements IContextProvider {
             }
         }
         assertHandoffSubscription(agent);
+        if (conversationKey(agent.definition) !== undefined && !this.conversations) throw new InvalidAgentDefinitionError('The agent enables conversations but the engine has no conversation capability.');
     }
 
     protected registry(): RegistryContext {

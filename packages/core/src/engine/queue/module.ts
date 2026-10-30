@@ -30,6 +30,17 @@ export class RunQueue {
 
     protected again = false;
 
+    /** Busy conversations retry on the next poll or local terminal release, avoiding a tight requeue loop. */
+    protected deferred = new Set<string>();
+
+    defer(runId: string): void {
+        this.deferred.add(runId);
+    }
+
+    retryDeferred(): void {
+        this.deferred.clear();
+    }
+
     protected pollGeneration = 0;
 
     protected poll: { clear(): void } | undefined;
@@ -50,7 +61,7 @@ export class RunQueue {
         const tick = () => {
             this.poll = this.opts.clock.setTimeout(() => {
                 const work: Promise<void> = Promise.resolve()
-                    .then(() => this.opts.onPoll?.())
+                    .then(() => { this.retryDeferred(); return this.opts.onPoll?.(); })
                     .catch((error: unknown) => this.opts.onError(error))
                     .then(() => this.pump())
                     .finally(() => {
@@ -82,6 +93,7 @@ export class RunQueue {
 
     resume(): void {
         this.halted = false;
+        this.retryDeferred();
     }
 
     /** Request a scheduling pass; coalesces overlapping requests. */
@@ -116,12 +128,12 @@ export class RunQueue {
     protected async pass(): Promise<void> {
         if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
         const { store } = this.opts;
-        const { data: queued } = await store.listRuns({ status: [RunStatus.QUEUED] });
+        const { data: queued } = await store.runs.find({ status: [RunStatus.QUEUED] });
         if (queued.length === 0) return;
         const mayStart = await this.opts.prepareStart?.();
         for (const run of queued) {
             if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
-            if (mayStart && !mayStart(run)) continue;
+            if (this.deferred.has(run.id) || (mayStart && !mayStart(run))) continue;
 
             const started = await admitRun(this.opts, run, (candidate) => this.tryStart(candidate), mayStart);
             if (started) this.launch(started);
@@ -139,11 +151,11 @@ export class RunQueue {
         // keyed runs: check + claim + mark running must be atomic across replicas.
         // The lock TTL is claimTtlMs: a transition slower than that lets a second replica in.
         const lockKey = `concurrency:${run.agent}:${run.concurrencyKey}`;
-        if (!await store.acquire(lockKey, owner, claimTtlMs)) return undefined;
+        if (!await store.locks.acquire(lockKey, owner, claimTtlMs)) return undefined;
         try {
             return await this.transition(run, groupKey(run));
         } finally {
-            await store.release(lockKey, owner).catch((error: unknown) => {
+            await store.locks.release(lockKey, owner).catch((error: unknown) => {
                 try {
                     this.opts.onError(error, run);
                 } catch {
@@ -164,7 +176,7 @@ export class RunQueue {
         if (this.running.has(run.id)) return undefined;
         if (group !== undefined) {
             if (this.running.values().toArray().includes(group)) return undefined;
-            const { total } = await store.listRuns({
+            const { total } = await store.runs.find({
                 agent: run.agent,
                 // an interrupted run is unfinished and keeps its key until recovery requeues it
                 status: [RunStatus.RUNNING, RunStatus.WAITING, RunStatus.INTERRUPTED],
@@ -173,12 +185,12 @@ export class RunQueue {
             });
             if (total > 0) return undefined;
         }
-        if (!await store.claimRun(run.id, owner, claimTtlMs)) return undefined;
+        if (!await store.runs.claim(run.id, owner, claimTtlMs)) return undefined;
         // reserve the slot before the next await so concurrent passes cannot overshoot
         this.running.set(run.id, group);
         try {
             const now = clock.now();
-            return await store.updateRun(run.id, {
+            return await store.runs.update(run.id, {
                 status: RunStatus.RUNNING,
                 startedAt: now,
                 updatedAt: now,
@@ -217,7 +229,7 @@ export class RunQueue {
         let timer: { clear(): void } | undefined;
         const schedule = () => {
             timer = clock.setTimeout(() => {
-                store.renewClaim(runId, owner, claimTtlMs).then(
+                store.runs.renewClaim(runId, owner, claimTtlMs).then(
                     (ok) => {
                         if (stopped) return;
                         if (ok) schedule();

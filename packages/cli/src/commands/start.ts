@@ -45,7 +45,7 @@ const START_ARGS = {
 /**
  * `chamvi start`: loads the entry, installs the signal handlers, then
  * `app.start()`. `--dev` reads `.env`, defaults to the source entry and
- * passes `dev` to the app (MemoryStore, random secret and token).
+ * passes `dev` to the app (memory store, random secret and token).
  * `--check` runs `app.check()` instead: the same start path up to its start
  * steps, writing nothing to the store; the agent folders' issues go to
  * stderr one per line (exit 2), a clean check prints CHECK_PASSED_MESSAGE.

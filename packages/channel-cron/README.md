@@ -46,7 +46,7 @@ ESM only, Node.js `>=22`. `@chamvi/core` is a peer dependency; [`hubwire`](https
 import type { LanguageModel } from 'ai';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { cron, cronChannel } from '@chamvi/channel-cron';
@@ -60,10 +60,10 @@ export async function startScheduling(model: LanguageModel) {
         channels: [cron.on('*/30 * * * *', { timezone: 'Europe/Berlin' })],
     });
 
-    // MemoryStore is per process; with several replicas, pass one shared store
-    // (e.g. TypeormStore) so its lock fires each tick once across them
+    // createMemoryStore is per process; with several replicas, pass one shared store
+    // (e.g. createDatabaseStore) so its lock fires each tick once across them
     const engine = new Engine({
-        store: new MemoryStore(),
+        store: createMemoryStore(),
         agents: [sweep],
         // every replica registers the same channel; it reads agents and store from the engine
         channels: [cronChannel()],
@@ -91,7 +91,7 @@ new Engine({ channels: [cronChannel(), eu] /* ... */ });
 ## How a tick works
 
 - **One component per subscription.** Each becomes a hubwire scheduled component named `cron:<agent>:<subscriptionId>`.
-- **One replica per tick.** Before a tick runs, the replica acquires the store lock `cron:<agent>:<subscriptionId>:<scheduledAt ISO>` (through `ILockStore`) for `lockTtlMs` (default 10 minutes). The key is never released: a replica that fires the same tick late cannot win it again.
+- **One replica per tick.** Before a tick runs, the replica acquires the store lock `cron:<agent>:<subscriptionId>:<scheduledAt ISO>` (through `ILockRepository`) for `lockTtlMs` (default 10 minutes). The key is never released: a replica that fires the same tick late cannot win it again.
 - **Deduplicated dispatch.** The winner dispatches through the channel (envelope `channel` = the channel's name, `trigger` = the subscription id) with payload `options.payload ?? { scheduledAt: '<ISO>' }` and the idempotency key `<subscriptionId>@<scheduledAt ISO>`, so even a second firing of the same tick returns the existing run. A subscription's own `idempotencyKey()` is ignored for cron.
 - **Never on start.** Starting or restarting a replica fires nothing; the first dispatch is at the next scheduled tick.
 - **No catch-up.** A tick that falls into a restart, or whose timer fires `lockTtlMs` or more late (a suspended process), is not fired later.
@@ -190,7 +190,7 @@ A run that pauses for an approval does not hold the pod: the job returns, the ap
 | `fireCronSubscription` | function | One tick: overlap check and dispatch, for a given `scheduledAt` |
 | `readCronOptions` | function | Reads and validates the options `cron.on()` stores on a subscription |
 | `assertSchedulable` | function | Throws for a subscription of a cron channel (default `cron`) the scheduler cannot use |
-| `createStoreScheduleLock` | function | A hubwire `IScheduleLock` over core's `ILockStore` |
+| `createRepositoryScheduleLock` | function | A hubwire `IScheduleLock` over core's `ILockRepository` |
 | `CRON_CHANNEL_NAME` | constant | `'cron'` |
 | `SCHEDULE_LOCK_TTL_MS` | constant | The default lock TTL, `600_000` |
 

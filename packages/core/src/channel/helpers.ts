@@ -5,10 +5,13 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { conversationFor, dispatchConversation } from '../conversation/context.ts';
 import { isObject } from 'smob';
 import { requestApproval } from '../approval/request.ts';
 import type { ApprovalDecision, ApprovalRequestInput } from '../approval/types.ts';
 import { currentToolCall } from '../effect/frame.ts';
+import { matchesEmitReceipt } from '../conversation/helpers.ts';
+import { assertConversationText } from '../conversation/persistence/module.ts';
 import { stableHash } from '../effect/helpers.ts';
 import type { Engine } from '../engine/module.ts';
 import {
@@ -18,8 +21,9 @@ import {
     ValidationError,
 } from '../errors/index.ts';
 import { NAME_MAX_LENGTH, NAME_PATTERN } from '../agent/constants.ts';
+import { untilAborted } from '../run/helpers.ts';
 import type { RunContext } from '../run/types.ts';
-import type { IEffectStore } from '../store/types.ts';
+import type { IEffectRepository } from '../repository/types.ts';
 import type {
     ChannelContext,
     ChannelHandle,
@@ -29,12 +33,13 @@ import type {
 } from './types.ts';
 
 /** Emits in flight in one execution by effect key: parallel identical emits share one send. */
-type Inflight = Map<string, Promise<void>>;
+type Inflight = Map<string, Promise<unknown>>;
 
 /** The context a channel's `start` and `in` get: its dispatch always carries the channel's own name. */
 export function createChannelContext(engine: Engine, channel: Pick<IChannel, 'name'>): ChannelContext {
     return {
         engine,
+        dispatchConversation: (envelope, target) => dispatchConversation(engine, channel, envelope, target),
         dispatch: (envelope) => engine.dispatch({ ...envelope, channel: channel.name }),
     };
 }
@@ -78,38 +83,51 @@ function assertEmitMessage(message: unknown): asserts message is EmitMessage {
  */
 function createChannelHandle(
     run: RunContext,
-    effects: IEffectStore,
+    effects: IEffectRepository,
     inflight: Inflight,
     channel: IChannel<any, any>,
     address?: string,
+    conversation?: ReturnType<typeof conversationFor>,
 ): ChannelHandle {
     const { name } = channel;
     const fallback = address ?? channel.defaultAddress;
     const missing = () => new ValidationError(
         `Channel "${name}" needs an address: only the run's source channel and a channel with a defaultAddress have a default one.`,
     );
+    const capture = conversation && run.trigger.channel === name ? conversation : undefined;
     const send = async (effectKey: string, key: string, message: EmitMessage, target: string) => {
-        const stored = await effects.getEffect(effectKey);
-        if (stored) return;
-        await channel.out!({
+        const stored = await effects.findOne(effectKey);
+        if (stored) return stored.result;
+        if (conversation) run.signal.throwIfAborted();
+        const delivery = Promise.resolve(channel.out!({
             kind: 'message',
             key,
             runId: run.runId,
             agent: run.agent,
             ...(message.title !== undefined ? { title: message.title } : {}),
             body: message.body,
-        }, target, { signal: run.signal, trigger: run.trigger });
+        }, target, { signal: run.signal, trigger: run.trigger }));
+        if (conversation) {
+            // An aborted, non-cooperative transport may still deliver; it must never write a late receipt.
+            void delivery.catch(() => {});
+            await untilAborted(delivery, run.signal);
+        } else {
+            await delivery;
+        }
         // The message went out: a failing write must not fail the call (as for effect tools).
+        const receipt = {
+            channel: name,
+            address: target,
+            key,
+        };
         try {
-            await effects.putEffect(effectKey, {
-                channel: name, 
-                address: target, 
-                key, 
-            });
+            await effects.save(effectKey, receipt);
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error(`chamvi: failed to record emit ${effectKey}`, error);
+            return undefined;
         }
+        return receipt;
     };
 
     const emit = async (message: EmitMessage, to?: string): Promise<void> => {
@@ -122,21 +140,49 @@ function createChannelHandle(
         if (typeof target !== 'string' || target.length === 0) {
             throw new ValidationError('The address must be a non-empty string.');
         }
+        if (conversation) {
+            if (message.key !== undefined) assertConversationText(message.key, Number.MAX_SAFE_INTEGER);
+            assertConversationText(target, Number.MAX_SAFE_INTEGER);
+        }
         const prefix = `${run.runId}:emit:${name}:`;
         const effectKey = message.key !== undefined ?
             `${prefix}key:${message.key}` :
             `${prefix}${stableHash({
-                address: target, 
-                title: message.title, 
-                body: message.body, 
+                address: target,
+                title: message.title,
+                body: message.body,
             })}`;
         const key = message.key ?? effectKey;
-        let pending = inflight.get(effectKey);
-        if (!pending) {
-            pending = send(effectKey, key, message, target).finally(() => inflight.delete(effectKey));
-            inflight.set(effectKey, pending);
-        }
-        return pending;
+        const captured = { ...message };
+        const work = (async () => {
+            const source = capture && target === fallback ? capture : undefined;
+            if (source) {
+                assertConversationText(captured.body, source.capability.limits.maxItemBytes);
+                await source.capability.repository.prepareEmit(source.binding.scope, {
+                    id: `emit:${stableHash(effectKey)}`,
+                    runId: source.run.id,
+                    role: 'assistant',
+                    status: 'pending',
+                    text: captured.body,
+                    effectKey,
+                    target: { channel: name, address: target },
+                    createdAt: source.run.createdAt, // persistence owns the timestamp
+                });
+            }
+            // Prepare every caller before sharing a send, so key collisions cannot hide in-flight.
+            let pending = inflight.get(effectKey);
+            if (!pending) {
+                pending = send(effectKey, key, captured, target).finally(() => inflight.delete(effectKey));
+                inflight.set(effectKey, pending);
+            }
+            const receipt = await pending;
+            // Every source caller validates a shared send, including the in-flight fast path.
+            if (source && receipt !== undefined) {
+                if (!matchesEmitReceipt(receipt, { channel: name, address: target })) throw new ValidationError('The emit effect belongs to another target.');
+                await source.capability.repository.confirmEmit(source.binding.scope, `emit:${stableHash(effectKey)}`);
+            }
+        })();
+        return conversation ? conversation.capability.track(conversation.run.id, work) : work;
     };
 
     const approve = async (request: ApprovalRequestInput & { address?: string }): Promise<ApprovalDecision> => {
@@ -166,29 +212,37 @@ function createChannelHandle(
  */
 export function createToolChannels(
     run: RunContext,
-    effects: IEffectStore,
+    effects: IEffectRepository,
     engine: Pick<Engine, 'getChannel' | 'listChannels'>,
 ): ToolChannels {
     const inflight: Inflight = new Map();
+    const conversation = conversationFor(run);
+    const trusted = conversation ? {
+        runId: conversation.run.id,
+        agent: conversation.run.agent,
+        trigger: structuredClone(conversation.run.trigger),
+        signal: run.signal,
+    } : run;
     const canSend = (channel: IChannel<any, any> | undefined): channel is IChannel<any, any> => (
         typeof channel?.out === 'function'
     );
     const handle = (channel: IChannel<any, any>) => createChannelHandle(
-        run,
+        trusted,
         effects,
         inflight,
         channel,
-        run.trigger.channel === channel.name ? run.trigger.address : undefined,
+        trusted.trigger.channel === channel.name ? trusted.trigger.address : undefined,
+        conversation,
     );
     const findOne = (name?: string) => {
-        const channel = engine.getChannel(name ?? run.trigger.channel);
+        const channel = engine.getChannel(name ?? trusted.trigger.channel);
         return canSend(channel) ? handle(channel) : undefined;
     };
     return {
         findOne,
         findOneOrFail(name) {
             const found = findOne(name);
-            if (!found) throw new ChannelNotFoundError(name ?? run.trigger.channel);
+            if (!found) throw new ChannelNotFoundError(name ?? trusted.trigger.channel);
             return found;
         },
         find: () => engine.listChannels().filter(canSend).map(handle),

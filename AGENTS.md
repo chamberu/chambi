@@ -21,13 +21,13 @@ npm run lint
 - **Package manager**: npm (workspaces)
 - **Build orchestration**: nx (`nx run-many`), packages built with tsdown (ESM only)
 
-Packages live in `packages/*`. `@chamvi/app`, `@chamvi/channel-cron`, `@chamvi/channel-openclaw`, `@chamvi/cli`, `@chamvi/coding`, `@chamvi/core`, `@chamvi/github`, `@chamvi/http`, `@chamvi/sandbox`, `@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s`, `@chamvi/sandbox-local`, `@chamvi/store-typeorm`, `@chamvi/test-kit`, `@chamvi/tool-web` and `@chamvi/ui` exist today (container images in `images/*`); the others are planned (see [Project Structure](.agents/structure.md)).
+Packages live in `packages/*`. `@chamvi/app`, `@chamvi/channel-cron`, `@chamvi/channel-openclaw`, `@chamvi/cli`, `@chamvi/coding`, `@chamvi/core`, `@chamvi/github`, `@chamvi/http`, `@chamvi/sandbox`, `@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s`, `@chamvi/sandbox-local`, `@chamvi/store-db`, `@chamvi/test-kit`, `@chamvi/tool-web` and `@chamvi/ui` exist today (container images in `images/*`); the others are planned (see [Project Structure](.agents/structure.md)).
 
 ## Detailed Guides
 
 - **[Project Structure](.agents/structure.md)**: Workspace layout, existing and planned packages, core module map
-- **[Architecture](.agents/architecture.md)**: Run lifecycle and statuses, channels and the envelope, durable approvals and hooks, store contract, idempotency and effects
-- **[Testing](.agents/testing.md)**: Vitest setup, source aliasing, in-memory store, store contract suite
+- **[Architecture](.agents/architecture.md)**: Run lifecycle and statuses, channels and the envelope, durable approvals and hooks, repository contracts, idempotency and effects
+- **[Testing](.agents/testing.md)**: Vitest setup, source aliasing, in-memory repositories, repository contracts suite
 - **[Conventions](.agents/conventions.md)**: Tooling, naming rules, commits, release flow, external references (`.agents/references/`)
 - **[Design](.agents/design.md)**: Brand direction, colour tokens, type, logo and docs landing page rules
 

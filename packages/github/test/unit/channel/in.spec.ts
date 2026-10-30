@@ -7,7 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { Engine, MemoryStore, defineAgent } from '@chamvi/core';
+import { Engine, createMemoryStore, defineAgent } from '@chamvi/core';
 import type { Agent } from '@chamvi/core';
 import { github, githubChannel } from '@chamvi/github';
 import type { GithubEvent, GithubSubscriptionOptions } from '@chamvi/github';
@@ -60,7 +60,7 @@ describe('github channel in', () => {
         expect(answer.runs.map((r) => [r.agent, r.deduplicated])).toEqual([['triage', false], ['labels', false]]);
 
         for (const [index, subscriptionId] of ['github:issues.opened', 'github:issues'].entries()) {
-            const run = await store.getRun(answer.runs[index]!.runId);
+            const run = await store.runs.findOne(answer.runs[index]!.runId);
             expect(run?.status).toBe('queued');
             expect(run?.address).toBe('octo/demo#5');
             expect(run?.trigger).toMatchObject({
@@ -96,7 +96,7 @@ describe('github channel in', () => {
         expect(response.status).toBe(202);
         const answer = await response.json() as Answer;
         expect(answer.runs.map((r) => r.deduplicated)).toEqual([true, true]);
-        expect((await store.listRuns({})).total).toBe(2);
+        expect((await store.runs.find({})).total).toBe(2);
     });
 
     it('starts at most one run per agent', async () => {
@@ -108,7 +108,7 @@ describe('github channel in', () => {
         });
         const answer = await response.json() as Answer;
         expect(answer.runs).toHaveLength(1);
-        const run = await store.getRun(answer.runs[0]!.runId);
+        const run = await store.runs.findOne(answer.runs[0]!.runId);
         expect(run?.trigger.trigger).toBe('github:issues.opened');
     });
 
@@ -129,7 +129,7 @@ describe('github channel in', () => {
         });
         expect(wrong.status).toBe(401);
         expect(await wrong.json()).toMatchObject({ status: 401, code: 'unauthorized' });
-        expect((await store.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
     });
 
     it('checks the event and delivery headers', async () => {
@@ -150,7 +150,7 @@ describe('github channel in', () => {
             body: ISSUES_OPENED,
         });
         expect(longDelivery.status).toBe(400);
-        expect((await store.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
     });
 
     it('answers 415 for a form-encoded delivery and 413 above bodyLimit', async () => {
@@ -202,7 +202,7 @@ describe('github channel in', () => {
         });
         expect(release.status).toBe(202);
         expect(await release.json()).toEqual({ delivery: 'd-2', runs: [] });
-        expect((await store.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
     });
 
     it('dispatches an event name with digits (projects_v2_item)', async () => {
@@ -294,7 +294,7 @@ describe('github channel in', () => {
             body: ISSUES_OPENED,
         });
         const answer = await response.json() as Answer;
-        const run = await store.getRun(answer.runs[0]!.runId);
+        const run = await store.runs.findOne(answer.runs[0]!.runId);
         expect(run?.trigger.idempotencyKey).toBe('issue:5');
         expect(run?.trigger.concurrencyKey).toBe('one-lane');
     });
@@ -322,7 +322,7 @@ describe('github channel in', () => {
         });
         expect(response.status).toBe(500);
         expect(errors).toHaveLength(1);
-        const { data } = await store.listRuns({});
+        const { data } = await store.runs.find({});
         expect(data.map((r) => r.agent)).toEqual(['ok']);
     });
 
@@ -333,7 +333,7 @@ describe('github channel in', () => {
             name: 'github-ent', 
             clock, 
         });
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStore({ clock });
         const engine = new Engine({
             store,
             agents: [
@@ -375,7 +375,7 @@ describe('github channel in', () => {
         expect(response.status).toBe(202);
         const answer = await response.json() as Answer;
         expect(answer.runs.map((r) => r.agent)).toEqual(['ent']);
-        expect((await store.getRun(answer.runs[0]!.runId))?.trigger.channel).toBe('github-ent');
+        expect((await store.runs.findOne(answer.runs[0]!.runId))?.trigger.channel).toBe('github-ent');
         // the default channel is not served by this app
         const other = await deliver(app, {
             event: 'issues',
@@ -394,7 +394,7 @@ describe('github channel in', () => {
             path: '/channels/github/triage',
         });
         expect(response.status).toBe(404);
-        expect((await store.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
     });
 
     it('sets no address for an event without issue or pull request', async () => {
@@ -405,7 +405,7 @@ describe('github channel in', () => {
             body: JSON.stringify({ repository: { full_name: 'octo/demo' }, sender: { login: 'octocat', type: 'User' } }),
         });
         const answer = await response.json() as Answer;
-        const run = await store.getRun(answer.runs[0]!.runId);
+        const run = await store.runs.findOne(answer.runs[0]!.runId);
         expect(run?.trigger.address).toBeUndefined();
         expect(run?.trigger.concurrencyKey).toBe('octo/demo');
     });
@@ -430,7 +430,7 @@ describe('github channel in', () => {
         expect(failed.status).toBe(500);
         expect(await failed.json()).toMatchObject({ status: 500, message: 'Internal Server Error' });
         expect(broken.errors).toHaveLength(1);
-        const { data } = await broken.store.listRuns({});
+        const { data } = await broken.store.runs.find({});
         expect(data.map((r) => r.agent).sort()).toEqual(['first', 'third']);
     });
 

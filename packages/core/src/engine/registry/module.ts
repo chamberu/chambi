@@ -29,7 +29,7 @@ export async function cancelAgentRuns(
     reason: CancelReason,
     before?: Date,
 ): Promise<string[]> {
-    const { data } = await ctx.store.listRuns({ agent, status: UNSETTLED });
+    const { data } = await ctx.store.runs.find({ agent, status: UNSETTLED });
     const runs = before === undefined ?
         data :
         data.filter((run) => run.createdAt.getTime() < before.getTime());
@@ -67,13 +67,13 @@ export async function syncRevision(
     former?: string,
 ): Promise<string[] | undefined> {
     return withAgentLock(ctx, agent, async () => {
-        const marker = await ctx.store.getAgentRevision(agent);
+        const marker = await ctx.store.agentRevisions.findOne(agent);
         if (marker?.hash === revision) return undefined;
         if (await moveFormerMarker(ctx, marker, revision, former)) return undefined;
         const reason = agentCancelReason(agent, 'replaced', revision);
         const cancelled = marker ? await cancelAgentRuns(ctx, agent, reason, ctx.clock.now()) : [];
         const changedAt = ctx.clock.now();
-        await ctx.store.setAgentRevision({
+        await ctx.store.agentRevisions.save({
             agent,
             hash: revision,
             changedAt,
@@ -99,11 +99,11 @@ export async function claimRevision(
     former?: string,
 ): Promise<void> {
     await withAgentLock(ctx, agent, async () => {
-        const marker = await ctx.store.getAgentRevision(agent);
+        const marker = await ctx.store.agentRevisions.findOne(agent);
         if (marker?.hash === revision) return;
         if (await moveFormerMarker(ctx, marker, revision, former)) return;
         if (marker) {
-            const { data } = await ctx.store.listRuns({
+            const { data } = await ctx.store.runs.find({
                 agent,
                 status: UNSETTLED,
                 limit: 1,
@@ -116,7 +116,7 @@ export async function claimRevision(
                 );
             }
         }
-        await ctx.store.setAgentRevision({
+        await ctx.store.agentRevisions.save({
             agent,
             hash: revision,
             changedAt: ctx.clock.now(),
@@ -135,11 +135,11 @@ export async function claimRevision(
 export async function dropRevision(ctx: RegistryContext, agent: string, options: DropRevisionOptions): Promise<string[] | undefined> {
     return withAgentLock(ctx, agent, async () => {
         const reason = agentCancelReason(agent, 'removed');
-        const marker = await ctx.store.getAgentRevision(agent);
+        const marker = await ctx.store.agentRevisions.findOne(agent);
         if (marker) {
             if (options.revision !== undefined && marker.hash !== options.revision) return undefined;
             const cancelled = await cancelAgentRuns(ctx, agent, reason);
-            await ctx.store.deleteAgentRevision(agent);
+            await ctx.store.agentRevisions.delete(agent);
             return cancelled;
         }
         if (options.registered) return cancelAgentRuns(ctx, agent, reason);
@@ -158,6 +158,6 @@ async function moveFormerMarker(
     former: string | undefined,
 ): Promise<boolean> {
     if (marker === undefined || former === undefined || marker.hash !== former) return false;
-    await ctx.store.setAgentRevision({ ...marker, hash: revision });
+    await ctx.store.agentRevisions.save({ ...marker, hash: revision });
     return true;
 }

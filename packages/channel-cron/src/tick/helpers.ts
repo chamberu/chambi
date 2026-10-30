@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { IRunStore, RunStatusLiteral } from '@chamvi/core';
+import type { IRunRepository, RunStatusLiteral } from '@chamvi/core';
 import type { OverlapPolicy } from '../subscription/types.ts';
 
 const ACTIVE: RunStatusLiteral[] = ['queued', 'running', 'waiting', 'interrupted'];
@@ -16,13 +16,13 @@ const ACTIVE: RunStatusLiteral[] = ['queued', 'running', 'waiting', 'interrupted
  * `allow` never.
  */
 export async function isOverlapping(
-    store: Pick<IRunStore, 'listRuns'>,
+    store: Pick<IRunRepository, 'find'>,
     agent: string,
     subscriptionId: string,
     policy: OverlapPolicy,
 ): Promise<boolean> {
     if (policy === 'allow') return false;
-    const { data } = await store.listRuns({
+    const { data } = await store.find({
         agent,
         status: policy === 'skip' ? ACTIVE : ['queued'],
     });

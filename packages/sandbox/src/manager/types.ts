@@ -100,7 +100,7 @@ export type CloseOptions = {
     timeoutMs?: number;
     /**
      * Also dispose the workspaces of live runs (default false: they stay for
-     * their runs to find again). For a store nothing resumes from, a MemoryStore.
+     * their runs to find again). For in-memory run storage, nothing can resume after the process exits.
      */
     dispose?: boolean;
 };

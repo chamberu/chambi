@@ -15,7 +15,7 @@ import { z } from 'zod';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -35,7 +35,7 @@ afterEach(() => {
 
 function setup(script: MockResponse[], tools: AgentDefinition['tools']) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const provider = createFakeProvider({ clock });
     const manager = createWorkspaceManager({
         provider,
@@ -67,7 +67,7 @@ function setup(script: MockResponse[], tools: AgentDefinition['tools']) {
     };
 }
 
-async function run(engine: Engine, store: MemoryStore) {
+async function run(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
     const { runId } = await engine.dispatch({
         agent: 'coder',
         trigger: 'http',
@@ -75,7 +75,7 @@ async function run(engine: Engine, store: MemoryStore) {
         payload: {},
     });
     await engine.idle();
-    return { runId, run: await store.getRun(runId) };
+    return { runId, run: await store.runs.findOne(runId) };
 }
 
 const text = (t: string): MockResponse => ({ parts: [{ type: 'text', text: t }] });

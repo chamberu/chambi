@@ -12,7 +12,7 @@
 | release-please | One linked version for every package, one release and changelog (`linked-versions`) |
 | Dependabot | Daily npm + GitHub Actions updates, grouped by prod/dev and major/minor+patch |
 | EditorConfig | Whitespace rules shared with the editor |
-| unplugin-swc | Compiles the store-typeorm entities' legacy decorators in tsdown and Vitest; the root `tsconfig.build.json` sets `experimentalDecorators: true` |
+| unplugin-swc | Compiles the store-db entities' legacy decorators in tsdown and Vitest; the root `tsconfig.build.json` sets `experimentalDecorators: true` |
 
 The `@tada5hi/*` config packages are the source of truth for lint, TS and commit rules; the local config files are thin wrappers. Prefer changing the shared package over adding a local override, unless the deviation is chamvi-specific.
 
@@ -47,13 +47,14 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 - **The package entry composes folder barrels.** `src/index.ts` is `export * from './<folder>/index.ts'` per folder. Inside a package, import the file you need (`../errors/index.ts`, `../state/types.ts`), not `src/index.ts`.
 - **Feature package modules.** An app module lives in its feature package's `src/module/`, published as the `/module` subpath (`@chamvi/github/module`, ...): the only folder importing `@chamvi/app`, which is an optional peer (`peerDependenciesMeta`) plus a devDependency, and stays external in `dist/module.mjs` (one `AppToken` set per process). The main entry and every chunk it loads stay app-free. A shared instance reaches tools through a context pair in the main entry (`provide<Name>Context(engine, value)`, `inject<Name>Context(ctx)`, core-only, in `src/context/`); the `ContextKey` stays internal, and the module provides in its `engineCreated` hook. `@chamvi/app` itself keeps only `/authup` (http cannot depend on app) and `/testing`.
 - **Dependency graph.** The `@chamvi/*` edges of `dependencies`, `devDependencies`, `optionalDependencies` and `peerDependencies` (optional or not) must stay acyclic: nx builds its project graph from them, and release-please's node-workspace plugin (with `updatePeerDependencies`) throws on a cycle, which aborts the release run for every package. An `nx.implicitDependencies` exclusion only hides an edge from nx, so it is no fix. Break a cycle in the package.json files instead (a structural type in place of a type import, as `@chamvi/test-kit` does for `IWorkspace`; a variable-specifier import of a package that is in no dependency field, as `@chamvi/sandbox/module` does for its providers). `packages/app/test/unit/graph.spec.ts` checks the graph release-please builds.
-- **Test helpers are a package.** Helpers other packages test with (`ControllableClock`, `describeStoreContract`) live in `@chamvi/test-kit`, which depends on `@chamvi/core`; core never depends on the kit (that would be an nx cycle), so core's own tests use the private copy in `test/utils/clock.ts`.
+- **Test helpers are a package.** Helpers other packages test with (`ControllableClock`, `describeRepositoryContract`) live in `@chamvi/test-kit`, which depends on `@chamvi/core`; core never depends on the kit (that would be an nx cycle), so core's own tests use the private copy in `test/utils/clock.ts`.
 
 ## Naming
 
-- **`interface` is for behavior contracts and always carries the `I` prefix**: `IStore`, `IRunStore`, `IClock`, `IChannel`, `IAgentState`. A class implements it (`MemoryStore implements IStore`), or a factory returns it.
+- **`interface` is for behavior contracts and always carries the `I` prefix**: `IRunRepository`, `IClock`, `IChannel`, `IAgentState`, `IStore`. A class implements it (`MemoryRunRepository implements IRunRepository`), or a factory returns it.
 - **Data shapes are `type` aliases without a prefix**: `Run`, `Step`, `TriggerEnvelope`, `EngineOptions`, `ApprovalAnswer`.
 - Files are kebab-case.
+- `IStore` is the plain aggregate interface passed as `store` to `Engine` and `storeModule` (registered as `AppToken.STORE`); it has no facade methods. Persistence capabilities are repositories (`IRunRepository`, `MemoryRunRepository`); the database backend remains a store. Use concise role-local methods (`insert`, `save`, `findOne`, `find`), preserving domain operations such as `claim` and `beginTurn`. Query `OrFail` variants reject missing records or empty selected pages, never present falsy values.
 
 ## Helpers and Dependencies
 
@@ -63,8 +64,14 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 - Option misconfiguration in any package's factory (`createHttpApp`, `createScheduler`, `staticTokens`, ...) throws core `InvalidAgentDefinitionError`: it covers app definitions, not only agents.
 - validup has no built-in validators: build them with `defineValidator`, fail with `createValidupError` (an ebec issue code, never a bare `Error`) and reuse them (`packages/http/src/request/validators.ts`), never pull in zod for request validation (zod stays a dev dependency for specs).
 - Persistence code uses TypeORM repositories and their query builders (`insert().orIgnore()`, `orUpdate()` with an overwrite condition, `update().where().returning()`, find options). Raw SQL only where the ORM cannot express a statement, with a one-line comment saying why.
+- Entity links use TypeORM relationship decorators (`@ManyToOne` or `@OneToOne`) with `@JoinColumn`. Map scalar IDs to the same join columns when store code needs direct ID access; generate the database constraints from those relationships.
 
 ## Workflow
+
+- Before implementation, trace the complete input-to-output flow and inspect an existing analogous module. Reuse its patterns and installed library mechanisms; introduce a new seam only for concrete callers that need it.
+- For persistence changes, map every stored identifier to its parent or document the lifecycle reason it can precede/outlive that parent. Generate migrations from entity metadata and verify both database integrity and normal ORM relationship loading.
+- Keep domain validation, identity and selection rules in one implementation shared by store adapters. Adapter code owns queries and transactions.
+- Review the whole feature, including callers and configuration, after local fixes. Report design/convention findings separately from test results; passing checks alone do not establish completion.
 
 - After changes run `npm run build && npm run test && npm run typecheck && npm run lint`. Run `npm run lint:fix` before hand-fixing formatting.
 - Never edit `dist/` (generated, git-ignored). Never hand-edit `.release-please-manifest.json` or package versions; release-please owns them.

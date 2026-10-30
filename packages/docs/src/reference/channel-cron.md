@@ -54,9 +54,9 @@ Starts the engine with `start({ channels: false })`. Rejects with `InvalidAgentD
 ```ts
 function fireCronSubscription(ctx: CronTickContext): Promise<CronTickResult>;
 function readCronOptions(agent: Agent, subscription: ChannelSubscription): CronOptions;
-function createStoreScheduleLock(store: ILockStore, owner: string): IScheduleLock;
+function createRepositoryScheduleLock(store: ILockRepository, owner: string): IScheduleLock;
 ```
 
-`fireCronSubscription` is one tick (overlap check and dispatch) for an explicit `scheduledAt`; the channel and `runJob` both call it. `createStoreScheduleLock` adapts core's `ILockStore` to hubwire's `IScheduleLock`.
+`fireCronSubscription` is one tick (overlap check and dispatch) for an explicit `scheduledAt`; the channel and `runJob` both call it. `createRepositoryScheduleLock` adapts core's `ILockRepository` to hubwire's `IScheduleLock`.
 
 <<< ../../../channel-cron/src/tick/types.ts{ts}

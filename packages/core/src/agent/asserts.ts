@@ -6,6 +6,9 @@
  */
 
 import type { ToolSet } from 'ai';
+import { isObject } from 'smob';
+import { CONVERSATION_FIELD_MAX_LENGTH } from '../conversation/constants.ts';
+import type { AgentDefinition } from './types.ts';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
 import { hasToolContext } from '../tool/helpers.ts';
 
@@ -43,4 +46,16 @@ export function assertNoNeedsApproval(agent: string, tools: ToolSet): void {
             );
         }
     }
+}
+
+/** The configured storage namespace, validated before registration or any store write. */
+export function conversationKey(def: Pick<AgentDefinition, 'name' | 'conversation'>): string | undefined {
+    const value = def.conversation;
+    if (value === undefined || value === false) return undefined;
+    if (value === true) return def.name;
+    if (!isObject(value) || typeof value.key !== 'string' || value.key.trim().length === 0 ||
+        value.key.length > CONVERSATION_FIELD_MAX_LENGTH || /[\p{Cc}\p{Cs}]/u.test(value.key)) {
+        throw new InvalidAgentDefinitionError(`Agent "${def.name}" needs a boolean conversation option or an object with a valid key.`);
+    }
+    return value.key;
 }

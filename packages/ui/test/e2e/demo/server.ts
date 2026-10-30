@@ -8,8 +8,8 @@
 import { z } from 'zod';
 import {
     Engine,
-    MemoryStore,
     approve,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -33,7 +33,7 @@ const capture: IChannel = {
     out: () => Promise.resolve(),
 };
 
-const store = new MemoryStore();
+const store = createMemoryStore();
 
 const engine = new Engine({
     store,
@@ -96,9 +96,9 @@ const engine = new Engine({
     claimTtlMs: 3000,
 });
 
-await store.kvSet('digest', 'last_digest_at', '2026-10-21T06:00:12.481Z');
-await store.kvSet('digest', 'recipients', ['#maintainers']);
-await store.docUpsert('digest', 'sent', '2026-10-21', { issues: 14, channel: '#maintainers' });
+await store.state.set('digest', 'last_digest_at', '2026-10-21T06:00:12.481Z');
+await store.state.set('digest', 'recipients', ['#maintainers']);
+await store.state.upsertDocument('digest', 'sent', '2026-10-21', { issues: 14, channel: '#maintainers' });
 
 const app = createHttpApp({
     engine,

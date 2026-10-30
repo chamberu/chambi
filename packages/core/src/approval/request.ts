@@ -84,7 +84,7 @@ export async function requestApproval(
     const choice = assertRequest(request);
     // taken before any await, so the ordinals follow the order of the calls
     const approvalId = `${frame.stepIndex}:${frame.toolCallId}:${frame.approvals++}`;
-    const recorded = await frame.effects.getEffect(approvalDecisionKey(frame.runId, approvalId));
+    const recorded = await frame.effects.findOne(approvalDecisionKey(frame.runId, approvalId));
     if (recorded) return fitRecordedDecision(toApprovalDecision(recorded.result), { approvalId, ...choice });
 
     const pending: ApprovalRequest = {

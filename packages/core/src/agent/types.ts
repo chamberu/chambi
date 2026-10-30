@@ -107,6 +107,15 @@ export type AgentDefinition<S extends StateSchema = StateSchema> = {
      * final answer that does not parse fails the run with a ValidationError.
      */
     output?: OutputInterface;
+    /**
+     * Opts the agent into conversation memory (needs
+     * EngineOptions.conversations); runs that come with no conversation still
+     * execute as before. Omitted or false: no conversation behaviour.
+     */
+    conversation?: boolean | {
+        /** Stable memory identity across agent renames; default is the agent name. */
+        key: string;
+    };
 };
 
 export type Agent<S extends StateSchema = StateSchema> = {

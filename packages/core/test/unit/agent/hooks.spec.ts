@@ -28,7 +28,7 @@ import {
 import type { AgentDefinition, AgentHooks } from '@chamvi/core';
 import { currentToolCall } from '../../../src/effect/frame.ts';
 import { stableHash } from '../../../src/effect/helpers.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -55,7 +55,7 @@ async function runOnce(
     setup?: (engine: Engine) => void,
 ) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const engine = new Engine({
         store,
         agents: [defineAgent({
@@ -77,11 +77,11 @@ async function runOnce(
         payload: {},
     });
     await engine.idle();
-    const steps = await store.listSteps(runId);
+    const steps = await store.steps.find(runId);
     return {
         runId,
         store,
-        run: await store.getRun(runId),
+        run: await store.runs.findOne(runId),
         tools: steps.filter((step) => step.kind === 'tool'),
     };
 }
@@ -114,15 +114,15 @@ describe('agent hooks', () => {
         expect(run?.status).toBe('completed');
         expect(seen).toEqual([
             {
-                tool: 'plain', 
-                frame: 'plain', 
-                id: true, 
+                tool: 'plain',
+                frame: 'plain',
+                id: true,
                 injected: 'hi',
             },
             {
-                tool: 'state_notes_list', 
-                frame: 'state_notes_list', 
-                id: true, 
+                tool: 'state_notes_list',
+                frame: 'state_notes_list',
+                id: true,
                 injected: 'hi',
             },
         ]);
@@ -195,16 +195,16 @@ describe('agent hooks', () => {
             execute: async ({ body }) => body,
         });
         const {
-            run, 
-            runId, 
-            store, 
+            run,
+            runId,
+            store,
         } = await runOnce(mockModel([call('post', { body: 'x' }), text('done')]), {
             tools: { post },
             hooks: { beforeToolExecution: () => ({ body: 'y' }) },
         });
         expect(run?.status).toBe('completed');
-        expect(await store.getEffect(`${runId}:post:${stableHash({ body: 'y' })}`)).toEqual({ result: 'y' });
-        expect(await store.getEffect(`${runId}:post:${stableHash({ body: 'x' })}`)).toBeUndefined();
+        expect(await store.effects.findOne(`${runId}:post:${stableHash({ body: 'y' })}`)).toEqual({ result: 'y' });
+        expect(await store.effects.findOne(`${runId}:post:${stableHash({ body: 'x' })}`)).toBeUndefined();
     });
 
     it('afterToolExecution rewrites a fresh result and a recorded effect result alike', async () => {

@@ -6,7 +6,7 @@
  */
 
 import type { ModelMessage, ToolSet } from 'ai';
-import { MemoryStore, createAgentState } from '@chamvi/core';
+import { createAgentState, createMemoryStore } from '@chamvi/core';
 import type {
     IRunArtifacts,
     ToolContext,
@@ -61,7 +61,7 @@ export function toolContext(input: ToolContextInput = {}): ToolContext {
             trigger,
             signal: input.signal ?? new AbortController().signal,
         },
-        state: createAgentState('triage', undefined, new MemoryStore()),
+        state: createAgentState('triage', undefined, createMemoryStore().state),
         artifacts: NO_ARTIFACTS,
     };
 }

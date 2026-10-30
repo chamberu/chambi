@@ -18,9 +18,9 @@ export type InvokerView = Omit<Invoker, 'permissions'>;
 
 /**
  * A run as it leaves the package (REST, SSE, MCP): without the internal
- * `claim`, and the invoker without its `permissions`.
+ * claim and conversation binding, and the invoker without its permissions.
  */
-export type RunView = Omit<Run, 'claim' | 'trigger'> & {
+export type RunView = Omit<Run, 'claim' | 'trigger' | 'conversation'> & {
     trigger: Omit<TriggerEnvelope, 'invoker'> & { invoker?: InvokerView };
 };
 

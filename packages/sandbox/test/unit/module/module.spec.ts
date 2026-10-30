@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -424,7 +424,7 @@ describe('sandboxModule', () => {
         expect(events).toEqual(['attach', 'drain', 'detach', 'close']);
     });
 
-    it('disposes the held workspaces after drained when the store is a MemoryStore', async () => {
+    it('disposes the held workspaces after drained when the store is in-memory', async () => {
         // nothing resumes a run of a memory store after the restart
         const manager = fakeManager([]);
         await (await harnessWith(sandboxModule({ manager, env: {} }))).stop();
@@ -432,20 +432,21 @@ describe('sandboxModule', () => {
     });
 
     it('keeps the held workspaces after drained when the store persists', async () => {
-        const memory = new MemoryStore();
+        const memory = createMemoryStore();
         // a store of its own kind: the runs outlive the process
-        const store = new Proxy({}, {
+        const runs = new Proxy({}, {
             get: (_target, key) => {
-                const value: unknown = Reflect.get(memory, key);
-                return typeof value === 'function' ? value.bind(memory) : value;
+                const value: unknown = Reflect.get(memory.runs, key);
+                return typeof value === 'function' ? value.bind(memory.runs) : value;
             },
-        }) as IStore;
+        }) as IStore['runs'];
+        const store = { ...memory, runs };
         const manager = fakeManager([]);
         await (await harnessWith(sandboxModule({ manager, env: {} }), { store })).stop();
         expect(manager.closes).toEqual([{ dispose: false }]);
     });
 
-    it('a MemoryStore app disposes a live run\'s workspace on stop', async () => {
+    it('an app with a memory store disposes a live run\'s workspace on stop', async () => {
         const root = await mkdtemp(join(tmpdir(), 'chamvi-sandbox-module-'));
         roots.push(root);
         const module = sandboxModule({
@@ -526,7 +527,7 @@ describe('sandboxModule', () => {
 
         const run = await engine.getRun(runId);
         expect(run?.status).toBe('completed');
-        const steps = await engine.store.listSteps(runId);
+        const steps = await engine.store.steps.find(runId);
         const created = steps.find((step) => step.kind === 'tool');
         expect(created?.output).toMatchObject({ root: '/workspace', reused: false });
 

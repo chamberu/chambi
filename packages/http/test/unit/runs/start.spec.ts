@@ -31,7 +31,7 @@ describe('POST /agents/:name/runs', () => {
         const body = await response.json() as { runId: string; deduplicated: boolean };
         expect(body).toEqual({ runId: expect.any(String), deduplicated: false });
 
-        const run = await store.getRun(body.runId);
+        const run = await store.runs.findOne(body.runId);
         expect(run?.trigger).toMatchObject({
             channel: 'http',
             trigger: 'http',
@@ -44,7 +44,7 @@ describe('POST /agents/:name/runs', () => {
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN });
         expect(response.status).toBe(202);
         const { runId } = await response.json() as { runId: string };
-        expect((await store.getRun(runId))?.trigger.payload).toBeUndefined();
+        expect((await store.runs.findOne(runId))?.trigger.payload).toBeUndefined();
     });
 
     it('dedupes by idempotencyKey in the body', async () => {
@@ -78,7 +78,7 @@ describe('POST /agents/:name/runs', () => {
         const second = await start(high);
         expect(second.deduplicated).toBe(false);
         expect(second.runId).not.toBe(first.runId);
-        expect((await store.getRun(second.runId))?.trigger.invoker?.id).toBe('u-high');
+        expect((await store.runs.findOne(second.runId))?.trigger.invoker?.id).toBe('u-high');
         expect(await start(high)).toEqual({ runId: second.runId, deduplicated: true });
     });
 
@@ -163,7 +163,7 @@ describe('POST /agents/:name/runs', () => {
         const response = await call(app, 'POST', '/agents/typed/runs', { token: ADMIN_TOKEN, body: { payload: { n: 'x' } } });
         expect(response.status).toBe(400);
         expect((await response.json()).issues[0].path).toEqual(['n']);
-        expect((await store.listRuns({ agent: 'typed' })).total).toBe(0);
+        expect((await store.runs.find({ agent: 'typed' })).total).toBe(0);
     });
 
     describe('attachments', () => {
@@ -190,7 +190,7 @@ describe('POST /agents/:name/runs', () => {
             expect(response.status).toBe(202);
             const { runId } = await response.json() as { runId: string };
 
-            const run = await store.getRun(runId);
+            const run = await store.runs.findOne(runId);
             expect(run?.trigger.attachments).toHaveLength(2);
             const [first, second] = run!.trigger.attachments!;
             expect(first).toMatchObject({
@@ -201,9 +201,9 @@ describe('POST /agents/:name/runs', () => {
                 size: 5,
             });
             expect(second).not.toHaveProperty('filename');
-            expect(new TextDecoder().decode(await store.readArtifact(first!.id))).toBe('alpha');
-            expect(new TextDecoder().decode(await store.readArtifact(second!.id))).toBe('beta');
-            expect(await store.listArtifacts(runId)).toHaveLength(2);
+            expect(new TextDecoder().decode(await store.artifacts.read(first!.id))).toBe('alpha');
+            expect(new TextDecoder().decode(await store.artifacts.read(second!.id))).toBe('beta');
+            expect(await store.artifacts.find(runId)).toHaveLength(2);
         });
 
         it('takes an empty list as none', async () => {
@@ -211,7 +211,7 @@ describe('POST /agents/:name/runs', () => {
             const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { attachments: [] } });
             expect(response.status).toBe(202);
             const { runId } = await response.json() as { runId: string };
-            expect((await store.getRun(runId))?.trigger.attachments).toBeUndefined();
+            expect((await store.runs.findOne(runId))?.trigger.attachments).toBeUndefined();
         });
 
         it('accepts at most 16 attachments', async () => {
@@ -242,7 +242,7 @@ describe('POST /agents/:name/runs', () => {
             const body = await response.json();
             expect(body.code).toBe('validation_error');
             expect(body.issues.map((i: { path: unknown }) => i.path)).toContainEqual(path);
-            expect((await store.listRuns({ agent: 'echo' })).total).toBe(0);
+            expect((await store.runs.find({ agent: 'echo' })).total).toBe(0);
         });
 
         it.each([['str'], [{ 0: 1 }], [null], [[1]]])('rejects attachments %j', async (attachments) => {
@@ -283,7 +283,7 @@ describe('POST /agents/:name/runs', () => {
             const first = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body })).json();
             const second = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body })).json();
             expect(second).toEqual({ runId: first.runId, deduplicated: true });
-            expect(await store.listArtifacts(first.runId)).toHaveLength(1);
+            expect(await store.artifacts.find(first.runId)).toHaveLength(1);
         });
 
         it('stays bounded by bodyLimit', async () => {

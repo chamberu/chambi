@@ -32,9 +32,9 @@ describe('README example', () => {
         ]);
 
         const {
-            run, 
-            labels, 
-            lines, 
+            run,
+            labels,
+            lines,
         } = await triageIssue(model);
 
         expect(run?.status).toBe('completed');

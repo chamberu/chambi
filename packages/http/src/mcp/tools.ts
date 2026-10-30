@@ -170,7 +170,7 @@ function registerReadTools(server: McpServer, ctx: HttpContext, principal: Princ
         annotations: { readOnlyHint: true },
     }, (args) => runTool(ctx, async () => {
         assertCanListRuns(principal, args.agent);
-        const { data, total } = await ctx.store.listRuns({
+        const { data, total } = await ctx.store.runs.find({
             ...(args.agent !== undefined ? { agent: args.agent } : {}),
             ...(args.status !== undefined ? { status: args.status } : {}),
             limit: args.limit ?? DEFAULT_PAGE_LIMIT,
@@ -324,7 +324,7 @@ function registerRunTool(
         // a wait holds one stream.maxOpen slot; over the cap the dispatched run is answered at once
         const release = waitSeconds > 0 ? acquireStreamSlot(ctx) : undefined;
         if (!release) {
-            const status = deduplicated ? (await ctx.store.getRun(runId))?.status ?? RunStatus.QUEUED : RunStatus.QUEUED;
+            const status = deduplicated ? (await ctx.store.runs.findOne(runId))?.status ?? RunStatus.QUEUED : RunStatus.QUEUED;
             return toolResult({
                 runId,
                 status,

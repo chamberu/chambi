@@ -13,7 +13,8 @@ describe('public api', () => {
         'ControllableClock',
         'createFakeGithub',
         'createGitFixture',
-        'describeStoreContract',
+        'describeConversationRepositoryContract',
+        'describeRepositoryContract',
         'describeWorkspaceContract',
     ])('exports %s', (name) => {
         expect(kit).toHaveProperty(name);

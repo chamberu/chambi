@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChannelSubscription, RunStatusLiteral } from '@chamvi/core';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { CronTickResult } from '@chamvi/channel-cron';
@@ -22,7 +22,7 @@ const at = (tick: number) => new Date(T.getTime() + tick * 300_000);
 
 function setup(subscriptions: ChannelSubscription[]) {
     const clock = new ControllableClock(T);
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const agent = defineAgent({
         name: 'sweep',
         model: textModel(),
@@ -61,7 +61,7 @@ describe('overlap', () => {
         async (status) => {
             const { store, fire } = setup([cron.on('*/5 * * * *')]);
             const id = idOf(await fire(0));
-            await store.updateRun(id, { status });
+            await store.runs.update(id, { status });
 
             expect(await fire(1)).toEqual({ dispatched: false, reason: 'overlap' });
         },
@@ -72,7 +72,7 @@ describe('overlap', () => {
         async (status) => {
             const { store, fire } = setup([cron.on('*/5 * * * *')]);
             const id = idOf(await fire(0));
-            await store.updateRun(id, { status });
+            await store.runs.update(id, { status });
 
             expect(await fire(1)).toMatchObject({ dispatched: true, deduplicated: false });
         },
@@ -83,7 +83,7 @@ describe('overlap', () => {
         const second = cron.on('0 * * * *');
         const { store, fire } = setup([first, second]);
         const id = idOf(await fire(0, second));
-        await store.updateRun(id, { status: 'running' });
+        await store.runs.update(id, { status: 'running' });
 
         expect(await fire(0, first)).toMatchObject({ dispatched: true });
     });
@@ -92,13 +92,13 @@ describe('overlap', () => {
         const subscription = cron.on('*/5 * * * *', { overlap: 'queue-one' });
         const { store, fire } = setup([subscription]);
         const run1 = idOf(await fire(0));
-        await store.updateRun(run1, { status: 'running' });
+        await store.runs.update(run1, { status: 'running' });
 
         const run2 = idOf(await fire(1));
-        expect((await store.getRun(run2))?.concurrencyKey).toBe(subscription.id);
+        expect((await store.runs.findOne(run2))?.concurrencyKey).toBe(subscription.id);
         expect(await fire(2)).toEqual({ dispatched: false, reason: 'overlap' });
 
-        await store.updateRun(run2, { status: 'running' });
+        await store.runs.update(run2, { status: 'running' });
         expect(await fire(3)).toMatchObject({ dispatched: true });
     });
 
@@ -111,18 +111,18 @@ describe('overlap', () => {
         } = setup([cron.on('*/5 * * * *', { overlap: 'queue-one' })]);
         const run1 = idOf(await fire(0));
         // running on another replica, which holds a live claim (recovery leaves it alone)
-        await store.claimRun(run1, 'elsewhere', 60_000);
-        await store.updateRun(run1, { status: 'running' });
+        await store.runs.claim(run1, 'elsewhere', 60_000);
+        await store.runs.update(run1, { status: 'running' });
         await engine.start();
 
         const run2 = idOf(await fire(1));
         await engine.idle();
-        expect((await store.getRun(run2))?.status).toBe('queued');
+        expect((await store.runs.findOne(run2))?.status).toBe('queued');
 
-        await store.updateRun(run1, { status: 'completed' });
+        await store.runs.update(run1, { status: 'completed' });
         clock.advance(20_000);
         await engine.idle();
-        expect((await store.getRun(run2))?.status).toBe('completed');
+        expect((await store.runs.findOne(run2))?.status).toBe('completed');
 
         await engine.drain();
     });
@@ -134,6 +134,6 @@ describe('overlap', () => {
         await fire(1);
         await fire(2);
 
-        expect((await store.listRuns({ agent: 'sweep' })).total).toBe(3);
+        expect((await store.runs.find({ agent: 'sweep' })).total).toBe(3);
     });
 });

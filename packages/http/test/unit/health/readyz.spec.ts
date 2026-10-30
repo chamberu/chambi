@@ -6,15 +6,15 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { MemoryStore } from '@chamvi/core';
+import { createMemoryStore } from '@chamvi/core';
 import type { IStore } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import type { IShutdown } from '@chamvi/http';
 import { call, createTestApp } from '../../utils/app.ts';
 
-function storeWith(getRun: IStore['getRun'], clock: ControllableClock): IStore {
-    const store = new MemoryStore({ clock });
-    store.getRun = getRun;
+function storeWith(getRun: IStore['runs']['findOne'], clock: ControllableClock): IStore {
+    const store = createMemoryStore({ clock });
+    store.runs.findOne = getRun;
     return store;
 }
 

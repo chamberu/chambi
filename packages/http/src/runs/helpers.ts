@@ -8,7 +8,6 @@
 import {
     APPROVAL_OPTIONS_MAX,
     ArtifactNotFoundError,
-    RunNotFoundError,
     RunStatus,
     hasPermission,
 } from '@chamvi/core';
@@ -62,20 +61,24 @@ import type {
 
 /** An invoker without its `permissions`: a reader must not learn another principal's grants. */
 function viewInvoker(invoker: Invoker): InvokerView {
-    const view: InvokerView & { permissions?: unknown } = { ...invoker };
-    delete view.permissions;
-    return view;
+    return {
+        id: invoker.id,
+        kind: invoker.kind,
+        ...(invoker.name !== undefined ? { name: invoker.name } : {}),
+    };
 }
 
 /**
- * Drops the internal `claim` (owner and lease expiry) and the invoker's
- * `permissions` from a run.
+ * Drops the internal claim, conversation binding and invoker permissions.
  */
 export function serializeRun(run: Run): RunView {
-    const view: RunView & { claim?: unknown } = { ...run };
+    const view = { ...run };
     delete view.claim;
-    if (run.trigger.invoker) view.trigger = { ...run.trigger, invoker: viewInvoker(run.trigger.invoker) };
-    return view;
+    delete view.conversation;
+    return {
+        ...view,
+        trigger: run.trigger.invoker ? { ...run.trigger, invoker: viewInvoker(run.trigger.invoker) } : run.trigger,
+    };
 }
 
 /** A step as it leaves the package: a `wait` step's approver without its `permissions`. */
@@ -94,8 +97,7 @@ export function canReadRun(principal: Principal, run: Run): boolean {
 
 /** The run, once the principal may read it: 404, then 403. */
 export async function loadReadableRun(ctx: HttpContext, principal: Principal, id: string): Promise<Run> {
-    const run = await ctx.store.getRun(id);
-    if (!run) throw new RunNotFoundError(id);
+    const run = await ctx.store.runs.findOneOrFail(id);
     if (!canReadRun(principal, run)) {
         throw new ForbiddenError({ message: `Missing permission "${Permission.RUN_READ}".` });
     }
@@ -144,9 +146,9 @@ function createAttachmentContainer(): Container<ArtifactInput> {
 
 /** An artifact of `run` with its bytes; ArtifactNotFoundError (404) for an unknown id or another run's artifact. */
 export async function loadRunArtifact(ctx: HttpContext, run: Run, id: string): Promise<{ artifact: Artifact; data: Uint8Array }> {
-    const artifact = await ctx.store.getArtifact(id);
+    const artifact = await ctx.store.artifacts.findOne(id);
     if (!artifact || artifact.runId !== run.id) throw new ArtifactNotFoundError(id);
-    const data = await ctx.store.readArtifact(id);
+    const data = await ctx.store.artifacts.read(id);
     if (!data) throw new ArtifactNotFoundError(id);
     return { artifact, data };
 }
@@ -258,8 +260,7 @@ export function createApproveContainer(): Container<ApproveBody> {
  * read permission needed), 403 without `agent:<agent>:approve`.
  */
 export async function loadApprovableRun(ctx: HttpContext, principal: Principal, id: string): Promise<Run> {
-    const run = await ctx.store.getRun(id);
-    if (!run) throw new RunNotFoundError(id);
+    const run = await ctx.store.runs.findOneOrFail(id);
     assertCanApprove(principal, run);
     return run;
 }

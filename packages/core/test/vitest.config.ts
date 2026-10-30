@@ -6,6 +6,7 @@ export default defineConfig({
         // the sources, not dist
         alias: [
             { find: /^@chamvi\/core$/, replacement: fileURLToPath(new URL('../src/index.ts', import.meta.url)) },
+            { find: /^@chamvi\/core\/conversation\/persistence$/, replacement: fileURLToPath(new URL('../src/conversation/persistence/index.ts', import.meta.url)) },
         ],
     },
     test: {

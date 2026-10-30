@@ -55,7 +55,7 @@ The `agent` channel has no `out`, so `ctx.channels.findOne()` without a name is 
 
 ## Lineage
 
-The child's `trigger.parent` is `{ kind: 'handoff', runId, agent, depth: 1 }` (`TriggerParent`). Only `startHandoff()` sets it: `engine.dispatch()` and a channel's `ctx.dispatch()` drop a `parent` a caller passes, so nobody forges lineage. It lives in the stored envelope, so both stores keep it without a migration. The [dashboard](/guide/ui)'s run page shows "handed off from" with a link to the parent run.
+The child's `trigger.parent` is `{ kind: 'handoff', runId, agent, depth: 1 }` (`TriggerParent`). Only `startHandoff()` sets it: `engine.dispatch()` and a channel's `ctx.dispatch()` drop a `parent` a caller passes, so nobody forges lineage. It lives in the stored envelope, so both repositories keep it without a migration. The [dashboard](/guide/ui)'s run page shows "handed off from" with a link to the parent run.
 
 ## Under `chamvi run-job`
 

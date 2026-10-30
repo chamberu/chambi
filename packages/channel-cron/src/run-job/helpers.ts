@@ -9,7 +9,7 @@ import type {
     Agent,
     ChannelSubscription,
     Engine,
-    IRunStore,
+    IRunRepository,
     Run,
 } from '@chamvi/core';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
@@ -42,9 +42,9 @@ export function resolveCronSubscription(engine: Engine, agent: Agent, subscripti
  * for an approval: it starts only once a human answers (or the approval times
  * out), so a job must not wait for it.
  */
-export async function isQueuedBehindApproval(store: Pick<IRunStore, 'listRuns'>, run: Run): Promise<boolean> {
+export async function isQueuedBehindApproval(store: Pick<IRunRepository, 'find'>, run: Run): Promise<boolean> {
     if (run.status !== 'queued' || run.concurrencyKey === undefined) return false;
-    const { total } = await store.listRuns({
+    const { total } = await store.find({
         agent: run.agent,
         status: ['waiting'],
         concurrencyKey: run.concurrencyKey,

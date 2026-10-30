@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
@@ -30,7 +30,7 @@ import { SseReader } from '../../utils/sse.ts';
 
 function setup() {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const agents = [
         defineAgent({
             name: 'echo',

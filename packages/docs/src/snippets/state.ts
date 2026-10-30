@@ -2,9 +2,9 @@ import { tool } from 'ai';
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
-    MemoryStore,
     ValidationError,
     createAgentState,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 
@@ -41,8 +41,8 @@ export function createDigest(model: LanguageModel) {
 
 export async function stateOutsideARun() {
     // #region direct
-    const store = new MemoryStore();
-    const state = createAgentState('digest', { loops: loop }, store);
+    const store = createMemoryStore();
+    const state = createAgentState('digest', { loops: loop }, store.state);
 
     await state.set('lastUid', 1042);
     await state.get<number>('lastUid'); // 1042
@@ -56,7 +56,7 @@ export async function stateOutsideARun() {
 }
 
 export async function invalidDocument() {
-    const state = createAgentState('digest', { loops: loop }, new MemoryStore());
+    const state = createAgentState('digest', { loops: loop }, createMemoryStore().state);
 
     // #region invalid
     try {

@@ -15,7 +15,7 @@ async function storeReachable(ctx: HttpContext): Promise<boolean> {
     const timeout = new Promise<boolean>((resolve) => {
         timer = ctx.clock.setTimeout(() => resolve(false), ctx.readyTimeoutMs);
     });
-    const probe = ctx.store.getRun(READINESS_PROBE_RUN_ID).then(() => true, () => false);
+    const probe = ctx.store.runs.findOne(READINESS_PROBE_RUN_ID).then(() => true, () => false);
     try {
         return await Promise.race([probe, timeout]);
     } finally {

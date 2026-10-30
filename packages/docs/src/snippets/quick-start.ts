@@ -2,8 +2,8 @@ import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
     Engine,
-    MemoryStore,
     consoleChannel,
+    createMemoryStore,
     defineAgent,
     defineEffectTool,
 } from '@chamvi/core';
@@ -32,7 +32,7 @@ export async function triageIssue(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        store: new MemoryStore(),
+        store: createMemoryStore(),
         agents: [triage],
         // logs every message a tool sends through it
         channels: [consoleChannel()],

@@ -36,7 +36,7 @@ If recording the result fails after the effect happened, the call still succeeds
 
 ## Outside the engine
 
-`wrapToolsForRun(tools, ctx, store, allow?)` applies the same wrapping to a `ToolSet` outside the engine, for example in a test or a custom loop. `ctx` is a `ToolContext` (`run`, `state`, `artifacts`, `channels`), `store` any `IEffectStore`, and the optional `allow(toolName)` re-checks every call (a refused call throws `ToolNotAllowedError`). Tools that are not effect tools pass through unchanged. The wrapped tools keep their `contextSchema` and forward the call options, so pass the same `ToolContext` as `context` when you call them.
+`wrapToolsForRun(tools, ctx, store, allow?)` applies the same wrapping to a `ToolSet` outside the engine, for example in a test or a custom loop. `ctx` is a `ToolContext` (`run`, `state`, `artifacts`, `channels`), `store` any `IEffectRepository`, and the optional `allow(toolName)` re-checks every call (a refused call throws `ToolNotAllowedError`). Tools that are not effect tools pass through unchanged. The wrapped tools keep their `contextSchema` and forward the call options, so pass the same `ToolContext` as `context` when you call them.
 
 ## Migrating from 0.1
 

@@ -6,7 +6,8 @@
  */
 
 export * from './clock/index.ts';
+export * from './conversation-contract/index.ts';
 export * from './git-fixture/index.ts';
 export * from './github-fake/index.ts';
-export * from './store-contract/index.ts';
+export * from './repository-contract/index.ts';
 export * from './workspace-contract/index.ts';

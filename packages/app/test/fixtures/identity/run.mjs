@@ -10,7 +10,7 @@
 // in CHAMVI_AGENTS_DIR (argv[2], outside the app tree) injects it. The folder
 // agent reads the key and the mock model from globalThis.
 import { AppToken, createApp, storeModule } from '@chamvi/app';
-import { MemoryStore, defineContextKey } from '@chamvi/core';
+import { createMemoryStore, defineContextKey } from '@chamvi/core';
 import { simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 
@@ -62,7 +62,7 @@ globalThis.chamviGreetingKey = key;
 // the model goes in directly: through a models provider the AI SDK would wrap the mock
 globalThis.chamviModel = model;
 
-const store = new MemoryStore();
+const store = createMemoryStore();
 const app = createApp({
     modules: [{
         name: 'greeting',
@@ -81,7 +81,7 @@ const result = await app.runJob({
         CHAMVI_LOG_LEVEL: 'error',
     },
 });
-const steps = result.runId ? await store.listSteps(result.runId) : [];
+const steps = result.runId ? await store.steps.find(result.runId) : [];
 const tool = steps.find((step) => step.kind === 'tool');
 process.stdout.write(`${JSON.stringify({
     status: result.status, 

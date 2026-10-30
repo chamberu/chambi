@@ -14,7 +14,7 @@ import {
 } from 'vitest';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { cron, cronChannel } from '@chamvi/channel-cron';
@@ -26,7 +26,7 @@ const T = new Date('2026-03-01T08:00:00.000Z');
 
 function setup() {
     const clock = new ControllableClock(T);
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const subscription = cron.on('0 9 * * *', { timezone: 'Europe/Berlin' });
     const agent = defineAgent({
         name: 'sweep',
@@ -75,7 +75,7 @@ describe('buildComponentOptions', () => {
 
         await options.run({ scheduledAt: T });
 
-        const { data } = await store.listRuns({ agent: 'sweep' });
+        const { data } = await store.runs.find({ agent: 'sweep' });
         expect(data).toHaveLength(1);
         expect(data[0]?.trigger.channel).toBe('cron');
         expect(data[0]?.trigger.idempotencyKey).toMatch(/@2026-03-01T08:00:00\.000Z$/);
