@@ -8,7 +8,7 @@
 import type { SkillContribution } from './types.ts';
 
 export const EMPTY_SKILL_CONTRIBUTION: SkillContribution = Object.freeze({
-    instructions: '',
+    instructions: Object.freeze([]),
     tools: Object.freeze({}),
     checkTools: () => {},
 });

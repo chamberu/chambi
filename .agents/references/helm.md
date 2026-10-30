@@ -82,3 +82,15 @@ loaders own retrieval and verification against reviewed pins. The skills main en
 Downstream documentation commit `7247aa5873d39b5a8bc372bff0016a6f3bbabf6f` updates only ownership/import guidance. `caffeinate -is make docs` and the six `test_docs.py` documentation contract tests passed.
 Existing dependencies, images, manifests, CLI/env/routes, probe settings, RBAC and fixtures require no changes.
 No push, image build, live cluster or publication was performed in this scoped check.
+
+## Structured instructions compatibility check (2026-10-30, unreleased)
+
+Core `src/message/types.ts` now exports native SDK message/content types; `src/agent/types.ts` adds
+`AgentInstruction` and string-or-readonly-array `AgentInstructions`. App's existing core barrel re-exports them.
+`src/engine/execute/module.ts` maps only leading system blocks to SDK instructions, retaining later configured
+blocks in order as a transient prefix outside checkpoints and pending replay. Skills runtime metadata is a separate
+system block; manual `SkillCatalog.instructions` remains text. Existing string agents remain compatible.
+
+Downstream commit `fc6bf888cc411ad544e86fc00dfd6587796a0394` updates only charts/agent-app/README.md.gotmpl and generated README.
+`caffeinate -is make docs` plus all six `test_docs.py` documentation contract checks passed. Existing sources, fixtures, dependencies, CLI/env, routes,
+images, values, manifests, probes and RBAC need no changes. No push or publication was performed.

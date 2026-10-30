@@ -35,7 +35,9 @@ App startup prepares defaults and code agents before exposing the engine or runn
 
 `gitSkills({ source, revision, directory, approved })` from the skills main entry selects exactly the reviewed names and verifies their staged contents before replacing the managed corpus. The full cloned commit must match the pin and the entire committed source must be symlink-free, including unselected paths. Supporting files may use any extension, including source code, scripts and SVG, provided they contain valid UTF-8 text. They remain passive references and are never executed by the loader. Source credentials and configuration belong to the operator.
 
-For explicit setup/build workflows, `prepareSkills()` remains available with a staged `verify` callback. `loadSkillBundles(approved)` remains the manual catalog API: append `catalog.instructions` and compose `catalog.tools` yourself, checking for an existing `load_skill`. Do not combine a manual catalog tool with first-class skills on the same agent. The [skills reference](/reference/skills) includes the unchanged manual consumer example.
+The runtime appends catalog metadata as a separate system-message block after the configured agent instructions. A string role and skills become two system blocks; structured examples retain their authored order before the catalog. These configured blocks are transient and stay out of checkpoints. Bodies and references still enter the transcript only as `load_skill` results.
+
+For explicit setup/build workflows, `prepareSkills()` remains available with a staged `verify` callback. `loadSkillBundles(approved)` remains the manual catalog API: append `catalog.instructions` and compose `catalog.tools` yourself, checking for an existing `load_skill`. Do not combine a manual catalog tool with first-class skills on the same agent. `catalog.instructions` remains a string; with structured agent instructions, append `{ role: 'system', content: catalog.instructions }` as the last block instead of string interpolation. The [skills reference](/reference/skills) includes the unchanged manual consumer example.
 
 ## Bundle format and bounds
 

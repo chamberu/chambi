@@ -41,6 +41,8 @@ export type LoadedSkill = {
 function createSkillCatalog(skills: readonly Skill[]): SkillCatalog;
 ```
 
+`SkillCatalog.instructions` remains metadata-only text for manual composition. The first-class runtime converts nonempty catalog text into a frozen system-message array (an empty catalog contributes `[]`), appended after the configured agent instructions. `SkillContribution.instructions` accepts core `AgentInstructions`, including legacy strings.
+
 Core exports only the generic integration protocol. It coordinates preparation, cancellation and contributed tools; the optional runtime owns content validation, catalogs, source caches and fingerprints. Core/app work without skills installed, and the skills main entry has no app dependency.
 
 <<< ../../../core/src/skill/types.ts{ts}

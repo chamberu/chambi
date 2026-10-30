@@ -19,6 +19,7 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 ## Code Style
 
 - ESM only (`"type": "module"`), Node >= 22.
+- Configured agent/contributed instructions use core `AgentInstructions`; preserve native SDK role-specific content and provider options. Only the leading system run goes into SDK `instructions`; later configured blocks stay transient and ordered. Manual skills catalog instructions remain strings.
 - `@chamvi/ui`'s app ships to Vite's default browser target (Safari 16.4, Firefox 114), which esbuild does not polyfill: no ES2025 iterator helpers (`map.entries().toArray()`; use `Array.from`), enforced by a `no-restricted-syntax` rule in `eslint.config.js`.
 - 4-space indent (also JSON and YAML), LF, UTF-8, final newline, trailing whitespace trimmed except in Markdown (see `.editorconfig`).
 - Single quotes, semicolons (enforced by ESLint).

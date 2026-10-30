@@ -78,3 +78,15 @@ loaders own retrieval and verification against reviewed pins. The skills main en
 Downstream documentation commit `8ba3f4eecd80c01865e424a51ad7f611a8e26b53` updates only ownership/import guidance. README/deployment checks passed 12 tests across two files.
 Existing dependencies, images, manifests, CLI/env/routes, probe settings, RBAC and fixtures require no changes.
 No push, image build, live cluster or publication was performed in this scoped check.
+
+## Structured instructions compatibility check (2026-10-30, unreleased)
+
+Core `src/message/types.ts` now exports native SDK message/content types; `src/agent/types.ts` adds
+`AgentInstruction` and string-or-readonly-array `AgentInstructions`. App's existing core barrel re-exports them.
+`src/engine/execute/module.ts` maps only leading system blocks to SDK instructions, retaining later configured
+blocks in order as a transient prefix outside checkpoints and pending replay. Skills runtime metadata is a separate
+system block; manual `SkillCatalog.instructions` remains text. Existing string agents remain compatible.
+
+Downstream commit `858f89bef52f6d369015f6a2b00ac2cb2fcbd2a2` updates only README and agent conventions.
+the eight README contract tests passed. Existing sources, fixtures, dependencies, CLI/env, routes,
+images, values, manifests, probes and RBAC need no changes. No push or publication was performed.

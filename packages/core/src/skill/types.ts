@@ -6,7 +6,7 @@
  */
 
 import type { ToolSet } from 'ai';
-import type { Agent } from '../agent/types.ts';
+import type { Agent, AgentInstructions } from '../agent/types.ts';
 
 export type SkillInput = Readonly<{
     runtime: ISkillRuntimeProvider;
@@ -33,7 +33,7 @@ export type PreparedAgentSkills = Readonly<{
     contribution: SkillContribution;
 }>;
 export type SkillContribution = Readonly<{
-    instructions: string;
+    instructions: AgentInstructions;
     tools: ToolSet;
     /** Check ordinary user/state tools before contributed tools are merged. */
     checkTools(tools: ToolSet): void;

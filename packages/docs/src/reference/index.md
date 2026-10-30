@@ -17,11 +17,17 @@ const DEFAULT_MAX_STEPS: 20;
 const DEFAULT_TIMEOUT_MS: 900_000; // 15 minutes
 ```
 
-Throws `InvalidAgentDefinitionError` for an invalid name, duplicate subscription ids, a tool with `needsApproval` or a `toolsContext` entry naming a chamvi tool or no tool of a plain tool set (both in a plain tool set; a tools factory fails the run instead). See [Agents](/guide/agents).
+Throws `InvalidAgentDefinitionError` for an invalid name, instruction outer shape or role, duplicate subscription ids, a tool with `needsApproval` or a `toolsContext` entry naming a chamvi tool or no tool of a plain tool set (both in a plain tool set; a tools factory fails the run instead). See [Agents](/guide/agents).
 
 A folder agent's `agent.ts` default-exports `defineAgent()`'s result, named like its folder; `AgentRevision` is the store's revision marker of a folder agent (see [Agent Folders](/guide/agent-folders)):
 
 <<< ../../../core/src/agent/types.ts{ts}
+
+## Native messages and instructions
+
+Core exports the unchanged native SDK types `SystemModelMessage`, `UserModelMessage`, `AssistantModelMessage`, `ModelMessage`, `UserContent`, `AssistantContent`, `TextPart`, `ImagePart` and `FilePart`. App re-exports these through its normal core barrel. System content is a string; user/assistant multipart content and provider options retain their native SDK types.
+
+`AgentInstruction` is the union of native system/user/assistant messages; `AgentInstructions` accepts a string or readonly array of that union. Tool roles and a single-object shorthand are refused. Leading system blocks use SDK instructions; all remaining configured messages stay ordered in a transient prefix. Skills runtime metadata adds a separate system block, while manual catalog metadata stays a string. Prefixes hydrate files without entering checkpoints or pending-tool replay; restored transcript system roles are rejected. See the [typed instructions example](/guide/agents#instructions).
 
 ## Permissions
 

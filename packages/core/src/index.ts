@@ -15,6 +15,7 @@ export * from './effect/index.ts';
 export * from './engine/index.ts';
 export * from './errors/index.ts';
 export * from './handoff/index.ts';
+export * from './message/index.ts';
 export * from './model/index.ts';
 export * from './permission/index.ts';
 export * from './run/index.ts';

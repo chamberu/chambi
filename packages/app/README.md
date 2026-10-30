@@ -314,3 +314,5 @@ See [Pick a Model](https://chamvi.dev/guide/models) for providers, secrets, gate
 ## License
 
 Published under [Apache License 2.0](./LICENSE).
+
+Agent `instructions` also accept an ordered readonly array of native system/user/assistant messages. `AgentInstructions`, `SystemModelMessage`, `UserModelMessage`, `AssistantModelMessage` and the native content types are exported by `@chamvi/core` and re-exported by this package. Strings remain compatible. See the [typed instructions example](https://chamvi.dev/guide/agents#instructions) for role-specific content, provider options and transient checkpoint behavior.

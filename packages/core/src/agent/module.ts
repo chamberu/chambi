@@ -7,6 +7,7 @@
 
 import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
+import { assertInstructions } from '../message/helpers.ts';
 import { snapshotSkillInputs } from '../skill/helpers.ts';
 import type { StateSchema } from '../state/types.ts';
 import {
@@ -29,6 +30,7 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
         );
     }
 
+    assertInstructions(def.instructions);
     assertConcurrencyMaxRuns(def.concurrencyMaxRuns, `Agent "${def.name}" concurrencyMaxRuns`);
     const seen = new Set<string>();
     for (const subscription of def.channels ?? []) {

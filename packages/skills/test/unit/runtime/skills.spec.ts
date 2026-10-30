@@ -47,6 +47,77 @@ const engine = (skills: ConstructorParameters<typeof Engine>[0]['skills'] = [], 
 const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
 
 describe('first class skills', () => {
+    it('publishes frozen system arrays and keeps an empty catalog contribution empty', async () => {
+        const ready = skill();
+        for (const globals of [[], [ready]]) {
+            const runtime = ready.runtime.create(globals);
+            const configured = agent();
+            runtime.checkAgent(configured, []);
+            const preparation = await runtime.prepare([configured], { signal: new AbortController().signal });
+            const { instructions } = preparation.commit()[0]!.contribution;
+            expect(instructions).toEqual(globals.length ? [{ role: 'system', content: expect.stringContaining('approved_skills') }] : []);
+            expect(Object.isFrozen(instructions)).toBe(true);
+            if (Array.isArray(instructions) && instructions.length) expect(Object.isFrozen(instructions[0])).toBe(true);
+        }
+    });
+
+    it('contributes a separate metadata system block after the configured instruction array', async () => {
+        const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
+        const e = new Engine({
+            store: new MemoryStore(),
+            model,
+            skills: [skill()],
+            agents: [defineAgent({
+                name: 'test',
+                instructions: [
+                    { role: 'system', content: 'base' },
+                    { role: 'user', content: 'example question' },
+                    { role: 'assistant', content: 'example answer' },
+                ],
+            })],
+        });
+        try {
+            await e.start();
+            const { runId } = await e.dispatch({
+                agent: 'test',
+                channel: 'test',
+                trigger: 'test',
+                payload: {},
+            });
+            await e.idle();
+            expect((await e.getRun(runId))?.status).toBe('completed');
+            const { prompt } = (model.doStreamCalls[0]!);
+            expect(prompt.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'system', 'user']);
+            expect(prompt[3]?.content).toContain('approved_skills');
+            expect(JSON.stringify(prompt)).not.toContain('SECRET BODY');
+            expect(JSON.stringify(await e.store.latestCheckpoint(runId))).not.toContain('approved_skills');
+        } finally { await e.stop(); }
+    });
+    it('keeps string instructions and catalog metadata in distinct leading system blocks', async () => {
+        const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
+        const e = new Engine({
+            store: new MemoryStore(),
+            model,
+            skills: [skill()],
+            agents: [agent()],
+        });
+        try {
+            await e.start();
+            const { runId } = await e.dispatch({
+                agent: 'test',
+                channel: 'test',
+                trigger: 'test',
+                payload: {},
+            });
+            await e.idle();
+            expect((await e.getRun(runId))?.status).toBe('completed');
+            expect(model.doStreamCalls[0]?.prompt.slice(0, 2)).toEqual([
+                { role: 'system', content: 'role' },
+                { role: 'system', content: expect.stringContaining('approved_skills') },
+            ]);
+        } finally { await e.stop(); }
+    });
+
     it('deduplicates exact headers and rejects per-agent conflicts and effective limit synchronously', () => {
         expect(() => engine([skill()], [agent([skill()])])).not.toThrow();
         expect(() => engine([skill()], [agent([defineSkill({ ...skill(), version: '2' })])])).toThrow(/skill/i);

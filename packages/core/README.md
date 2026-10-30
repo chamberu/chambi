@@ -353,7 +353,7 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 |---|---|---|---|
 | `name` | `string` | required | Unique per app, lowercase words joined by `-` |
 | `model` | `ModelRef` | `EngineOptions.model` | A `'<provider>/<model id>'` string resolved through `EngineOptions.models`, or any AI SDK `LanguageModel` |
-| `instructions` | `string` | required | System instructions |
+| `instructions` | `AgentInstructions` | required | A string or an ordered readonly array of native system/user/assistant messages |
 | `channels` | `ChannelSubscription[]` | none | Subscriptions to channels registered on the engine |
 | `tools` | `ToolSet \| (ctx) => ToolSet` | none | A plain tool set, or a factory called for each execution |
 | `toolsContext` | `Record<string, unknown>` | none | Per tool name, the context of a tool that is not chamvi's, passed through by reference |
@@ -363,10 +363,31 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 | `hooks` | `AgentHooks` | none | `beforeToolExecution` / `afterToolExecution` around every tool call: rewrite input or output, gate a tool with `approve()` |
 | `output` | `Output` | none | AI SDK structured output; a completed run's `output` is the parsed value |
 
+## Structured instructions
+
+Strings remain shorthand for one system message. Native message types are available directly from core:
+
+```ts
+import { defineAgent } from '@chamvi/core';
+import type { AgentInstructions, SystemModelMessage, UserModelMessage } from '@chamvi/core';
+
+const policy: SystemModelMessage = { role: 'system', content: 'Summarize the report.' };
+const example: UserModelMessage = { role: 'user', content: [{ type: 'text', text: 'All checks passed.' }] };
+const instructions: AgentInstructions = [policy, example, { role: 'assistant', content: 'Ready to release.' }];
+const agent = defineAgent({ name: 'reporter', instructions });
+```
+
+System content is a string; user/assistant content and `providerOptions` use their native SDK types. Leading system blocks go through SDK `instructions`; the remaining messages stay in order before the run transcript, including any later system blocks. First-class skills append a separate metadata system block. These configured messages are transient: they hydrate artifact markers for model/tool context, stay out of checkpoints and never become pending replay calls. Resumed executions rebuild them from the current definition. Stored transcript system roles are rejected before replay/model work. Manual `SkillCatalog.instructions` remains a string for explicit composition.
+
+See the [instructions guide](https://chamvi.dev/guide/agents#instructions) for the typed example and role-specific content limits.
+
 ## API
 
 | Export | Kind | Purpose |
 |---|---|---|
+| `AgentInstruction`, `AgentInstructions` | type | Native system/user/assistant message union and string-or-readonly-array configuration |
+| `SystemModelMessage`, `UserModelMessage`, `AssistantModelMessage`, `ModelMessage` | type | Identity-preserving native SDK message types |
+| `UserContent`, `AssistantContent`, `TextPart`, `ImagePart`, `FilePart` | type | Native SDK content and part types |
 | `defineAgent` | function | Validates an agent definition and applies defaults |
 | `DEFAULT_MAX_STEPS`, `DEFAULT_TIMEOUT_MS` | constant | The default budget: `20` steps, `900_000` ms |
 | `Engine` | class | `store`, `clock`, `getAgent`, `listAgents`, `putAgent`, `removeAgent`, `getChannel`, `listChannels`, `provide`, `start`, `dispatch`, `getRun`, `on`, `approve`, `cancel`, `recover`, `tick`, `idle`, `stop`, `drain` |

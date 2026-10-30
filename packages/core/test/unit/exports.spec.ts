@@ -12,8 +12,28 @@ import {
     it,
 } from 'vitest';
 import * as core from '@chamvi/core';
+import type * as sdk from 'ai';
 
 describe('public api', () => {
+    it('exports native message aliases and role-specific instruction types', () => {
+        expectTypeOf<core.SystemModelMessage>().toEqualTypeOf<sdk.SystemModelMessage>();
+        expectTypeOf<core.UserModelMessage>().toEqualTypeOf<sdk.UserModelMessage>();
+        expectTypeOf<core.AssistantModelMessage>().toEqualTypeOf<sdk.AssistantModelMessage>();
+        expectTypeOf<core.ModelMessage>().toEqualTypeOf<sdk.ModelMessage>();
+        expectTypeOf<core.SystemModelMessage['content']>().toEqualTypeOf<string>();
+        expectTypeOf<core.UserContent>().toEqualTypeOf<sdk.UserContent>();
+        expectTypeOf<core.AssistantContent>().toEqualTypeOf<sdk.AssistantContent>();
+        expectTypeOf<core.TextPart>().toEqualTypeOf<sdk.TextPart>();
+        expectTypeOf<core.ImagePart>().toEqualTypeOf<sdk.ImagePart>();
+        expectTypeOf<core.FilePart>().toEqualTypeOf<sdk.FilePart>();
+        expectTypeOf<core.AgentInstruction>().toEqualTypeOf<sdk.SystemModelMessage | sdk.UserModelMessage | sdk.AssistantModelMessage>();
+        expectTypeOf<core.AgentDefinition['instructions']>().toEqualTypeOf<string | readonly core.AgentInstruction[]>();
+        expectTypeOf<core.SkillContribution['instructions']>().toEqualTypeOf<core.AgentInstructions>();
+        expectTypeOf<sdk.ToolModelMessage>().not.toExtend<core.AgentInstruction>();
+        expect(core).not.toHaveProperty('normalizeInstructions');
+        expect(core).not.toHaveProperty('splitInstructions');
+    });
+
     it.each([
         'defineAgent',
         'Engine',

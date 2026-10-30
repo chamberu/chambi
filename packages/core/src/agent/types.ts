@@ -7,6 +7,7 @@
 
 import type { OutputInterface, ToolSet } from 'ai';
 import type { ChannelSubscription } from '../channel/types.ts';
+import type { AssistantModelMessage, SystemModelMessage, UserModelMessage } from '../message/types.ts';
 import type { ModelRef } from '../model/types.ts';
 import type { Budget, RunContext } from '../run/types.ts';
 import type { StateSchema } from '../state/types.ts';
@@ -61,6 +62,12 @@ export type AgentHooks = {
     afterToolExecution?(call: ToolCallInfo & { output: unknown }, ctx: ToolContext): unknown | Promise<unknown>;
 };
 
+/** Trusted configured messages; tool-role messages are never instruction inputs. */
+export type AgentInstruction = SystemModelMessage | UserModelMessage | AssistantModelMessage;
+
+/** A string is shorthand for one system message. Arrays retain their authored order. */
+export type AgentInstructions = string | readonly AgentInstruction[];
+
 export type AgentDefinition<S extends StateSchema = StateSchema> = {
     name: string;
     /**
@@ -68,7 +75,7 @@ export type AgentDefinition<S extends StateSchema = StateSchema> = {
      * LanguageModel object; without it the agent uses EngineOptions.model.
      */
     model?: ModelRef;
-    instructions: string;
+    instructions: AgentInstructions;
     readonly skills?: readonly SkillInput[];
     /**
      * The channels that start the agent's runs (e.g. `cron.on('0 8 * * 1-5')`);

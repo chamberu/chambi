@@ -37,6 +37,8 @@ Startup installation requires this package and Git in the runtime image, writabl
 
 `Skill`, `SkillIdentity`, `SkillMetadata`, `ISkillSource`, `SkillCatalog`, `LoadedSkill` and `createSkillCatalog()` are exported from `@chamvi/skills`. Core exports only the generic `SkillInput` and preparation/contribution contracts. For caller-provided values, use `defineSkill(rawSkill)` or `defineSkillSource(rawSource)` before placing them in a `skills` array. These adapters validate and copy contents/declarations and attach the runtime; they do not fetch or independently hash-verify caller-provided text. Custom loaders own retrieval and verification against their reviewed pins. `gitSkills()` and `loadSkillBundle()` already return adapted values.
 
+First-class runtime metadata is a separate frozen system-message block appended after the agent's configured instructions, including structured system/user/assistant arrays. It contains descriptions and identities, with bodies and references disclosed only through `load_skill`. The standalone `SkillCatalog.instructions` stays a string, so existing manual string composition remains compatible. For a structured manual configuration, append `{ role: 'system', content: catalog.instructions }` to the array and merge `catalog.tools` explicitly.
+
 The manual catalog workflow remains supported:
 
 Call `prepareSkills({ source, revision, names, directory, verify? })` in an explicit setup/build task. The source is a local Git repository, Git URL or repository shorthand; revision is a full 40-character commit. The result is an ordered readonly list of `{ name, description, path }`, with absolute paths. Source configuration, role choices and independently reviewed content pins belong to your application.

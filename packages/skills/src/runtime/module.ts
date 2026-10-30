@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto';
 import type {
     Agent,
+    AgentInstructions,
     ISkillPreparation,
     ISkillRuntime,
     PreparedAgentSkills,
@@ -107,7 +108,7 @@ export class SkillRuntime implements ISkillRuntime {
             attest(skills);
             const catalog = createSkillCatalog(skills);
             const contribution = Object.freeze({
-                instructions: catalog.instructions,
+                instructions: Object.freeze(catalog.instructions ? [Object.freeze({ role: 'system', content: catalog.instructions })] : []) satisfies AgentInstructions,
                 tools: catalog.tools,
                 checkTools: (tools: typeof catalog.tools) => assertSkillToolCollision(catalog.skills, tools),
             });
