@@ -9,7 +9,6 @@ import {
     describe,
     expect,
     it,
-    vi,
 } from 'vitest';
 import { ChamviError, InvalidAgentDefinitionError, ValidationError } from '@chamvi/core';
 import type { ChannelMessage, TriggerEnvelope } from '@chamvi/core';
@@ -204,11 +203,17 @@ describe('github channel out', () => {
             clock,
         } = setup();
 
-        fake.route('GET', '/repos/:owner/:repo/issues/:number/comments', () => new Promise(() => {}));
+        const entered = Promise.withResolvers<void>();
+
+        fake.route('GET', '/repos/:owner/:repo/issues/:number/comments', () => {
+            entered.resolve();
+
+            return new Promise(() => {});
+        });
 
         const pending = send();
 
-        await vi.waitFor(() => expect(fake.requests.some((r) => r.path.endsWith('/comments'))).toBe(true));
+        await entered.promise;
         clock.advance(GITHUB_CHANNEL_TIMEOUT_MS);
 
         const error = await rejection(pending);
@@ -224,12 +229,18 @@ describe('github channel out', () => {
             posts,
         } = setup();
 
-        fake.route('GET', '/repos/:owner/:repo/issues/:number/comments', () => new Promise(() => {}));
+        const entered = Promise.withResolvers<void>();
+
+        fake.route('GET', '/repos/:owner/:repo/issues/:number/comments', () => {
+            entered.resolve();
+
+            return new Promise(() => {});
+        });
 
         const controller = new AbortController();
         const pending = send(APPROVAL, ADDRESS, githubTrigger(), controller.signal);
 
-        await vi.waitFor(() => expect(fake.requests.some((r) => r.path.endsWith('/comments'))).toBe(true));
+        await entered.promise;
 
         const reason = new Error('the engine gave up');
 

@@ -15,6 +15,7 @@ import {
 } from '@chamvi/core';
 import type { ToolTrust } from '@chamvi/core';
 import type { Tool } from 'ai';
+import { createGithubApp } from '@chamvi/github';
 import type { GithubCreatedPullRequest, GithubProposalsOptions, GithubProposeChangeInput } from '@chamvi/github';
 import { githubModule } from '@chamvi/github/module';
 import { createGithubFixture } from '../../utils/app.ts';
@@ -387,8 +388,16 @@ describe('github_propose_change', () => {
     });
 
     it('validates policy eagerly', () => {
+        const { fake } = createGithubFixture();
+
         for (const policy of [null, { repos: [] }, { repos: { invalid: { paths: ['*'] } } }, { repos: { 'octo/demo': { paths: [] } } }, { repos: { 'octo/demo': { paths: ['../*'] } } }, { repos: { 'octo/demo': { paths: ['.github/**'] } } }, { repos: { 'octo/demo': { paths: ['config\\*'] } } }, { repos: { 'octo/demo': { paths: [1] } } }]) {
-            expect(() => createGithubFixture({ proposals: policy as unknown as GithubProposalsOptions })).toThrow(InvalidAgentDefinitionError);
+            expect(() => createGithubApp({
+                appId: 123,
+                privateKey: fake.privateKey,
+                webhookSecret: 'test-secret',
+                fetch: fake.fetch,
+                proposals: policy as unknown as GithubProposalsOptions,
+            })).toThrow(InvalidAgentDefinitionError);
         }
     });
 
