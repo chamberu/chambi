@@ -49,7 +49,7 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
 
     const skills = snapshotSkillInputs(
         def.skills,
-        typeof def.tools === 'function' ? {} : def.tools ?? {}
+        typeof def.tools === 'function' ? {} : def.tools ?? {},
     );
 
     // a factory's set is only known per execution, the engine checks it there
