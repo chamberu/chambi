@@ -58,6 +58,10 @@ export class GithubModule implements IModule {
         const logger = container.resolve(AppToken.LOGGER);
         const channel = githubChannel({
             ...this.channelOptions,
+            locks: this.channelOptions.locks ?? {
+                acquire: (...args) => container.resolve(AppToken.STORE).locks.acquire(...args),
+                release: (...args) => container.resolve(AppToken.STORE).locks.release(...args),
+            },
             app: this.app,
             ...(approvalUrl && { approvalUrl }),
             clock: container.resolve(AppToken.CLOCK),

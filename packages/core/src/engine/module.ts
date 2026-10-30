@@ -1493,6 +1493,7 @@ export class Engine implements IEngine {
                     agent: run.agent,
                     title: waiting.title,
                     body: waiting.notification ?? waiting.body ?? '',
+                    ...(waiting.slot !== undefined ? { slot: waiting.slot } : {}),
                     approvalId: waiting.approvalId,
                     expiresAt: waiting.expiresAt,
                     ...(waiting.options !== undefined ? { options: waiting.options } : {}),

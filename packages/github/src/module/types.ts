@@ -18,7 +18,7 @@ export type GithubModuleOptions = Partial<GithubAppOptions> & {
     app?: IGithubApp;
     /** Default `process.env`, read when the factory is called. */
     env?: Env;
-    /** The channel's options (name, mentions, approval link, timeout, body limit). */
+    /** The channel's options; named comment slots use the app store's locks by default. */
     channel?: GithubModuleChannelOptions;
     /**
      * The App's git credentials (`githubAppCredentials()`), contributed to

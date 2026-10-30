@@ -41,6 +41,8 @@ export type ChannelMessage = {
     agent: string;
     title?: string;
     body: string;
+    /** Named persistent message where supported (GitHub); omitted messages append. */
+    slot?: string;
     /** Set for kind `approval`. */
     approvalId?: string;
     /** Set for kind `approval`. */
@@ -103,6 +105,8 @@ export type EmitMessage = {
     title?: string;
     body: string;
     key?: string;
+    /** Named persistent message where supported (GitHub); omitted messages append. */
+    slot?: string;
 };
 
 /**
@@ -119,7 +123,7 @@ export type ChannelHandle = {
      */
     emit(message: EmitMessage, address?: string): Promise<void>;
     /** Asks the owner to approve, durably (suspends the tool call until answered). */
-    approve(request: ApprovalRequestInput & { address?: string }): Promise<ApprovalDecision>;
+    approve(request: ApprovalRequestInput & { address?: string; slot?: string }): Promise<ApprovalDecision>;
 };
 
 /**

@@ -24,6 +24,7 @@ import {
     describe,
     expect,
     it,
+    vi,
 } from 'vitest';
 import { z } from 'zod';
 import {
@@ -226,6 +227,73 @@ describe('githubModule', () => {
 
         harnesses.push(harness);
         expect(harness.container.resolveAll(AppToken.CHANNELS).map((channel) => channel.name)).toEqual(['github-ent']);
+    });
+
+    it('uses the app store lock for persistent comments and forwards the slot', async () => {
+        const fixture = createFakeGithub({
+            appId: '1',
+            slug: 'chamvi-test',
+            clock,
+        });
+        const gh = createGithubApp({
+            appId: '1',
+            privateKey: fixture.privateKey,
+            webhookSecret: 'a',
+            slug: 'chamvi-test',
+            installationId: 42,
+            clock,
+            fetch: fixture.fetch,
+        });
+
+        fixture.issues.set('octo/demo#7', { number: 7 });
+
+        const harness = await createModuleHarness({
+            env: {},
+            modules: [
+                configModule({ logger: createRecordingLogger() }),
+                githubModule({ app: gh }),
+                storeModule(),
+            ],
+        });
+
+        harnesses.push(harness);
+
+        const store = harness.container.resolve(AppToken.STORE);
+        const acquire = vi.spyOn(store.locks, 'acquire').mockResolvedValue(false);
+        const [channel] = harness.container.resolveAll(AppToken.CHANNELS);
+        const message = {
+            kind: 'message' as const,
+            key: 'status-1',
+            slot: 'status',
+            runId: 'r1',
+            agent: 'triage',
+            body: 'First status',
+        };
+        const opts = {
+            signal: new AbortController().signal,
+            trigger: {
+                id: 'e1',
+                agent: 'triage',
+                trigger: 'http',
+                channel: 'http',
+                payload: {},
+                receivedAt: clock.now(),
+            },
+        };
+
+        await expect(channel!.out!(message, 'octo/demo#7', opts)).rejects.toMatchObject({ code: 'github_request' });
+        expect(acquire).toHaveBeenCalledOnce();
+        expect(fixture.comments.size).toBe(0);
+        acquire.mockRestore();
+
+        await channel!.out!(message, 'octo/demo#7', opts);
+        await channel!.out!({
+            ...message,
+            key: 'status-2',
+            body: 'Latest status',
+        }, 'octo/demo#7', opts);
+        expect(fixture.comments.get('octo/demo#7')).toHaveLength(1);
+        expect(fixture.comments.get('octo/demo#7')?.[0]?.body).toContain('Latest status');
     });
 
     it('links approvals to the UI of CHAMVI_PUBLIC_URL', async () => {

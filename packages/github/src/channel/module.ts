@@ -20,7 +20,9 @@ import type { GithubChannel, GithubChannelOptions } from './types.ts';
  * the event's issue or pull request, deduplicated by the delivery id; it
  * answers `202 { delivery, runs }`, also for ping, unmatched and self-sent
  * events. `out` comments on an issue or pull request (`owner/repo#n`, e.g.
- * the run's source address), at most once per message key. Throws
+ * the run's source address), at most once per message key. With
+ * an explicit message `slot`, later messages update that agent's slot instead.
+ * Throws
  * InvalidAgentDefinitionError for an invalid option.
  */
 export function githubChannel(options: GithubChannelOptions): GithubChannel {

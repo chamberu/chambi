@@ -78,7 +78,11 @@ function assertRequest(request: unknown): Pick<ApprovalRequest, 'options' | 'mul
  */
 export async function requestApproval(
     request: ApprovalRequestInput & { binding?: string; notification?: string },
-    target: { channel?: string; address?: string } = {},
+    target: {
+        channel?: string;
+        address?: string;
+        slot?: string
+    } = {},
 ): Promise<ApprovalDecision> {
     const frame = currentToolCall();
 
@@ -118,6 +122,7 @@ export async function requestApproval(
         ...choice,
         ...(target.channel !== undefined ? { channel: target.channel } : {}),
         ...(target.address !== undefined ? { address: target.address } : {}),
+        ...(target.slot !== undefined ? { slot: target.slot } : {}),
         timeoutMs: request.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
     };
 

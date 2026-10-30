@@ -322,10 +322,14 @@ describe('public api', () => {
         expectTypeOf<core.EmitMessage>().toEqualTypeOf<{
             title?: string;
             body: string;
-            key?: string
+            key?: string;
+            slot?: string
         }>();
         expectTypeOf<core.ChannelHandle['emit']>().returns.toEqualTypeOf<Promise<void>>();
         expectTypeOf<core.ChannelHandle['approve']>().returns.toEqualTypeOf<Promise<core.ApprovalDecision>>();
+        expectTypeOf<Parameters<core.ChannelHandle['approve']>[0]>().toEqualTypeOf<core.ApprovalRequestInput & { address?: string; slot?: string }>();
+        expectTypeOf<core.ChannelMessage['slot']>().toEqualTypeOf<string | undefined>();
+        expectTypeOf<core.WaitPoint['slot']>().toEqualTypeOf<string | undefined>();
         expectTypeOf<core.ConsoleChannelOptions>().toHaveProperty('name').toEqualTypeOf<string | undefined>();
     });
 
