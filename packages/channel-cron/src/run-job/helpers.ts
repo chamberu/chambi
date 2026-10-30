@@ -8,7 +8,7 @@
 import type {
     Agent,
     ChannelSubscription,
-    Engine,
+    IEngine,
     IRunRepository,
     Run,
 } from '@chamvi/core';
@@ -20,7 +20,7 @@ import { isCronChannel } from '../channel/helpers.ts';
  * subscription of a cron channel the engine holds. Throws
  * InvalidAgentDefinitionError when it is missing or ambiguous.
  */
-export function resolveCronSubscription(engine: Engine, agent: Agent, subscriptionId?: string): ChannelSubscription {
+export function resolveCronSubscription(engine: IEngine, agent: Agent, subscriptionId?: string): ChannelSubscription {
     const crons = (agent.definition.channels ?? []).filter((s) => isCronChannel(engine.getChannel(s.channel)));
 
     if (subscriptionId !== undefined) {

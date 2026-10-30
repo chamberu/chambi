@@ -7,7 +7,7 @@
 
 import { createHmac } from 'node:crypto';
 import { Engine, createMemoryStore } from '@chamvi/core';
-import type { Agent, IChannel } from '@chamvi/core';
+import type { Agent, IChannel, IEngine } from '@chamvi/core';
 import { createGithubApp, githubChannel } from '@chamvi/github';
 import type {
     GithubAppOptions,
@@ -40,7 +40,7 @@ export type GithubTestAppInput = {
 
 export type GithubTestApp = {
     app: App;
-    engine: Engine;
+    engine: IEngine;
     store: ReturnType<typeof createMemoryStore>;
     clock: ControllableClock;
     fake: FakeGithub;

@@ -61,13 +61,14 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { openclawChannel } from '@chamvi/channel-openclaw';
 import type { OpenclawChannelOptions } from '@chamvi/channel-openclaw';
 
 export function createApprovalEngine(
     model: LanguageModel,
     options: Pick<OpenclawChannelOptions, 'fetch' | 'clock'> = {},
-): Engine {
+): IEngine {
     const {
         OPENCLAW_URL,
         OPENCLAW_HOOKS_TOKEN,

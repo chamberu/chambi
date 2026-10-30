@@ -12,7 +12,7 @@ import {
     it,
 } from 'vitest';
 import { Engine, defineAgent } from '@chamvi/core';
-import type { EngineOptions, Run } from '@chamvi/core';
+import type { EngineOptions, IEngine, Run } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import { createMemoryStore } from '../../../src/repository/index.ts';
@@ -35,7 +35,7 @@ class HookedEngine extends Engine {
     }
 }
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -99,7 +99,7 @@ const env = (agent = 'triage') => ({
 const statusOf = async (store: ReturnType<typeof createMemoryStore>, id: string) => (await store.runs.findOne(id))?.status;
 
 /** One poll of the queue (claimTtlMs 60 s: every 20 s), then everything it started. */
-async function poll(engine: Engine, clock: ControllableClock): Promise<void> {
+async function poll(engine: IEngine, clock: ControllableClock): Promise<void> {
     clock.advance(20_000);
     await engine.idle();
 }

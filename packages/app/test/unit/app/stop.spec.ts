@@ -7,7 +7,7 @@
 
 import { createMemoryStore, defineAgent } from '@chamvi/core';
 import { http } from '@chamvi/http';
-import type { Engine } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { ControllableClock, textModel } from '@chamvi/test-kit';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
@@ -267,7 +267,7 @@ describe('App.stop', () => {
         };
         const recorder = hookModule({
             name: 'recorder',
-            engineCreated: (engine: Engine) => {
+            engineCreated: (engine: IEngine) => {
                 const drain = engine.drain.bind(engine);
 
                 engine.drain = async (input) => {

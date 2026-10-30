@@ -6,7 +6,7 @@
  */
 
 import { ChamviError } from '@chamvi/core';
-import type { Engine } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import type { IModule } from 'orkos';
 import { describe, expect, it } from 'vitest';
 import {
@@ -34,7 +34,7 @@ function hookModule(hooks: ILifecycleHook[]): IModule {
 
 describe('runHooks', () => {
     it('runs in registration order and only the given phase', async () => {
-        const fakeEngine = {} as Engine;
+        const fakeEngine = {} as IEngine;
         const calls: string[] = [];
         const harness = await createHarness({
             modules: [hookModule([

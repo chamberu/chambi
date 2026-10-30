@@ -11,6 +11,7 @@ import {
     createMemoryStore,
     defineAgent,
 } from '@chamvi/app';
+import type { IEngine } from '@chamvi/app';
 import { hashSkillBundle } from '@chamvi/skills';
 import { ControllableClock, createGitFixture } from '@chamvi/test-kit';
 import type { LanguageModelV4StreamPart } from '@ai-sdk/provider';
@@ -96,7 +97,7 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
         names: ['audit'],
         directory,
     };
-    let engine: Engine | undefined;
+    let engine: IEngine | undefined;
 
     try {
         const catalog = await prepareCatalog(options, { audit: hash });

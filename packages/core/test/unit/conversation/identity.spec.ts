@@ -18,9 +18,10 @@ import {
     createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { mockModel } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(async () => {
     const pending = engines.map((engine) => engine.stop());

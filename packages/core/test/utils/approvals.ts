@@ -6,7 +6,7 @@
  */
 
 import { ToolDeniedError, approve } from '@chamvi/core';
-import type { AgentHooks, Engine } from '@chamvi/core';
+import type { AgentHooks, IEngine } from '@chamvi/core';
 
 export type IssuedApproval = {
     runId: string;
@@ -20,7 +20,7 @@ export type IssuedApproval = {
  * Records each new wait point the engine emits (what the owner would be
  * asked), in order: `calls[i].approvalId`.
  */
-export function recordApprovals(engine: Engine): { calls: IssuedApproval[] } {
+export function recordApprovals(engine: IEngine): { calls: IssuedApproval[] } {
     const calls: IssuedApproval[] = [];
     const seen = new Set<string>();
 

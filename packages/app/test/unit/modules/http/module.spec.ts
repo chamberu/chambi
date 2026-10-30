@@ -11,7 +11,7 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { Agent, Engine } from '@chamvi/core';
+import type { Agent, IEngine } from '@chamvi/core';
 import { http } from '@chamvi/http';
 import { ControllableClock, approvalModel, textModel } from '@chamvi/test-kit';
 import type { IContainer } from 'eldin';
@@ -80,7 +80,7 @@ function hooks(hook: ILifecycleHook): IModule {
 function drainRecorder(events: string[]): IModule {
     return hooks({
         name: 'drain-recorder',
-        engineCreated: (engine: Engine) => {
+        engineCreated: (engine: IEngine) => {
             const drain = engine.drain.bind(engine);
 
             engine.drain = async (input) => {

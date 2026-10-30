@@ -10,7 +10,7 @@ import {
     ErrorCode,
     InvalidAgentDefinitionError,
 } from '@chamvi/core';
-import type { Agent, Engine } from '@chamvi/core';
+import type { Agent, IEngine } from '@chamvi/core';
 import type { Issue } from '@ebec/core';
 import { isHTTPError } from '@ebec/http';
 import type { IHTTPError } from '@ebec/http';
@@ -136,7 +136,7 @@ function isAtOrUnder(path: string, prefix: string): boolean {
  * The engine's agents, or only the named ones (in the given order); a name the
  * engine lacks or a name given twice throws InvalidAgentDefinitionError.
  */
-export function selectAgents(engine: Engine, names?: readonly string[]): Agent[] {
+export function selectAgents(engine: IEngine, names?: readonly string[]): Agent[] {
     if (names === undefined) {
         return engine.listAgents();
     }
@@ -164,7 +164,7 @@ export function selectAgents(engine: Engine, names?: readonly string[]): Agent[]
  * The engine's agents, read on every call, or only the named ones the engine
  * holds then (checked by `selectAgents` at construction).
  */
-export function createLiveAgents(engine: Engine, names?: readonly string[]): HttpAgents {
+export function createLiveAgents(engine: IEngine, names?: readonly string[]): HttpAgents {
     const served = names === undefined ? undefined : new Set(names);
     const list = (): Agent[] => {
         const agents = engine.listAgents();

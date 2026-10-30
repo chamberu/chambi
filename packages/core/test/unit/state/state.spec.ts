@@ -15,6 +15,7 @@ import {
 } from 'vitest';
 import { z } from 'zod';
 import { Engine, ValidationError, defineAgent } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { EFFECT } from '../../../src/effect/constants.ts';
 import { wrapToolsForRun } from '../../../src/effect/wrap.ts';
 import { createRunArtifacts } from '../../../src/artifact/module.ts';
@@ -61,7 +62,7 @@ async function call(tools: ToolSet, name: string, input: unknown, context?: Tool
     return (t?.execute as (i: unknown, o: unknown) => Promise<unknown>)(input, { ...callOpts, context });
 }
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {

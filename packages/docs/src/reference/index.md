@@ -64,6 +64,8 @@ Subscription builders live in the channel packages: `http.on()` and `webhook.on(
 
 ## Engine
 
+Use `IEngine` for engine type annotations and `Engine` for construction or extension. `IEngine` describes every public engine member and extends `IContextProvider`; it is also re-exported by `@chamvi/app`.
+
 ```ts
 class Engine {
     constructor(opts: EngineOptions);

@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { InvalidAgentDefinitionError, RunStatus, SandboxError } from '@chamvi/core';
-import type { Engine, Run, RunEvent } from '@chamvi/core';
+import type { IEngine, Run, RunEvent } from '@chamvi/core';
 import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { ISandboxProvider, WorkspaceManagerOptions } from '@chamvi/sandbox';
 import { ControllableClock } from '../../utils/clock.ts';
@@ -60,7 +60,7 @@ function fakeEngine() {
             return () => {
                 listeners.delete(listener);
             };
-        }) as Engine['on'],
+        }) as IEngine['on'],
         emit(run: Pick<Run, 'id' | 'status'>) {
             for (const listener of listeners) {
                 listener({ type: 'run.updated', run: run as Run });

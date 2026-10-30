@@ -21,7 +21,7 @@ import {
     defineEffectTool,
     defineTool,
 } from '@chamvi/core';
-import type { IChannel } from '@chamvi/core';
+import type { IChannel, IEngine } from '@chamvi/core';
 import { createMemoryStore } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
@@ -29,7 +29,7 @@ import type { MockPart, MockResponse } from '../../utils/mock-model.ts';
 
 const START = 1_000_000;
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(async () => {
     await Promise.all(engines.map((e) => e.stop()));
@@ -77,7 +77,7 @@ function createEngine(
     return { engine, errors };
 }
 
-async function dispatch(engine: Engine): Promise<string> {
+async function dispatch(engine: IEngine): Promise<string> {
     await engine.start();
 
     const { runId } = await engine.dispatch({

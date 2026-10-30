@@ -6,7 +6,7 @@
  */
 
 import { Engine, InvalidAgentDefinitionError, agentChannel } from '@chamvi/core';
-import type { IModelResolver, ModelRef } from '@chamvi/core';
+import type { IEngine, IModelResolver, ModelRef } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
 import { createModelResolver } from '../../models/resolver.ts';
@@ -39,7 +39,7 @@ export class EngineModule implements IModule {
 
     protected options: EngineModuleOptions;
 
-    protected engine: Engine | undefined;
+    protected engine: IEngine | undefined;
 
     protected model: ModelRef | undefined;
 

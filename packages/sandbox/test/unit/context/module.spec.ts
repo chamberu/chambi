@@ -19,14 +19,14 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { AgentDefinition } from '@chamvi/core';
+import type { AgentDefinition, IEngine } from '@chamvi/core';
 import { createWorkspaceManager, injectSandboxContext, provideSandboxContext } from '@chamvi/sandbox';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/model.ts';
 import type { MockResponse } from '../../utils/model.ts';
 import { createFakeProvider } from '../../utils/provider.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const engine of engines) {
@@ -74,7 +74,7 @@ function setup(script: MockResponse[], tools: AgentDefinition['tools']) {
     };
 }
 
-async function run(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
+async function run(engine: IEngine, store: ReturnType<typeof createMemoryStore>) {
     const { runId } = await engine.dispatch({
         agent: 'coder',
         trigger: 'http',

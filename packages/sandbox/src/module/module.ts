@@ -19,7 +19,7 @@ import type {
     IModule,
 } from '@chamvi/app';
 import { InvalidAgentDefinitionError, MemoryRunRepository } from '@chamvi/core';
-import type { Engine, IClock } from '@chamvi/core';
+import type { IClock, IEngine } from '@chamvi/core';
 import { isObject } from 'smob';
 import { provideSandboxContext } from '../context/module.ts';
 import { staticGitCredentials } from '../credentials/module.ts';
@@ -66,7 +66,7 @@ export class SandboxModule implements IModule {
     protected report: AppContext['report'] | undefined;
 
     /** Set in `engineCreated`: answers `isSettled` for the garbage collection. */
-    protected engine: Engine | undefined;
+    protected engine: IEngine | undefined;
 
     /**
      * True when the deployment was named (`CHAMVI_DEPLOYMENT` or the option):
@@ -216,7 +216,7 @@ export class SandboxModule implements IModule {
         container.registerMany(AppToken.LIFECYCLE_HOOKS, {
             useValue: {
                 name: SANDBOX_MODULE_NAME,
-                engineCreated: (engine: Engine) => {
+                engineCreated: (engine: IEngine) => {
                     this.engine = engine;
                     detach = this.manager.attach(engine);
                     provideSandboxContext(engine, this.manager);

@@ -18,11 +18,11 @@ import {
 } from 'vitest';
 import { z } from 'zod';
 import { Engine, defineAgent } from '@chamvi/core';
-import type { RunDelta } from '@chamvi/core';
+import type { IEngine, RunDelta } from '@chamvi/core';
 import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {

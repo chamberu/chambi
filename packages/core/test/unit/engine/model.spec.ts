@@ -12,13 +12,13 @@ import {
     it,
 } from 'vitest';
 import { Engine, defineAgent } from '@chamvi/core';
-import type { IModelResolver, ModelRef } from '@chamvi/core';
+import type { IEngine, IModelResolver, ModelRef } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {

@@ -31,6 +31,7 @@ import {
 import type {
     ChannelSubscription,
     HandoffInput,
+    IEngine,
     IStore,
     Invoker,
     Run,
@@ -82,7 +83,7 @@ const fan = defineTool({
     execute: async (input, { context }) => startHandoff(context, input as HandoffInput),
 });
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -175,7 +176,7 @@ function setup(options: {
     };
 }
 
-async function dispatchParent(engine: Engine, extra: { invoker?: Invoker } = {}) {
+async function dispatchParent(engine: IEngine, extra: { invoker?: Invoker } = {}) {
     await engine.start();
 
     const { runId } = await engine.dispatch({

@@ -27,6 +27,7 @@ import type {
     ApprovalOption,
     ChannelMessage,
     IChannel,
+    IEngine,
 } from '@chamvi/core';
 import { toApprovalDecision } from '../../../src/approval/helpers.ts';
 import { createMemoryStore } from '../../../src/repository/index.ts';
@@ -36,7 +37,7 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 
 const START = 1_000_000;
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -111,7 +112,7 @@ function setup(model: LanguageModel, channels: IChannel[] = []) {
     };
 }
 
-async function dispatch(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
+async function dispatch(engine: IEngine, store: ReturnType<typeof createMemoryStore>) {
     await engine.start();
 
     const { runId } = await engine.dispatch({

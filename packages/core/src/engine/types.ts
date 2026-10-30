@@ -7,14 +7,58 @@
 
 import type { Agent } from '../agent/types.ts';
 import type { ArtifactInput } from '../artifact/types.ts';
-import type { IChannel } from '../channel/types.ts';
+import type { ChannelContext, IChannel } from '../channel/types.ts';
 import type { IClock } from '../clock/index.ts';
-import type { ConversationOptions } from '../conversation/types.ts';
+import type { IContextProvider } from '../context/types.ts';
+import type {
+    ConversationIdentity,
+    ConversationInspection,
+    ConversationOptions,
+    ConversationScope,
+} from '../conversation/types.ts';
 import type { IModelResolver, ModelRef } from '../model/types.ts';
 import type { Run, Step } from '../run/types.ts';
 import type { SkillInput } from '../skill/types.ts';
 import type { IStore } from '../repository/types.ts';
 import type { Invoker, TriggerEnvelope } from '../trigger/types.ts';
+
+/** Public engine contract; use Engine only for construction or extension. */
+export interface IEngine extends IContextProvider {
+    readonly store: IStore;
+    readonly clock: IClock;
+    readonly isDraining: boolean;
+
+    dispatch(envelope: DispatchEnvelope): Promise<{ runId: string; deduplicated: boolean }>;
+    inspectConversation(identity: ConversationIdentity, query?: { limit?: number; offset?: number }): Promise<ConversationInspection | undefined>;
+    resetConversation(identity: ConversationIdentity, options?: { keepNotes?: boolean }): Promise<ConversationScope>;
+    deleteConversation(identity: ConversationIdentity): Promise<void>;
+    pruneConversations(): Promise<void>;
+    getAgent(name: string): Agent | undefined;
+    listAgents(): Agent[];
+    channelContext(channel: IChannel): ChannelContext;
+    getChannel(name: string): IChannel | undefined;
+    listChannels(): IChannel[];
+    agentRevision(name: string): string | undefined;
+    putAgent(agent: Agent, options?: {
+        revision?: string;
+        formerRevision?: string;
+        reload?: boolean;
+        signal?: AbortSignal;
+    }): Promise<'added' | 'replaced' | 'unchanged'>;
+    removeAgent(name: string): Promise<boolean>;
+    getRun(id: string): Promise<Run | undefined>;
+    on<T extends EngineEvent['type']>(event: T, listener: (e: Extract<EngineEvent, { type: T }>) => void): () => void;
+    prepare(options?: { signal?: AbortSignal; agents?: readonly Agent[] }): Promise<void>;
+    start(options?: EngineStartOptions): Promise<void>;
+    stop(): Promise<void>;
+    recover(): Promise<number>;
+    drain(options?: { timeoutMs?: number }): Promise<void>;
+    idle(): Promise<void>;
+    cancel(runId: string): Promise<void>;
+    approve(runId: string, answer: ApprovalAnswer): Promise<void>;
+    tick(): Promise<void>;
+    checkAgent(agent: Agent): void;
+}
 
 /**
  * A piece of model output while it streams; never stored. `step` is the

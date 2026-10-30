@@ -1,10 +1,10 @@
-import type { Engine } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { createWorkspaceManager } from '@chamvi/sandbox';
 import type { ISandboxProvider, IWorkspaceManager } from '@chamvi/sandbox';
 
 export function createWorkspaces(
     provider: ISandboxProvider,
-    engine: Pick<Engine, 'on'>,
+    engine: Pick<IEngine, 'on'>,
 ): IWorkspaceManager {
     const workspaces = createWorkspaceManager({
         provider,

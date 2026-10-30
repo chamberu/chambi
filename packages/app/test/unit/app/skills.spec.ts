@@ -11,6 +11,7 @@ import {
     createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { preparationInput } from '../../utils/skill-runtime.ts';
 import { mockModel, textModel } from '@chamvi/test-kit';
 import { cron } from '@chamvi/channel-cron';
@@ -47,7 +48,7 @@ afterEach(async () => {
 function build(options: Partial<AppOptions> = {}) {
     const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }, { parts: [{ type: 'text', text: 'done' }] }]);
     const store = createMemoryStore();
-    let engine: Engine | undefined;
+    let engine: IEngine | undefined;
     const events: string[] = [];
     const observe: IModule = {
         name: 'observe',

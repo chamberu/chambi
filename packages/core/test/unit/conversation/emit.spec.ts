@@ -20,7 +20,7 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { IChannel, ToolContext } from '@chamvi/core';
+import type { IChannel, IEngine, ToolContext } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 
@@ -37,7 +37,7 @@ const identity = {
     chat: 'private',
     audience: 'direct',
 };
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(async () => {
     const pending = engines.map((engine) => engine.stop());

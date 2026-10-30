@@ -8,7 +8,7 @@
 import type { LanguageModelV4StreamPart } from '@ai-sdk/provider';
 import { Output, simulateReadableStream, tool } from 'ai';
 import type { LanguageModel, ToolSet } from 'ai';
-import type { RunDelta } from '@chamvi/core';
+import type { IEngine, RunDelta } from '@chamvi/core';
 import {
     afterEach,
     describe,
@@ -22,7 +22,7 @@ import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {

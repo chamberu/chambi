@@ -252,7 +252,7 @@ process.once('SIGTERM', () => {
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `engine` | `Engine` | required | Dispatches, cancels and resumes runs; its `store`, agents and `clock` serve every route (runs, steps and state are read from `engine.store`, polls, waits and timeouts run on `engine.clock`) |
+| `engine` | `IEngine` | required | Dispatches, cancels and resumes runs; its `store`, agents and `clock` serve every route (runs, steps and state are read from `engine.store`, polls, waits and timeouts run on `engine.clock`) |
 | `agents` | `string[]` | every agent | Names of the engine's agents this app serves (routes, MCP tools, extra routes); the others are unknown to it. A mounted channel serves every agent subscribing to it. A name the engine lacks or given twice throws `InvalidAgentDefinitionError` |
 | `auth` | `Authenticator \| Authenticator[]` | required | The authenticator chain |
 | `basePath` | `string` | none | Prefix of every route, e.g. `/api` |
@@ -274,7 +274,7 @@ process.once('SIGTERM', () => {
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `engine` | `Engine` | required | Drained during the shutdown; its `clock` drives the delays |
+| `engine` | `IEngine` | required | Drained during the shutdown; its `clock` drives the delays |
 | `server` | `{ close(force?): Promise<void> }` | none | The srvx server |
 | `readinessDelayMs` | `number` | `0` | Time for load balancers to see the failing readiness |
 | `drainTimeoutMs` | `number` | `30_000` | Passed to `engine.drain()` |

@@ -15,7 +15,7 @@ import {
     createMemoryStore,
     defineAgent,
 } from '@chamvi/app';
-import type { Agent, AgentDefinition } from '@chamvi/app';
+import type { Agent, AgentDefinition, IEngine } from '@chamvi/app';
 import { loadSkillBundles } from '@chamvi/skills';
 import type { ApprovedSkill } from '@chamvi/skills';
 import { ControllableClock, mockModel } from '@chamvi/test-kit';
@@ -28,7 +28,7 @@ import {
 import type { MockResponse } from '@chamvi/test-kit';
 import { approvedSkill, cleanupSkills } from '../../utils/skills.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(async () => {
     await Promise.all(engines.map(async (engine) => {
@@ -78,7 +78,7 @@ function skillAgent(approved: ApprovedSkill, model: ReturnType<typeof mockModel>
     });
 }
 
-async function dispatch(engine: Engine, payload: unknown = {}, agent = 'reviewer') {
+async function dispatch(engine: IEngine, payload: unknown = {}, agent = 'reviewer') {
     const { runId } = await engine.dispatch({
         agent,
         trigger: 'http',

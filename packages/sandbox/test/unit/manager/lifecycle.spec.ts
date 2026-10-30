@@ -19,7 +19,12 @@ import {
     createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
-import type { AgentHooks, Run, RunEvent } from '@chamvi/core';
+import type {
+    AgentHooks,
+    IEngine,
+    Run,
+    RunEvent,
+} from '@chamvi/core';
 import { createWorkspaceManager } from '@chamvi/sandbox';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/model.ts';
@@ -27,7 +32,7 @@ import type { MockResponse } from '../../utils/model.ts';
 import { createFakeProvider } from '../../utils/provider.ts';
 import type { FakeProvider } from '../../utils/provider.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const engine of engines) {
@@ -132,7 +137,7 @@ function fakeEngine() {
             return () => {
                 listeners.delete(listener);
             };
-        }) as Engine['on'],
+        }) as IEngine['on'],
         emit(run: Pick<Run, 'id' | 'status'>) {
             for (const listener of listeners) {
                 listener({ type: 'run.updated', run: run as Run });

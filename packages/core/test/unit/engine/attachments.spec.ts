@@ -26,6 +26,7 @@ import {
 } from '@chamvi/core';
 import type {
     AgentDefinition,
+    IEngine,
     IRunArtifacts,
     IStore,
 } from '@chamvi/core';
@@ -35,7 +36,7 @@ import { gateTool, recordApprovals } from '../../utils/approvals.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {

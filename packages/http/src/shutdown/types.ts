@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Engine } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 
 export interface IShutdown {
     /** True from the first `shutdown()` call on; `/readyz` then fails. */
@@ -21,7 +21,7 @@ export interface IShutdown {
 
 export type ShutdownOptions = {
     /** Drained on shutdown; its `clock` times the delays. */
-    engine: Engine;
+    engine: IEngine;
     /** srvx `Server` (pass `gracefulShutdown: false` to `serve`). */
     server?: { close(closeActiveConnections?: boolean): Promise<void> };
     /** Time for load balancers to see the failing readiness. Default 0. */

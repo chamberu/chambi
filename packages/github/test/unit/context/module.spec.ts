@@ -20,12 +20,12 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { AgentDefinition } from '@chamvi/core';
+import type { AgentDefinition, IEngine } from '@chamvi/core';
 import { injectGithubContext, provideGithubContext } from '@chamvi/github';
 import { createGithubFixture } from '../../utils/app.ts';
 import { mockModel } from '../../utils/model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -63,7 +63,7 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     };
 }
 
-async function run(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
+async function run(engine: IEngine, store: ReturnType<typeof createMemoryStore>) {
     const { runId } = await engine.dispatch({
         agent: 'triage',
         trigger: 'http',

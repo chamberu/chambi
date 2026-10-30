@@ -26,6 +26,7 @@ import type {
     AgentDefinition,
     ApprovalDecision,
     IChannel,
+    IEngine,
     Invoker,
     ToolContext,
 } from '@chamvi/core';
@@ -37,7 +38,7 @@ import type { MockPart, MockResponse } from '../../utils/mock-model.ts';
 const DAY = 24 * 60 * 60 * 1000;
 const START = 1_000_000;
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -131,7 +132,7 @@ function setup(model: LanguageModel, definition: Partial<AgentDefinition>) {
     };
 }
 
-async function dispatch(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
+async function dispatch(engine: IEngine, store: ReturnType<typeof createMemoryStore>) {
     await engine.start();
 
     const { runId } = await engine.dispatch({

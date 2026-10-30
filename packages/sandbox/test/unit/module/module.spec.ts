@@ -16,7 +16,7 @@ import {
 } from '@chamvi/core';
 import type {
     Agent,
-    Engine,
+    IEngine,
     IStore,
     Run,
 } from '@chamvi/core';
@@ -181,7 +181,7 @@ async function harnessWith(module: IModule, options: {
 }
 
 /** Records `drain` into `events` when the engine module drains the engine (C5: before the manager closes). */
-function recordDrain(engine: Engine, events: string[]): void {
+function recordDrain(engine: IEngine, events: string[]): void {
     const drain = engine.drain.bind(engine);
 
     engine.drain = async (options) => {
@@ -478,7 +478,7 @@ describe('sandboxModule', () => {
         const manager = fakeManager(events);
         const harness = await harnessWith(sandboxModule({ manager, env: {} }));
 
-        const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+        const engine: IEngine = harness.container.resolve(AppToken.ENGINE);
 
         expect(manager.engines).toEqual([engine]);
         expect(events).toEqual(['attach']);
@@ -732,7 +732,7 @@ describe('sandboxModule', () => {
         const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
         const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
 
-        const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+        const engine: IEngine = harness.container.resolve(AppToken.ENGINE);
 
         expect(await isSettled('missing')).toBe(false);
 
@@ -779,7 +779,7 @@ describe('sandboxModule', () => {
         const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
         const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
 
-        const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+        const engine: IEngine = harness.container.resolve(AppToken.ENGINE);
 
         expect(await isSettled('missing')).toBe(true);
 

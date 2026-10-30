@@ -1,9 +1,9 @@
 import type { ITokenVerifier } from '@authup/server-adapter-kit';
-import type { Engine } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { authup, createHttpApp, staticTokens } from '@chamvi/http';
 import { uiRoutes } from '@chamvi/ui';
 
-export function tokenDashboard(engine: Engine) {
+export function tokenDashboard(engine: IEngine) {
     // #region tokens
     return createHttpApp({
         engine,
@@ -21,7 +21,7 @@ export function tokenDashboard(engine: Engine) {
 }
 
 /** `verifier`: an authup `TokenVerifier` in remote mode, see the HTTP guide. */
-export function authupDashboard(engine: Engine, verifier: ITokenVerifier) {
+export function authupDashboard(engine: IEngine, verifier: ITokenVerifier) {
     // #region authup
     return createHttpApp({
         engine,

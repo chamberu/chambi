@@ -7,8 +7,7 @@
 
 import type { ApprovalDecision, ApprovalOption, ApprovalRequestInput } from '../approval/types.ts';
 import type { ConversationTarget } from '../conversation/types.ts';
-import type { Engine } from '../engine/module.ts';
-import type { DispatchEnvelope } from '../engine/types.ts';
+import type { DispatchEnvelope, IEngine } from '../engine/types.ts';
 import type { TriggerEnvelope } from '../trigger/types.ts';
 
 /** The HTTP input of a channel: the raw web request (body unread) and the raw subpath after `/channels/<name>`. */
@@ -27,7 +26,7 @@ export type DispatchResult = {
 };
 
 export type ChannelContext = {
-    engine: Engine;
+    engine: IEngine;
     /** engine.dispatch with `channel` set to this channel's name (a channel cannot dispatch as another). */
     dispatch(envelope: ChannelDispatchEnvelope): Promise<DispatchResult>;
     /** Trusted, registered-channel intake; the channel supplies canonical identity and accepted text. */

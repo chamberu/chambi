@@ -9,7 +9,7 @@ import type {
     Agent,
     ChannelContext,
     ChannelSubscription,
-    Engine,
+    IEngine,
 } from '@chamvi/core';
 import type { OverlapPolicy } from '../subscription/types.ts';
 
@@ -22,7 +22,7 @@ export type CronOptions = {
 };
 
 export type CronTickContext = {
-    engine: Engine;
+    engine: IEngine;
     agent: Agent;
     subscription: ChannelSubscription;
     /** The tick's planned fire time; forms the idempotency key. */

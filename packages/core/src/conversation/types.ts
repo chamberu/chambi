@@ -9,6 +9,7 @@ import type { ModelMessage } from 'ai';
 import type { ConversationOperation, ConversationTurnKind } from './constants.ts';
 import type { IClock } from '../clock/index.ts';
 import type { Invoker } from '../trigger/types.ts';
+import type { Run } from '../run/types.ts';
 
 /**
  * Who a conversation is with, as the trusted channel names it: the memory key, the
@@ -93,6 +94,22 @@ export type ConversationOptions = {
     authorize: (access: ConversationAccess) => boolean | Promise<boolean>;
     limits?: ConversationLimits;
 };
+
+/** Optional engine capability; no ordinary run calls it. */
+export interface IConversations {
+    readonly repository: IConversationRepository;
+    readonly limits: ResolvedConversationLimits;
+
+    allow(operation: ConversationOperationLiteral, identity: ConversationIdentity, agent: string, invoker?: Invoker): Promise<void>;
+    check(run: Run, operation?: `${ConversationOperation.RECALL | ConversationOperation.NOTES}`): Promise<void>;
+    admit(run: Run): Promise<Exclude<BeginTurnResult, { kind: `${ConversationTurnKind.STALE}` }>>;
+    track(runId: string, work: Promise<void>): Promise<void>;
+    idle(runId?: string): Promise<void>;
+    reconcile(scope: ConversationScope, runId: string): Promise<void>;
+    repair(identity: ConversationIdentity): Promise<void>;
+    inspect(identity: ConversationIdentity, query?: { limit?: number; offset?: number }): Promise<ConversationInspection | undefined>;
+    prune(): Promise<void>;
+}
 
 /**
  * One transcript record: an accepted user message (`sent` = accepted input),

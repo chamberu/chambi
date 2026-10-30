@@ -13,7 +13,7 @@ import { currentToolCall } from '../effect/frame.ts';
 import { matchesEmitReceipt } from '../conversation/helpers.ts';
 import { assertConversationText } from '../conversation/persistence/module.ts';
 import { stableHash } from '../effect/helpers.ts';
-import type { Engine } from '../engine/module.ts';
+import type { IEngine } from '../engine/types.ts';
 import {
     ChannelNotFoundError,
     InvalidAgentDefinitionError,
@@ -36,7 +36,7 @@ import type {
 type Inflight = Map<string, Promise<unknown>>;
 
 /** The context a channel's `start` and `in` get: its dispatch always carries the channel's own name. */
-export function createChannelContext(engine: Engine, channel: Pick<IChannel, 'name'>): ChannelContext {
+export function createChannelContext(engine: IEngine, channel: Pick<IChannel, 'name'>): ChannelContext {
     return {
         engine,
         dispatchConversation: (envelope, target) => dispatchConversation(engine, channel, envelope, target),
@@ -255,7 +255,7 @@ function createChannelHandle(
 export function createToolChannels(
     run: RunContext,
     effects: IEffectRepository,
-    engine: Pick<Engine, 'getChannel' | 'listChannels'>,
+    engine: Pick<IEngine, 'getChannel' | 'listChannels'>,
 ): ToolChannels {
     const inflight: Inflight = new Map();
     const conversation = conversationFor(run);

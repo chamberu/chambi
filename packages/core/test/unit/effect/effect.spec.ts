@@ -16,6 +16,7 @@ import {
 } from 'vitest';
 import { z } from 'zod';
 import { Engine, ToolNotAllowedError, defineAgent } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import {
     EFFECT,
     defineEffectTool,
@@ -58,7 +59,7 @@ const ctx = toolContext('r1');
 const callOpts = { toolCallId: 'c', messages: [] };
 const schema = z.object({ body: z.string(), n: z.number().optional() });
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {

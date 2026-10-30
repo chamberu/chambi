@@ -21,7 +21,12 @@ import {
     defineTool,
 } from '@chamvi/core';
 import { jsonSchema } from 'ai';
-import type { AgentDefinition, IClock, ModelMessage } from '@chamvi/core';
+import type {
+    AgentDefinition,
+    IClock,
+    IEngine,
+    ModelMessage,
+} from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import { fakeSkillRuntime } from '../../utils/skill-runtime.ts';
@@ -44,7 +49,7 @@ const envelope = {
     trigger: 'message',
     payload: 'current',
 };
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(async () => {
     const pending = engines.map((engine) => engine.stop());

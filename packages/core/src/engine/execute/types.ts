@@ -5,8 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Conversations } from '../../conversation/module.ts';
-import type { ConversationSnapshot } from '../../conversation/types.ts';
+import type { ConversationSnapshot, IConversations } from '../../conversation/types.ts';
 import type { Agent } from '../../agent/types.ts';
 import type { ApprovalOption } from '../../approval/types.ts';
 import type { IClock } from '../../clock/index.ts';
@@ -15,8 +14,7 @@ import type { IModelResolver, ModelRef } from '../../model/types.ts';
 import type { Run, Step, Usage } from '../../run/types.ts';
 import type { SkillContribution } from '../../skill/types.ts';
 import type { IStore } from '../../repository/types.ts';
-import type { Engine } from '../module.ts';
-import type { RunDelta } from '../types.ts';
+import type { IEngine, RunDelta } from '../types.ts';
 
 /** A tool call of the checkpoint that has no result yet: suspended by approve(). */
 export type PendingToolCall = {
@@ -27,8 +25,8 @@ export type PendingToolCall = {
 
 export type ExecuteContext = {
     /** The executing engine, handed to the execution's ToolContext as `engine`. */
-    engine: Engine;
-    conversation?: { capability: Conversations; snapshot: ConversationSnapshot };
+    engine: IEngine;
+    conversation?: { capability: IConversations; snapshot: ConversationSnapshot };
     run: Run;
     agent: Agent;
     skills?: SkillContribution;

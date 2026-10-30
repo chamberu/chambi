@@ -8,7 +8,7 @@ import {
     hasConversation,
     memoryTools,
 } from '@chamvi/app';
-import type { ConversationOptions, Engine, IChannel } from '@chamvi/app';
+import type { ConversationOptions, IChannel, IEngine } from '@chamvi/app';
 
 export function conversationApp(model: LanguageModel, chat: IChannel, authorize: ConversationOptions['authorize']) {
     // #region app
@@ -51,7 +51,7 @@ export function conversationApp(model: LanguageModel, chat: IChannel, authorize:
 }
 
 // #region intake
-export async function firstMessage(engine: Engine, chat: IChannel) {
+export async function firstMessage(engine: IEngine, chat: IChannel) {
     // `chat` must be the exact registered adapter. Its authenticated event supplies these fields.
     const text = 'Please remember that I prefer short answers.';
 
@@ -70,7 +70,7 @@ export async function firstMessage(engine: Engine, chat: IChannel) {
     await engine.idle();
 }
 
-export async function nextMessage(engine: Engine, chat: IChannel) {
+export async function nextMessage(engine: IEngine, chat: IChannel) {
     // After a restart, use the new engine and its exact registered adapter, with the same database.
     const text = 'What answer style do I prefer?';
 
@@ -90,7 +90,7 @@ export async function nextMessage(engine: Engine, chat: IChannel) {
 }
 // #endregion intake
 
-export async function manageConversation(engine: Engine, chat: IChannel) {
+export async function manageConversation(engine: IEngine, chat: IChannel) {
     // #region management
     const identity = {
         agent: 'helper',

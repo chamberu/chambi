@@ -7,9 +7,9 @@
 
 import type {
     Agent,
-    Engine,
     IChannel,
     IClock,
+    IEngine,
     IStore,
     ModelRef,
     SkillInput,
@@ -90,7 +90,7 @@ export type GitCredentialSource = {
 export interface ILifecycleHook {
     readonly name: string;
     /** After verified preparation, before `engine.start()` (start and job); a check skips preparation. */
-    engineCreated?(engine: Engine): void | Promise<void>;
+    engineCreated?(engine: IEngine): void | Promise<void>;
     /** start only: after engine.start() (which starts the channels), before serve(). */
     started?(): void | Promise<void>;
     /** start only: the shutdown's first step, before the closers, the server close and the drain (which stops the channels). */
@@ -124,7 +124,7 @@ export type AppTokens = {
     CLOCK: IClock;
     STORE: IStore;
     DATA_SOURCE: DataSource;
-    ENGINE: Engine;
+    ENGINE: IEngine;
     SHUTDOWN: IShutdown;
     SERVER: Server;
     HTTP_ROUTES: HttpRoute;

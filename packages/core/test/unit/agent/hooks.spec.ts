@@ -25,7 +25,7 @@ import {
     defineTool,
     inject,
 } from '@chamvi/core';
-import type { AgentDefinition, AgentHooks } from '@chamvi/core';
+import type { AgentDefinition, AgentHooks, IEngine } from '@chamvi/core';
 import { currentToolCall } from '../../../src/effect/frame.ts';
 import { stableHash } from '../../../src/effect/helpers.ts';
 import { createMemoryStore } from '../../../src/repository/index.ts';
@@ -42,7 +42,7 @@ const call = (toolName: string, input: unknown = {}): MockResponse => ({
     }],
 });
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -55,7 +55,7 @@ afterEach(() => {
 async function runOnce(
     model: LanguageModel,
     definition: Partial<AgentDefinition>,
-    setup?: (engine: Engine) => void,
+    setup?: (engine: IEngine) => void,
 ) {
     const clock = new ControllableClock(new Date(1_000_000));
     const store = createMemoryStore({ clock });

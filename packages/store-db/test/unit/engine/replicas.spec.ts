@@ -21,7 +21,7 @@ import {
 } from 'vitest';
 import { z } from 'zod';
 import { Engine, defineAgent } from '@chamvi/core';
-import type { EngineOptions } from '@chamvi/core';
+import type { EngineOptions, IEngine } from '@chamvi/core';
 import { createDatabaseStore } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres, truncateRepository } from '../../utils/database.ts';
 import { mockModel } from '../../utils/mock-model.ts';
@@ -87,7 +87,7 @@ const env = {
 
 describePostgres('two engines sharing TypeORM store', () => {
     let dataSource: DataSource;
-    const engines: Engine[] = [];
+    const engines: IEngine[] = [];
 
     function make(
         model: LanguageModel,

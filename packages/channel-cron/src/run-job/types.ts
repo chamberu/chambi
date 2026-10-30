@@ -7,7 +7,7 @@
 
 import type {
     Agent,
-    Engine,
+    IEngine,
     RunStatusLiteral,
 } from '@chamvi/core';
 
@@ -17,7 +17,7 @@ export type RunJobOptions = {
      * when the tick is skipped. It holds the subscription's cron channel. Its store is polled and its clock gives scheduledAt and drives
      * the poll.
      */
-    engine: Engine;
+    engine: IEngine;
     agent: Agent;
     /**
      * Cron subscription id; optional when the agent has exactly one

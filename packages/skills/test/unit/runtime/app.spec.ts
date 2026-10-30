@@ -14,7 +14,7 @@ import {
     defineAgent,
     storeModule,
 } from '@chamvi/app';
-import type { Engine } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { defineSkillSource, loadSkillBundle } from '@chamvi/skills';
 import { mockModel } from '@chamvi/test-kit';
 import { approvedSkill, cleanupSkills } from '../../utils/skills.ts';
@@ -23,7 +23,7 @@ it('prepares real app defaults before engineCreated and combines factory extras 
     const common = loadSkillBundle(approvedSkill('common', { body: 'DEFAULT BODY' }));
     const extra = loadSkillBundle(approvedSkill('extra', { body: 'EXTRA BODY' }));
     const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
-    let loaded = false; let engine: Engine | undefined;
+    let loaded = false; let engine: IEngine | undefined;
     const model = mockModel([
         {
             parts: [{

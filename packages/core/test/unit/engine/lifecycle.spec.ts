@@ -27,6 +27,7 @@ import {
 } from '@chamvi/core';
 import type {
     EngineOptions,
+    IEngine,
     IStore,
     Run,
     RunEvent,
@@ -38,7 +39,7 @@ import { MemoryRunRepository, createMemoryStore } from '../../../src/repository/
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 /** Lets already-queued microtasks settle; not a sleep. */
 const flush = () => new Promise<void>((resolve) => {

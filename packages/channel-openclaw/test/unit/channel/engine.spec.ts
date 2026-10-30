@@ -13,7 +13,7 @@ import {
     it,
 } from 'vitest';
 import { z } from 'zod';
-import type { ChamviError } from '@chamvi/core';
+import type { ChamviError, IEngine } from '@chamvi/core';
 import {
     Engine,
     createMemoryStore,
@@ -28,7 +28,7 @@ import { createFakeOpenclaw } from '../../utils/openclaw.ts';
 
 const TOKEN = 'hooks-token-0123456789';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(async () => {
     await Promise.all(engines.map((engine) => engine.stop()));

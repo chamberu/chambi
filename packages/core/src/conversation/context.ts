@@ -6,22 +6,21 @@
  */
 
 import type { ChannelDispatchEnvelope, DispatchResult, IChannel } from '../channel/types.ts';
-import type { Engine } from '../engine/module.ts';
+import type { IEngine } from '../engine/types.ts';
 import { ValidationError } from '../errors/index.ts';
 import type { Run, RunContext } from '../run/types.ts';
 import { ConversationOperation } from './constants.ts';
-import type { Conversations } from './module.ts';
-import type { ConversationBinding, ConversationTarget } from './types.ts';
+import type { ConversationBinding, ConversationTarget, IConversations } from './types.ts';
 
 type Intake = (channel: Pick<IChannel, 'name'>, envelope: ChannelDispatchEnvelope, target: ConversationTarget) => Promise<DispatchResult>;
-const intake = new WeakMap<Engine, Intake>();
+const intake = new WeakMap<IEngine, Intake>();
 const executions = new WeakMap<RunContext, {
-    capability: Conversations;
+    capability: IConversations;
     run: Run;
     binding: ConversationBinding
 }>();
 
-export function bindConversationRun(context: RunContext, capability: Conversations, run: Run): void {
+export function bindConversationRun(context: RunContext, capability: IConversations, run: Run): void {
     if (!run.conversation) {
         return;
     }
@@ -47,11 +46,11 @@ export async function checkConversation(context: RunContext, operation: `${Conve
     await bound.capability.check(bound.run, operation);
 }
 
-export function bindConversationIntake(engine: Engine, dispatch: Intake): void {
+export function bindConversationIntake(engine: IEngine, dispatch: Intake): void {
     intake.set(engine, dispatch);
 }
 
-export function dispatchConversation(engine: Engine, channel: Pick<IChannel, 'name'>, envelope: ChannelDispatchEnvelope, target: ConversationTarget): Promise<DispatchResult> {
+export function dispatchConversation(engine: IEngine, channel: Pick<IChannel, 'name'>, envelope: ChannelDispatchEnvelope, target: ConversationTarget): Promise<DispatchResult> {
     const dispatch = intake.get(engine);
 
     if (!dispatch) {

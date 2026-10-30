@@ -7,9 +7,9 @@
 
 import type {
     Agent,
-    Engine,
     IChannel,
     IClock,
+    IEngine,
     IStore,
 } from '@chamvi/core';
 import type { Options as CorsPluginOptions } from '@routup/cors';
@@ -45,7 +45,7 @@ export type McpOptions = {
 
 export type HttpAppOptions = {
     /** Its `store`, agents and `clock` serve every route. */
-    engine: Engine;
+    engine: IEngine;
     /**
      * Names of the engine's agents to serve (routes, MCP tools, extra
      * routes), checked at construction; the others, also agents registered
@@ -141,7 +141,7 @@ export type HttpRouteResult = {
 };
 
 export type HttpRouteContext = {
-    engine: Engine;
+    engine: IEngine;
     /** The agents the app serves, read from the engine on every access. */
     agents: readonly Agent[];
     clock: IClock;
@@ -180,7 +180,7 @@ export type HttpAgents = {
 
 /** Shared by every route module; internal. */
 export type HttpContext = {
-    engine: Engine;
+    engine: IEngine;
     store: IStore;
     agents: HttpAgents;
     /** Agents that failed to load, as `GET /agents` lists them. */

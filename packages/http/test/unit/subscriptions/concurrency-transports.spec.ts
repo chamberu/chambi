@@ -11,6 +11,7 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import {
     createHttpApp,
     http,
@@ -31,7 +32,7 @@ import { ADMIN_TOKEN, call, testAuth } from '../../utils/app.ts';
 import { callTool, connectMcp } from '../../utils/mcp.ts';
 import { mockModel } from '../../utils/model.ts';
 
-let engine: Engine | undefined;
+let engine: IEngine | undefined;
 
 afterEach(async () => {
     await engine?.drain({ timeoutMs: 0 });

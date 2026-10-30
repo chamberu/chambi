@@ -12,7 +12,12 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { Agent, ChannelSubscription, EngineOptions } from '@chamvi/core';
+import type {
+    Agent,
+    ChannelSubscription,
+    EngineOptions,
+    IEngine,
+} from '@chamvi/core';
 import { ControllableClock } from './clock.ts';
 import { MockLanguageModelV4 } from 'ai/test';
 
@@ -23,7 +28,7 @@ export const flush = () => new Promise<void>((resolve) => {
 export function concurrencyHarness() {
     const clock = new ControllableClock(new Date(1_000_000));
     const store = createMemoryStore({ clock });
-    const engines: Engine[] = [];
+    const engines: IEngine[] = [];
     const releases = new Map<string, () => void>();
     const entered: string[] = [];
     const errors: unknown[] = [];
@@ -102,7 +107,7 @@ export function concurrencyHarness() {
 
         return instance;
     }
-    async function dispatch(instance: Engine, trigger = 'a', extra = {}) {
+    async function dispatch(instance: IEngine, trigger = 'a', extra = {}) {
         clock.advance(1);
 
         return instance.dispatch({

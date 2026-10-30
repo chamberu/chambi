@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Engine, IClock } from '@chamvi/core';
+import type { IClock, IEngine } from '@chamvi/core';
 import type { AgentIssue } from '@chamvi/http';
 import type { ILogger } from '../../logger/types.ts';
 import type { AgentCheck } from '../../module/types.ts';
@@ -13,7 +13,7 @@ import type { AgentCheck } from '../../module/types.ts';
 export type AgentsWatcherOptions = {
     /** The agents dir, absolute. */
     root: string;
-    engine: Engine;
+    engine: IEngine;
     /** The code agents' names: a folder of such a name is an issue, never loaded or removed. */
     codeNames: ReadonlySet<string>;
     /**

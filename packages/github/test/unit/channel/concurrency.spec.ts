@@ -12,6 +12,7 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { github, githubChannel } from '@chamvi/github';
 import { createHttpApp } from '@chamvi/http';
 import { MockLanguageModelV4 } from 'ai/test';
@@ -27,7 +28,7 @@ import { createGithubFixture, deliver } from '../../utils/app.ts';
 import { mockModel, textModel } from '../../utils/model.ts';
 
 const BODY = readFileSync(new URL('../../fixtures/deliveries/issues-opened.json', import.meta.url), 'utf8');
-let engine: Engine | undefined;
+let engine: IEngine | undefined;
 
 afterEach(async () => {
     await engine?.drain({ timeoutMs: 0 });

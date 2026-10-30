@@ -28,6 +28,7 @@ import type {
     ChannelMessage,
     ChannelSendOptions,
     IChannel,
+    IEngine,
     ToolContext,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
@@ -84,7 +85,7 @@ const call = (toolName: string, input: unknown = {}, toolCallId?: string): MockR
     }],
 });
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -135,7 +136,7 @@ function setup(
 }
 
 async function run(
-    ctx: { engine: Engine; store: ReturnType<typeof createMemoryStore> },
+    ctx: { engine: IEngine; store: ReturnType<typeof createMemoryStore> },
     envelope: { channel?: string; address?: string } = {},
 ) {
     await ctx.engine.start();

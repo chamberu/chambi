@@ -6,7 +6,7 @@
  */
 
 import { defineAgent } from '@chamvi/core';
-import type { Agent, Engine } from '@chamvi/core';
+import type { Agent, IEngine } from '@chamvi/core';
 import { ControllableClock, textModel } from '@chamvi/test-kit';
 import {
     afterEach,
@@ -67,7 +67,7 @@ async function start(mode?: AppMode, check?: boolean) {
     return harness;
 }
 
-async function dispatch(engine: Engine) {
+async function dispatch(engine: IEngine) {
     return engine.dispatch({
         agent: 'triage',
         trigger: 'http',

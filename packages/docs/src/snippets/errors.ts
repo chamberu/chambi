@@ -4,7 +4,7 @@ import {
     LeaseLostError,
     RunStatus,
 } from '@chamvi/core';
-import type { Agent, IStore } from '@chamvi/core';
+import type { Agent, IEngine, IStore } from '@chamvi/core';
 
 declare const logger: { error(fields: object, message: string): void };
 
@@ -27,7 +27,7 @@ export function createEngine(store: IStore, agents: Agent[]) {
     return engine;
 }
 
-export async function explainFailure(engine: Engine, runId: string) {
+export async function explainFailure(engine: IEngine, runId: string) {
     // #region run-error
     const run = await engine.getRun(runId);
 

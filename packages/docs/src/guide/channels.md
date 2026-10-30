@@ -13,7 +13,7 @@ interface IChannel<TInput = ChannelRequest, TOutput = Response> {
 }
 
 type ChannelRequest = { request: Request; subpath: string };  // the raw request, the raw path below /channels/<name>
-type ChannelContext = { engine: Engine; dispatch(envelope: ChannelDispatchEnvelope): Promise<DispatchResult> };
+type ChannelContext = { engine: IEngine; dispatch(envelope: ChannelDispatchEnvelope): Promise<DispatchResult> };
 
 type ChannelMessage = {
     kind: 'message' | 'approval';

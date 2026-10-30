@@ -25,6 +25,7 @@ import type {
     ChannelSubscription,
     EngineOptions,
     IChannel,
+    IEngine,
     Run,
 } from '@chamvi/core';
 import { createMemoryStore } from '../../../src/repository/index.ts';
@@ -61,7 +62,7 @@ class GatedEngine extends Engine {
     }
 }
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {

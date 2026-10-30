@@ -173,7 +173,7 @@ A run that pauses for an approval does not hold the pod: the job returns, the ap
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `engine` | `Engine` | required | Not started yet; started without channels and drained by the job, also when the tick is skipped. Its clock gives `scheduledAt` and drives the poll |
+| `engine` | `IEngine` | required | Not started yet; started without channels and drained by the job, also when the tick is skipped. Its clock gives `scheduledAt` and drives the poll |
 | `agent` | `Agent` | required | The agent to fire |
 | `subscription` | `string` | the only cron subscription | Cron subscription id; required when the agent has several |
 | `pollMs` | `number` | `1_000` | Poll of `engine.getRun`, which also sees a run finished by another replica |

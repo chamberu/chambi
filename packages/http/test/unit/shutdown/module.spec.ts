@@ -11,7 +11,7 @@ import {
     it,
     vi,
 } from 'vitest';
-import type { Engine } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { createShutdown } from '@chamvi/http';
 import type { ShutdownOptions } from '@chamvi/http';
@@ -27,7 +27,7 @@ function setup(overrides: Partial<ShutdownOptions> = {}) {
     const drain = vi.fn<(opts?: { timeoutMs?: number }) => Promise<void>>(async () => {
         order.push('drain');
     });
-    const engine = { drain, clock } as unknown as Engine;
+    const engine = { drain, clock } as unknown as IEngine;
     const errors: unknown[] = [];
     const server = {
         close: vi.fn<(force?: boolean) => Promise<void>>(async () => {

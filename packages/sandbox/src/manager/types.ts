@@ -6,7 +6,7 @@
  */
 
 import type { ToolSet } from 'ai';
-import type { Engine, IClock, ToolContext } from '@chamvi/core';
+import type { IClock, IEngine, ToolContext } from '@chamvi/core';
 import type {
     GitAccess,
     GitCredential,
@@ -190,7 +190,7 @@ export interface IWorkspaceManager {
      * per `gcIntervalMs`), which removes what other processes left for it.
      * Returns the unsubscribe; after close() it subscribes nothing.
      */
-    attach(engine: Pick<Engine, 'on'>): () => void;
+    attach(engine: Pick<IEngine, 'on'>): () => void;
     /** Workspace lifecycle, structured Git and (unless disabled) repository guidance tools (no bash tool). */
     tools(): ToolSet;
     /**

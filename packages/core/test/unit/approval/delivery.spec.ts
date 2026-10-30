@@ -21,7 +21,12 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { ChannelMessage, ChannelSendOptions, IChannel } from '@chamvi/core';
+import type {
+    ChannelMessage,
+    ChannelSendOptions,
+    IChannel,
+    IEngine,
+} from '@chamvi/core';
 import { createMemoryStore } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
@@ -30,7 +35,7 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 const START = 1_000_000;
 const CLAIM_TTL_MS = 30;
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -123,7 +128,7 @@ function setup() {
     return { clock, store };
 }
 
-async function start(engine: Engine, wait = true) {
+async function start(engine: IEngine, wait = true) {
     await engine.start();
 
     const { runId } = await engine.dispatch({

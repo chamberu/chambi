@@ -17,9 +17,15 @@ import type * as sdk from 'ai';
 import * as persistence from '@chamvi/core/conversation/persistence';
 
 describe('public api', () => {
+    it('keeps the engine interface aligned with the public class contract', () => {
+        expectTypeOf<keyof core.Engine>().toEqualTypeOf<keyof core.IEngine>();
+        expectTypeOf<InstanceType<typeof core.Engine>>().toExtend<core.IEngine>();
+        expectTypeOf<core.IEngine>().toExtend<Pick<core.Engine, keyof core.IEngine>>();
+    });
+
     it('types the store as a collection of repositories with conversation support from the memory factory', () => {
         expectTypeOf<core.EngineOptions['store']>().toEqualTypeOf<core.IStore>();
-        expectTypeOf<core.Engine['store']>().toEqualTypeOf<core.IStore>();
+        expectTypeOf<core.IEngine['store']>().toEqualTypeOf<core.IStore>();
         expectTypeOf<ReturnType<typeof core.createMemoryStore>['conversations']>()
             .toEqualTypeOf<core.IConversationRepository>();
         expect(core).not.toHaveProperty('createMemoryRepositories');
@@ -131,7 +137,7 @@ describe('public api', () => {
         expectTypeOf<core.SkillInput['runtime']>().toEqualTypeOf<core.ISkillRuntimeProvider>();
         expectTypeOf<ReturnType<core.ISkillRuntimeProvider['create']>>().toEqualTypeOf<core.ISkillRuntime>();
         expect(core).not.toHaveProperty('createSkillCatalog');
-        expectTypeOf<core.Engine['prepare']>().parameter(0).toEqualTypeOf<{ signal?: AbortSignal; agents?: readonly core.Agent[] } | undefined>();
+        expectTypeOf<core.IEngine['prepare']>().parameter(0).toEqualTypeOf<{ signal?: AbortSignal; agents?: readonly core.Agent[] } | undefined>();
     });
 
     it('keeps the artifact uri prefix internal', () => {

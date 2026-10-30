@@ -6,7 +6,7 @@
  */
 
 import { MemoryConversationRepository, createMemoryStore, defineAgent } from '@chamvi/core';
-import type { Engine, IConversationRepository } from '@chamvi/core';
+import type { IConversationRepository, IEngine } from '@chamvi/core';
 import { ControllableClock, textModel  } from '@chamvi/test-kit';
 import type { IContainer } from 'eldin';
 import {
@@ -113,7 +113,7 @@ describe('app conversation capability', () => {
 
         expect(store).toBeInstanceOf(MemoryConversationRepository);
 
-        const engine = built.container().resolve(AppToken.ENGINE) as Engine;
+        const engine = built.container().resolve(AppToken.ENGINE) as IEngine;
 
         expect(await engine.inspectConversation(identity)).toBeUndefined();
 

@@ -18,7 +18,7 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { ChamviError, Engine } from '@chamvi/core';
+import type { ChamviError, IEngine } from '@chamvi/core';
 import { github } from '@chamvi/github';
 import type { GithubChannelOptions, IGithubApp } from '@chamvi/github';
 import { createGithubTestApp, deliver } from '../../utils/app.ts';
@@ -30,7 +30,7 @@ const ISSUES_OPENED = readFileSync(new URL('../../fixtures/deliveries/issues-ope
 const ISSUE = { repo: 'octo/demo', number: 5 };
 const APPROVAL_URL: GithubChannelOptions['approvalUrl'] = (ref) => `https://chamvi.example/ui/approvals?run=${ref.runId}&approval=${ref.approvalId}&agent=${ref.agent}`;
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(async () => {
     await Promise.all(engines.map((engine) => engine.drain()));

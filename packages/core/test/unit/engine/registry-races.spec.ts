@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { Engine, defineAgent } from '@chamvi/core';
-import type { EngineOptions, IStore  } from '@chamvi/core';
+import type { EngineOptions, IEngine, IStore } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import { MemoryAgentRevisionRepository, createMemoryStore } from '../../../src/repository/index.ts';
@@ -65,7 +65,7 @@ class GatedRepository extends MemoryAgentRevisionRepository {
     }
 }
 
-function createEngine(store: IStore, clock: ControllableClock, extra: Partial<EngineOptions> = {}): Engine {
+function createEngine(store: IStore, clock: ControllableClock, extra: Partial<EngineOptions> = {}): IEngine {
     return new Engine({
         store,
         clock,
@@ -75,7 +75,7 @@ function createEngine(store: IStore, clock: ControllableClock, extra: Partial<En
     });
 }
 
-const dispatch = (engine: Engine) => engine.dispatch({
+const dispatch = (engine: IEngine) => engine.dispatch({
     agent: 'triage',
     trigger: 'http',
     channel: 'http',

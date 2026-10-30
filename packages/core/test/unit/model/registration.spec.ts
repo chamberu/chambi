@@ -22,6 +22,7 @@ import type {
     Agent,
     AgentChange,
     EngineOptions,
+    IEngine,
     IModelResolver,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
@@ -60,7 +61,7 @@ function withModel(model: unknown, name = 'triage'): Agent {
     return { ...agent, definition: { ...agent.definition, model: model as LanguageModel } };
 }
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {

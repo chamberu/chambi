@@ -23,11 +23,11 @@ import {
     defineAgent,
     defineTool,
 } from '@chamvi/core';
-import type { AgentDefinition, AgentInstructions } from '@chamvi/core';
+import type { AgentDefinition, AgentInstructions, IEngine } from '@chamvi/core';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(async () => {
     const stopping = engines.map((engine) => engine.stop());

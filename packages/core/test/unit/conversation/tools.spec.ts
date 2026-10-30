@@ -21,6 +21,7 @@ import {
 import type {
     AgentHooks,
     ConversationAccess,
+    IEngine,
     ToolContext,
     ToolPolicy,
 } from '@chamvi/core';
@@ -60,7 +61,7 @@ class InspectableConversationRepository extends MemoryConversationRepository {
     }
 }
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(async () => {
     const stops = engines.map((engine) => engine.stop());

@@ -27,6 +27,7 @@ import {
 import type {
     AgentDefinition,
     EngineOptions,
+    IEngine,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { createMemoryStore } from '../../../src/repository/index.ts';
@@ -34,7 +35,7 @@ import { recordApprovals } from '../../utils/approvals.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {

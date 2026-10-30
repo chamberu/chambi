@@ -23,6 +23,7 @@ import {
 } from '@chamvi/core';
 import type {
     EngineOptions,
+    IEngine,
     IStore,
     Run,
     RunEvent,
@@ -97,7 +98,7 @@ class SlowStartRepository extends MemoryRunRepository {
     }
 }
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -129,7 +130,7 @@ const env = (extra: Record<string, unknown> = {}) => ({
     ...extra,
 });
 
-const statusOf = async (engine: Engine, id: string) => (await engine.getRun(id))?.status;
+const statusOf = async (engine: IEngine, id: string) => (await engine.getRun(id))?.status;
 
 describe('Engine.dispatch', () => {
     it('dispatch creates queued run', async () => {

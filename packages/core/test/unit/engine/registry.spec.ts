@@ -25,6 +25,7 @@ import type {
     AgentChange,
     AgentRunsCancelled,
     EngineOptions,
+    IEngine,
     IRunRepository,
     IStore,
     Run,
@@ -81,7 +82,7 @@ function createCountingStore(options: { clock: ControllableClock }) {
     };
 }
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -155,7 +156,7 @@ async function parkWaiting(store: IStore, clock: ControllableClock, id: string, 
     await store.runs.insert(run);
 }
 
-const statusOf = async (engine: Engine, id: string) => (await engine.getRun(id))?.status;
+const statusOf = async (engine: IEngine, id: string) => (await engine.getRun(id))?.status;
 
 describe('Engine agent registry', () => {
     it('putAgent adds an agent and emits added', async () => {

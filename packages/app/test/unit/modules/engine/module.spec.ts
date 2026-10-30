@@ -17,8 +17,8 @@ import {
 import { http, httpChannel } from '@chamvi/http';
 import type {
     Agent,
-    Engine,
     IChannel,
+    IEngine,
     ModelRef,
 } from '@chamvi/core';
 import { ControllableClock, approvalModel, textModel } from '@chamvi/test-kit';
@@ -105,7 +105,7 @@ function build(options: {
     };
 }
 
-async function dispatch(engine: Engine) {
+async function dispatch(engine: IEngine) {
     return engine.dispatch({
         agent: 'triage',
         trigger: 'http',

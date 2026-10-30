@@ -15,6 +15,8 @@ import type {
     ConversationOptions,
     ConversationScope,
     IConversationRepository,
+    IConversations,
+    ResolvedConversationLimits,
 } from './types.ts';
 import type { IEffectRepository, IRunRepository } from '../repository/types.ts';
 import { InvalidAgentDefinitionError, InvalidRunStateError, ValidationError } from '../errors/index.ts';
@@ -28,10 +30,10 @@ function settled(run: Run | undefined): boolean {
 }
 
 /** Optional engine capability; no ordinary run calls it. */
-export class Conversations {
-    readonly repository;
+export class Conversations implements IConversations {
+    readonly repository: IConversationRepository;
 
-    readonly limits;
+    readonly limits: ResolvedConversationLimits;
 
     protected readonly authorize;
 

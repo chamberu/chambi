@@ -14,6 +14,7 @@ import {
     createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { gitSkills, hashSkillBundle } from '@chamvi/skills';
 import { createGitFixture, mockModel } from '@chamvi/test-kit';
 import type { MockResponse } from '@chamvi/test-kit';
@@ -34,7 +35,7 @@ it('installs Git defaults and agent extras at startup and scopes real load_skill
         'skills/common/SKILL.md': '---\nname: common\ndescription: Shared review guidance\n---\nCOMMON BODY\n',
         'skills/private/SKILL.md': '---\nname: private\ndescription: Maintainer guidance\n---\nPRIVATE BODY\n',
     });
-    const engines: Engine[] = [];
+    const engines: IEngine[] = [];
     const store = createMemoryStore();
     const pin = (name: string) => ({
         name,
@@ -124,7 +125,7 @@ it('rejects changed Git bytes under an old content pin before recovery and prese
         'skills/audit/SKILL.md': '---\nname: audit\ndescription: Review code\n---\nORIGINAL BODY\n',
         'skills/audit/references/checks.md': 'ORIGINAL REFERENCE\n',
     });
-    const engines: Engine[] = [];
+    const engines: IEngine[] = [];
     const store = createMemoryStore();
     const directory = join(fixture.path, 'prepared');
     const oldPin = {

@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Engine, IChannel } from '@chamvi/core';
+import type { IChannel, IEngine } from '@chamvi/core';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
 import type { WebhookTarget } from './types.ts';
 
@@ -26,7 +26,7 @@ export function isWebhookChannel(channel: unknown): boolean {
  * The channels an http app mounts: each with an `in`, the very object the
  * engine holds under its name, listed once; else InvalidAgentDefinitionError.
  */
-export function validateChannels(engine: Engine, channels: readonly IChannel[] | undefined): IChannel[] {
+export function validateChannels(engine: IEngine, channels: readonly IChannel[] | undefined): IChannel[] {
     const seen = new Set<string>();
 
     return (channels ?? []).map((channel) => {

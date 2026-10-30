@@ -13,6 +13,7 @@ import {
     vi,
 } from 'vitest';
 import { Engine, createMemoryStore } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { buildContext } from '../../../src/app/helpers.ts';
 import { waitForRun } from '../../../src/mcp/helpers.ts';
@@ -28,10 +29,10 @@ import { callTool, connectMcp } from '../../utils/mcp.ts';
 import type { ToolResult } from '../../utils/mcp.ts';
 
 /** Spies on engine.on so every unsubscribe it hands out is a spy. */
-function spyOnSubscriptions(engine: Engine) {
+function spyOnSubscriptions(engine: IEngine) {
     const unsubscribes: Array<ReturnType<typeof vi.fn>> = [];
     const original = engine.on.bind(engine);
-    const on: Engine['on'] = (type, listener) => {
+    const on: IEngine['on'] = (type, listener) => {
         const unsubscribe = vi.fn(original(type, listener));
 
         unsubscribes.push(unsubscribe);

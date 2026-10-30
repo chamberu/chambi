@@ -13,7 +13,7 @@ import {
     it,
     vi,
 } from 'vitest';
-import type { ChannelSubscription, IChannel } from '@chamvi/core';
+import type { ChannelSubscription, IChannel, IEngine } from '@chamvi/core';
 import {
     Engine,
     InvalidAgentDefinitionError,
@@ -32,7 +32,7 @@ const agentWith = (channels: ChannelSubscription[], name = 'sweep') => defineAge
 });
 
 describe('cronChannel', () => {
-    let engines: Engine[] = [];
+    let engines: IEngine[] = [];
 
     const make = (
         channels: IChannel<any, any>[],

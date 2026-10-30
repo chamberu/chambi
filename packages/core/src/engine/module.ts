@@ -30,11 +30,12 @@ import type {
     ConversationIdentity,
     ConversationInspection,
     ConversationScope,
+    IConversations,
 } from '../conversation/types.ts';
 import { systemClock } from '../clock/index.ts';
 import type { IClock } from '../clock/index.ts';
 import { contextKeyName, isContextKey } from '../context/helpers.ts';
-import type { ContextKey, IContextProvider } from '../context/types.ts';
+import type { ContextKey } from '../context/types.ts';
 import {
     AgentNotFoundError,
     ChamviError,
@@ -93,12 +94,13 @@ import type {
     EngineEvent,
     EngineOptions,
     EngineStartOptions,
+    IEngine,
 } from './types.ts';
 
 /** What `answer()` records: an `ApprovalAnswer` without its approval id. */
 type ApprovalDecisionInput = Omit<ApprovalAnswer, 'approvalId'>;
 
-export class Engine implements IContextProvider {
+export class Engine implements IEngine {
     /** Persistence capabilities, independently replaceable by packages built on the engine. */
     readonly store: IStore;
 
@@ -127,10 +129,9 @@ export class Engine implements IContextProvider {
     /** Every time-based decision of the engine; packages built on it share it. */
     readonly clock: IClock;
 
-
     protected readonly queue: RunQueue;
 
-    protected readonly conversations?: Conversations;
+    protected readonly conversations?: IConversations;
 
     protected readonly claimTtlMs: number;
 
@@ -486,7 +487,7 @@ export class Engine implements IContextProvider {
         return { runId, deduplicated: false };
     }
 
-    protected conversationCapability(): Conversations {
+    protected conversationCapability(): IConversations {
         if (!this.conversations) {
             throw new ValidationError('Conversation capability is disabled.');
         }

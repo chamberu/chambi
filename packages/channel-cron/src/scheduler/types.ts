@@ -5,12 +5,12 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { ChannelContext, Engine } from '@chamvi/core';
+import type { ChannelContext, IEngine } from '@chamvi/core';
 import type { CronChannelErrorContext } from '../channel/types.ts';
 
 export type SchedulerOptions = {
     /** Its agents' subscriptions of `channel` are scheduled; its store holds the tick locks. */
-    engine: Engine;
+    engine: IEngine;
     /** The cron channel's name: only subscriptions naming it are scheduled. */
     channel: string;
     /** The channel's dispatch; default engine.dispatch with the subscription's channel. */

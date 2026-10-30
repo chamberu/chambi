@@ -1,4 +1,4 @@
-import type { Agent, IStore } from '@chamvi/core';
+import type { Agent, IEngine, IStore } from '@chamvi/core';
 import { Engine } from '@chamvi/core';
 
 export async function serve(store: IStore, agents: Agent[]) {
@@ -22,7 +22,7 @@ export async function serve(store: IStore, agents: Agent[]) {
     return engine;
 }
 
-export async function cancelRun(engine: Engine, runId: string) {
+export async function cancelRun(engine: IEngine, runId: string) {
     // #region cancel
     await engine.cancel(runId);
 

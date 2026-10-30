@@ -24,7 +24,12 @@ import {
     inject,
     tryInject,
 } from '@chamvi/core';
-import type { AgentDefinition, ContextKey, ToolContext } from '@chamvi/core';
+import type {
+    AgentDefinition,
+    ContextKey,
+    IEngine,
+    ToolContext,
+} from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
@@ -32,7 +37,7 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 
 type Service = { id: string };
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -80,7 +85,7 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     };
 }
 
-async function runOn(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
+async function runOn(engine: IEngine, store: ReturnType<typeof createMemoryStore>) {
     const { runId } = await engine.dispatch({
         agent: 'ops',
         trigger: 'http',

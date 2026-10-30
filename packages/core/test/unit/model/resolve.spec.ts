@@ -23,6 +23,7 @@ import {
 import type {
     AgentDefinition,
     EngineOptions,
+    IEngine,
     IModelResolver,
     ToolContext,
 } from '@chamvi/core';
@@ -31,7 +32,7 @@ import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 afterEach(() => {
     for (const e of engines) {
@@ -96,7 +97,7 @@ function setup(
     return { store, engine };
 }
 
-async function runOn(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
+async function runOn(engine: IEngine, store: ReturnType<typeof createMemoryStore>) {
     await engine.start();
 
     const { runId } = await engine.dispatch({

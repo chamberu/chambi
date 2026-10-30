@@ -7,6 +7,7 @@
 
 import { join } from 'node:path';
 import { Engine, InvalidRunStateError, createMemoryStore } from '@chamvi/core';
+import type { IEngine } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
     afterEach,
@@ -38,7 +39,7 @@ afterEach(async () => {
     await root.remove();
 });
 
-function otherEngine(store: ReturnType<typeof createMemoryStore>, clock: ControllableClock): Engine {
+function otherEngine(store: ReturnType<typeof createMemoryStore>, clock: ControllableClock): IEngine {
     return new Engine({
         store,
         clock,
@@ -49,10 +50,10 @@ function otherEngine(store: ReturnType<typeof createMemoryStore>, clock: Control
 
 describe('revision markers moved by another process', () => {
     it.each([
-        ['removed', async (engine: Engine) => {
+        ['removed', async (engine: IEngine) => {
             await engine.removeAgent('greeter');
         }, /removed this agent's revision marker/],
-        ['moved', async (_engine: Engine, store: ReturnType<typeof createMemoryStore>, clock: ControllableClock) => {
+        ['moved', async (_engine: IEngine, store: ReturnType<typeof createMemoryStore>, clock: ControllableClock) => {
             await store.agentRevisions.save({
                 agent: 'greeter',
                 hash: 'h0',

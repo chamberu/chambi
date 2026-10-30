@@ -18,13 +18,18 @@ import {
 } from 'vitest';
 import { z } from 'zod';
 import { Engine, FatalToolError, defineAgent } from '@chamvi/core';
-import type { Budget, EngineOptions, IStore  } from '@chamvi/core';
+import type {
+    Budget,
+    EngineOptions,
+    IEngine,
+    IStore,
+} from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
-const engines: Engine[] = [];
+const engines: IEngine[] = [];
 
 /** Lets already-queued microtasks settle; not a sleep. */
 const flush = () => new Promise<void>((resolve) => {
