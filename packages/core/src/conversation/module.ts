@@ -62,12 +62,14 @@ export class Conversations implements IConversations {
     }
 
     async allow(operation: ConversationOperationLiteral, identity: ConversationIdentity, agent: string, invoker?: Invoker): Promise<void> {
-        if (await this.authorize(structuredClone({
+        const authorized = await this.authorize(structuredClone({
             operation,
             identity,
             agent,
             ...(invoker ? { invoker } : {}),
-        })) !== true) {
+        }));
+
+        if (!authorized) {
             throw new ValidationError('Conversation access was denied.');
         }
     }

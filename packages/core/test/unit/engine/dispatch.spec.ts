@@ -30,7 +30,6 @@ import type {
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { MemoryRunRepository, createMemoryStore } from '../../../src/repository/index.ts';
-import { createChannelContext } from '../../../src/channel/helpers.ts';
 
 const model = {} as LanguageModel;
 const agent = defineAgent({
@@ -526,8 +525,9 @@ describe('dispatch keeps lineage private', () => {
     });
 
     it("a channel's ctx.dispatch drops a parent", async () => {
-        const { engine, store } = make();
-        const { runId } = await createChannelContext(engine, { name: 'http' }).dispatch({ ...env(), parent } as never);
+        const channel = { name: 'http' };
+        const { engine, store } = make({ channels: [channel] });
+        const { runId } = await engine.channelContext(channel).dispatch({ ...env(), parent } as never);
         const run = await store.runs.findOne(runId);
 
         expect(run!.trigger.parent).toBeUndefined();

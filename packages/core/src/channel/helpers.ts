@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { conversationFor, dispatchConversation } from '../conversation/context.ts';
+import { conversationFor } from '../conversation/context.ts';
 import { isObject } from 'smob';
 import { requestApproval } from '../approval/request.ts';
 import type { ApprovalDecision, ApprovalRequestInput } from '../approval/types.ts';
@@ -25,7 +25,6 @@ import { untilAborted } from '../run/helpers.ts';
 import type { RunContext } from '../run/types.ts';
 import type { IEffectRepository } from '../repository/types.ts';
 import type {
-    ChannelContext,
     ChannelHandle,
     EmitMessage,
     IChannel,
@@ -34,15 +33,6 @@ import type {
 
 /** Emits in flight in one execution by effect key: parallel identical emits share one send. */
 type Inflight = Map<string, Promise<unknown>>;
-
-/** The context a channel's `start` and `in` get: its dispatch always carries the channel's own name. */
-export function createChannelContext(engine: IEngine, channel: Pick<IChannel, 'name'>): ChannelContext {
-    return {
-        engine,
-        dispatchConversation: (envelope, target) => dispatchConversation(engine, channel, envelope, target),
-        dispatch: (envelope) => engine.dispatch({ ...envelope, channel: channel.name }),
-    };
-}
 
 /** Refuses a channel name that breaks the agent-name rules. */
 /** Refuses a `defaultAddress` that is given but no non-empty string (InvalidAgentDefinitionError). */
