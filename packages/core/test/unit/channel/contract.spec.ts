@@ -290,6 +290,42 @@ describe('channels on the engine', () => {
         expect(a.ctx!.engine).toBe(engine);
     });
 
+    it('start receives the engine channel context with trusted conversation intake', async () => {
+        const chat = recording('chat', []);
+        const engine = make({
+            agents: [defineAgent({ ...agent.definition, conversation: true })],
+            channels: [chat],
+            conversations: { authorize: () => true },
+        });
+        const channelContext = vi.spyOn(engine, 'channelContext');
+
+        await engine.start();
+        expect(channelContext).toHaveBeenCalledExactlyOnceWith(chat);
+        expect(chat.ctx).toBe(channelContext.mock.results[0]!.value);
+
+        const { runId } = await chat.ctx!.dispatchConversation({
+            agent: 'triage',
+            trigger: 'message',
+            payload: 'hello',
+        }, {
+            account: 'main',
+            chat: 'private',
+            audience: 'direct',
+            text: 'hello',
+        });
+        const run = await engine.getRun(runId);
+
+        expect(run?.trigger.channel).toBe('chat');
+        expect(run?.conversation?.text).toBe('hello');
+        expect(run?.conversation?.scope.identity).toEqual({
+            agent: 'triage',
+            channel: 'chat',
+            account: 'main',
+            chat: 'private',
+            audience: 'direct',
+        });
+    });
+
     it('idempotency scope is <agent>:<channel>: two channels with the same key get two runs', async () => {
         const engine = make({ channels: [{ name: 'a' }, { name: 'b' }] });
         const base = {

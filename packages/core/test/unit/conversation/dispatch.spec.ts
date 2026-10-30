@@ -19,7 +19,6 @@ import {
     createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
-import { createChannelContext } from '../../../src/channel/helpers.ts';
 
 const channel = { name: 'chat' };
 const identity = {
@@ -61,7 +60,7 @@ function setup(allowed: boolean | (() => Promise<boolean>) = true, optIn = true)
         store,
         conversations,
         authorize,
-        ctx: createChannelContext(engine, channel),
+        ctx: engine.channelContext(channel),
     };
 }
 
@@ -229,10 +228,50 @@ describe('trusted conversation intake', () => {
         expect(() => engine.checkAgent(agent)).toThrow();
         await expect(engine.putAgent(agent)).rejects.toThrow();
     });
-    it('rejects unregistered channel object with the same name', async () => {
-        const { engine } = setup();
-        const forged = createChannelContext(engine, { name: 'chat' });
+    it('shared_channel_contexts_keep_intake_owned_by_each_engine', async () => {
+        const first = setup();
+        const second = setup();
+        const input = { ...envelope, idempotencyKey: 'same-message' };
+        const [one, two] = await Promise.all([
+            first.ctx.dispatchConversation(input, target),
+            second.ctx.dispatchConversation(input, target),
+        ]);
 
-        await expect(forged.dispatchConversation(envelope, target)).rejects.toThrow();
+        expect(one.deduplicated).toBe(false);
+        expect(two.deduplicated).toBe(false);
+        expect(one.runId).not.toBe(two.runId);
+        expect(await first.store.runs.findOne(two.runId)).toBeUndefined();
+        expect(await second.store.runs.findOne(one.runId)).toBeUndefined();
+
+        for (const [s, result] of [[first, one], [second, two]] as const) {
+            expect(s.ctx.engine).toBe(s.engine);
+            expect(s.authorize).toHaveBeenCalledTimes(1);
+            expect((await s.conversations.findOne(identity))?.identity).toEqual(identity);
+            expect((await s.store.runs.findOne(result.runId))?.conversation?.text).toBe(target.text);
+            expect((await s.store.runs.find({})).total).toBe(1);
+        }
+    });
+
+    it('detached_dispatch_keeps_its_engine_and_channel_binding', async () => {
+        const { ctx, store } = setup();
+        const { dispatchConversation } = ctx;
+        const result = await dispatchConversation(envelope, target);
+
+        expect((await store.runs.findOne(result.runId))?.conversation?.scope.identity).toEqual(identity);
+    });
+
+    it('unregistered_channel_cannot_obtain_a_context', async () => {
+        const {
+            engine,
+            store,
+            conversations,
+            authorize,
+        } = setup();
+
+        expect(() => engine.channelContext({ name: 'chat' })).toThrow(/not registered/);
+        expect(() => engine.channelContext({ name: 'other' })).toThrow(/not registered/);
+        expect(authorize).not.toHaveBeenCalled();
+        expect(await conversations.findOne(identity)).toBeUndefined();
+        expect((await store.runs.find({})).total).toBe(0);
     });
 });

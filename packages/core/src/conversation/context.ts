@@ -5,15 +5,10 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { ChannelDispatchEnvelope, DispatchResult, IChannel } from '../channel/types.ts';
-import type { IEngine } from '../engine/types.ts';
-import { ValidationError } from '../errors/index.ts';
 import type { Run, RunContext } from '../run/types.ts';
 import { ConversationOperation } from './constants.ts';
-import type { ConversationBinding, ConversationTarget, IConversations } from './types.ts';
+import type { ConversationBinding, IConversations } from './types.ts';
 
-type Intake = (channel: Pick<IChannel, 'name'>, envelope: ChannelDispatchEnvelope, target: ConversationTarget) => Promise<DispatchResult>;
-const intake = new WeakMap<IEngine, Intake>();
 const executions = new WeakMap<RunContext, {
     capability: IConversations;
     run: Run;
@@ -44,18 +39,4 @@ export async function checkConversation(context: RunContext, operation: `${Conve
     }
 
     await bound.capability.check(bound.run, operation);
-}
-
-export function bindConversationIntake(engine: IEngine, dispatch: Intake): void {
-    intake.set(engine, dispatch);
-}
-
-export function dispatchConversation(engine: IEngine, channel: Pick<IChannel, 'name'>, envelope: ChannelDispatchEnvelope, target: ConversationTarget): Promise<DispatchResult> {
-    const dispatch = intake.get(engine);
-
-    if (!dispatch) {
-        return Promise.reject(new ValidationError('Conversation intake is unavailable.'));
-    }
-
-    return dispatch(channel, envelope, target);
 }

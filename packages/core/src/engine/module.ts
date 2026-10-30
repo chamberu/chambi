@@ -14,10 +14,14 @@ import { approvalDecisionKey, assertSelectionShape, toSelection } from '../appro
 import { assertArtifactInput } from '../artifact/helpers.ts';
 import { attachmentIds, storeArtifact } from '../artifact/module.ts';
 import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
-import { assertChannelName, assertDefaultAddress, createChannelContext } from '../channel/helpers.ts';
-import type { ChannelContext, IChannel } from '../channel/types.ts';
+import { assertChannelName, assertDefaultAddress } from '../channel/helpers.ts';
+import type {
+    ChannelContext,
+    ChannelDispatchEnvelope,
+    DispatchResult,
+    IChannel,
+} from '../channel/types.ts';
 import { Conversations } from '../conversation/module.ts';
-import { bindConversationIntake } from '../conversation/context.ts';
 import { ConversationOperation } from '../conversation/constants.ts';
 import {
     assertConversationIdentity,
@@ -30,6 +34,7 @@ import type {
     ConversationIdentity,
     ConversationInspection,
     ConversationScope,
+    ConversationTarget,
     IConversations,
 } from '../conversation/types.ts';
 import { systemClock } from '../clock/index.ts';
@@ -59,14 +64,8 @@ import { assertHandoffSubscription } from '../handoff/helpers.ts';
 import { MODEL_CONTEXT } from '../model/constants.ts';
 import { checkAgentModel, checkDefaultModel } from '../model/module.ts';
 import type { IModelResolver, ModelContext, ModelRef } from '../model/types.ts';
-import { EMPTY_SKILL_CONTRIBUTION } from '../skill/constants.ts';
-import { selectSkillProvider, snapshotSkillInputs } from '../skill/helpers.ts';
-import type {
-    ISkillRuntime,
-    ISkillRuntimeProvider,
-    SkillContribution,
-    SkillInput,
-} from '../skill/types.ts';
+import { EngineSkills } from './skills/module.ts';
+import type { IEngineSkills } from './skills/types.ts';
 import type { IStore } from '../repository/types.ts';
 import { idempotencyScope, toInvoker } from '../trigger/helpers.ts';
 import { assertTriggerKey } from '../trigger/key.ts';
@@ -176,15 +175,7 @@ export class Engine implements IEngine {
     /** Values tools reach through inject(ctx, key), by reference. */
     protected readonly provided = new Map<ContextKey<unknown>, unknown>();
 
-    protected readonly skills: readonly SkillInput[];
-
-    protected skillProvider?: ISkillRuntimeProvider;
-
-    protected skillRuntime?: ISkillRuntime;
-
-    protected readonly agentSkillInputs = new WeakMap<Agent, readonly SkillInput[]>();
-
-    protected readonly preparedSkills = new WeakMap<Agent, SkillContribution>();
+    protected readonly skills: IEngineSkills;
 
     protected readonly preparing = new Set<Promise<void>>();
 
@@ -199,9 +190,7 @@ export class Engine implements IEngine {
     protected stopping?: Promise<void>;
 
     constructor(opts: EngineOptions) {
-        this.skills = snapshotSkillInputs(opts.skills);
-        this.skillProvider = selectSkillProvider(this.skills);
-        this.skillRuntime = this.skillProvider?.create(this.skills);
+        this.skills = new EngineSkills(opts.skills);
         this.store = opts.store;
 
         if (opts.conversations !== undefined) {
@@ -255,74 +244,6 @@ export class Engine implements IEngine {
         } satisfies ModelContext);
 
         this.provided.set(HANDOFF_CONTEXT, this.createHandoffHost());
-
-        bindConversationIntake(
-            this,
-            async (channel, envelope, target) => {
-                if (this.channels.get(channel.name) !== channel) {
-                    throw new ValidationError('Conversation intake needs the registered channel object.');
-                }
-
-                const capability = this.conversationCapability();
-                const copied = structuredClone(target);
-                const input = structuredClone(envelope);
-                const agent = this.agents.get(input.agent);
-                const key = agent && conversationKey(agent.definition);
-
-                if (key === undefined) {
-                    throw new ValidationError('The agent has not enabled conversations.');
-                }
-
-                const identity: ConversationIdentity = {
-                    agent: key,
-                    channel: channel.name,
-                    account: copied?.account,
-                    chat: copied?.chat,
-                    audience: copied?.audience,
-                };
-
-                assertConversationIdentity(identity);
-                assertConversationText(copied?.text, capability.limits.maxItemBytes);
-
-                for (const field of ['id', 'idempotencyKey', 'concurrencyKey', 'address'] as const) {
-                    if (input[field] !== undefined) {
-                        assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
-                    }
-                }
-
-                const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
-
-                await capability.allow(ConversationOperation.DISPATCH, identity, input.agent, invoker);
-
-                // Validate caller keys before resolve can create any conversation rows.
-                assertTriggerKey('idempotency key', input.idempotencyKey);
-                assertTriggerKey('concurrency key', input.concurrencyKey);
-
-                const current = await capability.repository.findOne(identity);
-                const proposed = current ?? {
-                    id: identityId(identity),
-                    generation: 0,
-                    identity,
-                };
-
-                if (input.concurrencyKey !== undefined && input.concurrencyKey !== conversationConcurrencyKey(proposed)) {
-                    throw new ValidationError('The conversation concurrency key conflicts with its scope.');
-                }
-
-                const scope = await capability.repository.resolve(identity);
-                const concurrencyKey = conversationConcurrencyKey(scope);
-
-                if (input.concurrencyKey !== undefined && input.concurrencyKey !== concurrencyKey) {
-                    throw new ValidationError('The conversation concurrency key conflicts with its scope.');
-                }
-
-                return this.createRun({
-                    ...input,
-                    channel: channel.name,
-                    concurrencyKey,
-                }, undefined, { scope, text: copied.text });
-            },
-        );
 
         for (const agent of opts.agents) {
             this.assertRegistrable(agent);
@@ -593,7 +514,77 @@ export class Engine implements IEngine {
             throw new ValidationError('The channel object is not registered.');
         }
 
-        return createChannelContext(this, channel);
+        return {
+            engine: this,
+            dispatch: (envelope) => this.dispatch({ ...envelope, channel: channel.name }),
+            dispatchConversation: (envelope, target) => this.intakeConversation(channel, envelope, target),
+        };
+    }
+
+    /** Trusted intake belongs to the engine and is bound to the registered channel object. */
+    protected async intakeConversation(channel: IChannel, envelope: ChannelDispatchEnvelope, target: ConversationTarget): Promise<DispatchResult> {
+        if (this.channels.get(channel.name) !== channel) {
+            throw new ValidationError('Conversation intake needs the registered channel object.');
+        }
+
+        const capability = this.conversationCapability();
+        const copied = structuredClone(target);
+        const input = structuredClone(envelope);
+        const agent = this.agents.get(input.agent);
+        const key = agent && conversationKey(agent.definition);
+
+        if (key === undefined) {
+            throw new ValidationError('The agent has not enabled conversations.');
+        }
+
+        const identity: ConversationIdentity = {
+            agent: key,
+            channel: channel.name,
+            account: copied?.account,
+            chat: copied?.chat,
+            audience: copied?.audience,
+        };
+
+        assertConversationIdentity(identity);
+        assertConversationText(copied?.text, capability.limits.maxItemBytes);
+
+        for (const field of ['id', 'idempotencyKey', 'concurrencyKey', 'address'] as const) {
+            if (input[field] !== undefined) {
+                assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
+            }
+        }
+
+        const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
+
+        await capability.allow(ConversationOperation.DISPATCH, identity, input.agent, invoker);
+
+        // Validate caller keys before resolve can create any conversation rows.
+        assertTriggerKey('idempotency key', input.idempotencyKey);
+        assertTriggerKey('concurrency key', input.concurrencyKey);
+
+        const current = await capability.repository.findOne(identity);
+        const proposed = current ?? {
+            id: identityId(identity),
+            generation: 0,
+            identity,
+        };
+
+        if (input.concurrencyKey !== undefined && input.concurrencyKey !== conversationConcurrencyKey(proposed)) {
+            throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+        }
+
+        const scope = await capability.repository.resolve(identity);
+        const concurrencyKey = conversationConcurrencyKey(scope);
+
+        if (input.concurrencyKey !== undefined && input.concurrencyKey !== concurrencyKey) {
+            throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+        }
+
+        return this.createRun({
+            ...input,
+            channel: channel.name,
+            concurrencyKey,
+        }, undefined, { scope, text: copied.text });
     }
 
     /** The registered channel of that name. */
@@ -785,38 +776,8 @@ export class Engine implements IEngine {
             signal.throwIfAborted();
 
             const agents = [...new Set([...this.agents.values(), ...(options.agents ?? [])])];
-            const runtimeBeforeChecks = this.skillRuntime;
 
-            for (const agent of agents) {
-                this.checkAgentSkills(agent);
-            }
-
-            // A first runtime selected late in the pass must also receive earlier empty captures.
-            if (this.skillRuntime !== runtimeBeforeChecks) {
-                for (const agent of agents) {
-                    this.checkAgentSkills(agent);
-                }
-            }
-
-            const unprepared = agents.filter((agent) => !this.preparedSkills.has(agent));
-
-            if (this.skillRuntime) {
-                const pending = await this.skillRuntime.prepare(unprepared, { signal });
-
-                signal.throwIfAborted();
-
-                const prepared = pending.commit();
-
-                for (const { agent, contribution } of prepared) {
-                    this.preparedSkills.set(agent, contribution);
-                }
-            } else {
-                signal.throwIfAborted();
-
-                for (const agent of unprepared) {
-                    this.preparedSkills.set(agent, EMPTY_SKILL_CONTRIBUTION);
-                }
-            }
+            await this.skills.prepare(agents, { signal });
         };
 
         const done = Promise.try(async () => {
@@ -973,7 +934,7 @@ export class Engine implements IEngine {
                 continue;
             }
 
-            await channel.start(createChannelContext(this, channel));
+            await channel.start(this.channelContext(channel));
             // Record even a late success: startup's internal cleanup must own its stop.
             this.startedChannels.push(channel);
             signal.throwIfAborted();
@@ -1579,7 +1540,7 @@ export class Engine implements IEngine {
         }
 
         const agent = this.agents.get(run.agent);
-        const skills = agent ? this.preparedSkills.get(agent) : undefined;
+        const skills = agent ? this.skills.get(agent) : undefined;
 
         if (!agent || !skills || !await this.isCurrent(run.agent)) {
             // removed or replaced since the claim: left for a replica that runs the agent's current revision
@@ -1696,7 +1657,7 @@ export class Engine implements IEngine {
 
             const agent = this.agents.get(run.agent);
 
-            if (!agent || !this.preparedSkills.has(agent) || !this.agents.has(run.agent) || this.syncing.has(run.agent)) {
+            if (!agent || !this.skills.get(agent) || !this.agents.has(run.agent) || this.syncing.has(run.agent)) {
                 return false;
             }
 
@@ -1893,26 +1854,7 @@ export class Engine implements IEngine {
             throw new InvalidAgentDefinitionError('The agent enables conversations but the engine has no conversation capability.');
         }
 
-        this.checkAgentSkills(agent);
-    }
-
-    protected checkAgentSkills(agent: Agent): void {
-        const captured = this.agentSkillInputs.get(agent);
-        const supplied = captured ?? agent.definition.skills ?? [];
-        const provider = selectSkillProvider(supplied, this.skillProvider);
-        const tools = typeof agent.definition.tools === 'function' ? {} : agent.definition.tools ?? {};
-        const inputs = captured ?? provider?.snapshot(supplied, tools) ?? Object.freeze([]);
-        const runtime = this.skillRuntime ?? provider?.create(this.skills);
-
-        runtime?.checkAgent(agent, inputs);
-
-        // A rejected candidate must neither select the first runtime nor capture failed inputs.
-        if (!captured) {
-            this.agentSkillInputs.set(agent, inputs);
-        }
-
-        this.skillProvider = provider;
-        this.skillRuntime = runtime;
+        this.skills.checkAgent(agent);
     }
 
     protected registry(): RegistryContext {
