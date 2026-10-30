@@ -38,6 +38,8 @@ describe('workspace tool trust classification', () => {
             expect(await untrustedResult(tools, 'create_workspace', {})).toBe(false);
             expect(await untrustedResult(tools, 'read_repository_instructions', { workspace: repo.id })).toBe(true);
             expect(await untrustedResult(tools, 'read_repository_instructions', { workspace: empty.id })).toBe(false);
+            expect(await untrustedResult(tools, 'git_fetch', {})).toBe(true);
+            expect(await untrustedResult(tools, 'git_pull', {})).toBe(true);
             expect((tools.git_push as Tool & { trust: ToolTrust }).trust).toEqual({ outbound: true });
         } finally {
             await manager.release('r1');
@@ -137,6 +139,154 @@ describe('workspace tool trust classification', () => {
                 engine.stop();
             }
         }
+    });
+
+    describe.each(['git_fetch', 'git_pull'])('%s outbound targets', (name) => {
+        it.each([
+            { remote: undefined, allowed: true },
+            { remote: 'octo/demo', allowed: true },
+            { remote: 'https://github.com/octo/demo/', allowed: true },
+            { remote: 'https://other.example/octo/demo.git', allowed: false },
+            // A non-origin repository can have the tracking name "origin".
+            { remote: 'https://other.example/origin', allowed: false },
+            { remote: 'https://127.0.0.1/private/repo', allowed: false },
+        ])('denies tainted non-origin requests but exempts origin: $remote', async ({ remote, allowed }) => {
+            let network = 0;
+            const provider = createFakeProvider({
+                onExec(argv) {
+                    if (argv.includes('fetch') || argv.includes('ls-remote')) {
+                        network++;
+                    }
+
+                    return {};
+                },
+            });
+            const manager = createWorkspaceManager({
+                provider,
+                repositoryInstructions: false,
+                gcIntervalMs: 0,
+            });
+            const store = createMemoryStore();
+            const call = (toolName: string, input: unknown = {}) => ({
+                parts: [{
+                    type: 'tool-call' as const,
+                    toolName,
+                    input,
+                }],
+            });
+            const engine = new Engine({
+                store,
+                agents: [defineAgent({
+                    name: 'test',
+                    instructions: 'test',
+                    trust: { onTainted: 'deny' },
+                    model: mockModel([
+                        call('create_workspace', { repo: 'octo/demo' }),
+                        call('read'),
+                        call(name, { ...(remote === undefined ? {} : { remote }), branch: 'main' }),
+                        { parts: [{ type: 'text', text: 'done' }] },
+                    ]),
+                    tools: {
+                        ...manager.tools(),
+                        read: defineTool({
+                            inputSchema: z.object({}),
+                            trust: { untrustedResult: true },
+                            execute: async () => 'untrusted instructions',
+                        }),
+                    },
+                })],
+            });
+
+            manager.attach(engine);
+
+            try {
+                await engine.start();
+
+                const { runId } = await engine.dispatch({
+                    agent: 'test',
+                    channel: 'http',
+                    trigger: 'test',
+                    payload: {},
+                });
+
+                await engine.idle();
+
+                expect((await store.runs.findOne(runId))?.status).toBe('completed');
+                expect(network).toBe(allowed ? 1 : 0);
+            } finally {
+                engine.stop();
+            }
+        });
+
+        it.each([false, true])('waits for approval before contacting a non-origin remote (approved: %s)', async (approved) => {
+            let network = 0;
+            const provider = createFakeProvider({
+                onExec(argv) {
+                    if (argv.includes('fetch') || argv.includes('ls-remote')) {
+                        network++;
+                    }
+
+                    return {};
+                },
+            });
+            const manager = createWorkspaceManager({ provider, gcIntervalMs: 0 });
+            const store = createMemoryStore();
+            const call = (toolName: string, input: unknown = {}) => ({
+                parts: [{
+                    type: 'tool-call' as const,
+                    toolName,
+                    toolCallId: toolName,
+                    input,
+                }],
+            });
+            const engine = new Engine({
+                store,
+                agents: [defineAgent({
+                    name: 'test',
+                    instructions: 'test',
+                    model: mockModel([
+                        call('create_workspace', { repo: 'octo/demo' }),
+                        call(name, { remote: 'https://other.example/octo/demo.git', branch: 'main' }),
+                        { parts: [{ type: 'text', text: 'done' }] },
+                    ]),
+                    tools: manager.tools(),
+                })],
+            });
+
+            manager.attach(engine);
+
+            try {
+                await engine.start();
+
+                const { runId } = await engine.dispatch({
+                    agent: 'test',
+                    channel: 'http',
+                    trigger: 'test',
+                    payload: {},
+                });
+
+                await engine.idle();
+
+                const waiting = await store.runs.findOne(runId);
+
+                expect(waiting?.status).toBe('waiting');
+                expect(waiting?.taint?.source).toBe('tool:create_workspace');
+                expect(network).toBe(0);
+                expect(waiting?.waiting?.kind).toBe('approval');
+
+                if (waiting?.waiting?.kind !== 'approval') {
+                    throw new Error('missing outbound approval');
+                }
+
+                await engine.approve(runId, { approvalId: waiting.waiting.approvalId, approved });
+                await engine.idle();
+
+                expect((await store.runs.findOne(runId))?.status).toBe('completed');
+                expect(network).toBe(approved ? 1 : 0);
+            } finally {
+                engine.stop();
+            }
+        });
     });
 
     it('does not taint workspace creation when repository instructions are disabled', async () => {
