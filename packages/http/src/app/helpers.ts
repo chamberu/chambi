@@ -181,7 +181,7 @@ export function buildContext(options: HttpAppOptions): HttpContext {
 
     return {
         engine: options.engine,
-        repositories: options.engine.repositories,
+        store: options.engine.store,
         agents: createLiveAgents(options.engine, options.agents),
         agentIssues: readAgentIssues(options),
         authenticators,

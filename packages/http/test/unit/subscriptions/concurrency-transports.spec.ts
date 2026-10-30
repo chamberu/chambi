@@ -7,7 +7,7 @@
 
 import {
     Engine,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -40,7 +40,7 @@ afterEach(async () => {
 describe('HTTP subscription execution cap', () => {
     it('shares one subscription slot between REST and MCP transport runs', async () => {
         const clock = new ControllableClock(new Date('2026-10-28T00:00:00Z'));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const entered: string[] = [];
         const releases = new Map<string, () => void>();
         const errors: unknown[] = [];
@@ -75,7 +75,7 @@ describe('HTTP subscription execution cap', () => {
             }),
         });
         engine = new Engine({
-            repositories: store,
+            store,
             clock,
             agents: [agent],
             channels: [httpChannel(), mcpChannel()],

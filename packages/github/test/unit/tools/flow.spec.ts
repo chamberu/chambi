@@ -54,7 +54,7 @@ describe('webhook to comment', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             fake,
         } = setup([
             {
@@ -114,7 +114,7 @@ describe('webhook to comment', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             fake,
         } = setup([
             {
@@ -163,7 +163,7 @@ describe('webhook to comment', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             fake,
             errors,
         } = setup;
@@ -208,7 +208,7 @@ describe('webhook to comment', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             fake,
         } = setup([comment('zero'), comment('one'), { parts: [{ type: 'text', text: 'Done.' }] }]);
         const response = await deliver(app, {

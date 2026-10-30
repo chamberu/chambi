@@ -1,6 +1,6 @@
-# Repository Contract
+# Stores and repositories
 
-The engine receives a `Repositories` object with one implementation per persistence capability. Each role has its own small interface and can be built and tested independently.
+The engine receives an `IStore` object with one implementation per persistence capability. Each role has its own small interface and can be built and tested independently.
 
 | Interface | Holds | Key operations |
 |---|---|---|
@@ -15,22 +15,21 @@ The engine receives a `Repositories` object with one implementation per persiste
 | `IAgentRevisionRepository` | One revision marker per [folder agent](/guide/agent-folders): `{ agent, hash, changedAt }`, no code | `findOne`, `save` (upsert), `delete` (a missing one is a no-op), `find` (agent code-point order) |
 | `IConversationRepository` (optional) | Conversation generations, turn ownership, recall, journal and explicit notes | `findOne`, `findItems`, `findNotes`, `findOneNote`; `resolve`, `beginTurn`, `endTurn`, `prepareEmit`, `confirmEmit`, `applyNote`, `reset`, `delete`, `prune` |
 
-`Repositories` has nine required fields: `runs`, `steps`, `checkpoints`, `idempotency`, `locks`, `effects`, `state`, `artifacts` and `agentRevisions`. Its optional `conversations` field implements `IConversationRepository`. Pass the aggregate as `new Engine({ repositories, agents })`; use `repositories.runs.findOne(id)` or `repositories.state.findOne(agent, key)` for direct access. Conversation storage alone does not enable memory: configure `conversations: { authorize, limits? }` on the engine and opt agents in.
+`IStore` has nine required fields: `runs`, `steps`, `checkpoints`, `idempotency`, `locks`, `effects`, `state`, `artifacts` and `agentRevisions`. Its optional `conversations` field implements `IConversationRepository`. Pass the aggregate as `new Engine({ store, agents })`; use `store.runs.findOne(id)` or `store.state.findOne(agent, key)` for direct access. `IStore` is a plain aggregate, not a facade with forwarding methods. Conversation storage alone does not enable memory: configure `conversations: { authorize, limits? }` on the engine and opt agents in.
 
 ## Updating existing callers
 
-This changes the storage API. `IStore`, `MemoryStore` and `TypeormStore` are removed; custom adapters implement the individual interfaces and are supplied in a `Repositories` object.
+This changes the storage API. `IStore` now aggregates individual repository interfaces rather than forwarding all operations through one facade. The `MemoryStore` and `TypeormStore` classes are removed; custom adapters assemble their capabilities into an `IStore` object.
 
-| Previous API | Separate repositories API |
+| Previous API | Store aggregate API |
 |---|---|
-| `new MemoryStore(options)` | `createMemoryRepositories(options)` |
-| `new TypeormStore(options)` | `createDatabaseRepositories(options)` |
-| `new Engine({ store, agents })` | `new Engine({ repositories, agents })` |
-| `engine.store.getRun(id)` | `engine.repositories.runs.findOne(id)` |
-| `storeModule({ store })` | `repositoryModule({ repositories })` |
-| `AppToken.STORE` | `AppToken.REPOSITORIES` |
-| `conversations: { store, authorize }` | `repositories.conversations` holds storage; `conversations: { authorize }` holds policy |
-| `container.resolve(AppToken.CONVERSATIONS)` | `container.resolve(AppToken.REPOSITORIES).conversations` |
+| `new MemoryStore(options)` | `createMemoryStore(options)` |
+| `new TypeormStore(options)` | `createDatabaseStore(options)` |
+| `engine.store.getRun(id)` | `engine.store.runs.findOne(id)` |
+| `conversations: { store, authorize }` | `store.conversations` holds storage; `conversations: { authorize }` holds policy |
+| `container.resolve(AppToken.CONVERSATIONS)` | `container.resolve(AppToken.STORE).conversations` |
+
+Keep passing the aggregate through `new Engine({ store, agents })`, `storeModule({ store })` and `AppToken.STORE`. Factory option types are `MemoryStoreOptions` and `DatabaseStoreOptions`; `createDatabaseStore()` returns `DatabaseStore`.
 
 The package is now `@chamvi/store-db` (previously `@chamvi/store-typeorm`). Replace package imports and dependencies; database tables and migration history keep their names. The class split itself changes no database schema. Existing TypeORM roles must keep sharing the same DataSource so their relationships remain valid.
 
@@ -43,9 +42,9 @@ The matching `OrFail` method returns the same result when it exists. `findOneOrF
 A missing single run or artifact uses `RunNotFoundError` or `ArtifactNotFoundError`; other missing repository results use `RepositoryNotFoundError`. Backend failures and validation errors pass through unchanged. Leases and mutations retain their domain operations, such as `claim`, `renewClaim` and `beginTurn`.
 
 ```ts
-const run = await repositories.runs.findOneOrFail(runId);
-const { data, total } = await repositories.runs.find({ agent: run.agent, limit: 20 });
-const artifacts = await repositories.artifacts.find(runId);
+const run = await store.runs.findOneOrFail(runId);
+const { data, total } = await store.runs.find({ agent: run.agent, limit: 20 });
+const artifacts = await store.artifacts.find(runId);
 ```
 
 ## Rules every repository keeps
@@ -64,11 +63,11 @@ const artifacts = await repositories.artifacts.find(runId);
 
 <<< ../../../core/src/repository/types.ts{ts}
 
-## Repositories
+## Store implementations
 
-| Repository | Package | Status |
+| Store | Package | Status |
 |---|---|---|
-| [`createMemoryRepositories()`](/repositories/memory) | `@chamvi/core` | Shipped. Development and tests |
+| [`createMemoryStore()`](/repositories/memory) | `@chamvi/core` | Shipped. Development and tests |
 | [TypeORM](/repositories/typeorm) | `@chamvi/store-db` | Shipped. PostgreSQL, production |
 
 Redis is never required. Any store that passes the [contract suite](/repositories/writing-a-repository) from `@chamvi/test-kit` works with the engine.

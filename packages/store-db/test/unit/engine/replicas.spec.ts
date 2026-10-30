@@ -22,7 +22,7 @@ import {
 import { z } from 'zod';
 import { Engine, defineAgent } from '@chamvi/core';
 import type { EngineOptions } from '@chamvi/core';
-import { createDatabaseRepositories } from '@chamvi/store-db';
+import { createDatabaseStore } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres, truncateRepository } from '../../utils/database.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -74,7 +74,7 @@ const env = {
     payload: { issue: 42 },
 };
 
-describePostgres('two engines sharing TypeORM repositories', () => {
+describePostgres('two engines sharing TypeORM store', () => {
     let dataSource: DataSource;
     const engines: Engine[] = [];
 
@@ -82,7 +82,7 @@ describePostgres('two engines sharing TypeORM repositories', () => {
         model: LanguageModel,
         opts: Partial<EngineOptions> & { tools?: () => ToolSet } = {},
     ) {
-        const repositories = createDatabaseRepositories({ dataSource });
+        const store = createDatabaseStore({ dataSource });
         const errors: unknown[] = [];
         const agent = defineAgent({
             name: 'triage',
@@ -91,7 +91,7 @@ describePostgres('two engines sharing TypeORM repositories', () => {
             tools: opts.tools,
         });
         const engine = new Engine({
-            repositories,
+            store,
             agents: [agent],
             // Real time: renewal runs every claimTtlMs / 3, so the lease must
             // survive a delayed renewal on a loaded machine.
@@ -103,7 +103,7 @@ describePostgres('two engines sharing TypeORM repositories', () => {
         });
         engines.push(engine);
         return {
-            repositories,
+            store,
             engine, 
             errors, 
         };
@@ -142,18 +142,18 @@ describePostgres('two engines sharing TypeORM repositories', () => {
         const { runId } = await a.engine.dispatch(env);
         await vi.waitFor(() => expect(calls).toHaveLength(2), WAIT);
         await a.engine.drain({ timeoutMs: 50 });
-        expect((await a.repositories.runs.findOne(runId))?.status).toBe('interrupted');
+        expect((await a.store.runs.findOne(runId))?.status).toBe('interrupted');
 
         await b.engine.start();
         await b.engine.idle();
 
-        const run = await b.repositories.runs.findOne(runId);
+        const run = await b.store.runs.findOne(runId);
         expect(run).toMatchObject({ status: 'completed', output: 'done' });
         expect(run?.claim).toBeUndefined();
         expect(lookup).toHaveBeenCalledTimes(1);
         expect(calls).toHaveLength(3);
-        expect((await b.repositories.checkpoints.findOne(runId))?.stepIndex).toBe(1);
-        const steps = await b.repositories.steps.find(runId);
+        expect((await b.store.checkpoints.findOne(runId))?.stepIndex).toBe(1);
+        const steps = await b.store.steps.find(runId);
         expect(steps.map((s) => s.kind)).toEqual(['llm', 'tool', 'llm']);
         expect(a.errors).toEqual([]);
         expect(b.errors).toEqual([]);
@@ -172,10 +172,10 @@ describePostgres('two engines sharing TypeORM repositories', () => {
         ]);
         expect(results[0].runId).toBe(results[1].runId);
         expect(results.filter((r) => r.deduplicated)).toHaveLength(1);
-        expect((await a.repositories.runs.find({})).total).toBe(1);
+        expect((await a.store.runs.find({})).total).toBe(1);
 
         await vi.waitFor(async () => {
-            expect((await a.repositories.runs.findOne(results[0].runId))?.status).toBe('completed');
+            expect((await a.store.runs.findOne(results[0].runId))?.status).toBe('completed');
         }, WAIT);
         expect(a.errors).toEqual([]);
         expect(b.errors).toEqual([]);
@@ -191,21 +191,21 @@ describePostgres('two engines sharing TypeORM repositories', () => {
 
         const { runId: run1 } = await a.engine.dispatch({ ...env, concurrencyKey: 'k' });
         await vi.waitFor(async () => {
-            expect((await a.repositories.runs.findOne(run1))?.status).toBe('running');
+            expect((await a.store.runs.findOne(run1))?.status).toBe('running');
         }, WAIT);
 
         const { runId: run2 } = await b.engine.dispatch({ ...env, concurrencyKey: 'k' });
         await sleep(500);
-        expect((await b.repositories.runs.findOne(run2))?.status).toBe('queued');
+        expect((await b.store.runs.findOne(run2))?.status).toBe('queued');
 
         open();
         await vi.waitFor(async () => {
-            expect((await a.repositories.runs.findOne(run1))?.status).toBe('completed');
-            expect((await a.repositories.runs.findOne(run2))?.status).toBe('completed');
+            expect((await a.store.runs.findOne(run1))?.status).toBe('completed');
+            expect((await a.store.runs.findOne(run2))?.status).toBe('completed');
         }, WAIT);
 
-        const first = await a.repositories.runs.findOne(run1);
-        const second = await a.repositories.runs.findOne(run2);
+        const first = await a.store.runs.findOne(run1);
+        const second = await a.store.runs.findOne(run2);
         expect(second!.startedAt!.getTime()).toBeGreaterThanOrEqual(first!.finishedAt!.getTime());
         expect(a.errors).toEqual([]);
         expect(b.errors).toEqual([]);

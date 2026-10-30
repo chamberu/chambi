@@ -17,7 +17,7 @@ import {
     defineAgent,
     handoff,
 } from '@chamvi/core';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 
 const agent = () => defineAgent({
@@ -54,14 +54,14 @@ describe('handoff.on()', () => {
     });
 
     it('an agent subscribing without agentChannel() is refused', () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         expect(() => new Engine({
-            repositories: store,
+            store,
             agents: [agent()],
             channels: [],
         })).toThrow(/unknown channel "agent"/);
         expect(() => new Engine({
-            repositories: store,
+            store,
             agents: [agent()],
             channels: [agentChannel()],
         })).not.toThrow();

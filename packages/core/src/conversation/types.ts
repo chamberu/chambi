@@ -191,7 +191,7 @@ export type MemoryConversationRepositoryOptions = {
 export type ConversationFindOptions = { limit: number; offset: number };
 
 /**
- * Optional conversation persistence in the engine's Repositories bundle.
+ * Optional conversation persistence in the engine's IStore bundle.
  * Dates come from the repository's IClock; values are copied in and out.
  * OrFail queries throw RepositoryNotFoundError on absence or an empty selected
  * page, preserving validation, expiry and generation rules of the plain query.

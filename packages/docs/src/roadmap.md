@@ -6,10 +6,10 @@ chamvi is built milestone by milestone, each defined by one real agent that has 
 
 | Package | Contents |
 |---|---|
-| `@chamvi/core` | `defineAgent()` with channel subscriptions and tool hooks, the `IChannel` contract (`ToolContext.channels`, `consoleChannel()`), `Engine` (dispatch, scheduling, checkpoints, budgets, durable `approve()`, cancel, drain, recovery), effect tools, agent state, the `Repositories` contract, `createMemoryRepositories()` |
+| `@chamvi/core` | `defineAgent()` with channel subscriptions and tool hooks, the `IChannel` contract (`ToolContext.channels`, `consoleChannel()`), `Engine` (dispatch, scheduling, checkpoints, budgets, durable `approve()`, cancel, drain, recovery), effect tools, agent state, the `IStore` contract, `createMemoryStore()` |
 | `@chamvi/test-kit` | `describeRepositoryContract`, `describeWorkspaceContract`, `ControllableClock`, `createGitFixture`, `createFakeGithub` |
 | `@chamvi/channel-cron` | The cron channel `cronChannel()` and `cron.on()` (one locked hubwire component per subscription, overlap policies, timezones), `runJob()` for one-shot jobs |
-| `@chamvi/store-db` | `createDatabaseRepositories()` on Postgres, `migrateStore`, `purgeExpired`. See [TypeORM store](/repositories/typeorm) |
+| `@chamvi/store-db` | `createDatabaseStore()` on Postgres, `migrateStore`, `purgeExpired`. See [TypeORM store](/repositories/typeorm) |
 | `@chamvi/http` | REST control API, server-sent events, the `http`, `mcp` and `webhook` channels and the `/channels/<name>` mount, `/healthz`, `/readyz`, `/metrics`, the MCP endpoint, static-token, authup and OIDC authentication, graceful shutdown. See [HTTP API & MCP](/guide/http) |
 | `@chamvi/github` | GitHub App auth with an installation-token cache, the GitHub channel (signed deliveries in, deduplicated by delivery id; issue comments out, deduplicated by a hidden marker), `github.on()` subscriptions, read tools and effect write tools with marker reconciliation. See [GitHub App](/deployment/github-app) |
 | `@chamvi/sandbox` | Sandbox contracts, path, repository and limit rules, the run-scoped workspace manager with `create_workspace` and `dispose_workspace`, workspaces a run finds again after a restart or on another replica. See [Workspaces & Coding](/guide/workspaces) |

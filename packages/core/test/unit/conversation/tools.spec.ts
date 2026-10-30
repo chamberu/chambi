@@ -14,7 +14,7 @@ import {
 import {
     Engine,
     MemoryConversationRepository,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     toolContextSchema,
 } from '@chamvi/core';
@@ -91,7 +91,7 @@ function setup(options: {
     authorize?: (access: ConversationAccess) => boolean;
     factory?: (ctx: ToolContext) => ToolSet;
 } = {}) {
-    const store = createMemoryRepositories();
+    const store = createMemoryStore();
     const conversations = options.conversations ?? new MemoryConversationRepository();
     const model = mockModel([...(options.responses ?? []), { parts: [{ type: 'text', text: 'done' }] }]);
     let context: ToolContext;
@@ -106,7 +106,7 @@ function setup(options: {
         },
     };
     const engine = new Engine({
-        repositories: { ...store, conversations },
+        store: { ...store, conversations },
         agents: [defineAgent({
             name: 'helper',
             model,
@@ -123,7 +123,7 @@ function setup(options: {
     engines.push(engine);
     return {
         engine,
-        repositories: store,
+        store,
         conversations,
         model,
         hookErrors,
@@ -136,7 +136,7 @@ async function run(s: ReturnType<typeof setup>, bound = true) {
     await s.engine.start();
     await s.engine.idle();
     expect(s.hookErrors).toEqual([]);
-    expect((await s.repositories.runs.findOne(result.runId))?.status).toBe('completed');
+    expect((await s.store.runs.findOne(result.runId))?.status).toBe('completed');
     return result.runId;
 }
 
@@ -218,11 +218,11 @@ describe('scoped memory tools', () => {
         const peerEntered = Promise.withResolvers<void>();
         const peerRelease = Promise.withResolvers<void>();
         const conversations = new MemoryConversationRepository();
-        const repositories = { ...createMemoryRepositories(), conversations };
+        const store = { ...createMemoryStore(), conversations };
         const channel = { name: 'chat' };
         const old = new Engine({
             owner: 'old',
-            repositories,
+            store,
             channels: [channel],
             agents: [defineAgent({
                 name: 'helper',
@@ -253,7 +253,7 @@ describe('scoped memory tools', () => {
         });
         const peer = new Engine({
             owner: 'peer',
-            repositories,
+            store,
             channels: [channel],
             agents: [defineAgent({
                 name: 'helper',
@@ -279,11 +279,11 @@ describe('scoped memory tools', () => {
             await old.start();
             await entered.promise;
             await old.drain({ timeoutMs: 1 });
-            expect((await repositories.runs.findOne(runId))?.status).toBe('interrupted');
+            expect((await store.runs.findOne(runId))?.status).toBe('interrupted');
 
             await peer.start();
             await peerEntered.promise;
-            const recovered = (await repositories.runs.findOne(runId))!;
+            const recovered = (await store.runs.findOne(runId))!;
             expect(recovered).toMatchObject({ status: 'running', claim: { owner: 'peer' } });
             const { scope } = recovered.conversation!;
             expect(await conversations.findOneNote(scope, 'preference')).toMatchObject({ text: 'current' });
@@ -294,7 +294,7 @@ describe('scoped memory tools', () => {
 
             peerRelease.resolve();
             await peer.idle();
-            expect((await repositories.runs.findOne(runId))?.status).toBe('completed');
+            expect((await store.runs.findOne(runId))?.status).toBe('completed');
         } finally {
             release.resolve();
             peerRelease.resolve();

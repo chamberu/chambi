@@ -9,8 +9,8 @@
 // a module provides a context key in engineCreated, and a folder agent's tool
 // in CHAMVI_AGENTS_DIR (argv[2], outside the app tree) injects it. The folder
 // agent reads the key and the mock model from globalThis.
-import { AppToken, createApp, repositoryModule } from '@chamvi/app';
-import { createMemoryRepositories, defineContextKey } from '@chamvi/core';
+import { AppToken, createApp, storeModule } from '@chamvi/app';
+import { createMemoryStore, defineContextKey } from '@chamvi/core';
 import { simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 
@@ -62,14 +62,14 @@ globalThis.chamviGreetingKey = key;
 // the model goes in directly: through a models provider the AI SDK would wrap the mock
 globalThis.chamviModel = model;
 
-const store = createMemoryRepositories();
+const store = createMemoryStore();
 const app = createApp({
     modules: [{
         name: 'greeting',
         async setup(container) {
             container.registerMany(AppToken.LIFECYCLE_HOOKS, { useValue: { name: 'greeting', engineCreated: (engine) => engine.provide(key, 'hello from the module') } });
         },
-    }, repositoryModule({ repositories: store })],
+    }, storeModule({ store })],
 });
 
 const result = await app.runJob({

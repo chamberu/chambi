@@ -19,6 +19,6 @@ export type ContextKey<T> = {
 
 /** Holds values tools reach through `inject(ctx, key)`. */
 export interface IContextProvider {
-    /** Repositories `value` by reference under `key`. */
+    /** Stores `value` by reference under `key`. */
     provide<T>(key: ContextKey<T>, value: T): void;
 }

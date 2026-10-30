@@ -19,7 +19,7 @@ import {
 import {
     Engine,
     approve,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { codingTools } from '@chamvi/coding';
@@ -69,9 +69,9 @@ describe('coding flow (local)', () => {
             ]),
             tools: { ...manager.tools(), ...codingTools(manager) },
         });
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const engine = new Engine({
-            repositories: store,
+            store,
             agents: [agent],
             onError: () => {},
         });
@@ -149,8 +149,8 @@ describe('repository guidance through Engine checkpoints', () => {
                 },
             },
         });
-        const store = createMemoryRepositories();
-        const first = new Engine({ repositories: store, agents: [agentFor(firstManager)] });
+        const store = createMemoryStore();
+        const first = new Engine({ store, agents: [agentFor(firstManager)] });
         cleanups.push(() => first.stop());
         firstManager.attach(first);
         await first.start();
@@ -206,7 +206,7 @@ describe('repository guidance through Engine checkpoints', () => {
         await firstManager.close();
         const secondManager = makeManager();
         cleanups.push(() => secondManager.close());
-        const second = new Engine({ repositories: store, agents: [agentFor(secondManager)] });
+        const second = new Engine({ store, agents: [agentFor(secondManager)] });
         cleanups.push(() => second.stop());
         secondManager.attach(second);
         await second.start();

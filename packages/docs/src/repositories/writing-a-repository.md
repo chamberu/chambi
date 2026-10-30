@@ -1,10 +1,10 @@
 # Writing a Repository
 
-Implement the capability interfaces from `@chamvi/core` and assemble them into a plain `Repositories` object. Pass it to `new Engine({ repositories, agents })`. A backend can expose its own assembly factory, as `createMemoryRepositories()` and `createDatabaseRepositories()` do.
+Implement the capability interfaces from `@chamvi/core` and assemble them into a plain `IStore` object. Pass it to `new Engine({ store, agents })`. A backend can expose its own assembly factory, as `createMemoryStore()` and `createDatabaseStore()` do.
 
 ## Prove it with the contract suite
 
-`@chamvi/test-kit` ships `describeRepositoryContract`, the Vitest suite every store must pass. It is the same suite `createMemoryRepositories()` runs.
+`@chamvi/test-kit` ships `describeRepositoryContract`, the Vitest suite every store must pass. It is the same suite `createMemoryStore()` runs.
 
 ```bash
 npm install --save-dev @chamvi/test-kit vitest

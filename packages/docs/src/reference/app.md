@@ -60,7 +60,7 @@ Read by `readConfig(env, { mode, dev })` once per lifecycle; the optional module
 | `CHAMVI_BASE_PATH` | http | empty or `^(?:\/[a-z0-9._~-]+)+$` | `''` (health at `/healthz`, UI at `/ui`) | never |
 | `CHAMVI_PUBLIC_URL` | http, ui, channels | absolute URL | unset | an approval link is wanted |
 | `CHAMVI_LOG_LEVEL` | config | `error`, `warn`, `info`, `debug` | `info` | never |
-| `DATABASE_URL` | store | `postgres://...` | unset: `createMemoryRepositories()` (warned outside dev) | `migrate`; any multi-replica or CronJob deployment |
+| `DATABASE_URL` | store | `postgres://...` | unset: `createMemoryStore()` (warned outside dev) | `migrate`; any multi-replica or CronJob deployment |
 | `CHAMVI_MIGRATE` | store | bool | `true` | never |
 | `CHAMVI_PURGE_INTERVAL_MS` | store | int, `0` disables | `3600000` (for purgeable capability repositories, on `engine.clock`) | never |
 | `CHAMVI_MAX_CONCURRENT_RUNS` | engine | int >= 1 | `4` | never |
@@ -119,7 +119,7 @@ With `required: true` or a `default` the overloads return a defined value.
 
 ```ts
 function configModule(options?: ConfigModuleOptions): IModule;            // 'chamvi:config'
-function repositoryModule(options?: RepositoryModuleOptions): IModule;              // 'chamvi:store'
+function storeModule(options?: StoreModuleOptions): IModule;              // 'chamvi:store'
 function staticTokensModule(options?: StaticTokensModuleOptions): IModule; // 'chamvi:static-tokens'
 function engineModule(options?: EngineModuleOptions): IModule;            // 'chamvi:engine'
 function agentsModule(): IModule;                                         // 'chamvi:agents'
@@ -132,7 +132,7 @@ Listing one of them in `createApp({ modules })` replaces the default instance. `
 
 <<< ../../../app/src/modules/config/types.ts{ts}
 
-`RepositoryModuleOptions` (`repositories` is used as is and never closed; `dataSource` must be initialized, is migrated like a built one and never destroyed; `url` wins over `DATABASE_URL`; a data source built from a URL waits at most 10 s for Postgres to accept the first connection):
+`StoreModuleOptions` (`store` is used as is and never closed; `dataSource` must be initialized, is migrated like a built one and never destroyed; `url` wins over `DATABASE_URL`; a data source built from a URL waits at most 10 s for Postgres to accept the first connection):
 
 <<< ../../../app/src/modules/repository/types.ts{ts}
 
@@ -199,7 +199,7 @@ function buildModuleHarness(options?: ModuleHarnessOptions): ModuleHarness;     
 async function createModuleHarness(options?: ModuleHarnessOptions): Promise<ModuleHarness>; // set up
 ```
 
-The real module lifecycle without `start()` and a port, over exactly `options.modules` (list the built-ins a module needs, e.g. `configModule()`, `repositoryModule()`, `engineModule()`) on a container holding `AppToken.CONTEXT` (and `CLOCK` with `clock`): `setup()` runs every `setup`, every `onReady` and the start steps like the app and tears down and rethrows when one fails, `reported` collects every `context.report()` call (a throwing lifecycle hook lands there), `stop()` aborts the context signal and tears down.
+The real module lifecycle without `start()` and a port, over exactly `options.modules` (list the built-ins a module needs, e.g. `configModule()`, `storeModule()`, `engineModule()`) on a container holding `AppToken.CONTEXT` (and `CLOCK` with `clock`): `setup()` runs every `setup`, every `onReady` and the start steps like the app and tears down and rethrows when one fails, `reported` collects every `context.report()` call (a throwing lifecycle hook lands there), `stop()` aborts the context signal and tears down.
 
 <<< ../../../app/src/testing/types.ts{ts}
 

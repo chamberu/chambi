@@ -64,11 +64,11 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     const {
         run,
         agent,
-        repositories,
+        store,
         clock,
     } = ctx;
     const budget = resolveBudget(agent);
-    const checkpoint = await repositories.checkpoints.findOne(run.id);
+    const checkpoint = await store.checkpoints.findOne(run.id);
     // stored form: file parts hold artifact markers; the model gets a hydrated copy
     let initial: ModelMessage[] = checkpoint?.messages ?? [
         ...(ctx.conversation?.snapshot.messages ?? []),
@@ -76,7 +76,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     ];
     const usage: Usage = { ...run.usage };
     let stepIndex = checkpoint ? checkpoint.stepIndex + 1 : 0;
-    let stepSeq = (await repositories.steps.find(run.id)).length;
+    let stepSeq = (await store.steps.find(run.id)).length;
 
     // calls a suspended approve() left without a result: run before any model call
     const pending = checkpoint ? pendingToolCalls(checkpoint.messages) : [];
@@ -113,7 +113,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
 
     let prompt: ModelMessage[];
     try {
-        prompt = await hydrateMessages(initial, repositories.artifacts);
+        prompt = await hydrateMessages(initial, store.artifacts);
     } catch (error) {
         if (!(error instanceof ArtifactNotFoundError)) throw error;
         await ctx.finish({ status: RunStatus.FAILED, error: toRunError(error) });
@@ -191,7 +191,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             runId: run.id,
             index: stepSeq,
         };
-        if (await guarded(() => repositories.steps.insert(full))) {
+        if (await guarded(() => store.steps.insert(full))) {
             stepSeq++;
             ctx.onStepAppended(full);
         }
@@ -254,7 +254,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                     .sort((a, b) => order.indexOf(a.toolCallId) - order.indexOf(b.toolCallId))[0] ?? suspended[0];
             }
             responseMessages.push(...messages);
-            await guarded(() => repositories.checkpoints.save({
+            await guarded(() => store.checkpoints.save({
                 runId: run.id,
                 stepIndex: stepIndex++,
                 messages: [...initial, ...responseMessages],
@@ -312,7 +312,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 const part = await toToolResultPart(call, Object.hasOwn(tools, call.toolName) ? tools[call.toolName] : undefined, result);
                 initial = withToolResults(initial, [part]);
                 prompt = withToolResults(prompt, [part]);
-                await guarded(() => repositories.checkpoints.save({
+                await guarded(() => store.checkpoints.save({
                     runId: run.id,
                     stepIndex: checkpoint!.stepIndex,
                     messages: initial,
@@ -416,7 +416,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         toolsContext: toolsContext as never,
         stopWhen,
         // a tool result's artifact marker (artifactFilePart) gets its bytes per model call, never in a stored message
-        prepareStep: async ({ messages }) => ({ messages: await hydrateMessages(messages, repositories.artifacts) }),
+        prepareStep: async ({ messages }) => ({ messages: await hydrateMessages(messages, store.artifacts) }),
         onLanguageModelCallEnd: () => {
             modelCallEnded = true;
         },

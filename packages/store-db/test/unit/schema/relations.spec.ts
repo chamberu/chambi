@@ -8,7 +8,7 @@
 import type { DataSource } from 'typeorm';
 import { afterEach, expect, it } from 'vitest';
 import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
-import { DatabaseConversationRepository, createDatabaseRepositories } from '@chamvi/store-db';
+import { DatabaseConversationRepository, createDatabaseStore } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import { seedRun } from '../../utils/conversation.ts';
 import { TableName } from '../../../src/entities/constants.ts';
@@ -44,7 +44,7 @@ describePostgres('relational integrity', () => {
     it('rejects dangling run and scope references and preserves referenced parents', async () => {
         ds = await createTestDataSource();
         const conversations = new DatabaseConversationRepository({ dataSource: ds });
-        const repositories = createDatabaseRepositories({ dataSource: ds });
+        const store = createDatabaseStore({ dataSource: ds });
         const scope = await conversations.resolve(IDENTITY);
         await seedRun(ds, 'run', { conversation: { scope, text: 'input' } });
         await conversations.beginTurn(scope, 'run', 'input', DEFAULT_CONVERSATION_LIMITS);
@@ -61,14 +61,14 @@ describePostgres('relational integrity', () => {
             },
         });
         const now = new Date();
-        await repositories.checkpoints.save({
+        await store.checkpoints.save({
             runId: 'run',
             stepIndex: 0,
             messages: [],
             createdAt: now,
             conversation: { scopeId: scope.id, generation: scope.generation },
         });
-        await repositories.steps.insert({
+        await store.steps.insert({
             runId: 'run',
             index: 0,
             kind: 'llm',
@@ -96,7 +96,7 @@ describePostgres('relational integrity', () => {
             .rejects.toMatchObject({ driverError: { code: '23503' } });
         await conversations.endTurn(scope, 'run', []);
         await conversations.reset(IDENTITY, { keepNotes: true });
-        expect((await repositories.checkpoints.findOne('run'))?.conversation).toEqual({ scopeId: scope.id, generation: scope.generation });
+        expect((await store.checkpoints.findOne('run'))?.conversation).toEqual({ scopeId: scope.id, generation: scope.generation });
         await expect(ds.query('DELETE FROM chamvi_conversations WHERE id = $1', [scope.id]))
             .rejects.toMatchObject({ driverError: { code: '23503' } });
     });
@@ -104,7 +104,7 @@ describePostgres('relational integrity', () => {
     it('loads related runs and conversations through normal TypeORM relations', async () => {
         ds = await createTestDataSource();
         const conversations = new DatabaseConversationRepository({ dataSource: ds });
-        const repositories = createDatabaseRepositories({ dataSource: ds });
+        const store = createDatabaseStore({ dataSource: ds });
         const scope = await conversations.resolve(IDENTITY);
         await seedRun(ds, 'run', { conversation: { scope, text: 'input' } });
         await conversations.beginTurn(scope, 'run', 'input', DEFAULT_CONVERSATION_LIMITS);
@@ -120,7 +120,7 @@ describePostgres('relational integrity', () => {
                 stepIndex: 0,
             },
         });
-        await repositories.checkpoints.save({
+        await store.checkpoints.save({
             runId: 'run',
             stepIndex: 0,
             messages: [],
@@ -145,7 +145,7 @@ describePostgres('relational integrity', () => {
         const conversation = await ds.getRepository(ConversationEntity).findOneOrFail({ where: { id: scope.id }, relations: { activeRun: true } });
         expect(conversation.activeRun?.id).toBe('run');
         const now = new Date();
-        await repositories.steps.insert({
+        await store.steps.insert({
             runId: 'run',
             index: 0,
             kind: 'tool',

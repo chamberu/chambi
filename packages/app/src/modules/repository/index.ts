@@ -6,4 +6,4 @@
  */
 
 export * from './module.ts';
-export type { RepositoryModuleOptions } from './types.ts';
+export type { StoreModuleOptions } from './types.ts';

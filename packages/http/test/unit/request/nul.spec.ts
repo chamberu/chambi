@@ -32,7 +32,7 @@ describe('a NUL character', () => {
     });
 
     it.each(['idempotencyKey', 'address'])('in a REST %s answers 400', async (key) => {
-        const { app, repositories: store } = createRunTestApp();
+        const { app, store } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { [key]: 'a\u0000b' } });
         expect(response.status).toBe(400);
         expect((await store.runs.find({})).total).toBe(0);
@@ -56,7 +56,7 @@ describe('a NUL character', () => {
         ['get_run', { runId: 'a\u0000b' }],
         ['list_runs', { agent: 'a\u0000b' }],
     ])('in MCP %s %j is a tool error', async (tool, args) => {
-        const { app, repositories: store } = createRunTestApp();
+        const { app, store } = createRunTestApp();
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, tool, args);
         expect(result.isError).toBe(true);

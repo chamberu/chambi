@@ -22,7 +22,7 @@ export const AppToken = {
     CONFIG: token('CONFIG'),
     LOGGER: token('LOGGER'),
     CLOCK: token('CLOCK'),
-    REPOSITORIES: token('REPOSITORIES'),
+    STORE: token('STORE'),
     DATA_SOURCE: token('DATA_SOURCE'),
     ENGINE: token('ENGINE'),
     SHUTDOWN: token('SHUTDOWN'),

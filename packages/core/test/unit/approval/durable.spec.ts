@@ -29,7 +29,7 @@ import type {
     Invoker,
     ToolContext,
 } from '@chamvi/core';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockPart, MockResponse } from '../../utils/mock-model.ts';
@@ -82,7 +82,7 @@ function createDeploy(recorder: Recorder, schema: z.ZodType = z.object({ env: z.
 }
 
 function createEngine(
-    store: ReturnType<typeof createMemoryRepositories>,
+    store: ReturnType<typeof createMemoryStore>,
     clock: ControllableClock,
     model: LanguageModel,
     definition: Partial<AgentDefinition>,
@@ -90,7 +90,7 @@ function createEngine(
 ) {
     const errors: unknown[] = [];
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [defineAgent({
             name: 'release',
             instructions: 'You release.',
@@ -110,15 +110,15 @@ function createEngine(
 
 function setup(model: LanguageModel, definition: Partial<AgentDefinition>) {
     const clock = new ControllableClock(new Date(START));
-    const store = createMemoryRepositories({ clock });
+    const store = createMemoryStore({ clock });
     return {
         clock,
-        repositories: store,
+        store,
         ...createEngine(store, clock, model, definition),
     };
 }
 
-async function dispatch(engine: Engine, store: ReturnType<typeof createMemoryRepositories>) {
+async function dispatch(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
     await engine.start();
     const { runId } = await engine.dispatch({
         agent: 'release',
@@ -150,7 +150,7 @@ describe('durable approve()', () => {
     it('approve() pauses the run waiting with the wait point', async () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('done')]);
-        const { repositories: store, engine } = setup(model, { tools: { deploy: createDeploy(recorder) } });
+        const { store, engine } = setup(model, { tools: { deploy: createDeploy(recorder) } });
         const { runId, run } = await dispatch(engine, store);
 
         expect(run?.status).toBe('waiting');
@@ -178,7 +178,7 @@ describe('durable approve()', () => {
     it('approved: the call replays, approve() returns the decision, the model sees the tool result', async () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('done')]);
-        const { repositories: store, engine } = setup(model, { tools: { deploy: createDeploy(recorder) } });
+        const { store, engine } = setup(model, { tools: { deploy: createDeploy(recorder) } });
         const { runId } = await dispatch(engine, store);
 
         await engine.approve(runId, {
@@ -217,7 +217,7 @@ describe('durable approve()', () => {
     it('denied: approve() returns approved false with the reason', async () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('skipped')]);
-        const { repositories: store, engine } = setup(model, { tools: { deploy: createDeploy(recorder) } });
+        const { store, engine } = setup(model, { tools: { deploy: createDeploy(recorder) } });
         const { runId } = await dispatch(engine, store);
 
         await engine.approve(runId, {
@@ -247,7 +247,7 @@ describe('durable approve()', () => {
             turn(call('quick', {}, 'c1'), call('deploy', { env: 'prod' }, 'c2')),
             text('done'),
         ]);
-        const { repositories: store, engine } = setup(model, { tools: { quick, deploy: createDeploy(recorder) } });
+        const { store, engine } = setup(model, { tools: { quick, deploy: createDeploy(recorder) } });
         const { runId, run } = await dispatch(engine, store);
 
         expect(run?.waiting?.approvalId).toBe('0:c2:0');
@@ -273,7 +273,7 @@ describe('durable approve()', () => {
             turn(call('deploy', { env: 'prod' }, 'c1'), call('deploy', { env: 'eu' }, 'c2')),
             text('both done'),
         ]);
-        const { repositories: store, engine } = setup(model, { tools: { deploy: createDeploy(recorder) } });
+        const { store, engine } = setup(model, { tools: { deploy: createDeploy(recorder) } });
         const { runId, run } = await dispatch(engine, store);
         expect(run?.waiting).toMatchObject({ approvalId: '0:c1:0', title: 'Deploy prod?' });
 
@@ -307,7 +307,7 @@ describe('durable approve()', () => {
             },
         });
         const model = mockModel([turn(call('twice', {}, 'c1')), text('done')]);
-        const { repositories: store, engine } = setup(model, { tools: { twice } });
+        const { store, engine } = setup(model, { tools: { twice } });
         const { runId, run } = await dispatch(engine, store);
         expect(run?.waiting).toMatchObject({ approvalId: '0:c1:0', title: 'first' });
 
@@ -337,7 +337,7 @@ describe('durable approve()', () => {
             turn(call('bash', { command: 'rm -rf /' }, 'c2')),
             text('done'),
         ]);
-        const { repositories: store, engine } = setup(model, {
+        const { store, engine } = setup(model, {
             tools: { bash },
             hooks: {
                 async beforeToolExecution(info, ctx) {
@@ -379,7 +379,7 @@ describe('durable approve()', () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('not allowed, stopping')]);
         const {
-            repositories: store,
+            store,
             clock,
             engine,
         } = setup(model, { tools: { deploy: createDeploy(recorder) } });
@@ -406,7 +406,7 @@ describe('durable approve()', () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('bad input')]);
         const {
-            repositories: store,
+            store,
             clock,
             engine,
         } = setup(model, { tools: { deploy: createDeploy(recorder) } });
@@ -436,7 +436,7 @@ describe('durable approve()', () => {
         });
         const model = mockModel([turn(call('deploy', {}, 'c1')), text('timed out')]);
         const {
-            repositories: store,
+            store,
             clock,
             engine,
         } = setup(model, { tools: { deploy } });
@@ -478,7 +478,7 @@ describe('durable approve()', () => {
             ),
             text('done'),
         ]);
-        const { repositories: store, engine } = setup(model, { tools: { ask } });
+        const { store, engine } = setup(model, { tools: { ask } });
         const { run } = await dispatch(engine, store);
         expect(run?.status).toBe('completed');
         expect(seen).toEqual(['validation_error', 'validation_error', 'validation_error']);
@@ -497,18 +497,18 @@ describe('durable approve()', () => {
             },
         });
         const model = mockModel([turn(call('stream', {}, 'c1')), text('done')]);
-        const { repositories: store, engine } = setup(model, { tools: { stream } as ToolSet });
+        const { store, engine } = setup(model, { tools: { stream } as ToolSet });
         const { runId, run } = await dispatch(engine, store);
         expect(run).toMatchObject({ status: 'completed', output: 'done' });
         const tools = (await store.steps.find(runId)).filter((s) => s.kind === 'tool');
         expect(tools[0]).toMatchObject({ name: 'stream', error: { code: 'invalid_run_state' } });
     });
 
-    it('restart while waiting: a fresh Engine on the same memory repositories resumes from the stored pending checkpoint', async () => {
+    it('restart while waiting: a fresh Engine on the same memory store resumes from the stored pending checkpoint', async () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('done after restart')]);
         const {
-            repositories: store,
+            store,
             clock,
             engine,
         } = setup(model, { tools: { deploy: createDeploy(recorder) } });
@@ -529,7 +529,7 @@ describe('durable approve()', () => {
     it('a resumed approval on the last allowed step still runs (one extra step)', async () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('done')]);
-        const { repositories: store, engine } = setup(model, {
+        const { store, engine } = setup(model, {
             tools: { deploy: createDeploy(recorder) },
             budget: { maxSteps: 1 },
         });
@@ -560,7 +560,7 @@ describe('durable approve()', () => {
         });
         const model = mockModel([turn(call('ask', {}, 'c1')), text('done')]);
         const clock = new ControllableClock(new Date(START));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const { engine } = createEngine(store, clock, model, { tools: { ask } }, [slack]);
         const { runId, run } = await dispatch(engine, store);
         expect(run?.waiting).toMatchObject({
@@ -594,7 +594,7 @@ describe('durable approve()', () => {
             },
         };
         const {
-            repositories: store,
+            store,
             clock,
             engine,
         } = setup(model, {

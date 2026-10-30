@@ -25,7 +25,7 @@ import { textModel } from '../../utils/model.ts';
 
 describe('POST /agents/:name/runs', () => {
     it('dispatches through the http channel', async () => {
-        const { app, repositories: store } = createRunTestApp();
+        const { app, store } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { payload: { n: 1 } } });
         expect(response.status).toBe(202);
         const body = await response.json() as { runId: string; deduplicated: boolean };
@@ -40,7 +40,7 @@ describe('POST /agents/:name/runs', () => {
     });
 
     it('accepts an empty body', async () => {
-        const { app, repositories: store } = createRunTestApp();
+        const { app, store } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN });
         expect(response.status).toBe(202);
         const { runId } = await response.json() as { runId: string };
@@ -57,7 +57,7 @@ describe('POST /agents/:name/runs', () => {
     it('scopes an idempotency key to the principal', async () => {
         const low = 'low-runner-token-0123456789';
         const high = 'high-runner-token-0123456789';
-        const { app, repositories: store } = createRunTestApp({
+        const { app, store } = createRunTestApp({
             auth: [staticTokens({
                 tokens: [
                     {
@@ -159,7 +159,7 @@ describe('POST /agents/:name/runs', () => {
             instructions: 'Typed.',
             channels: [http.on({ schema: z.object({ n: z.number() }) })],
         });
-        const { app, repositories: store } = createRunTestApp({ agents: [...createRunAgents(), typed] });
+        const { app, store } = createRunTestApp({ agents: [...createRunAgents(), typed] });
         const response = await call(app, 'POST', '/agents/typed/runs', { token: ADMIN_TOKEN, body: { payload: { n: 'x' } } });
         expect(response.status).toBe(400);
         expect((await response.json()).issues[0].path).toEqual(['n']);
@@ -172,7 +172,7 @@ describe('POST /agents/:name/runs', () => {
         }
 
         it('stores each attachment as an artifact of the run', async () => {
-            const { app, repositories: store } = createRunTestApp();
+            const { app, store } = createRunTestApp();
             const response = await call(app, 'POST', '/agents/echo/runs', {
                 token: ADMIN_TOKEN,
                 body: {
@@ -207,7 +207,7 @@ describe('POST /agents/:name/runs', () => {
         });
 
         it('takes an empty list as none', async () => {
-            const { app, repositories: store } = createRunTestApp();
+            const { app, store } = createRunTestApp();
             const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { attachments: [] } });
             expect(response.status).toBe(202);
             const { runId } = await response.json() as { runId: string };
@@ -236,7 +236,7 @@ describe('POST /agents/:name/runs', () => {
                 data: 'aGk=',
             }, ['attachments', 0, 'filename']],
         ])('rejects %s with 400 and stores nothing', async (_, attachment, path) => {
-            const { app, repositories: store } = createRunTestApp();
+            const { app, store } = createRunTestApp();
             const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { attachments: [attachment] } });
             expect(response.status).toBe(400);
             const body = await response.json();
@@ -278,7 +278,7 @@ describe('POST /agents/:name/runs', () => {
         });
 
         it('stores nothing for a deduplicated dispatch', async () => {
-            const { app, repositories: store } = createRunTestApp();
+            const { app, store } = createRunTestApp();
             const body = { idempotencyKey: 'k', attachments: [{ mediaType: 'text/plain', data: b64('x') }] };
             const first = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body })).json();
             const second = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body })).json();

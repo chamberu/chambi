@@ -18,7 +18,7 @@ import {
 import { MockLanguageModelV4 } from 'ai/test';
 import { z } from 'zod';
 import { Engine, defineAgent } from '@chamvi/core';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
@@ -43,7 +43,7 @@ function make(model: LanguageModel, opts: {
     maxSteps?: number;
     output?: typeof output
 } = {}) {
-    const store = createMemoryRepositories();
+    const store = createMemoryStore();
     const agent = defineAgent({
         name: 'triage',
         instructions: 'You triage.',
@@ -53,16 +53,16 @@ function make(model: LanguageModel, opts: {
         ...(opts.maxSteps ? { budget: { maxSteps: opts.maxSteps } } : {}),
     });
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [agent],
         onError: () => {},
     });
     engines.push(engine);
-    return { repositories: store, engine };
+    return { store, engine };
 }
 
 async function runOnce(model: LanguageModel, opts: Parameters<typeof make>[1] = {}) {
-    const { engine, repositories: store } = make(model, opts);
+    const { engine, store } = make(model, opts);
     await engine.start();
     const { runId } = await engine.dispatch(env);
     await engine.idle();
@@ -165,7 +165,7 @@ describe('structured output', () => {
         ['oops', 'failed'],
     ])('parses the answer of an earlier execution at the step limit (%s)', async (answer, status) => {
         const model = mockModel([]);
-        const { engine, repositories: store } = make(model, { maxSteps: 2 });
+        const { engine, store } = make(model, { maxSteps: 2 });
         const { runId } = await engine.dispatch(env);
         await store.checkpoints.save({
             runId,
@@ -234,7 +234,7 @@ describe('structured output', () => {
 
     it('fails an earlier execution\'s cut answer at the step limit as incomplete', async () => {
         const model = mockModel([]);
-        const { engine, repositories: store } = make(model, { maxSteps: 1 });
+        const { engine, store } = make(model, { maxSteps: 1 });
         const { runId } = await engine.dispatch(env);
         await store.checkpoints.save({
             runId,
@@ -307,7 +307,7 @@ describe('structured output', () => {
                 }),
             }),
         });
-        const { engine, repositories: store } = make(model, { output: counted });
+        const { engine, store } = make(model, { output: counted });
         const deltas: RunDelta[] = [];
         engine.on('run.delta', (e) => {
             deltas.push(e.delta);

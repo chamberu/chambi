@@ -14,7 +14,7 @@ const COLUMNS = [
         links: [
             { text: 'Getting Started', link: '/getting-started/' },
             { text: 'Guide', link: '/guide/' },
-            { text: 'Repositories', link: '/repositories/' },
+            { text: 'Stores & repositories', link: '/repositories/' },
             { text: 'Reference', link: '/reference/' },
         ],
     },

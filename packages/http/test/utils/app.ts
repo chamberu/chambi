@@ -9,7 +9,7 @@ import { z } from 'zod';
 import {
     Engine,
     approve,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -17,7 +17,7 @@ import type {
     Agent,
     ChannelSubscription,
     IChannel,
-    Repositories,
+    IStore,
 } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
@@ -56,7 +56,7 @@ export const testAuth = staticTokens({
 export type TestAppOverrides = Partial<Omit<HttpAppOptions, 'agents'>> & {
     /** Engine construction, ignored when `engine` is given. */
     agents?: Agent[];
-    repositories?: Repositories;
+    store?: IStore;
     clock?: ControllableClock;
     /** Channels the engine holds besides `http`, `mcp`, `webhook` and the `cron` stub. */
     engineChannels?: IChannel<any, any>[];
@@ -65,7 +65,7 @@ export type TestAppOverrides = Partial<Omit<HttpAppOptions, 'agents'>> & {
 export function createTestApp(overrides: TestAppOverrides = {}) {
     const {
         agents: agentsOverride,
-        repositories: storeOverride,
+        store: storeOverride,
         clock: clockOverride,
         engineChannels = [],
         engine: engineOverride,
@@ -78,7 +78,7 @@ export function createTestApp(overrides: TestAppOverrides = {}) {
     const channels = testChannels();
     const hooks = channels.find((channel) => channel.name === 'webhook')!;
     const engine = engineOverride ?? new Engine({
-        repositories: storeOverride ?? createMemoryRepositories({ clock }),
+        store: storeOverride ?? createMemoryStore({ clock }),
         agents: agentsOverride ?? [
             defineAgent({
                 name: 'echo',
@@ -103,7 +103,7 @@ export function createTestApp(overrides: TestAppOverrides = {}) {
     return {
         app,
         engine,
-        repositories: engine.repositories,
+        store: engine.store,
         clock,
         agents: engine.listAgents(),
     };
@@ -188,7 +188,7 @@ export function pickTool() {
 }
 
 /** The approval id the run's current wait point waits on. */
-export async function approvalIdOf(store: Repositories, runId: string): Promise<string> {
+export async function approvalIdOf(store: IStore, runId: string): Promise<string> {
     const waiting = (await store.runs.findOne(runId))?.waiting;
     if (!waiting) throw new Error(`run ${runId} is not waiting`);
     return waiting.approvalId;
@@ -242,7 +242,7 @@ export function createRunTestApp(overrides: TestAppOverrides = {}) {
         agents: createRunAgents(),
         ...overrides,
     });
-    return { ...setup, approvalIdOf: (runId: string) => approvalIdOf(setup.repositories, runId) };
+    return { ...setup, approvalIdOf: (runId: string) => approvalIdOf(setup.store, runId) };
 }
 
 /** An authenticator that maps `Bearer p:<a>,<b>` to a principal with those permissions. */

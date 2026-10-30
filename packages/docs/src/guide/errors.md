@@ -7,7 +7,7 @@ Every error chamvi throws extends `ChamviError`, which extends ebec's `BaseError
 | `InvalidAgentDefinitionError` | `INVALID_AGENT_DEFINITION` | `invalid_agent_definition` | An agent or channel name, subscription id or cron expression is invalid; duplicate agent or channel names; a subscription to an unknown channel; a tool with `needsApproval` |
 | `AgentNotFoundError` | `AGENT_NOT_FOUND` | `agent_not_found` | `dispatch()` for an agent the engine does not hold; `@chamvi/http` answers 404 |
 | `InvalidRunStateError` | `INVALID_RUN_STATE` | `invalid_run_state` | A run is not in the status an operation needs: resuming a run that is not waiting, cancelling a settled run, a store guard (`expectStatus`, `expectOwner`) that does not match; `approve()` outside a tool call or in a streaming tool's body; `emit()` outside a tool call |
-| `RunNotFoundError` | `RUN_NOT_FOUND` | `run_not_found` | `resume()`, `cancel()`, `repositories.runs.update()` or `repositories.runs.findOneOrFail()` for an unknown run |
+| `RunNotFoundError` | `RUN_NOT_FOUND` | `run_not_found` | `resume()`, `cancel()`, `store.runs.update()` or `store.runs.findOneOrFail()` for an unknown run |
 | `ArtifactNotFoundError` | `ARTIFACT_NOT_FOUND` | `artifact_not_found` | An execution cannot read an artifact its messages refer to (the run fails); `@chamvi/http` answers 404 with it for an unknown artifact |
 | `BudgetExceededError` | `BUDGET_EXCEEDED` | `BudgetExceeded` | A run hit `maxSteps` or `maxTokens` while the model still wanted tools |
 | `TimeoutError` | `TIMEOUT` | `Timeout` | An execution exceeded `timeoutMs` |

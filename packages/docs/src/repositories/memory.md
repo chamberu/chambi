@@ -1,11 +1,11 @@
 # Memory repositories
 
-`createMemoryRepositories()` assembles independent in-memory capability repositories, including conversations. It ships with `@chamvi/core` for development and tests.
+`createMemoryStore()` assembles independent in-memory capability repositories, including conversations. It ships with `@chamvi/core` for development and tests.
 
 ```ts
-import { createMemoryRepositories } from '@chamvi/core';
+import { createMemoryStore } from '@chamvi/core';
 
-const repositories = createMemoryRepositories();
+const store = createMemoryStore();
 ```
 
 | Option | Type | Default | Description |

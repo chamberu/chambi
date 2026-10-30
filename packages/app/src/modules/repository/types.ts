@@ -5,15 +5,15 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { IClock, Repositories } from '@chamvi/core';
+import type { IClock, IStore } from '@chamvi/core';
 import type { DataSource } from 'typeorm';
 import type { ILogger } from '../../logger/types.ts';
 
-export type RepositoryModuleOptions = {
+export type StoreModuleOptions = {
     /** A Postgres URL; default `DATABASE_URL`. */
     url?: string;
     /** Used as is and never closed. */
-    repositories?: Repositories;
+    store?: IStore;
     /** An initialized data source, shared by the TypeORM repositories and never destroyed. */
     dataSource?: DataSource;
 };

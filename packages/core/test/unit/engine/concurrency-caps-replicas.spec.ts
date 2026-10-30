@@ -31,33 +31,33 @@ describe('shared-store admission', () => {
         const { runId } = await h.dispatch(engine);
         const error = new Error(`failed ${failure}`);
         let armed = true;
-        const list = h.repositories.runs.find.bind(h.repositories.runs);
-        h.repositories.runs.find = async (query) => {
+        const list = h.store.runs.find.bind(h.store.runs);
+        h.store.runs.find = async (query) => {
             if (armed && failure === 'count' && query?.agent === 'worker' && query.status?.includes('running')) {
                 armed = false;
                 throw error;
             }
             return list(query);
         };
-        const claim = h.repositories.runs.claim.bind(h.repositories.runs);
-        h.repositories.runs.claim = async (...args) => {
+        const claim = h.store.runs.claim.bind(h.store.runs);
+        h.store.runs.claim = async (...args) => {
             if (armed && failure === 'claim') { armed = false; throw error; }
             return claim(...args);
         };
-        const update = h.repositories.runs.update.bind(h.repositories.runs);
-        h.repositories.runs.update = async (...args) => {
+        const update = h.store.runs.update.bind(h.store.runs);
+        h.store.runs.update = async (...args) => {
             if (armed && failure === 'transition' && args[1].status === 'running') { armed = false; throw error; }
             return update(...args);
         };
         await engine.start();
         await h.settle();
         expect(h.errors).toContain(error);
-        expect((await h.repositories.runs.findOne(runId))?.status).toBe('queued');
-        expect(await h.repositories.locks.acquire('admission:worker', 'probe', 1)).toBe(true);
-        await h.repositories.locks.release('admission:worker', 'probe');
+        expect((await h.store.runs.findOne(runId))?.status).toBe('queued');
+        expect(await h.store.locks.acquire('admission:worker', 'probe', 1)).toBe(true);
+        await h.store.locks.release('admission:worker', 'probe');
         h.clock.advance(60_001);
         await h.settle();
-        expect((await h.repositories.runs.findOne(runId))?.status).toBe('running');
+        expect((await h.store.runs.findOne(runId))?.status).toBe('running');
         expect(h.entered).toEqual([runId]);
     });
 
@@ -66,8 +66,8 @@ describe('shared-store admission', () => {
         const engine = h.engine([h.agent('worker', 1)], { concurrencyMaxRuns: 1 });
         const stale = await h.dispatch(engine);
         const next = await h.dispatch(engine);
-        const update = h.repositories.runs.update.bind(h.repositories.runs);
-        h.repositories.runs.update = async (...args) => {
+        const update = h.store.runs.update.bind(h.store.runs);
+        h.store.runs.update = async (...args) => {
             if (args[0] === stale.runId && args[1].status === 'running') {
                 await update(stale.runId, { status: 'cancelled' });
             }
@@ -82,10 +82,10 @@ describe('shared-store admission', () => {
         const h = setup();
         const engine = h.engine([h.agent('worker', 1)]);
         const { runId } = await h.dispatch(engine);
-        await h.repositories.locks.acquire('admission:worker', 'other', 60_000);
+        await h.store.locks.acquire('admission:worker', 'other', 60_000);
         await engine.start();
         await h.settle();
-        expect((await h.repositories.runs.findOne(runId))?.claim).toBeUndefined();
+        expect((await h.store.runs.findOne(runId))?.claim).toBeUndefined();
         expect(h.entered).toEqual([]);
     });
 
@@ -94,8 +94,8 @@ describe('shared-store admission', () => {
         const engine = h.engine([h.agent('worker', 1)]);
         const { runId } = await h.dispatch(engine);
         const error = new Error('release failed');
-        const release = h.repositories.locks.release.bind(h.repositories.locks);
-        h.repositories.locks.release = async (...args) => {
+        const release = h.store.locks.release.bind(h.store.locks);
+        h.store.locks.release = async (...args) => {
             if (args[0] === 'admission:worker') throw error;
             return release(...args);
         };
@@ -117,9 +117,9 @@ describe('shared-store admission', () => {
         });
         const first = await h.dispatch(engine, 'a', { concurrencyKey: 'key' });
         const second = await h.dispatch(engine, 'a', { concurrencyKey: 'other' });
-        const release = h.repositories.locks.release.bind(h.repositories.locks);
+        const release = h.store.locks.release.bind(h.store.locks);
         let armed = true;
-        h.repositories.locks.release = async (key, owner) => {
+        h.store.locks.release = async (key, owner) => {
             await release(key, owner);
             if (armed && key === lockKey) {
                 armed = false;
@@ -148,8 +148,8 @@ describe('shared-store admission', () => {
         let agentPeak = 0;
         let aPeak = 0;
         let bPeak = 0;
-        const update = h.repositories.runs.update.bind(h.repositories.runs);
-        h.repositories.runs.update = async (...args) => {
+        const update = h.store.runs.update.bind(h.store.runs);
+        h.store.runs.update = async (...args) => {
             const result = await update(...args);
             if (result?.status === 'running') {
                 running.set(result.id, result.trigger.trigger);
@@ -184,8 +184,8 @@ describe('shared-store admission', () => {
         const a = h.engine([agent], { owner: 'same-owner' });
         const b = h.engine([agent], { owner: 'same-owner' });
         const owners: string[] = [];
-        const acquire = h.repositories.locks.acquire.bind(h.repositories.locks);
-        h.repositories.locks.acquire = async (...args) => {
+        const acquire = h.store.locks.acquire.bind(h.store.locks);
+        h.store.locks.acquire = async (...args) => {
             if (args[0] === 'admission:worker') {
                 owners.push(args[1]);
                 await flush();
@@ -195,7 +195,7 @@ describe('shared-store admission', () => {
         for (const trigger of ['limited', 'limited', 'free', 'free']) await h.dispatch(a, trigger);
         await Promise.all([a.start(), b.start()]);
         await h.settle();
-        expect((await h.repositories.runs.find({ agent: 'worker', status: ['running'] })).total).toBe(3);
+        expect((await h.store.runs.find({ agent: 'worker', status: ['running'] })).total).toBe(3);
         expect(h.entered).toHaveLength(3);
         expect(owners.length).toBeGreaterThanOrEqual(4);
         expect(new Set(owners).size).toBe(owners.length);
@@ -208,9 +208,9 @@ describe('shared-store admission', () => {
         const engine = h.engine([agent]);
         await h.dispatch(engine);
         const later = await h.dispatch(engine);
-        const acquire = h.repositories.locks.acquire.bind(h.repositories.locks);
+        const acquire = h.store.locks.acquire.bind(h.store.locks);
         let attempts = 0;
-        h.repositories.locks.acquire = async (...args) => {
+        h.store.locks.acquire = async (...args) => {
             const acquired = await acquire(...args);
             if (args[0] === 'admission:worker' && acquired && ++attempts === 2) agent.definition.concurrencyMaxRuns = 1;
             return acquired;
@@ -218,22 +218,22 @@ describe('shared-store admission', () => {
         await engine.start();
         await h.settle();
         expect(h.entered).toHaveLength(1);
-        expect((await h.repositories.runs.findOne(later.runId))?.claim).toBeUndefined();
+        expect((await h.store.runs.findOne(later.runId))?.claim).toBeUndefined();
     });
 
     it('guards the running transition against a claim stolen after claiming', async () => {
         const h = setup();
         const engine = h.engine([h.agent('worker', 1)]);
         const { runId } = await h.dispatch(engine);
-        const claim = h.repositories.runs.claim.bind(h.repositories.runs);
-        h.repositories.runs.claim = async (...args) => {
+        const claim = h.store.runs.claim.bind(h.store.runs);
+        h.store.runs.claim = async (...args) => {
             const acquired = await claim(...args);
-            if (acquired) await h.repositories.runs.update(runId, { claim: { owner: 'thief', expiresAt: new Date(2_000_000) } });
+            if (acquired) await h.store.runs.update(runId, { claim: { owner: 'thief', expiresAt: new Date(2_000_000) } });
             return acquired;
         };
         await engine.start();
         await h.settle();
-        expect((await h.repositories.runs.findOne(runId))?.status).toBe('queued');
+        expect((await h.store.runs.findOne(runId))?.status).toBe('queued');
         expect(h.entered).toEqual([]);
     });
 
@@ -244,8 +244,8 @@ describe('shared-store admission', () => {
         const next = await h.dispatch(engine);
         await engine.start();
         await h.settle();
-        expect((await h.repositories.runs.findOne(first.runId))?.status).toBe('running');
-        expect((await h.repositories.runs.findOne(next.runId))?.claim).toBeUndefined();
+        expect((await h.store.runs.findOne(first.runId))?.status).toBe('running');
+        expect((await h.store.runs.findOne(next.runId))?.claim).toBeUndefined();
     });
 
     it('fails closed on admission acquisition errors and retries refused claims', async () => {
@@ -253,27 +253,27 @@ describe('shared-store admission', () => {
         const engine = h.engine([h.agent('worker', 1)]);
         const { runId } = await h.dispatch(engine);
         const error = new Error('acquire failed');
-        const acquire = h.repositories.locks.acquire.bind(h.repositories.locks);
+        const acquire = h.store.locks.acquire.bind(h.store.locks);
         let failed = false;
-        h.repositories.locks.acquire = async (...args) => {
+        h.store.locks.acquire = async (...args) => {
             if (!failed && args[0] === 'admission:worker') { failed = true; throw error; }
             return acquire(...args);
         };
         await engine.start();
         await h.settle();
         expect(h.errors).toContain(error);
-        expect((await h.repositories.runs.findOne(runId))?.claim).toBeUndefined();
-        const claim = h.repositories.runs.claim.bind(h.repositories.runs);
+        expect((await h.store.runs.findOne(runId))?.claim).toBeUndefined();
+        const claim = h.store.runs.claim.bind(h.store.runs);
         let refused = false;
-        h.repositories.runs.claim = async (...args) => {
+        h.store.runs.claim = async (...args) => {
             if (!refused) { refused = true; return false; }
             return claim(...args);
         };
         h.clock.advance(20_000);
         await h.settle();
-        expect((await h.repositories.runs.findOne(runId))?.status).toBe('queued');
-        expect(await h.repositories.locks.acquire('admission:worker', 'probe', 1)).toBe(true);
-        await h.repositories.locks.release('admission:worker', 'probe');
+        expect((await h.store.runs.findOne(runId))?.status).toBe('queued');
+        expect(await h.store.locks.acquire('admission:worker', 'probe', 1)).toBe(true);
+        await h.store.locks.release('admission:worker', 'probe');
         h.clock.advance(20_000);
         await h.settle();
         expect(h.entered).toEqual([runId]);
@@ -285,27 +285,27 @@ describe('shared-store admission', () => {
         const { runId } = await h.dispatch(engine);
         await engine.start();
         await h.settle();
-        await h.repositories.runs.update(runId, { claim: { owner: 'new-owner', expiresAt: new Date(2_000_000) } });
+        await h.store.runs.update(runId, { claim: { owner: 'new-owner', expiresAt: new Date(2_000_000) } });
         h.clock.advance(20_000);
         await h.settle();
         expect(h.errors.some((error) => (error as { code?: string }).code === 'lease_lost')).toBe(true);
-        expect((await h.repositories.runs.findOne(runId))?.claim?.owner).toBe('new-owner');
+        expect((await h.store.runs.findOne(runId))?.claim?.owner).toBe('new-owner');
     });
 
     it('re-reads a candidate that another replica settled while admission was acquired', async () => {
         const h = setup();
         const engine = h.engine([h.agent('worker', 1)]);
         const { runId } = await h.dispatch(engine);
-        const acquire = h.repositories.locks.acquire.bind(h.repositories.locks);
-        h.repositories.locks.acquire = async (...args) => {
+        const acquire = h.store.locks.acquire.bind(h.store.locks);
+        h.store.locks.acquire = async (...args) => {
             const result = await acquire(...args);
-            if (args[0] === 'admission:worker' && result) await h.repositories.runs.update(runId, { status: 'cancelled' });
+            if (args[0] === 'admission:worker' && result) await h.store.runs.update(runId, { status: 'cancelled' });
             return result;
         };
         await engine.start();
         await h.settle();
-        expect((await h.repositories.runs.findOne(runId))?.status).toBe('cancelled');
-        expect((await h.repositories.runs.findOne(runId))?.claim).toBeUndefined();
+        expect((await h.store.runs.findOne(runId))?.status).toBe('cancelled');
+        expect((await h.store.runs.findOne(runId))?.claim).toBeUndefined();
         expect(h.entered).toEqual([]);
     });
 });

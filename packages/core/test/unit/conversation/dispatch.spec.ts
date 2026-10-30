@@ -16,7 +16,7 @@ import {
 import {
     Engine,
     MemoryConversationRepository,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { createChannelContext } from '../../../src/channel/helpers.ts';
@@ -41,11 +41,11 @@ const envelope = {
     payload: 'hello',
 };
 function setup(allowed: boolean | (() => Promise<boolean>) = true, optIn = true) {
-    const store = createMemoryRepositories();
+    const store = createMemoryStore();
     const conversations = new MemoryConversationRepository();
     const authorize = vi.fn<(access: ConversationAccess) => boolean | Promise<boolean>>(() => typeof allowed === 'function' ? allowed() : allowed);
     const engine = new Engine({
-        repositories: { ...store, conversations },
+        store: { ...store, conversations },
         agents: [defineAgent({
             name: 'helper',
             model: {} as LanguageModel,
@@ -57,7 +57,7 @@ function setup(allowed: boolean | (() => Promise<boolean>) = true, optIn = true)
     });
     return {
         engine,
-        repositories: store,
+        store,
         conversations,
         authorize,
         ctx: createChannelContext(engine, channel),
@@ -66,7 +66,7 @@ function setup(allowed: boolean | (() => Promise<boolean>) = true, optIn = true)
 
 describe('trusted conversation intake', () => {
     it('forged_dispatch_binding_dropped', async () => {
-        const { engine, repositories: store } = setup();
+        const { engine, store } = setup();
         const result = await engine.dispatch({
             ...envelope,
             channel: 'chat',
@@ -77,7 +77,7 @@ describe('trusted conversation intake', () => {
         expect(run?.trigger).not.toHaveProperty('conversation');
     });
     it('channel_name_bound_by_identity', async () => {
-        const { ctx, repositories: store } = setup();
+        const { ctx, store } = setup();
         const result = await ctx.dispatchConversation({ ...envelope, channel: 'forged' } as never, {
             ...target,
             channel: 'forged',
@@ -88,7 +88,7 @@ describe('trusted conversation intake', () => {
         expect(run?.trigger.channel).toBe('chat');
     });
     it('non_opted_agent_refused', async () => {
-        const { ctx, repositories: store } = setup(true, false);
+        const { ctx, store } = setup(true, false);
         await expect(ctx.dispatchConversation(envelope, target)).rejects.toMatchObject({ code: 'validation_error' });
         expect((await store.runs.find({})).total).toBe(0);
     });
@@ -96,7 +96,7 @@ describe('trusted conversation intake', () => {
         const {
             ctx,
             conversations,
-            repositories: store,
+            store,
         } = setup(allowed);
         const resolve = vi.spyOn(conversations, 'resolve');
         await expect(ctx.dispatchConversation(envelope, target)).rejects.toThrow();
@@ -106,7 +106,7 @@ describe('trusted conversation intake', () => {
     it('idempotency_preserves_first_binding_across_reset', async () => {
         const {
             ctx,
-            repositories: store,
+            store,
             engine,
         } = setup();
         const first = await ctx.dispatchConversation({ ...envelope, idempotencyKey: 'event' }, target);
@@ -120,7 +120,7 @@ describe('trusted conversation intake', () => {
         const {
             ctx,
             engine,
-            repositories: store,
+            store,
             conversations,
         } = setup();
         vi.spyOn(store.runs, 'insert').mockRejectedValueOnce(new Error('run write unavailable'));
@@ -131,7 +131,7 @@ describe('trusted conversation intake', () => {
         expect((await conversations.findItems((await conversations.findOne(identity))!, { limit: 100, offset: 0 })).total).toBe(0);
     });
     it('generation zero still heals a failed run write without duplicate admission', async () => {
-        const { ctx, repositories: store } = setup();
+        const { ctx, store } = setup();
         vi.spyOn(store.runs, 'insert').mockRejectedValueOnce(new Error('run write unavailable'));
         await expect(ctx.dispatchConversation({ ...envelope, idempotencyKey: 'retry' }, target)).rejects.toThrow();
         const retry = await ctx.dispatchConversation({ ...envelope, idempotencyKey: 'retry' }, target);
@@ -175,7 +175,7 @@ describe('trusted conversation intake', () => {
     it('scope_clone_not_alias', async () => {
         const {
             ctx,
-            repositories: store,
+            store,
             authorize,
         } = setup();
         authorize.mockImplementation((access) => { access.identity.chat = 'mutated'; return true; });
@@ -195,8 +195,8 @@ describe('trusted conversation intake', () => {
             conversation: true,
             instructions: 'x',
         });
-        expect(() => new Engine({ repositories: createMemoryRepositories(), agents: [agent] })).toThrow();
-        const engine = new Engine({ repositories: createMemoryRepositories(), agents: [] });
+        expect(() => new Engine({ store: createMemoryStore(), agents: [agent] })).toThrow();
+        const engine = new Engine({ store: createMemoryStore(), agents: [] });
         expect(() => engine.checkAgent(agent)).toThrow();
         await expect(engine.putAgent(agent)).rejects.toThrow();
     });

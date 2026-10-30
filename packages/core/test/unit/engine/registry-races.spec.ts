@@ -7,10 +7,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { Engine, defineAgent } from '@chamvi/core';
-import type { EngineOptions, Repositories  } from '@chamvi/core';
+import type { EngineOptions, IStore  } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
-import { MemoryAgentRevisionRepository, createMemoryRepositories } from '../../../src/repository/index.ts';
+import { MemoryAgentRevisionRepository, createMemoryStore } from '../../../src/repository/index.ts';
 
 const answers = (text: string) => Array.from({ length: 5 }, () => ({ parts: [{ type: 'text' as const, text }] }));
 const agent = (text: string) => defineAgent({
@@ -56,9 +56,9 @@ class GatedRepository extends MemoryAgentRevisionRepository {
     }
 }
 
-function createEngine(store: Repositories, clock: ControllableClock, extra: Partial<EngineOptions> = {}): Engine {
+function createEngine(store: IStore, clock: ControllableClock, extra: Partial<EngineOptions> = {}): Engine {
     return new Engine({
-        repositories: store,
+        store,
         clock,
         agents: [],
         onError: () => {},
@@ -76,7 +76,7 @@ const dispatch = (engine: Engine) => engine.dispatch({
 describe('registry races', () => {
     it('a run dispatched while putAgent replaces never executes on the old code', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = { ...createMemoryRepositories({ clock }), agentRevisions: new GatedRepository() };
+        const store = { ...createMemoryStore({ clock }), agentRevisions: new GatedRepository() };
         const engine = createEngine(store, clock);
         await engine.putAgent(agent('old code'), { revision: 'h1' });
         await engine.start();
@@ -99,7 +99,7 @@ describe('registry races', () => {
 
     it('a queued run created while the marker moves is kept and runs on the new code', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = { ...createMemoryRepositories({ clock }), agentRevisions: new GatedRepository() };
+        const store = { ...createMemoryStore({ clock }), agentRevisions: new GatedRepository() };
         const a = createEngine(store, clock, { owner: 'a' });
         const b = createEngine(store, clock, { owner: 'b' });
         await a.putAgent(agent('old code'), { revision: 'h1' });
@@ -123,7 +123,7 @@ describe('registry races', () => {
 
     it('a run dispatched on a lagging replica between two removals is cancelled', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const a = createEngine(store, clock, { owner: 'a' });
         const b = createEngine(store, clock, { owner: 'b' });
         await a.putAgent(agent('v1'), { revision: 'h1' });
@@ -138,7 +138,7 @@ describe('registry races', () => {
 
     it('a dispatch while removeAgent cancels is refused', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = { ...createMemoryRepositories({ clock }), agentRevisions: new GatedRepository() };
+        const store = { ...createMemoryStore({ clock }), agentRevisions: new GatedRepository() };
         const engine = createEngine(store, clock);
         await engine.putAgent(agent('v1'), { revision: 'h1' });
 
@@ -153,7 +153,7 @@ describe('registry races', () => {
 
     it('a removal at an older revision leaves a newer marker and its runs alone', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const a = createEngine(store, clock, { owner: 'a' });
         const b = createEngine(store, clock, { owner: 'b' });
         await a.putAgent(agent('v1'), { revision: 'h1' });

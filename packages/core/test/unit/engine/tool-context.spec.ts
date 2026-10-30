@@ -33,7 +33,7 @@ import type {
     ToolContext,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { gateTool, recordApprovals } from '../../utils/approvals.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -88,14 +88,14 @@ type Setup = {
     toolPolicy?: AgentDefinition['toolPolicy'];
     hooks?: AgentDefinition['hooks'];
     toolsContext?: AgentDefinition['toolsContext'];
-    repositories?: ReturnType<typeof createMemoryRepositories>;
+    store?: ReturnType<typeof createMemoryStore>;
     owner?: string;
     claimTtlMs?: number;
 };
 
 function setup(s: Setup) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = s.repositories ?? createMemoryRepositories({ clock });
+    const store = s.store ?? createMemoryStore({ clock });
     const agent = defineAgent({
         name: 'release',
         instructions: 'You release.',
@@ -107,9 +107,9 @@ function setup(s: Setup) {
         toolsContext: s.toolsContext,
     });
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [agent],
-        clock: s.repositories ? undefined : clock,
+        clock: s.store ? undefined : clock,
         claimTtlMs: s.claimTtlMs ?? 30,
         owner: s.owner,
         onError: () => {},
@@ -118,7 +118,7 @@ function setup(s: Setup) {
     const notifier = recordApprovals(engine);
     return {
         clock,
-        repositories: store,
+        store,
         engine,
         notifier,
     };
@@ -140,7 +140,7 @@ async function runOnce(s: Setup) {
     return {
         ...ctx,
         runId,
-        run: await ctx.repositories.runs.findOne(runId),
+        run: await ctx.store.runs.findOne(runId),
     };
 }
 
@@ -188,7 +188,7 @@ describe('tool context', () => {
             },
         });
         const {
-            repositories: store,
+            store,
             runId,
             run,
         } = await runOnce({ model: mockModel([callTool('release'), text('done')]), tools: { release } });
@@ -347,7 +347,7 @@ describe('tool context', () => {
         })).toThrow(/toolsContext entry "lookup" names a chamvi tool/);
 
         const {
-            repositories: store,
+            store,
             runId,
             run,
         } = await runOnce({
@@ -403,7 +403,7 @@ describe('tool context', () => {
         expect(first.run?.status).toBe('failed');
         expect(first.run?.error).toEqual({ code: 'validation_error', message: expected });
         expect(executed).toBe(0);
-        expect((await first.repositories.steps.find(first.runId)).map((s) => s.kind)).toEqual(['llm']);
+        expect((await first.store.steps.find(first.runId)).map((s) => s.kind)).toEqual(['llm']);
     });
 
     it('keeps a rejected toolsContext entry out of the run error', async () => {
@@ -507,7 +507,7 @@ describe('tool context', () => {
 
     it('injects state tools too', async () => {
         const {
-            repositories: store,
+            store,
             run,
         } = await runOnce({
             model: mockModel([
@@ -545,7 +545,7 @@ describe('tool context', () => {
             },
         });
         const {
-            repositories: store,
+            store,
             runId,
             run,
         } = await runOnce({
@@ -574,7 +574,7 @@ describe('tool context', () => {
             },
         });
         const {
-            repositories: store,
+            store,
             runId,
             run,
         } = await runOnce({
@@ -609,7 +609,7 @@ describe('tool context', () => {
         });
         const {
             engine,
-            repositories: store,
+            store,
             notifier,
         } = setup({
             model: mockModel([callTool('deploy'), text('done')]),
@@ -634,20 +634,20 @@ describe('tool context', () => {
 
     it('hands the context to a call after recovery', async () => {
         const { model, calls } = scripted(['hang', callTool('lookup'), text('done')]);
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         // real time: a short lease could expire on a slow runner and let A re-run
         // the run itself; drain releases the claim, so B recovers it at once
         const a = setup({
             model,
             tools: { lookup },
-            repositories: store,
+            store,
             owner: 'A',
             claimTtlMs: 60_000,
         });
         const b = setup({
             model,
             tools: { lookup },
-            repositories: store,
+            store,
             owner: 'B',
             claimTtlMs: 60_000,
         });
@@ -666,7 +666,7 @@ describe('tool context', () => {
 
     it('stores no tool context in steps or checkpoints', async () => {
         const {
-            repositories: store,
+            store,
             runId,
             run,
         } = await runOnce({

@@ -59,7 +59,7 @@ Models, messages and tools stay AI SDK types: `defineAgent()` takes a `LanguageM
   - [Effect tools](#effect-tools)
   - [Approvals](#approvals)
   - [Agent state](#agent-state)
-  - [Repositories](#repositories)
+  - [Stores and repositories](#stores-and-repositories)
 - [Options](#options)
 - [API](#api)
 - [Notes](#notes)
@@ -83,7 +83,7 @@ import { z } from 'zod';
 import {
     Engine,
     consoleChannel,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineEffectTool,
 } from '@chamvi/core';
@@ -113,7 +113,7 @@ export async function triageIssue(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        repositories: createMemoryRepositories(),
+        store: createMemoryStore(),
         agents: [triage],
         channels: [consoleChannel({
             write: (line) => {
@@ -221,7 +221,7 @@ const deployer = defineAgent({
 });
 
 const engine = new Engine({
-    repositories,
+    store,
     agents: [deployer],
 });
 
@@ -298,14 +298,14 @@ const digest = defineAgent({
 - `state.get` and `state.set` are a key-value store per agent. Each declared collection holds documents, validated by its Standard Schema on upsert.
 - The model also gets each collection as `state_<collection>_list`, `state_<collection>_upsert` and `state_<collection>_remove` tools; upsert and remove are effect tools.
 
-### Repositories
+### Stores and repositories
 
-`createMemoryRepositories()` keeps everything in process memory, for development and tests. The factory assembles separate capability repositories (runs, steps, checkpoints, idempotency keys, locks, effects, state, artifacts, agent revisions and optional conversations) into `Repositories` and proves their contracts with the shared contract suite from [`@chamvi/test-kit`](../test-kit):
+`createMemoryStore()` keeps everything in process memory, for development and tests. The factory assembles separate capability repositories (runs, steps, checkpoints, idempotency keys, locks, effects, state, artifacts, agent revisions and optional conversations) into a plain `IStore` aggregate, not a facade with forwarding methods, and proves their contracts with the shared contract suite from [`@chamvi/test-kit`](../test-kit):
 
 ```typescript
 import { describeRepositoryContract } from '@chamvi/test-kit';
 
-describeRepositoryContract((clock) => createMemoryRepositories({ clock }));
+describeRepositoryContract((clock) => createMemoryStore({ clock }));
 ```
 
 The factory receives a `ControllableClock` and must use it for every expiry decision. The suite runs on Vitest.
@@ -338,7 +338,7 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `repositories` | `Repositories` | required | Where runs, steps, checkpoints and state live |
+| `store` | `IStore` | required | Where runs, steps, checkpoints and state live |
 | `agents` | `Agent[]` | required | The agents this engine runs |
 | `channels` | `IChannel[]` | `[]` | Channels by unique name, started by `start()` and stopped first by `drain()`/`stop()`; tools reach them through `ctx.channels` |
 | `concurrencyMaxRuns` | `number` | `4` | Runs executing at once in this process |
@@ -371,8 +371,8 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 |---|---|---|
 | `defineAgent` | function | Validates an agent definition and applies defaults |
 | `DEFAULT_MAX_STEPS`, `DEFAULT_TIMEOUT_MS` | constant | The default budget: `20` steps, `900_000` ms |
-| `Engine` | class | `repositories`, `clock`, `getAgent`, `listAgents`, `putAgent`, `removeAgent`, `getChannel`, `listChannels`, `provide`, `start`, `dispatch`, `getRun`, `on`, `approve`, `cancel`, `recover`, `tick`, `idle`, `stop`, `drain` |
-| `createMemoryRepositories()` | function | Assembles independent in-memory repositories, including conversations |
+| `Engine` | class | `store`, `clock`, `getAgent`, `listAgents`, `putAgent`, `removeAgent`, `getChannel`, `listChannels`, `provide`, `start`, `dispatch`, `getRun`, `on`, `approve`, `cancel`, `recover`, `tick`, `idle`, `stop`, `drain` |
+| `createMemoryStore()` | function | Assembles independent in-memory repositories, including conversations |
 | `defineTool` | function | An AI SDK `tool()` whose `execute` gets the run's `ToolContext` as `context` |
 | `defineContextKey`, `inject`, `tryInject` | function | Typed context keys, and reading a value provided on the engine from a `ToolContext` |
 | `toolContextSchema` | object | The `contextSchema` that marks a chamvi tool |
@@ -399,7 +399,7 @@ A missing value throws `ContextNotProvidedError` (`context_not_provided`, naming
 | `ErrorCode` | object | The `code` of every error above |
 | `systemClock` | object | The default `IClock` |
 
-Types: `Agent`, `AgentDefinition`, `ToolContext`, `ContextKey`, `IContextProvider`, `ToolPolicy`, `AgentHooks`, `ToolCallInfo`, `TriggerEnvelope`, `Invoker`, `Run`, `RunStatus`, `Step`, `Checkpoint`, `WaitPoint`, `Budget`, `Usage`, `ApprovalRequestInput`, `ApprovalDecision`, `ApprovalAnswer`, `Repositories` and its capability interfaces, `Artifact`, `ArtifactInput`, `IRunArtifacts`, `IChannel`, `ChannelSubscription`, `ChannelContext`, `ChannelMessage`, `ChannelSendOptions`, `ChannelHandle`, `EmitMessage`, `ConsoleChannelOptions`, `IAgentState`, `RunEvent`, `EngineOptions`, `ModelRef`, `IModelResolver`, `IClock`.
+Types: `Agent`, `AgentDefinition`, `ToolContext`, `ContextKey`, `IContextProvider`, `ToolPolicy`, `AgentHooks`, `ToolCallInfo`, `TriggerEnvelope`, `Invoker`, `Run`, `RunStatus`, `Step`, `Checkpoint`, `WaitPoint`, `Budget`, `Usage`, `ApprovalRequestInput`, `ApprovalDecision`, `ApprovalAnswer`, `IStore` and its capability interfaces, `MemoryStoreOptions`, `Artifact`, `ArtifactInput`, `IRunArtifacts`, `IChannel`, `ChannelSubscription`, `ChannelContext`, `ChannelMessage`, `ChannelSendOptions`, `ChannelHandle`, `EmitMessage`, `ConsoleChannelOptions`, `IAgentState`, `RunEvent`, `EngineOptions`, `ModelRef`, `IModelResolver`, `IClock`.
 
 Test helpers (`ControllableClock`, `describeRepositoryContract`) live in [`@chamvi/test-kit`](../test-kit).
 
@@ -409,7 +409,7 @@ Test helpers (`ControllableClock`, `describeRepositoryContract`) live in [`@cham
 - **Budgets settle runs.** A run stopped by `maxSteps` or `maxTokens` while the model still wanted to call tools fails with code `BudgetExceeded`; a run that hits its timeout fails with code `Timeout`.
 - **Effects are recorded after they happen.** A crash between a tool's side effect and the store write repeats the effect on resume, unless `alreadyApplied` finds it.
 - **Several approvals in one step are handled one at a time.** The run waits on the first in call order; the other suspended calls stay pending and ask again after the resume, before any further model call.
-- **`createMemoryRepositories()` is not durable.** Everything is gone with the process; use a persistent store to survive restarts or to run replicas.
+- **`createMemoryStore()` is not durable.** Everything is gone with the process; use a persistent store to survive restarts or to run replicas.
 - **`stop()` stops polling and the channels.** It resolves once every channel stopped; runs in progress continue, so use `drain()` to shut down.
 
 ## License

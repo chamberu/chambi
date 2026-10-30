@@ -7,7 +7,7 @@
 
 import { MemoryConversationRepository } from '../../conversation/memory.ts';
 import type { IConversationRepository } from '../../conversation/types.ts';
-import type { Repositories } from '../types.ts';
+import type { IStore } from '../types.ts';
 import { MemoryAgentRevisionRepository } from './agent-revision.ts';
 import { MemoryArtifactRepository } from './artifact.ts';
 import { MemoryCheckpointRepository } from './checkpoint.ts';
@@ -17,10 +17,10 @@ import { MemoryLockRepository } from './lock.ts';
 import { MemoryRunRepository } from './run.ts';
 import { MemoryStateRepository } from './state.ts';
 import { MemoryStepRepository } from './step.ts';
-import type { MemoryRepositoriesOptions } from './types.ts';
+import type { MemoryStoreOptions } from './types.ts';
 
 /** Independent in-memory capabilities; each call creates fresh storage. */
-export function createMemoryRepositories(options: MemoryRepositoriesOptions = {}): Repositories & { conversations: IConversationRepository } {
+export function createMemoryStore(options: MemoryStoreOptions = {}): IStore & { conversations: IConversationRepository } {
     return {
         runs: new MemoryRunRepository(options),
         steps: new MemoryStepRepository(),

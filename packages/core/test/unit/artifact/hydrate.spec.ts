@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { ArtifactNotFoundError, artifactFilePart } from '@chamvi/core';
 import { hydrateMessages } from '../../../src/artifact/helpers.ts';
 import { storeArtifact } from '../../../src/artifact/module.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 
 const PNG = new Uint8Array([137, 80, 78, 71]);
 
@@ -34,7 +34,7 @@ function toolMessage(id: string): ModelMessage {
 
 describe('hydrateMessages', () => {
     it('gives a tool result file item the bytes of its artifact, leaving the input alone', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const artifact = await storeArtifact(store.artifacts, { id: 'r1', agent: 'a' }, { mediaType: 'image/png', data: PNG }, new Date(0));
         const messages = [toolMessage(artifact.id)];
         const before = JSON.stringify(messages);
@@ -52,10 +52,10 @@ describe('hydrateMessages', () => {
 
     it('returns messages without a marker as they are', async () => {
         const messages: ModelMessage[] = [{ role: 'user', content: 'hi' }];
-        await expect(hydrateMessages(messages, createMemoryRepositories().artifacts)).resolves.toBe(messages);
+        await expect(hydrateMessages(messages, createMemoryStore().artifacts)).resolves.toBe(messages);
     });
 
     it('throws ArtifactNotFoundError for a tool result marker whose artifact is gone', async () => {
-        await expect(hydrateMessages([toolMessage('gone')], createMemoryRepositories().artifacts)).rejects.toThrow(ArtifactNotFoundError);
+        await expect(hydrateMessages([toolMessage('gone')], createMemoryStore().artifacts)).rejects.toThrow(ArtifactNotFoundError);
     });
 });

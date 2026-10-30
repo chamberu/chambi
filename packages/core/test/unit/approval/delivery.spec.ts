@@ -22,7 +22,7 @@ import {
     defineTool,
 } from '@chamvi/core';
 import type { ChannelMessage, ChannelSendOptions, IChannel } from '@chamvi/core';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -84,10 +84,10 @@ const askModel = (): LanguageModel => mockModel([
     { parts: [{ type: 'text', text: 'done' }] },
 ]);
 
-function createEngine(store: ReturnType<typeof createMemoryRepositories>, clock: ControllableClock, channels: IChannel[], channel: string | null = 'slack') {
+function createEngine(store: ReturnType<typeof createMemoryStore>, clock: ControllableClock, channels: IChannel[], channel: string | null = 'slack') {
     const errors: unknown[] = [];
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [defineAgent({
             name: 'release',
             instructions: 'You release.',
@@ -107,8 +107,8 @@ function createEngine(store: ReturnType<typeof createMemoryRepositories>, clock:
 
 function setup() {
     const clock = new ControllableClock(new Date(START));
-    const store = createMemoryRepositories({ clock });
-    return { clock, repositories: store };
+    const store = createMemoryStore({ clock });
+    return { clock, store };
 }
 
 async function start(engine: Engine, wait = true) {
@@ -125,7 +125,7 @@ async function start(engine: Engine, wait = true) {
 
 describe('approval delivery', () => {
     it('a paused run sends one approval message through the requested channel', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const { channel, sent } = createChannel();
         const { engine, errors } = createEngine(store, clock, [channel]);
         const runId = await start(engine);
@@ -163,7 +163,7 @@ describe('approval delivery', () => {
     });
 
     it('a failed send leaves notifiedAt unset and tick() re-sends until one succeeds', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         let failures = 2;
         const { channel, sent } = createChannel('slack', async () => {
             if (failures-- > 0) throw new Error('slack is down');
@@ -190,7 +190,7 @@ describe('approval delivery', () => {
     });
 
     it('crash after the wait point is stored, before the send: tick() sends exactly once', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         // the first replica's send hangs and ignores its signal: it never returns
         const hung = createChannel('slack', () => new Promise(() => {}));
         const first = createEngine(store, clock, [hung.channel]);
@@ -220,7 +220,7 @@ describe('approval delivery', () => {
     });
 
     it('approve() without a channel sends nothing', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const { channel, sent } = createChannel();
         const { engine, errors } = createEngine(store, clock, [channel], null);
         const runId = await start(engine);
@@ -234,7 +234,7 @@ describe('approval delivery', () => {
     });
 
     it('two replicas ticking concurrently send once', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         let fail = true;
         const { promise: gate, resolve: release } = Promise.withResolvers<void>();
         const behave = async () => {
@@ -265,7 +265,7 @@ describe('approval delivery', () => {
     });
 
     it('an approval naming a channel the engine no longer has goes to onError once per tick', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const down = createChannel('slack', async () => {
             throw new Error('down');
         });

@@ -16,6 +16,14 @@ import * as core from '@chamvi/core';
 import * as persistence from '@chamvi/core/conversation/persistence';
 
 describe('public api', () => {
+    it('types the store as a collection of repositories with conversation support from the memory factory', () => {
+        expectTypeOf<core.EngineOptions['store']>().toEqualTypeOf<core.IStore>();
+        expectTypeOf<core.Engine['store']>().toEqualTypeOf<core.IStore>();
+        expectTypeOf<ReturnType<typeof core.createMemoryStore>['conversations']>()
+            .toEqualTypeOf<core.IConversationRepository>();
+        expect(core).not.toHaveProperty('createMemoryRepositories');
+    });
+
     it('publishes conversation persistence separately from the agent api', () => {
         const manifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
         expect(manifest.exports['./conversation/persistence']).toEqual({
@@ -46,7 +54,7 @@ describe('public api', () => {
     });
 
     it.each([
-        'createMemoryRepositories',
+        'createMemoryStore',
         'defineAgent',
         'Engine',
         'MemoryAgentRevisionRepository',
@@ -194,7 +202,7 @@ describe('public api', () => {
         expectTypeOf<core.ConversationNoteOperation>().toHaveProperty('kind').toEqualTypeOf<'set' | 'remove'>();
         expectTypeOf<core.IConversationRepository['findOne']>()
             .toEqualTypeOf<(identity: core.ConversationIdentity) => Promise<core.ConversationScope | undefined>>();
-        expectTypeOf<core.Repositories>().not.toHaveProperty('resolve');
+        expectTypeOf<core.IStore>().not.toHaveProperty('resolve');
     });
 
     it('exports the trigger key bound', () => {

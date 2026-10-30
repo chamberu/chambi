@@ -18,9 +18,9 @@ import {
 } from 'vitest';
 import { z } from 'zod';
 import { Engine, FatalToolError, defineAgent } from '@chamvi/core';
-import type { Budget, EngineOptions, Repositories  } from '@chamvi/core';
+import type { Budget, EngineOptions, IStore  } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
@@ -30,8 +30,8 @@ const engines: Engine[] = [];
 const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
 
 /** Holds the first call of `method` until `control.pending` is called. */
-function createGatedRepositories(method: 'insert' | 'save') {
-    const repositories = createMemoryRepositories();
+function createGatedStore(method: 'insert' | 'save') {
+    const store = createMemoryStore();
     const control: { pending?: () => void; log: string[] } = { log: [] };
     let gated = false;
     const gate = async () => {
@@ -41,18 +41,18 @@ function createGatedRepositories(method: 'insert' | 'save') {
             control.pending = resolve;
         });
     };
-    const insert = repositories.steps.insert.bind(repositories.steps);
-    vi.spyOn(repositories.steps, 'insert').mockImplementation(async (...args) => {
+    const insert = store.steps.insert.bind(store.steps);
+    vi.spyOn(store.steps, 'insert').mockImplementation(async (...args) => {
         if (method === 'insert') await gate();
         return insert(...args);
     });
-    const save = repositories.checkpoints.save.bind(repositories.checkpoints);
-    vi.spyOn(repositories.checkpoints, 'save').mockImplementation(async (...args) => {
+    const save = store.checkpoints.save.bind(store.checkpoints);
+    vi.spyOn(store.checkpoints, 'save').mockImplementation(async (...args) => {
         if (method === 'save') await gate();
         await save(...args);
         control.log.push('checkpoint');
     });
-    return { control, repositories };
+    return { control, store };
 }
 
 afterEach(() => {
@@ -71,8 +71,8 @@ type TestAgent = {
     budget?: Partial<Budget>;
 };
 
-function make(def: TestAgent, opts: Partial<EngineOptions> & { repositories?: Repositories } = {}) {
-    const store = opts.repositories ?? createMemoryRepositories({ clock: opts.clock });
+function make(def: TestAgent, opts: Partial<EngineOptions> & { store?: IStore } = {}) {
+    const store = opts.store ?? createMemoryStore({ clock: opts.clock });
     const agent = defineAgent({
         name: 'triage',
         instructions: 'You triage.',
@@ -81,13 +81,13 @@ function make(def: TestAgent, opts: Partial<EngineOptions> & { repositories?: Re
         budget: def.budget,
     });
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [agent],
         onError: () => {},
         ...opts,
     });
     engines.push(engine);
-    return { repositories: store, engine };
+    return { store, engine };
 }
 
 const env = {
@@ -120,13 +120,13 @@ function hangingModel() {
 }
 
 async function runOnce(def: Parameters<typeof make>[0], opts: Parameters<typeof make>[1] = {}) {
-    const { engine, repositories: store } = make(def, opts);
+    const { engine, store } = make(def, opts);
     await engine.start();
     const { runId } = await engine.dispatch(env);
     await engine.idle();
     return {
         engine,
-        repositories: store,
+        store,
         runId,
         run: await store.runs.findOne(runId),
     };
@@ -138,7 +138,7 @@ describe('executeRun', () => {
     it('completed run stores output and usage', async () => {
         const {
             run,
-            repositories: store,
+            store,
             runId,
         } = await runOnce({
             model: mockModel([
@@ -188,7 +188,7 @@ describe('executeRun', () => {
     });
 
     it('checkpoint saved after every step', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const save = vi.spyOn(store.checkpoints, 'save');
         const appended: string[] = [];
         const { engine, runId } = await (async () => {
@@ -199,7 +199,7 @@ describe('executeRun', () => {
                     { parts: [{ type: 'text', text: 'done' }] },
                 ]),
                 tools: () => ({ lookup: lookup() }),
-            }, { repositories: store });
+            }, { store });
             made.engine.on('step.appended', (e) => {
                 if (e.type === 'step.appended') appended.push(e.step.kind);
             });
@@ -231,7 +231,7 @@ describe('executeRun', () => {
     it('run stops at maxSteps budget', async () => {
         const {
             run,
-            repositories: store,
+            store,
             runId,
         } = await runOnce({
             model: mockModel(Array.from({ length: 10 }, () => toolTurn())),
@@ -247,7 +247,7 @@ describe('executeRun', () => {
     it('run stops at maxTokens budget', async () => {
         const {
             run,
-            repositories: store,
+            store,
             runId,
         } = await runOnce({
             model: mockModel(Array.from({ length: 10 }, () => ({ ...toolTurn(), usage: { inputTokens: 10, outputTokens: 10 } }))),
@@ -272,7 +272,7 @@ describe('executeRun', () => {
     it('run times out', async () => {
         const clock = new ControllableClock(new Date('2026-01-01T00:00:00Z'));
         const { model, calls } = hangingModel();
-        const { engine, repositories: store } = make({ model, budget: budget({ timeoutMs: 50 }) }, { clock });
+        const { engine, store } = make({ model, budget: budget({ timeoutMs: 50 }) }, { clock });
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await vi.waitFor(() => expect(calls).toHaveLength(1));
@@ -288,7 +288,7 @@ describe('executeRun', () => {
 
     it('cancel aborts a running run', async () => {
         const { model, calls } = hangingModel();
-        const { engine, repositories: store } = make({ model });
+        const { engine, store } = make({ model });
         const statuses: string[] = [];
         engine.on('run.updated', (e) => {
             if (e.type === 'run.updated') statuses.push(e.run.status);
@@ -309,7 +309,7 @@ describe('executeRun', () => {
 
     it('cancel marks a queued run cancelled', async () => {
         const model = mockModel([]);
-        const { engine, repositories: store } = make({ model });
+        const { engine, store } = make({ model });
         const { runId } = await engine.dispatch(env);
         await engine.cancel(runId);
         expect((await store.runs.findOne(runId))?.status).toBe('cancelled');
@@ -332,7 +332,7 @@ describe('executeRun', () => {
         const model = mockModel([toolTurn(), { parts: [{ type: 'text', text: 'recovered' }] }]);
         const {
             run,
-            repositories: store,
+            store,
             runId,
         } = await runOnce({
             model,
@@ -366,11 +366,11 @@ describe('executeRun', () => {
     });
 
     it.each(['insert', 'save'] as const)('a cancel while %s is pending keeps the step whole and writes nothing after', async (method) => {
-        const gate = createGatedRepositories(method);
+        const gate = createGatedStore(method);
         const { engine } = make({
             model: mockModel([toolTurn(), { parts: [{ type: 'text', text: 'late' }] }]),
             tools: () => ({ lookup: lookup() }),
-        }, { repositories: gate.repositories });
+        }, { store: gate.store });
         const events = gate.control.log;
         engine.on('run.updated', (e) => {
             if (e.type === 'run.updated') events.push(`run:${e.run.status}`);
@@ -388,17 +388,17 @@ describe('executeRun', () => {
         await cancelled;
         await engine.idle();
 
-        const steps = (await gate.repositories.steps.find(runId)).map((s) => s.kind);
-        const checkpoint = await gate.repositories.checkpoints.findOne(runId);
+        const steps = (await gate.store.steps.find(runId)).map((s) => s.kind);
+        const checkpoint = await gate.store.checkpoints.findOne(runId);
         // let the abandoned generate run on
         for (let i = 0; i < 10; i++) await flush();
 
-        expect((await gate.repositories.runs.findOne(runId))?.status).toBe('cancelled');
+        expect((await gate.store.runs.findOne(runId))?.status).toBe('cancelled');
         // the completed step lands with its tool row and checkpoint before the run settles
         expect(steps).toEqual(['llm', 'tool']);
         expect(checkpoint?.stepIndex).toBe(0);
-        expect((await gate.repositories.steps.find(runId)).map((s) => s.kind)).toEqual(steps);
-        expect((await gate.repositories.checkpoints.findOne(runId))?.stepIndex).toBe(checkpoint?.stepIndex);
+        expect((await gate.store.steps.find(runId)).map((s) => s.kind)).toEqual(steps);
+        expect((await gate.store.checkpoints.findOne(runId))?.stepIndex).toBe(checkpoint?.stepIndex);
         expect(events.at(-1)).toBe('run:cancelled');
         expect(events.filter((e) => e === 'run:cancelled')).toHaveLength(1);
     });
@@ -407,9 +407,9 @@ describe('executeRun', () => {
         ['stop', 'completed'],
         ['tool-calls', 'failed'],
     ])('resuming at the step limit after a %s step settles %s', async (finishReason, status) => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const model = mockModel([]);
-        const { engine } = make({ model, budget: budget({ maxSteps: 2 }) }, { repositories: store });
+        const { engine } = make({ model, budget: budget({ maxSteps: 2 }) }, { store });
         const { runId } = await engine.dispatch(env);
         await store.checkpoints.save({
             runId,
@@ -437,9 +437,9 @@ describe('executeRun', () => {
     });
 
     it('execution resumes from checkpoint messages', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const model = mockModel([{ parts: [{ type: 'text', text: 'resumed' }] }]);
-        const { engine } = make({ model }, { repositories: store });
+        const { engine } = make({ model }, { store });
         const { runId } = await engine.dispatch(env);
         await store.checkpoints.save({
             runId,

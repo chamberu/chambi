@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import {
     Engine,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -38,7 +38,7 @@ describe('GitHub burst admission', () => {
     it('persists signed bursts before replying while nested caps leave room for another agent', async () => {
         const { gh, clock } = createGithubFixture();
         const channel = githubChannel({ app: gh, clock });
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const errors: unknown[] = [];
         const entered: string[] = [];
         const releases = new Map<string, () => void>();
@@ -88,7 +88,7 @@ describe('GitHub burst admission', () => {
             channels: [],
         });
         engine = new Engine({
-            repositories: store,
+            store,
             clock,
             agents: [agent, other],
             channels: [channel],

@@ -30,9 +30,9 @@ import {
     configModule,
     engineModule,
     httpModule,
-    repositoryModule,
     schedulerModule,
     staticTokensModule,
+    storeModule,
 } from '@chamvi/app';
 import type { ILifecycleHook } from '@chamvi/app';
 import { createStoppedError } from '../../../../src/module/helpers.ts';
@@ -117,7 +117,7 @@ async function build(options: {
         agents: options.agents ?? [triage()],
         modules: [
             configModule({ clock, logger }),
-            repositoryModule(),
+            storeModule(),
             staticTokensModule(),
             engineModule(),
             options.scheduler ?? schedulerModule(),

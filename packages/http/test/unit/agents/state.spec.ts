@@ -79,7 +79,7 @@ describe('state kv listing', () => {
     const LIST = '/agents/intake/state/kv';
 
     it('lists kv entries in key order with a page', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         await store.state.set('intake', 'b', 2);
         await store.state.set('intake', 'B', 'upper');
         await store.state.set('intake', 'a', { n: 1 });
@@ -123,12 +123,12 @@ describe('state kv listing', () => {
 describe('state collections', () => {
     async function seeded() {
         const ctx = setup();
-        await ctx.repositories.state.upsertDocument('intake', 'issues', 'i1', {
+        await ctx.store.state.upsertDocument('intake', 'issues', 'i1', {
             title: 'a',
             status: 'open',
             priority: 2,
         });
-        await ctx.repositories.state.upsertDocument('intake', 'issues', 'i2', {
+        await ctx.store.state.upsertDocument('intake', 'issues', 'i2', {
             title: 'b',
             status: 'closed',
             priority: 1,
@@ -165,7 +165,7 @@ describe('state collections', () => {
     });
 
     it('matches a string that looks like a scalar when the value is double-quoted', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         await store.state.upsertDocument('intake', 'issues', 'a', { issue: '42', tag: 'true' });
         await store.state.upsertDocument('intake', 'issues', 'b', { issue: 42, tag: 'null' });
         await store.state.upsertDocument('intake', 'issues', 'c', { issue: '007', tag: '"x"' });
@@ -189,7 +189,7 @@ describe('state collections', () => {
     });
 
     it('lists a collection named kv on an agent without a state schema', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         await store.state.upsertDocument('loose', 'kv', 'k1', { a: 1 });
         const response = await call(app, 'GET', '/agents/loose/state/collections/kv', { token: ADMIN_TOKEN });
         expect(response.status).toBe(200);

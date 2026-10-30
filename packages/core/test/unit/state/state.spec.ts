@@ -22,7 +22,7 @@ import { systemClock } from '../../../src/clock/index.ts';
 import type { RunContext } from '../../../src/run/types.ts';
 import { createAgentState } from '../../../src/state/module.ts';
 import { createStateTools } from '../../../src/state/tools.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { toolContextSchema } from '../../../src/tool/constants.ts';
 import type { ToolContext } from '../../../src/tool/types.ts';
 import { mockModel } from '../../utils/mock-model.ts';
@@ -34,7 +34,7 @@ const schema = {
 
 const callOpts = { toolCallId: 'c', messages: [] };
 
-function toolContext(store: ReturnType<typeof createMemoryRepositories>): ToolContext {
+function toolContext(store: ReturnType<typeof createMemoryStore>): ToolContext {
     const run: RunContext = {
         runId: 'r1',
         agent: 'alpha',
@@ -65,9 +65,9 @@ afterEach(() => {
     engines.length = 0;
 });
 
-async function runOnce(store: ReturnType<typeof createMemoryRepositories>, agent: Parameters<typeof defineAgent>[0]) {
+async function runOnce(store: ReturnType<typeof createMemoryStore>, agent: Parameters<typeof defineAgent>[0]) {
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [defineAgent(agent)],
         onError: () => {},
     });
@@ -85,7 +85,7 @@ async function runOnce(store: ReturnType<typeof createMemoryRepositories>, agent
 
 describe('agent state', () => {
     it('kv roundtrip is scoped per agent', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const a = createAgentState('alpha', schema, store.state);
         const b = createAgentState('beta', schema, store.state);
 
@@ -99,7 +99,7 @@ describe('agent state', () => {
     });
 
     it('upsert validates against schema', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const state = createAgentState('alpha', schema, store.state);
         const items = state.collection('items');
 
@@ -116,7 +116,7 @@ describe('agent state', () => {
     });
 
     it('list filters by where', async () => {
-        const state = createAgentState('alpha', schema, createMemoryRepositories().state);
+        const state = createAgentState('alpha', schema, createMemoryStore().state);
         const items = state.collection('items');
         await items.upsert('a', { title: 'one', done: true });
         await items.upsert('b', { title: 'two', done: false });
@@ -133,7 +133,7 @@ describe('agent state', () => {
     });
 
     it('state tools are generated per collection with expected names', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const context = toolContext(store);
         const tools = createStateTools(schema);
 
@@ -165,7 +165,7 @@ describe('agent state', () => {
     });
 
     it('repeated writes within a run are not memoized away', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const context = toolContext(store);
         const tools = wrapToolsForRun(createStateTools(schema), context, store.effects);
         const a = { id: 'x', doc: { title: 'a', done: false } };
@@ -183,7 +183,7 @@ describe('agent state', () => {
     });
 
     it('model can upsert via generated tool', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const runId = await runOnce(store, {
             name: 'todo',
             instructions: 'x',
@@ -207,7 +207,7 @@ describe('agent state', () => {
     });
 
     it('user tools win on a name clash', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         let userCalls = 0;
         const runId = await runOnce(store, {
             name: 'todo',

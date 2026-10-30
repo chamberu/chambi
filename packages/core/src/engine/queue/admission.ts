@@ -26,9 +26,9 @@ export async function admitRun(
     if (!hasCaps(opts.getAgent(run.agent))) return start(run);
     const key = `admission:${run.agent}`;
     const owner = randomUUID();
-    if (!await opts.repositories.locks.acquire(key, owner, opts.claimTtlMs)) return undefined;
+    if (!await opts.store.locks.acquire(key, owner, opts.claimTtlMs)) return undefined;
     try {
-        const candidate = await opts.repositories.runs.findOne(run.id);
+        const candidate = await opts.store.runs.findOne(run.id);
         if (!candidate || candidate.status !== RunStatus.QUEUED || (mayStart && !mayStart(candidate))) return undefined;
         const agent = opts.getAgent(candidate.agent);
         if (!agent && !candidate.cancelRequested) return undefined;
@@ -37,7 +37,7 @@ export async function admitRun(
             const subscriptionCap = agent.definition.channels
                 ?.find((subscription) => subscription.id === candidate.trigger.trigger)?.concurrencyMaxRuns;
             if (typeof agentCap === 'number' || typeof subscriptionCap === 'number') {
-                const { data: running } = await opts.repositories.runs.find({ agent: candidate.agent, status: [RunStatus.RUNNING] });
+                const { data: running } = await opts.store.runs.find({ agent: candidate.agent, status: [RunStatus.RUNNING] });
                 if (typeof agentCap === 'number' && running.length >= agentCap) return undefined;
                 if (typeof subscriptionCap === 'number' &&
                     running.filter((active) => active.trigger.trigger === candidate.trigger.trigger).length >= subscriptionCap) return undefined;
@@ -46,7 +46,7 @@ export async function admitRun(
         return await start(candidate);
     } finally {
         try {
-            await opts.repositories.locks.release(key, owner);
+            await opts.store.locks.release(key, owner);
         } catch (error) {
             try {
                 opts.onError(error, run);

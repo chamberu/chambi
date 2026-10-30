@@ -58,7 +58,7 @@ import { assertHandoffSubscription } from '../handoff/helpers.ts';
 import { MODEL_CONTEXT } from '../model/constants.ts';
 import { checkAgentModel, checkDefaultModel } from '../model/module.ts';
 import type { IModelResolver, ModelContext, ModelRef } from '../model/types.ts';
-import type { Repositories } from '../repository/types.ts';
+import type { IStore } from '../repository/types.ts';
 import { idempotencyScope, toInvoker } from '../trigger/helpers.ts';
 import { assertTriggerKey } from '../trigger/key.ts';
 import type { TriggerEnvelope, TriggerParent } from '../trigger/types.ts';
@@ -92,7 +92,7 @@ type ApprovalDecisionInput = Omit<ApprovalAnswer, 'approvalId'>;
 
 export class Engine implements IContextProvider {
     /** Persistence capabilities, independently replaceable by packages built on the engine. */
-    readonly repositories: Repositories;
+    readonly store: IStore;
 
     protected readonly agents: Map<string, Agent>;
 
@@ -168,16 +168,16 @@ export class Engine implements IContextProvider {
     protected readonly provided = new Map<ContextKey<unknown>, unknown>();
 
     constructor(opts: EngineOptions) {
-        this.repositories = opts.repositories;
+        this.store = opts.store;
         if (opts.conversations !== undefined) {
-            if (!opts.repositories.conversations) {
-                throw new InvalidAgentDefinitionError('Conversations need repositories.conversations.');
+            if (!opts.store.conversations) {
+                throw new InvalidAgentDefinitionError('Conversations need store.conversations.');
             }
             this.conversations = new Conversations(
                 opts.conversations,
-                opts.repositories.conversations,
-                opts.repositories.runs,
-                opts.repositories.effects,
+                opts.store.conversations,
+                opts.store.runs,
+                opts.store.effects,
             );
         }
         this.agents = new Map(opts.agents.map((a) => [a.name, a]));
@@ -254,7 +254,7 @@ export class Engine implements IContextProvider {
         // eslint-disable-next-line no-console
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));
         this.queue = new RunQueue({
-            repositories: this.repositories,
+            store: this.store,
             getAgent: (name) => this.getAgent(name),
             clock: this.clock,
             owner: this.owner,
@@ -319,7 +319,7 @@ export class Engine implements IContextProvider {
         let runId: string = randomUUID();
 
         if (trigger.idempotencyKey !== undefined) {
-            const claimed = await this.repositories.idempotency.claim(
+            const claimed = await this.store.idempotency.claim(
                 idempotencyScope(conversation ? {
                     ...trigger,
                     agent: conversation.scope.identity.agent,
@@ -330,7 +330,7 @@ export class Engine implements IContextProvider {
                 IDEMPOTENCY_TTL_MS,
             );
             if (!claimed.created) {
-                const original = await this.repositories.runs.findOne(claimed.runId);
+                const original = await this.store.runs.findOne(claimed.runId);
                 if (original) {
                     if (conversation && original.conversation?.scope.id !== conversation.scope.id) throw new ValidationError('The duplicate run belongs to another conversation.');
                     return { runId: claimed.runId, deduplicated: true };
@@ -352,7 +352,7 @@ export class Engine implements IContextProvider {
             trigger.attachments = [];
             for (const [i, attachment] of attachments.entries()) {
                 trigger.attachments.push(await storeArtifact(
-                    this.repositories.artifacts,
+                    this.store.artifacts,
                     { id: runId, agent: trigger.agent },
                     attachment,
                     now,
@@ -373,7 +373,7 @@ export class Engine implements IContextProvider {
             updatedAt: now,
         };
         if (conversation) run.conversation = structuredClone(conversation);
-        if (!await this.repositories.runs.insert(run)) return { runId, deduplicated: true };
+        if (!await this.store.runs.insert(run)) return { runId, deduplicated: true };
         this.emit({ type: 'run.updated', run });
         if (this.started) void this.queue.pump();
         return { runId, deduplicated: false };
@@ -415,7 +415,7 @@ export class Engine implements IContextProvider {
         const chains = new Map<string, Promise<unknown>>();
         return {
             getAgent: (name) => this.agents.get(name),
-            effects: this.repositories.effects,
+            effects: this.store.effects,
             dispatch: (envelope, parent) => this.createRun(envelope, parent),
             serial: (runId, fn) => {
                 const previous = chains.get(runId) ?? Promise.resolve();
@@ -590,7 +590,7 @@ export class Engine implements IContextProvider {
     }
 
     getRun(id: string): Promise<Run | undefined> {
-        return this.repositories.runs.findOne(id);
+        return this.store.runs.findOne(id);
     }
 
     on<T extends EngineEvent['type']>(event: T, listener: (e: Extract<EngineEvent, { type: T }>) => void): () => void {
@@ -675,7 +675,7 @@ export class Engine implements IContextProvider {
      * on every poll. Resolves the number of runs requeued.
      */
     async recover(): Promise<number> {
-        const { data } = await this.repositories.runs.find({ status: [RunStatus.RUNNING, RunStatus.INTERRUPTED] });
+        const { data } = await this.store.runs.find({ status: [RunStatus.RUNNING, RunStatus.INTERRUPTED] });
         let requeued = 0;
         for (const run of data) {
             const execution = this.executions.get(run.id);
@@ -689,13 +689,13 @@ export class Engine implements IContextProvider {
             }
             try {
                 // atomic: fails while another owner's claim is live
-                if (!await this.repositories.runs.claim(run.id, this.owner, this.claimTtlMs)) continue;
+                if (!await this.store.runs.claim(run.id, this.owner, this.claimTtlMs)) continue;
             } catch (error) {
                 this.onError(error, run);
                 continue;
             }
             try {
-                const queued = await this.repositories.runs.update(run.id, {
+                const queued = await this.store.runs.update(run.id, {
                     status: RunStatus.QUEUED,
                     claim: undefined,
                     updatedAt: this.clock.now(),
@@ -704,7 +704,7 @@ export class Engine implements IContextProvider {
                 this.emit({ type: 'run.updated', run: queued });
             } catch (error) {
                 // the run settled since it was listed: drop the claim just taken
-                await this.repositories.runs.update(run.id, { claim: undefined }, { expectOwner: this.owner })
+                await this.store.runs.update(run.id, { claim: undefined }, { expectOwner: this.owner })
                     .catch(() => {});
                 if (!(error instanceof InvalidRunStateError)) this.onError(error, run);
             }
@@ -789,14 +789,14 @@ export class Engine implements IContextProvider {
                 throw new InvalidRunStateError(`Run "${runId}" lost its claim while being cancelled; it is no longer executing here.`);
             }
             // the abort cannot stop a pause that was already writing: cancel the run it left waiting
-            const run = await this.repositories.runs.findOne(runId);
+            const run = await this.store.runs.findOne(runId);
             if (run?.status === RunStatus.WAITING || run?.status === RunStatus.QUEUED) {
                 await this.cancelStored(runId, [run.status], execution.cancelReason);
             }
             return;
         }
         for (let attempt = 0; ; attempt++) {
-            const run = await this.repositories.runs.findOneOrFail(runId);
+            const run = await this.store.runs.findOneOrFail(runId);
 
             const { status } = run;
             if (status !== RunStatus.QUEUED && status !== RunStatus.WAITING && status !== RunStatus.RUNNING && status !== RunStatus.INTERRUPTED) {
@@ -806,7 +806,7 @@ export class Engine implements IContextProvider {
                 if (status === RunStatus.QUEUED || status === RunStatus.WAITING) {
                     await this.cancelStored(runId, [status], reason);
                 } else {
-                    const updated = await this.repositories.runs.update(runId, {
+                    const updated = await this.store.runs.update(runId, {
                         cancelRequested: true,
                         ...(reason && { error: reason }),
                         updatedAt: this.clock.now(),
@@ -825,7 +825,7 @@ export class Engine implements IContextProvider {
     protected async cancelStored(runId: string, expectStatus: Run['status'][], reason?: CancelReason): Promise<void> {
         await this.conversations?.idle(runId);
         const now = this.clock.now();
-        const updated = await this.repositories.runs.update(
+        const updated = await this.store.runs.update(
             runId,
             {
                 status: RunStatus.CANCELLED,
@@ -854,7 +854,7 @@ export class Engine implements IContextProvider {
             ...(answer.approver !== undefined ? { approver: toInvoker(answer.approver, 'approver') } : {}),
         };
         assertSelectionShape(answer.selected);
-        const run = await this.repositories.runs.findOneOrFail(runId);
+        const run = await this.store.runs.findOneOrFail(runId);
         if (run.status !== RunStatus.WAITING || !run.waiting) {
             throw new InvalidRunStateError(`Run "${run.id}" is ${run.status} and not waiting for an approval.`);
         }
@@ -881,7 +881,7 @@ export class Engine implements IContextProvider {
      */
     async tick(): Promise<void> {
         const now = this.clock.now().getTime();
-        const { data } = await this.repositories.runs.find({ status: [RunStatus.WAITING] });
+        const { data } = await this.store.runs.find({ status: [RunStatus.WAITING] });
         for (const listed of data) {
             if (!listed.waiting) continue;
             if (listed.waiting.expiresAt.getTime() > now) {
@@ -890,7 +890,7 @@ export class Engine implements IContextProvider {
             }
             try {
                 // the listing may be stale by now: the run could wait on a newer approval
-                const run = await this.repositories.runs.findOne(listed.id);
+                const run = await this.store.runs.findOne(listed.id);
                 if (run?.status !== RunStatus.WAITING || !run.waiting || run.waiting.expiresAt.getTime() > now) continue;
                 await this.answer(
                     run,
@@ -926,7 +926,7 @@ export class Engine implements IContextProvider {
         stale: () => Error,
     ): Promise<void> {
         const now = this.clock.now();
-        const transitioned = await this.repositories.runs.update(run.id, {
+        const transitioned = await this.store.runs.update(run.id, {
             status: RunStatus.QUEUED,
             claim: { owner: this.owner, expiresAt: new Date(now.getTime() + this.claimTtlMs) },
             updatedAt: now,
@@ -938,7 +938,7 @@ export class Engine implements IContextProvider {
             if (transitioned.waiting?.approvalId !== waiting.approvalId) {
                 throw stale();
             }
-            await this.repositories.effects.save(approvalDecisionKey(run.id, waiting.approvalId), {
+            await this.store.effects.save(approvalDecisionKey(run.id, waiting.approvalId), {
                 approved: decision.approved,
                 ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
                 ...(decision.approver ? { approver: decision.approver } : {}),
@@ -946,7 +946,7 @@ export class Engine implements IContextProvider {
             });
             const step: Step = {
                 runId: run.id,
-                index: (await this.repositories.steps.find(run.id)).length,
+                index: (await this.store.steps.find(run.id)).length,
                 kind: 'wait',
                 name: waiting.toolName,
                 input: {
@@ -966,16 +966,16 @@ export class Engine implements IContextProvider {
                 startedAt: run.updatedAt,
                 finishedAt: now,
             };
-            await this.repositories.steps.insert(step);
+            await this.store.steps.insert(step);
             this.emit({ type: 'step.appended', step });
-            queued = await this.repositories.runs.update(run.id, {
+            queued = await this.store.runs.update(run.id, {
                 waiting: undefined,
                 claim: undefined,
                 updatedAt: this.clock.now(),
             }, { expectStatus: [RunStatus.QUEUED] });
         } catch (error) {
             // undo, so the wait point (still on the run) stays answerable
-            await this.repositories.runs.update(run.id, {
+            await this.store.runs.update(run.id, {
                 status: RunStatus.WAITING,
                 claim: undefined,
                 updatedAt: this.clock.now(),
@@ -1060,10 +1060,10 @@ export class Engine implements IContextProvider {
             code: ErrorCode.TIMEOUT,
         })), this.claimTtlMs);
         try {
-            acquired = await this.repositories.locks.acquire(lockKey, attempt, this.claimTtlMs);
+            acquired = await this.store.locks.acquire(lockKey, attempt, this.claimTtlMs);
             if (!acquired) return;
             // another attempt may have delivered it since `run` was read
-            const current = await this.repositories.runs.findOne(run.id);
+            const current = await this.store.runs.findOne(run.id);
             if (!isCurrent(current) || current?.waiting?.notifiedAt) return;
             controller.signal.throwIfAborted();
             const aborted = new Promise<never>((_, reject) => {
@@ -1087,9 +1087,9 @@ export class Engine implements IContextProvider {
                 aborted,
             ]);
             // answered meanwhile: nothing left to record
-            if (!isCurrent(await this.repositories.runs.findOne(run.id))) return;
+            if (!isCurrent(await this.store.runs.findOne(run.id))) return;
             controller.signal.throwIfAborted();
-            const notified = await this.repositories.runs.update(
+            const notified = await this.store.runs.update(
                 run.id,
                 { waiting: { ...waiting, notifiedAt: this.clock.now() } },
                 { expectStatus: [RunStatus.WAITING] },
@@ -1101,7 +1101,7 @@ export class Engine implements IContextProvider {
             this.deliveryControllers.delete(controller);
             timer.clear();
             if (acquired) {
-                await this.repositories.locks.release(lockKey, attempt).catch((releaseError: unknown) => this.onError(releaseError, run));
+                await this.store.locks.release(lockKey, attempt).catch((releaseError: unknown) => this.onError(releaseError, run));
             }
         }
     }
@@ -1159,7 +1159,7 @@ export class Engine implements IContextProvider {
             agent,
             model: agent.definition.model ?? this.model,
             models: this.models,
-            repositories: this.repositories,
+            store: this.store,
             clock: this.clock,
             signal,
             finish: (patch) => this.finish(run.id, patch),
@@ -1186,7 +1186,7 @@ export class Engine implements IContextProvider {
     protected async prepareStart(): Promise<(run: Run) => boolean> {
         const folder = this.revisions.values().some((revision) => revision !== undefined);
         const markers = folder ?
-            new Map((await this.repositories.agentRevisions.find()).map((marker) => [marker.agent, marker.hash])) :
+            new Map((await this.store.agentRevisions.find()).map((marker) => [marker.agent, marker.hash])) :
             new Map<string, string>();
         return (run) => {
             if (run.cancelRequested) return true;
@@ -1201,7 +1201,7 @@ export class Engine implements IContextProvider {
         if (this.syncing.has(name)) return false;
         const revision = this.revisions.get(name);
         if (revision === undefined) return true;
-        return (await this.repositories.agentRevisions.findOne(name))?.hash === revision;
+        return (await this.store.agentRevisions.findOne(name))?.hash === revision;
     }
 
     /** A throwing execution fails the run (and releases its claim) instead of leaking. */
@@ -1283,7 +1283,7 @@ export class Engine implements IContextProvider {
      */
     protected async ownedUpdate(id: string, patch: Partial<Run>): Promise<Run | undefined> {
         try {
-            return await this.repositories.runs.update(id, patch, { expectStatus: [RunStatus.RUNNING], expectOwner: this.owner });
+            return await this.store.runs.update(id, patch, { expectStatus: [RunStatus.RUNNING], expectOwner: this.owner });
         } catch (error) {
             if (error instanceof InvalidRunStateError && !await this.ownsRun(id)) return undefined;
             throw error;
@@ -1292,7 +1292,7 @@ export class Engine implements IContextProvider {
 
     /** Whether this engine still holds the run's claim; aborts its execution when not. */
     protected async ownsRun(id: string): Promise<boolean> {
-        const run = await this.repositories.runs.findOne(id);
+        const run = await this.store.runs.findOne(id);
         if (run?.claim?.owner === this.owner) return true;
         this.loseLease(id);
         return false;
@@ -1336,7 +1336,7 @@ export class Engine implements IContextProvider {
 
     protected registry(): RegistryContext {
         return {
-            repositories: this.repositories,
+            store: this.store,
             clock: this.clock,
             claimTtlMs: this.claimTtlMs,
             cancel: (runId, reason) => this.cancelRun(runId, reason),

@@ -7,7 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { Engine, createMemoryRepositories } from '@chamvi/core';
+import { Engine, createMemoryStore } from '@chamvi/core';
 import { createWorkspaces } from '../fixtures/readme-example.ts';
 import { createFakeProvider } from '../utils/provider.ts';
 
@@ -22,7 +22,7 @@ describe('README example', () => {
 
     it('builds a manager attached to the engine', async () => {
         const engine = new Engine({
-            repositories: createMemoryRepositories(),
+            store: createMemoryStore(),
             agents: [],
         });
         const manager = createWorkspaces(createFakeProvider(), engine);

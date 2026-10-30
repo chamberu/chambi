@@ -27,14 +27,14 @@ import { createRunArtifacts } from '../../../src/artifact/module.ts';
 import { systemClock } from '../../../src/clock/index.ts';
 import type { RunContext } from '../../../src/run/types.ts';
 import { createAgentState } from '../../../src/state/module.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { defineTool } from '../../../src/tool/define.ts';
 import { toolContextSchema } from '../../../src/tool/constants.ts';
 import type { ToolContext } from '../../../src/tool/types.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 
 function toolContext(runId: string): ToolContext {
-    const store = createMemoryRepositories();
+    const store = createMemoryStore();
     return {
         channels: {} as ToolContext['channels'],
         run: {
@@ -87,7 +87,7 @@ describe('effect tools', () => {
             },
         });
         expect(post.contextSchema).toBe(toolContextSchema);
-        await call(wrapToolsForRun({ post }, ctx, createMemoryRepositories().effects), 'post', { body: 'x' });
+        await call(wrapToolsForRun({ post }, ctx, createMemoryStore().effects), 'post', { body: 'x' });
         expect(seen).toEqual([ctx, ctx, ctx]);
         expect(seen.every((c) => c === ctx)).toBe(true);
     });
@@ -102,7 +102,7 @@ describe('effect tools', () => {
             },
             execute: async () => 'ok',
         });
-        const tools = wrapToolsForRun({ post }, ctx, createMemoryRepositories().effects);
+        const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
         await (tools.post?.execute as (i: unknown, o: unknown) => Promise<unknown>)(
             { body: 'x' },
             {
@@ -117,7 +117,7 @@ describe('effect tools', () => {
 
     it('keeps contextSchema and forwards options.context through the wrapper', async () => {
         const plain = defineTool({ inputSchema: schema, execute: async (_i, { context }) => context });
-        const wrapped = wrapToolsForRun({ plain }, ctx, createMemoryRepositories().effects, { allow: () => true });
+        const wrapped = wrapToolsForRun({ plain }, ctx, createMemoryStore().effects, { allow: () => true });
         expect(wrapped.plain!.contextSchema).toBe(toolContextSchema);
         expect(await call(wrapped, 'plain', { body: 'x' })).toBe(ctx);
     });
@@ -129,7 +129,7 @@ describe('effect tools', () => {
             effectKey: (_input, c) => `${c.run.runId}:c`,
             execute: async () => ++runs,
         });
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const r2 = toolContext('r2');
         await call(wrapToolsForRun({ post }, ctx, store.effects), 'post', { body: 'x' });
         await call(wrapToolsForRun({ post }, r2, store.effects), 'post', { body: 'x' }, r2);
@@ -144,7 +144,7 @@ describe('effect tools', () => {
             inputSchema: schema,
             execute: async () => ({ id: ++runs }),
         });
-        const tools = wrapToolsForRun({ post }, ctx, createMemoryRepositories().effects);
+        const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
         const a = await call(tools, 'post', { body: 'hi' });
         const b = await call(tools, 'post', { body: 'hi' });
         const c = await call(tools, 'post', { body: 'other' });
@@ -161,7 +161,7 @@ describe('effect tools', () => {
             execute: async () => ({ id: ++runs }),
         });
         // a crash before the checkpoint lands: the resumed run starts from scratch
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         vi.spyOn(store.checkpoints, 'save').mockResolvedValue(undefined);
         const turn = {
             parts: [{
@@ -173,7 +173,7 @@ describe('effect tools', () => {
         const done = { parts: [{ type: 'text' as const, text: 'done' }] };
         const make = (model: ReturnType<typeof mockModel>) => {
             const engine = new Engine({
-                repositories: store,
+                store,
                 agents: [defineAgent({
                     name: 'triage',
                     instructions: 'x',
@@ -223,7 +223,7 @@ describe('effect tools', () => {
                 return { id: 99 };
             },
         });
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const tools = wrapToolsForRun({ post }, ctx, store.effects);
         expect(await call(tools, 'post', { body: 'hi' })).toEqual({ id: 99 });
         expect(runs).toBe(0);
@@ -240,7 +240,7 @@ describe('effect tools', () => {
                 return 'ok';
             },
         });
-        const tools = wrapToolsForRun({ post }, ctx, createMemoryRepositories().effects);
+        const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
         await expect(call(tools, 'post', { body: 'hi' })).rejects.toThrow('boom');
         expect(await call(tools, 'post', { body: 'hi' })).toBe('ok');
     });
@@ -251,7 +251,7 @@ describe('effect tools', () => {
             effectKey: (input) => `custom:${input.body}`,
             execute: async () => 'x',
         });
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         await call(wrapToolsForRun({ post }, ctx, store.effects), 'post', { body: 'hi' });
         expect(await store.effects.findOne('custom:hi')).toEqual({ result: 'x' });
     });
@@ -259,7 +259,7 @@ describe('effect tools', () => {
     it('non-effect tools are not memoized', async () => {
         let runs = 0;
         const plain = tool({ inputSchema: schema, execute: async () => ++runs });
-        const tools = wrapToolsForRun({ plain }, ctx, createMemoryRepositories().effects);
+        const tools = wrapToolsForRun({ plain }, ctx, createMemoryStore().effects);
         // wrapped only to run inside its tool-call frame
         expect(tools.plain).toMatchObject({ inputSchema: plain.inputSchema });
         await call(tools, 'plain', { body: 'hi' });
@@ -295,7 +295,7 @@ describe('effect tools', () => {
                 return ++runs;
             },
         });
-        const tools = wrapToolsForRun({ post }, ctx, createMemoryRepositories().effects);
+        const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
         const out = await Promise.all([call(tools, 'post', { body: 'hi' }), call(tools, 'post', { body: 'hi' })]);
         expect(out).toEqual([1, 1]);
         expect(runs).toBe(1);
@@ -311,14 +311,14 @@ describe('effect tools', () => {
                 return undefined;
             },
         });
-        const tools = wrapToolsForRun({ post }, ctx, createMemoryRepositories().effects);
+        const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
         await call(tools, 'post', { body: 'hi' });
         await call(tools, 'post', { body: 'hi' });
         expect(checks).toBe(1);
     });
 
     it('returns the result when putEffect fails', async () => {
-        const broken = createMemoryRepositories();
+        const broken = createMemoryStore();
         vi.spyOn(broken.effects, 'save').mockRejectedValue(new Error('disk full'));
         const post = defineEffectTool({ inputSchema: schema, execute: async () => 'sent' });
         const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -336,7 +336,7 @@ describe('effect tools', () => {
             },
             execute: async () => 'x',
         });
-        const tools = wrapToolsForRun({ post }, ctx, createMemoryRepositories().effects);
+        const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
         await expect(call(tools, 'post', { body: 'hi' })).rejects.toThrow('bad key');
     });
 });
@@ -346,7 +346,7 @@ describe('tool allow check', () => {
         let runs = 0;
         const plain = tool({ inputSchema: schema, execute: async () => ++runs });
         const post = defineEffectTool({ inputSchema: schema, execute: async () => ++runs });
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const tools = wrapToolsForRun({ plain, post }, ctx, store.effects, { allow: (name) => name === 'none' });
         await expect(call(tools, 'plain', { body: 'hi' })).rejects.toBeInstanceOf(ToolNotAllowedError);
         await expect(call(tools, 'post', { body: 'hi' })).rejects.toMatchObject({ code: 'tool_not_allowed' });

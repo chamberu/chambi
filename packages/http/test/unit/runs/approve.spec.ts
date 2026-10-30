@@ -24,7 +24,7 @@ async function pausedGate(overrides: TestAppOverrides = {}, agent = 'gate') {
     const { runId } = await response.json() as { runId: string };
     await ctx.engine.start();
     await ctx.engine.idle();
-    const run = await ctx.repositories.runs.findOne(runId);
+    const run = await ctx.store.runs.findOne(runId);
     expect(run?.status).toBe('waiting');
     return {
         ...ctx,
@@ -38,7 +38,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             runId,
             waiting,
         } = await pausedGate();
@@ -68,7 +68,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             runId,
             waiting,
         } = await pausedGate();
@@ -92,7 +92,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             runId,
         } = await pausedGate();
         const response = await call(app, 'POST', `/runs/${runId}/approve`, {
@@ -146,7 +146,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             runId,
             waiting,
         } = await pausedGate();
@@ -189,7 +189,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             runId,
         } = await pausedGate();
         const response = await call(app, 'POST', `/runs/${runId}/approve`, { token: ADMIN_TOKEN, body });
@@ -202,7 +202,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             runId,
             waiting,
         } = await pausedGate({}, 'choose');
@@ -241,7 +241,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app, 
             engine, 
-            repositories: store,
+            store,
             runId, 
             waiting,
         } = await pausedGate({}, agent);
@@ -265,7 +265,7 @@ describe('POST /runs/:id/approve', () => {
         const {
             app, 
             engine, 
-            repositories: store,
+            store,
             runId, 
             waiting,
         } = await pausedGate({}, 'choose');

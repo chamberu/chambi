@@ -8,10 +8,10 @@
 import type { Agent } from '../../agent/types.ts';
 import type { IClock } from '../../clock/index.ts';
 import type { Run } from '../../run/types.ts';
-import type { Repositories } from '../../repository/types.ts';
+import type { IStore } from '../../repository/types.ts';
 
 export type RunQueueOptions = {
-    repositories: Pick<Repositories, 'runs' | 'locks'>;
+    store: Pick<IStore, 'runs' | 'locks'>;
     /** Synchronous live registry lookup; no loading, creation or I/O. Missing agents return undefined. */
     getAgent: (name: string) => Agent | undefined;
     clock: IClock;

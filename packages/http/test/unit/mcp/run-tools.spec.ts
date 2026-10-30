@@ -15,7 +15,7 @@ import { z } from 'zod';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { assertMcpRunTool, http, httpChannel } from '@chamvi/http';
@@ -111,7 +111,7 @@ describe('mcp run_<agent>', () => {
     });
 
     it('dispatches through the http subscription as channel mcp', async () => {
-        const { app, repositories: store } = createRunTestApp();
+        const { app, store } = createRunTestApp();
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_echo', { payload: { n: 1 } });
         expect(result.isError).toBeFalsy();
@@ -131,7 +131,7 @@ describe('mcp run_<agent>', () => {
     });
 
     it('dedupes an idempotencyKey within mcp, not across transports', async () => {
-        const { app, repositories: store } = createRunTestApp();
+        const { app, store } = createRunTestApp();
         const client = await connectMcp(app, ADMIN_TOKEN);
         const first = await callTool(client, 'run_echo', { idempotencyKey: 'k-1' });
         const second = await callTool(client, 'run_echo', { idempotencyKey: 'k-1' });
@@ -147,7 +147,7 @@ describe('mcp run_<agent>', () => {
     });
 
     it('rejects an invalid payload without dispatching', async () => {
-        const { app, repositories: store } = createRunTestApp({ agents: [...createRunAgents(), typedAgent()] });
+        const { app, store } = createRunTestApp({ agents: [...createRunAgents(), typedAgent()] });
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_typed', { payload: { n: 'x' } });
         expect(result.isError).toBe(true);
@@ -157,7 +157,7 @@ describe('mcp run_<agent>', () => {
     });
 
     it('rejects unknown arguments', async () => {
-        const { app, repositories: store } = createRunTestApp();
+        const { app, store } = createRunTestApp();
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_echo', { extra: 1 });
         expect(result.isError).toBe(true);
@@ -166,7 +166,7 @@ describe('mcp run_<agent>', () => {
     });
 
     it('advertises a recursive payload schema whose refs resolve from the tool schema', async () => {
-        const { app, repositories: store } = createRunTestApp({ agents: [...createRunAgents(), recursiveAgent()] });
+        const { app, store } = createRunTestApp({ agents: [...createRunAgents(), recursiveAgent()] });
         const client = await connectMcp(app, ADMIN_TOKEN);
         const { tools } = await client.listTools();
         const tree = tools.find((t) => t.name === 'run_tree')!;
@@ -228,7 +228,7 @@ describe('mcp run_<agent>', () => {
             channels: [http.on()],
         });
         const engine = new Engine({
-            repositories: createMemoryRepositories(),
+            store: createMemoryStore(),
             agents: [], 
             channels: [httpChannel()],
         });

@@ -16,7 +16,7 @@ import { z } from 'zod';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -34,10 +34,10 @@ afterEach(() => {
 
 function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     const { clock, gh } = createGithubFixture();
-    const store = createMemoryRepositories({ clock });
+    const store = createMemoryStore({ clock });
     const errors: unknown[] = [];
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [defineAgent({
             name: 'triage',
             instructions: 'Triage.',
@@ -52,13 +52,13 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     engines.push(engine);
     return {
         engine,
-        repositories: store,
+        store,
         gh,
         errors,
     };
 }
 
-async function run(engine: Engine, store: ReturnType<typeof createMemoryRepositories>) {
+async function run(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
     const { runId } = await engine.dispatch({
         agent: 'triage',
         trigger: 'http',
@@ -91,7 +91,7 @@ describe('github context', () => {
         ]);
         const {
             engine,
-            repositories: store,
+            store,
             gh,
         } = setup(model, { use });
         provideGithubContext(engine, gh);
@@ -105,7 +105,7 @@ describe('github context', () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
         const {
             engine,
-            repositories: store,
+            store,
             gh,
         } = setup(model, (ctx) => injectGithubContext(ctx).readTools());
         provideGithubContext(engine, gh);
@@ -119,7 +119,7 @@ describe('github context', () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
         const {
             engine,
-            repositories: store,
+            store,
             errors,
         } = setup(model, (ctx) => injectGithubContext(ctx).readTools());
         await engine.start();

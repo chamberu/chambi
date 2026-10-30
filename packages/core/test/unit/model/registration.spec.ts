@@ -26,7 +26,7 @@ import type {
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 
 const NO_MODEL = 'Agent "triage" has no model and the engine sets no default (EngineOptions.model; CHAMVI_MODEL in @chamvi/app).';
 const SHAPE = 'Agent "triage": model must be a "<provider>/<model>" string or a LanguageModel object.';
@@ -64,9 +64,9 @@ afterEach(() => {
 
 function make(opts: Partial<EngineOptions> = {}) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryRepositories({ clock });
+    const store = createMemoryStore({ clock });
     const engine = new Engine({
-        repositories: store,
+        store,
         clock,
         agents: [],
         onError: () => {},
@@ -74,7 +74,7 @@ function make(opts: Partial<EngineOptions> = {}) {
     });
     engines.push(engine);
     return {
-        repositories: store,
+        store,
         clock,
         engine,
     };
@@ -130,7 +130,7 @@ describe('model registration', () => {
 
     it('a refusal in putAgent writes nothing', async () => {
         const models = recordingResolver(['bad/model']);
-        const { engine, repositories: store } = make({ agents: [withModel('good/model')], models });
+        const { engine, store } = make({ agents: [withModel('good/model')], models });
         const changes: AgentChange[] = [];
         engine.on('agents.changed', (e) => {
             changes.push(e);

@@ -54,7 +54,7 @@ type Accepted = { runId: string; deduplicated: boolean };
 
 describe('POST /channels/webhook/:agent/<path>', () => {
     it('dispatches through the webhook subscription without executing', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const response = await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: '7' } });
         expect(response.status).toBe(202);
         const { runId, deduplicated } = await response.json() as Accepted;
@@ -74,14 +74,14 @@ describe('POST /channels/webhook/:agent/<path>', () => {
     });
 
     it('answers 400 when a key derived from the payload exceeds 255 characters', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const response = await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: 'x'.repeat(256) } });
         expect(response.status).toBe(400);
         expect((await store.runs.find({})).total).toBe(0);
     });
 
     it('dedupes a retried delivery by the subscription key', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const first = await (await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: '7' } })).json() as Accepted;
         const second = await (await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: '7' } })).json() as Accepted;
         expect(second).toEqual({ runId: first.runId, deduplicated: true });
@@ -89,7 +89,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
     });
 
     it('creates one run for parallel deliveries with one Idempotency-Key', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const send = (id: string) => call(app, 'POST', ISSUES, {
             token: ADMIN_TOKEN,
             body: { id },
@@ -108,7 +108,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
     });
 
     it('validates the payload with the subscription schema', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const response = await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: 7 } });
         expect(response.status).toBe(400);
         expect((await response.json()).issues[0].path).toEqual(['id']);
@@ -140,7 +140,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
     });
 
     it.each([[[1, 2]], [null], ['text'], [5]])('takes any JSON payload without a schema: %j', async (body) => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const response = await call(app, 'POST', RAW, { token: ADMIN_TOKEN, body });
         expect(response.status).toBe(202);
         const { runId } = await response.json() as Accepted;
@@ -180,7 +180,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
         ['/channels/webhook/raw', 'webhook:/'],
         ['/channels/webhook/raw/', 'webhook:/'],
     ])('routes %s on the webhook path to %s', async (path, trigger) => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const response = await call(app, 'POST', path, { token: ADMIN_TOKEN, body: {} });
         expect(response.status).toBe(202);
         const { runId } = await response.json() as Accepted;
@@ -228,7 +228,7 @@ describe('webhookChannel()', () => {
     }
 
     it('serves a second instance under its own name, with on() bound to it', async () => {
-        const { app, repositories: store } = limitedApp(1024);
+        const { app, store } = limitedApp(1024);
         const response = await call(app, 'POST', '/channels/hooks/raw/raw', { token: ADMIN_TOKEN, body: { a: 1 } });
         expect(response.status).toBe(202);
         const { runId } = await response.json() as Accepted;
@@ -236,7 +236,7 @@ describe('webhookChannel()', () => {
     });
 
     it('answers 413 above its bodyLimit', async () => {
-        const { app, repositories: store } = limitedApp(16);
+        const { app, store } = limitedApp(16);
         const response = await call(app, 'POST', '/channels/hooks/raw/raw', { token: ADMIN_TOKEN, body: { blob: 'x'.repeat(64) } });
         expect(response.status).toBe(413);
         expect((await response.json()).code).toBe('request_entity_too_large');

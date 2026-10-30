@@ -51,10 +51,10 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 
 ## Naming
 
-- **`interface` is for behavior contracts and always carries the `I` prefix**: `IRunRepository`, `IClock`, `IChannel`, `IAgentState`. A class implements it (`MemoryRunRepository implements IRunRepository`), or a factory returns it.
-- **Data shapes are `type` aliases without a prefix**: `Run`, `Step`, `TriggerEnvelope`, `EngineOptions`, `ApprovalAnswer`, `Repositories`.
+- **`interface` is for behavior contracts and always carries the `I` prefix**: `IRunRepository`, `IClock`, `IChannel`, `IAgentState`, `IStore`. A class implements it (`MemoryRunRepository implements IRunRepository`), or a factory returns it.
+- **Data shapes are `type` aliases without a prefix**: `Run`, `Step`, `TriggerEnvelope`, `EngineOptions`, `ApprovalAnswer`.
 - Files are kebab-case.
-- Persistence capabilities are repositories (`IRunRepository`, `MemoryRunRepository`); the database backend remains a store. Use concise role-local methods (`insert`, `save`, `findOne`, `find`), preserving domain operations such as `claim` and `beginTurn`. Query `OrFail` variants reject missing records or empty selected pages, never present falsy values.
+- `IStore` is the plain aggregate interface passed as `store` to `Engine` and `storeModule` (registered as `AppToken.STORE`); it has no facade methods. Persistence capabilities are repositories (`IRunRepository`, `MemoryRunRepository`); the database backend remains a store. Use concise role-local methods (`insert`, `save`, `findOne`, `find`), preserving domain operations such as `claim` and `beginTurn`. Query `OrFail` variants reject missing records or empty selected pages, never present falsy values.
 
 ## Helpers and Dependencies
 

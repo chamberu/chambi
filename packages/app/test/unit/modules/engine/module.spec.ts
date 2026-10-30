@@ -8,7 +8,7 @@
 import {
     AGENT_CHANNEL_NAME,
     InvalidAgentDefinitionError,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineTool,
     handoff,
@@ -37,7 +37,7 @@ import {
     configModule,
     consoleChannelModule,
     engineModule,
-    repositoryModule,
+    storeModule,
 } from '@chamvi/app';
 import type { AppMode, ILifecycleHook } from '@chamvi/app';
 import { buildHarness } from '../../../utils/harness.ts';
@@ -79,7 +79,7 @@ function build(options: {
     modules?: IModule[];
     models?: Record<string, ReturnType<typeof customProvider>>;
     model?: ModelRef;
-    repositories?: ReturnType<typeof createMemoryRepositories>;
+    store?: ReturnType<typeof createMemoryStore>;
 }) {
     const clock = new ControllableClock(new Date('2026-10-21T00:00:00Z'));
     const logger = createRecordingLogger(clock);
@@ -91,7 +91,7 @@ function build(options: {
         model: options.model,
         modules: [
             configModule({ clock, logger }),
-            repositoryModule(options.repositories ? { repositories: options.repositories } : {}),
+            storeModule(options.store ? { store: options.store } : {}),
             engineModule(),
             ...(options.modules ?? []),
         ],
@@ -159,7 +159,7 @@ describe('engineModule', () => {
             agents: [agentWith('anthropic/m')],
             env: { DATABASE_URL: 'postgres://u@127.0.0.1:1/x' },
             // a given store: the module never connects
-            repositories: createMemoryRepositories(),
+            store: createMemoryStore(),
         });
         await harness.setup();
 

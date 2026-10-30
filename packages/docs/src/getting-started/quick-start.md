@@ -20,6 +20,6 @@ Pass any AI SDK `LanguageModel`, for example `anthropic(...)` from `@ai-sdk/anth
 ## Where to go next
 
 - [Your First Agent](/guide/first-agent): the same agent as a folder on `@chamvi/app`, run with `chamvi dev`, checked with `chamvi start --check`
-- Replace `createMemoryRepositories()` with a durable store before you rely on restarts. See [Repositories](/repositories/).
+- Replace `createMemoryStore()` with a durable store before you rely on restarts. See [Stores and repositories](/repositories/).
 - Add a [budget](/guide/budgets), [approvals](/guide/approvals) or [state](/guide/state).
 - Shut down with [`drain()`](/guide/recovery) instead of `stop()` in a real process.

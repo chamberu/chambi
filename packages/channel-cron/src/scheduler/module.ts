@@ -55,7 +55,7 @@ export function createScheduler(opts: SchedulerOptions): IScheduler {
     const ctx = {
         engine,
         dispatch: opts.dispatch,
-        lock: createRepositoryScheduleLock(engine.repositories.locks, opts.owner ?? `${hostname()}-${pid}`),
+        lock: createRepositoryScheduleLock(engine.store.locks, opts.owner ?? `${hostname()}-${pid}`),
         lockTtlMs: opts.lockTtlMs ?? SCHEDULE_LOCK_TTL_MS,
         // eslint-disable-next-line no-console
         onError: opts.onError ?? ((error, errorCtx) => console.error('[chamvi]', error, errorCtx)),

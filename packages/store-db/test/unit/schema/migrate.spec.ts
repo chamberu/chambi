@@ -77,7 +77,7 @@ describePostgres('schema', () => {
         await expect(assertSchemaMatchesMetadata(ds)).resolves.toBeUndefined();
     });
 
-    it('repositories fixed conversation fields as columns and only frozen messages as JSONB', async () => {
+    it('store fixed conversation fields as columns and only frozen messages as JSONB', async () => {
         const ds = await create();
         const runner = ds.createQueryRunner();
         try {

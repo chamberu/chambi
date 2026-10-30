@@ -54,7 +54,7 @@ import type {
  * starting the garbage collector on the engine's clock, every
  * `gcIntervalMs`) and closes it after the engine drained (the collector
  * stopped first; disposing the held workspaces too when the engine uses
- * memory repositories, whose runs no restart resumes); migrate mode does nothing.
+ * a memory store, whose runs no restart resumes); migrate mode does nothing.
  */
 export class SandboxModule implements IModule {
     readonly name: string = SANDBOX_MODULE_NAME;
@@ -215,7 +215,7 @@ export class SandboxModule implements IModule {
                     detach = undefined;
                     // no run of a memory store resumes after this process: its
                     // workspaces would only wait for maxLifetimeMs
-                    await this.manager.close({ dispose: this.engine?.repositories.runs instanceof MemoryRunRepository });
+                    await this.manager.close({ dispose: this.engine?.store.runs instanceof MemoryRunRepository });
                 },
             },
         });

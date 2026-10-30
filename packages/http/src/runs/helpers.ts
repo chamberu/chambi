@@ -97,7 +97,7 @@ export function canReadRun(principal: Principal, run: Run): boolean {
 
 /** The run, once the principal may read it: 404, then 403. */
 export async function loadReadableRun(ctx: HttpContext, principal: Principal, id: string): Promise<Run> {
-    const run = await ctx.repositories.runs.findOneOrFail(id);
+    const run = await ctx.store.runs.findOneOrFail(id);
     if (!canReadRun(principal, run)) {
         throw new ForbiddenError({ message: `Missing permission "${Permission.RUN_READ}".` });
     }
@@ -146,9 +146,9 @@ function createAttachmentContainer(): Container<ArtifactInput> {
 
 /** An artifact of `run` with its bytes; ArtifactNotFoundError (404) for an unknown id or another run's artifact. */
 export async function loadRunArtifact(ctx: HttpContext, run: Run, id: string): Promise<{ artifact: Artifact; data: Uint8Array }> {
-    const artifact = await ctx.repositories.artifacts.findOne(id);
+    const artifact = await ctx.store.artifacts.findOne(id);
     if (!artifact || artifact.runId !== run.id) throw new ArtifactNotFoundError(id);
-    const data = await ctx.repositories.artifacts.read(id);
+    const data = await ctx.store.artifacts.read(id);
     if (!data) throw new ArtifactNotFoundError(id);
     return { artifact, data };
 }
@@ -260,7 +260,7 @@ export function createApproveContainer(): Container<ApproveBody> {
  * read permission needed), 403 without `agent:<agent>:approve`.
  */
 export async function loadApprovableRun(ctx: HttpContext, principal: Principal, id: string): Promise<Run> {
-    const run = await ctx.repositories.runs.findOneOrFail(id);
+    const run = await ctx.store.runs.findOneOrFail(id);
     assertCanApprove(principal, run);
     return run;
 }

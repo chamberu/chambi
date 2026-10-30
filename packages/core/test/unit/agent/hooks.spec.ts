@@ -28,7 +28,7 @@ import {
 import type { AgentDefinition, AgentHooks } from '@chamvi/core';
 import { currentToolCall } from '../../../src/effect/frame.ts';
 import { stableHash } from '../../../src/effect/helpers.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -55,9 +55,9 @@ async function runOnce(
     setup?: (engine: Engine) => void,
 ) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryRepositories({ clock });
+    const store = createMemoryStore({ clock });
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [defineAgent({
             name: 'ops',
             instructions: 'You operate.',
@@ -80,7 +80,7 @@ async function runOnce(
     const steps = await store.steps.find(runId);
     return {
         runId,
-        repositories: store,
+        store,
         run: await store.runs.findOne(runId),
         tools: steps.filter((step) => step.kind === 'tool'),
     };
@@ -197,7 +197,7 @@ describe('agent hooks', () => {
         const {
             run,
             runId,
-            repositories: store,
+            store,
         } = await runOnce(mockModel([call('post', { body: 'x' }), text('done')]), {
             tools: { post },
             hooks: { beforeToolExecution: () => ({ body: 'y' }) },

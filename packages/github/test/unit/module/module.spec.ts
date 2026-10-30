@@ -31,8 +31,8 @@ import {
     configModule,
     engineModule,
     httpModule,
-    repositoryModule,
     staticTokensModule,
+    storeModule,
 } from '@chamvi/app';
 import { createModuleHarness } from '@chamvi/app/testing';
 import type { ModuleHarness } from '@chamvi/app/testing';
@@ -266,7 +266,7 @@ describe('githubModule', () => {
             agents: [agent],
             modules: [
                 configModule({ logger: createRecordingLogger() }),
-                repositoryModule(),
+                storeModule(),
                 staticTokensModule(),
                 engineModule(),
                 httpModule({ metrics: false, rateLimit: false }),
@@ -314,7 +314,7 @@ describe('githubModule', () => {
             agents: [agent],
             modules: [
                 configModule({ logger }),
-                repositoryModule(),
+                storeModule(),
                 staticTokensModule(),
                 engineModule(),
                 httpModule({ metrics: false, rateLimit: false }),
@@ -370,7 +370,7 @@ describe('githubModule', () => {
             agents: [agent],
             modules: [
                 configModule({ logger: createRecordingLogger() }),
-                repositoryModule(),
+                storeModule(),
                 engineModule(),
                 module,
             ],
@@ -413,7 +413,7 @@ describe('githubModule', () => {
             })],
             modules: [
                 configModule({ logger: createRecordingLogger() }),
-                repositoryModule(),
+                storeModule(),
                 engineModule(),
                 earlier,
                 module,

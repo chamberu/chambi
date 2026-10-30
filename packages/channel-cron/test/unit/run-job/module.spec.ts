@@ -22,7 +22,7 @@ import {
     Engine,
     InvalidAgentDefinitionError,
     approve,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -64,7 +64,7 @@ function setup(
     extra: Partial<AgentDefinition> = {},
 ) {
     const clock = new ControllableClock(T);
-    const store = createMemoryRepositories({ clock });
+    const store = createMemoryStore({ clock });
     const channel = cronChannel();
     const agent = defineAgent({
         name: 'sweep',
@@ -75,14 +75,14 @@ function setup(
     });
     const channels = [channel, http];
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [agent],
         channels,
         clock,
     });
     return {
         clock,
-        repositories: store,
+        store,
         agent,
         channel,
         channels,
@@ -93,7 +93,7 @@ function setup(
 describe('runJob', () => {
     it('returns 0 for a completed run', async () => {
         const {
-            repositories: store,
+            store,
             agent,
             engine,
         } = setup(textModel());
@@ -111,7 +111,7 @@ describe('runJob', () => {
     it('takes scheduledAt from the engine clock', async () => {
         const {
             clock,
-            repositories: store,
+            store,
             agent,
             engine,
         } = setup(textModel());
@@ -139,7 +139,7 @@ describe('runJob', () => {
 
     it('returns when the run waits for an approval', async () => {
         const {
-            repositories: store,
+            store,
             agent,
             engine,
         } = setup(approvalModel('deploy'), undefined, gated());
@@ -183,7 +183,7 @@ describe('runJob', () => {
     it('recovers a run left running by a killed job pod when it skips', async () => {
         const {
             clock,
-            repositories: store,
+            store,
             agent,
             engine,
             channels,
@@ -201,7 +201,7 @@ describe('runJob', () => {
         clock.advance(15 * 60_000);
 
         const pod2 = new Engine({
-            repositories: store,
+            store,
             agents: [agent],
             channels,
             clock,
@@ -219,7 +219,7 @@ describe('runJob', () => {
     it('times out an expired approval left by an earlier job when it skips', async () => {
         const {
             clock,
-            repositories: store,
+            store,
             agent,
             engine,
             channels,
@@ -232,7 +232,7 @@ describe('runJob', () => {
         clock.advance(25 * 60 * 60_000);
 
         const pod2 = new Engine({
-            repositories: store,
+            store,
             agents: [agent],
             channels,
             clock,
@@ -249,7 +249,7 @@ describe('runJob', () => {
     it('returns queued when its run waits behind a run paused for an approval', async () => {
         const {
             clock,
-            repositories: store,
+            store,
             agent,
             engine,
             channels,
@@ -262,7 +262,7 @@ describe('runJob', () => {
         clock.advance(300_000);
 
         const pod2 = new Engine({
-            repositories: store,
+            store,
             agents: [agent],
             channels,
             clock,
@@ -283,12 +283,12 @@ describe('runJob', () => {
     it('resolves a run finished by another replica', async () => {
         const {
             clock,
-            repositories: store,
+            store,
             agent,
             channels,
         } = setup(textModel());
         const a = new Engine({
-            repositories: store,
+            store,
             agents: [agent],
             channels,
             clock,
@@ -296,7 +296,7 @@ describe('runJob', () => {
             concurrencyMaxRuns: 0,
         });
         const b = new Engine({
-            repositories: store,
+            store,
             agents: [agent],
             channels,
             clock,
@@ -320,7 +320,7 @@ describe('runJob', () => {
     it('stops polling once it returned', async () => {
         const {
             clock,
-            repositories: store,
+            store,
             agent,
             engine,
         } = setup(textModel());
@@ -403,14 +403,14 @@ describe('runJob', () => {
 
         const result = await runJob({ ...several, subscription: 'cron:0 * * * *' });
 
-        const run = await several.repositories.runs.findOne(result.runId as string);
+        const run = await several.store.runs.findOne(result.runId as string);
         expect(run?.trigger.trigger).toBe('cron:0 * * * *');
         expect(run?.trigger.channel).toBe('cron');
     });
 
     it('fires a subscription of another cron channel', async () => {
         const clock = new ControllableClock(T);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const eu = cronChannel({ name: 'cron-eu' });
         const agent = defineAgent({
             name: 'sweep',
@@ -419,7 +419,7 @@ describe('runJob', () => {
             channels: [eu.on('*/5 * * * *')],
         });
         const engine = new Engine({
-            repositories: store,
+            store,
             agents: [agent],
             channels: [eu],
             clock,

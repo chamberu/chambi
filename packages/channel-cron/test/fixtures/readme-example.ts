@@ -1,7 +1,7 @@
 import type { LanguageModel } from 'ai';
 import {
     Engine,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { cron, cronChannel } from '@chamvi/channel-cron';
@@ -15,10 +15,10 @@ export async function startScheduling(model: LanguageModel) {
         channels: [cron.on('*/30 * * * *', { timezone: 'Europe/Berlin' })],
     });
 
-    // createMemoryRepositories is per process; with several replicas, pass one shared store
-    // (e.g. createDatabaseRepositories) so its lock fires each tick once across them
+    // createMemoryStore is per process; with several replicas, pass one shared store
+    // (e.g. createDatabaseStore) so its lock fires each tick once across them
     const engine = new Engine({
-        repositories: createMemoryRepositories(),
+        store: createMemoryStore(),
         agents: [sweep],
         // every replica registers the same channel; it reads agents and store from the engine
         channels: [cronChannel()],

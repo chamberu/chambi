@@ -5,8 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { createMemoryRepositories, defineAgent } from '@chamvi/core';
-import type { Agent, Repositories, Run } from '@chamvi/core';
+import { createMemoryStore, defineAgent } from '@chamvi/core';
+import type { Agent, IStore, Run } from '@chamvi/core';
 import { http } from '@chamvi/http';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
@@ -21,7 +21,7 @@ import {
     AppToken,
     configModule,
     createApp,
-    repositoryModule,
+    storeModule,
 } from '@chamvi/app';
 import type { AppCheckResult, IApp, IModule } from '@chamvi/app';
 import {
@@ -51,7 +51,7 @@ afterEach(async () => {
 });
 
 /** A store that records every call that may write (any method not named find* or read*). */
-function recordingRepository(store: ReturnType<typeof createMemoryRepositories>): { repositories: Repositories; writes: string[] } {
+function recordingRepository(store: ReturnType<typeof createMemoryStore>): { store: IStore; writes: string[] } {
     const writes: string[] = [];
     const record = <T extends object>(target: T): T => new Proxy(target, {
         get(valueTarget, key, receiver) {
@@ -64,7 +64,7 @@ function recordingRepository(store: ReturnType<typeof createMemoryRepositories>)
         },
     });
     return {
-        repositories: {
+        store: {
             runs: record(store.runs),
             steps: record(store.steps),
             checkpoints: record(store.checkpoints),
@@ -82,24 +82,24 @@ function recordingRepository(store: ReturnType<typeof createMemoryRepositories>)
 
 function build(options: {
     agents?: Agent[]; 
-    repositories?: Repositories;
+    store?: IStore;
     clock?: ControllableClock;
     modules?: IModule[];
 } = {}) {
     const clock = options.clock ?? new ControllableClock(START);
     const logger = createRecordingLogger(clock);
-    const store = options.repositories ?? createMemoryRepositories({ clock });
+    const store = options.store ?? createMemoryStore({ clock });
     const app = createApp({
         agents: options.agents ?? [],
         models: { test: provider() },
-        modules: [configModule({ clock, logger }), repositoryModule({ repositories: store }), ...options.modules ?? []],
+        modules: [configModule({ clock, logger }), storeModule({ store }), ...options.modules ?? []],
     });
     apps.push(app);
     return {
         app,
         clock,
         logger,
-        repositories: store,
+        store,
     };
 }
 
@@ -124,7 +124,7 @@ const triage = defineAgent({
 });
 
 /** A run of `agent` parked on an approval. */
-async function parkWaiting(store: Repositories, clock: ControllableClock, id: string, agent: string): Promise<void> {
+async function parkWaiting(store: IStore, clock: ControllableClock, id: string, agent: string): Promise<void> {
     const now = clock.now();
     const run: Run = {
         id,
@@ -156,11 +156,11 @@ async function parkWaiting(store: Repositories, clock: ControllableClock, id: st
 describe('App.check', () => {
     it('resolves no issues for a clean app and starts nothing', async () => {
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const runId = await queueRun(store, clock, 'triage');
         const { app } = build({
             agents: [triage],
-            repositories: store,
+            store,
             clock,
         });
         const { port, env } = await envFor();
@@ -174,7 +174,7 @@ describe('App.check', () => {
 
     it('writes nothing to the store', async () => {
         const clock = new ControllableClock(START);
-        const memory = createMemoryRepositories({ clock });
+        const memory = createMemoryStore({ clock });
         await writeTree(dir.path, { 'triage/agent.ts': agentFile('v2', 'test/model', 'triage') });
         const stale = {
             agent: 'triage', 
@@ -190,8 +190,8 @@ describe('App.check', () => {
         await memory.agentRevisions.save(orphan);
         const queued = await queueRun(memory, clock, 'triage');
         await parkWaiting(memory, clock, 'waiting-run', 'triage');
-        const { repositories: store, writes } = recordingRepository(memory);
-        const { app } = build({ repositories: store, clock });
+        const { store, writes } = recordingRepository(memory);
+        const { app } = build({ store, clock });
         const { env } = await envFor({ CHAMVI_AGENTS_DIR: dir.path });
 
         await expect(app.check({ env })).resolves.toEqual({ issues: [] });

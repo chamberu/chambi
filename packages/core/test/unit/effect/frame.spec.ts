@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { defineEffectTool, wrapToolsForRun } from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
 import { currentToolCall } from '../../../src/effect/frame.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 
 const ctx = { run: { runId: 'r1' } } as unknown as ToolContext;
 const schema = z.object({});
@@ -40,7 +40,7 @@ describe('tool-call frame', () => {
             },
         });
         const effect = defineEffectTool({ inputSchema: schema, execute: async () => currentToolCall() });
-        const tools = wrapToolsForRun({ plain, effect }, ctx, createMemoryRepositories().effects);
+        const tools = wrapToolsForRun({ plain, effect }, ctx, createMemoryStore().effects);
         expect(await call(tools, 'plain', 'c1')).toMatchObject({
             runId: 'r1',
             toolCallId: 'c1',
@@ -65,7 +65,7 @@ describe('tool-call frame', () => {
                 yield currentToolCall()?.toolCallId;
             },
         });
-        const tools = wrapToolsForRun({ stream }, ctx, createMemoryRepositories().effects);
+        const tools = wrapToolsForRun({ stream }, ctx, createMemoryStore().effects);
         expect(await call(tools, 'stream', 'c3')).toEqual(['c3', 'c3']);
     });
 });

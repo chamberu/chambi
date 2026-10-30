@@ -15,7 +15,7 @@ import { Engine, defineAgent } from '@chamvi/core';
 import type { EngineOptions, Run } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 
 const answer = () => mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
 
@@ -41,7 +41,7 @@ afterEach(() => {
     engines.length = 0;
 });
 
-function make(opts: Partial<EngineOptions> & { repositories: ReturnType<typeof createMemoryRepositories>; clock: ControllableClock }) {
+function make(opts: Partial<EngineOptions> & { store: ReturnType<typeof createMemoryStore>; clock: ControllableClock }) {
     const errors: unknown[] = [];
     const engine = new HookedEngine({
         agents: [],
@@ -56,8 +56,8 @@ function make(opts: Partial<EngineOptions> & { repositories: ReturnType<typeof c
 
 function setup() {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryRepositories({ clock });
-    return { clock, repositories: store };
+    const store = createMemoryStore({ clock });
+    return { clock, store };
 }
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
@@ -88,7 +88,7 @@ const env = (agent = 'triage') => ({
     payload: {},
 });
 
-const statusOf = async (store: ReturnType<typeof createMemoryRepositories>, id: string) => (await store.runs.findOne(id))?.status;
+const statusOf = async (store: ReturnType<typeof createMemoryStore>, id: string) => (await store.runs.findOne(id))?.status;
 
 /** One poll of the queue (claimTtlMs 60 s: every 20 s), then everything it started. */
 async function poll(engine: Engine, clock: ControllableClock): Promise<void> {
@@ -98,7 +98,7 @@ async function poll(engine: Engine, clock: ControllableClock): Promise<void> {
 
 describe('execution guard', () => {
     it('a queued run of an unknown agent stays queued', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const model = answer();
         const triage = defineAgent({
             name: 'triage',
@@ -106,7 +106,7 @@ describe('execution guard', () => {
             instructions: 'x',
         });
         const { engine, errors } = make({
-            repositories: store,
+            store,
             clock,
             agents: [triage],
         });
@@ -123,7 +123,7 @@ describe('execution guard', () => {
     });
 
     it('a lagging replica does not execute a run after the marker moved', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const modelA = answer();
         const modelB = answer();
         const triageA = defineAgent({
@@ -137,13 +137,13 @@ describe('execution guard', () => {
             instructions: 'x',
         });
         const { engine: b, errors: errorsB } = make({
-            repositories: store,
+            store,
             clock,
             agents: [],
             owner: 'B',
         });
         const { engine: a, errors: errorsA } = make({
-            repositories: store,
+            store,
             clock,
             agents: [],
             owner: 'A',
@@ -169,7 +169,7 @@ describe('execution guard', () => {
     });
 
     it('a code agent is never held back by markers', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const model = answer();
         const triage = defineAgent({
             name: 'triage',
@@ -182,7 +182,7 @@ describe('execution guard', () => {
             changedAt: clock.now(),
         });
         const { engine, errors } = make({
-            repositories: store,
+            store,
             clock,
             agents: [triage],
         });
@@ -197,9 +197,9 @@ describe('execution guard', () => {
     });
 
     it('a run of an unknown agent with cancelRequested settles cancelled', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const { engine, errors } = make({
-            repositories: store,
+            store,
             clock,
             agents: [],
         });
@@ -213,7 +213,7 @@ describe('execution guard', () => {
     });
 
     it('a run whose agent is removed between claim and execute goes back to queued', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const model = answer();
         const triage = defineAgent({
             name: 'triage',
@@ -221,7 +221,7 @@ describe('execution guard', () => {
             instructions: 'x',
         });
         const { engine, errors } = make({
-            repositories: store,
+            store,
             clock,
             agents: [triage],
         });
@@ -245,7 +245,7 @@ describe('execution guard', () => {
     });
 
     it('a run whose marker moves between claim and execute goes back to queued', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const model = answer();
         const triage = defineAgent({
             name: 'triage',
@@ -253,7 +253,7 @@ describe('execution guard', () => {
             instructions: 'x',
         });
         const { engine, errors } = make({
-            repositories: store,
+            store,
             clock,
             agents: [],
         });

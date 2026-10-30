@@ -12,7 +12,7 @@ npm install @chamvi/store-db typeorm pg
 
 <<< @/snippets/store-db.ts#setup
 
-`createDatabaseRepositories({ dataSource, clock? })` assembles all capabilities, including conversations, over the same `DataSource`. Each role is a separate class: `DatabaseRunRepository`, `DatabaseStepRepository`, `DatabaseCheckpointRepository`, `DatabaseIdempotencyRepository`, `DatabaseLockRepository`, `DatabaseEffectRepository`, `DatabaseStateRepository`, `DatabaseArtifactRepository`, `DatabaseAgentRevisionRepository` and `DatabaseConversationRepository`. The repositories take an initialized `DataSource` and never initialize or destroy it. The database must exist; create it beforehand, for example with `createDatabase()` from `typeorm-extension`.
+`createDatabaseStore({ dataSource, clock? })` assembles all capabilities, including conversations, over the same `DataSource`. Each role is a separate class: `DatabaseRunRepository`, `DatabaseStepRepository`, `DatabaseCheckpointRepository`, `DatabaseIdempotencyRepository`, `DatabaseLockRepository`, `DatabaseEffectRepository`, `DatabaseStateRepository`, `DatabaseArtifactRepository`, `DatabaseAgentRevisionRepository` and `DatabaseConversationRepository`. The repositories take an initialized `DataSource` and never initialize or destroy it. The database must exist; create it beforehand, for example with `createDatabase()` from `typeorm-extension`.
 
 On shutdown, drain the engine before destroying the data source:
 
@@ -51,7 +51,7 @@ Conversation rows, active owners, transcript items, notes and operation receipts
 ## How it keeps the contract
 
 - **Repositories and query builders.** Every method goes through the entities' TypeORM repositories and query builders; the only hand-written fragment is the `jsonb_exists` key check in `findDocuments`, which TypeORM has no operator for.
-- **One statement per atomic operation**, never read-then-write in JavaScript:
+- **One statement for each listed atomic operation**, never read-then-write in JavaScript:
   - `runs.insert`: an insert with `orIgnore()` (`ON CONFLICT DO NOTHING RETURNING id`).
   - `idempotency.claim` and `locks.acquire`: an insert with `orUpdate()` and an overwrite condition (`ON CONFLICT DO UPDATE ... WHERE expires_at <= now RETURNING`), so an expired key or lock is taken over in the same statement.
   - `runs.claim` and `runs.renewClaim`: a conditional update (`UPDATE ... WHERE ...`) checked by its affected-row count.
@@ -59,6 +59,7 @@ Conversation rows, active owners, transcript items, notes and operation receipts
   - `checkpoints.save`: an insert with `orUpdate()` and the overwrite condition `step_index <=` the new index.
   - `artifacts.insert`: an insert with `orIgnore()` returning `id`.
   - `agentRevisions.save`: an upsert on `agent`. The marker needs no atomic compare: the engine reads and writes it under the store lock `agents:<name>`.
+- **Conversation transactions.** Conversation ownership and journal changes use transactions and row locks rather than the single-statement pattern above.
 - **Time from the clock.** The injected `IClock`'s time is passed as a parameter; queries never call the database's `now()`.
 - **No aliasing.** Values are serialized into the query and parsed out again; nothing is cached in memory.
 - **Dates.** Timestamps are `timestamptz`; `trigger.receivedAt`, `trigger.attachments[].createdAt`, `waiting.expiresAt` and `waiting.notifiedAt` live in JSON and are revived as `Date`.
@@ -69,14 +70,14 @@ Expired idempotency keys and locks never block anyone, but they stay in their ta
 
 <<< @/snippets/store-db.ts#purge
 
-`repositories.idempotency.purgeExpired(now?)` and `repositories.locks.purgeExpired(now?)` each delete their expired rows and return the number removed. The default time comes from the clock. Effects have no expiry and are never purged. Direct engine users schedule both as above; the app's built-in store module schedules them with `CHAMVI_PURGE_INTERVAL_MS`.
+`store.idempotency.purgeExpired(now?)` and `store.locks.purgeExpired(now?)` each delete their expired rows and return the number removed. The default time comes from the clock. Effects have no expiry and are never purged. Direct engine users schedule both as above; the app's built-in store module schedules them with `CHAMVI_PURGE_INTERVAL_MS`.
 
 ## Differences from memory repositories
 
 - **Opaque values are JSON.** A run's `output`, step `input`/`output`/`error`, checkpoint messages, effect results and state lose `Date`, `undefined` and `Map` fidelity, and a typed array such as `Uint8Array` comes back as an object keyed by index. A `BigInt` or a circular structure makes the write throw a `TypeError`.
 - **NUL characters and lone surrogates become U+FFFD** in opaque values, keys and strings alike, because `jsonb` cannot hold them.
 - **Artifact bytes are `bytea`**, never selected by `findOne` or `find`, and come back from `read` as a plain `Uint8Array`. Postgres caps a `bytea` value at 1 GB and the whole value travels in one query, so keep artifacts small enough for memory. Nothing purges artifacts yet.
-- **Identifiers have length limits** (`createMemoryRepositories()` has none): run and artifact ids 128 characters; `concurrencyKey`, `address`, claim owners, step names, document collections and document ids 255; idempotency, lock, effect and state keys 512; idempotency scopes 1024 (`<agent>:<source>:<kind>:<id>` with the invoker URI-encoded, leaving about 950 characters for the encoded `kind` and `id`). A longer value makes the write fail with the driver's `value too long` error, so validate user-supplied keys before they reach `dispatch` (a rejected run with an `idempotencyKey` keeps its key reserved until the key expires).
+- **Identifiers have length limits** (`createMemoryStore()` has none): run and artifact ids 128 characters; `concurrencyKey`, `address`, claim owners, step names, document collections and document ids 255; idempotency, lock, effect and state keys 512; idempotency scopes 1024 (`<agent>:<source>:<kind>:<id>` with the invoker URI-encoded, leaving about 950 characters for the encoded `kind` and `id`). A longer value makes the write fail with the driver's `value too long` error, so validate user-supplied keys before they reach `dispatch` (a rejected run with an `idempotencyKey` keeps its key reserved until the key expires).
 - **`null` in an optional property reads back as absent:** a run `output` of `null`, and a step `input`, `output` or `error` of `null`, are stored as SQL `NULL`. `effects.save(key, undefined)` reads back `{ result: null }` and `upsertDocument(..., undefined)` reads back `doc: null`.
-- **`findDocuments` `where` uses `jsonb` containment (`@>`).** Primitive values match by top-level equality; a nested object or array matches by containment, where `createMemoryRepositories()` never matches. A key whose value is `undefined` matches documents that lack the key, as in `createMemoryRepositories()`. Documents come back ordered by `id`, not by insertion.
-- **`runs.find` ties** on `createdAt` are broken by the byte order of `id` (`COLLATE "C"`, so `'B' < 'a'`, reversed for `order: 'desc'`); identical to `createMemoryRepositories()` for lowercase ids and UUIDs.
+- **`findDocuments` `where` uses `jsonb` containment (`@>`).** Primitive values match by top-level equality; a nested object or array matches by containment, where `createMemoryStore()` never matches. A key whose value is `undefined` matches documents that lack the key, as in `createMemoryStore()`. Documents come back ordered by `id`, not by insertion.
+- **`runs.find` ties** on `createdAt` are broken by the byte order of `id` (`COLLATE "C"`, so `'B' < 'a'`, reversed for `order: 'desc'`); identical to `createMemoryStore()` for lowercase ids and UUIDs.

@@ -12,7 +12,7 @@ import {
     it,
     vi,
 } from 'vitest';
-import { Engine, createMemoryRepositories } from '@chamvi/core';
+import { Engine, createMemoryStore } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { buildContext } from '../../../src/app/helpers.ts';
 import { waitForRun } from '../../../src/mcp/helpers.ts';
@@ -134,15 +134,15 @@ describe('mcp run_<agent> with waitSeconds', () => {
 
     it('sees a run executing on another replica through the store poll', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const agents = createRunAgents();
         const setup = createRunTestApp({
             clock,
-            repositories: store,
+            store,
             agents,
         });
         const other = new Engine({
-            repositories: store,
+            store,
             agents,
             clock,
             channels: testChannels(),
@@ -170,12 +170,12 @@ describe('mcp run_<agent> with waitSeconds', () => {
         // the client never hears back once its request is gone: do not await the call
         void callTool(client, 'run_echo', { waitSeconds: 30 }).catch(() => undefined);
         await until(() => subscriptions.length > 0);
-        const [run] = (await setup.repositories.runs.find({ agent: 'echo' })).data;
+        const [run] = (await setup.store.runs.find({ agent: 'echo' })).data;
 
         controller.abort();
         await until(() => subscriptions.every((unsubscribe) => unsubscribe.mock.calls.length > 0));
 
-        const getRun = vi.spyOn(setup.repositories.runs, 'findOne');
+        const getRun = vi.spyOn(setup.store.runs, 'findOne');
         await flush();
         const calls = getRun.mock.calls.filter(([id]) => id === run!.id).length;
         setup.clock.advance(1_000);
@@ -188,10 +188,10 @@ describe('mcp run_<agent> with waitSeconds', () => {
 describe('waitForRun', () => {
     function context() {
         const clock = new ControllableClock(new Date(1_000_000));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const agents = createRunAgents();
         const engine = new Engine({
-            repositories: store,
+            store,
             agents,
             clock,
             channels: testChannels(),
@@ -201,7 +201,7 @@ describe('waitForRun', () => {
         return {
             ctx,
             engine,
-            repositories: store,
+            store,
             clock,
         };
     }
@@ -210,7 +210,7 @@ describe('waitForRun', () => {
         const {
             ctx,
             engine,
-            repositories: store,
+            store,
             clock,
         } = context();
         const { runId } = await engine.dispatch({
@@ -238,7 +238,7 @@ describe('waitForRun', () => {
         const {
             ctx,
             engine,
-            repositories: store,
+            store,
             clock,
         } = context();
         const { runId } = await engine.dispatch({
@@ -264,7 +264,7 @@ describe('waitForRun', () => {
         await until(() => subscriptions.length > 0);
         await flush();
         const failure = new Error('store down');
-        vi.spyOn(setup.repositories.runs, 'findOne').mockRejectedValue(failure);
+        vi.spyOn(setup.store.runs, 'findOne').mockRejectedValue(failure);
         setup.clock.advance(1_000);
         const result = await pending;
         expect(result.isError).toBe(true);

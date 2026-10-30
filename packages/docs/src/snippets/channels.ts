@@ -6,7 +6,7 @@ import {
     Engine,
     ValidationError,
     consoleChannel,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -40,7 +40,7 @@ export async function dispatchExamples(model: LanguageModel, auth: Authenticator
     });
 
     const engine = new Engine({
-        repositories: createMemoryRepositories(),
+        store: createMemoryStore(),
         agents: [triage],
         // every subscribed channel must be registered (InvalidAgentDefinitionError otherwise)
         channels: [httpChannel(), webhookChannel({ auth }), cronChannel()],
@@ -109,7 +109,7 @@ export const resolve = defineTool({
 
 export function createEngine(model: LanguageModel) {
     return new Engine({
-        repositories: createMemoryRepositories(),
+        store: createMemoryStore(),
         agents: [defineAgent({
             name: 'fixer',
             model,

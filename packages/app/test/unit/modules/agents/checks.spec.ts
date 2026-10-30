@@ -7,7 +7,7 @@
 
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createMemoryRepositories } from '@chamvi/core';
+import { createMemoryStore } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
     afterEach,
@@ -90,11 +90,11 @@ describe('the checks a folder agent passes before it is registered', () => {
     ])('a change to %s keeps the old agent, cancels nothing and is tried once', async (_label, change) => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const setup = buildAgentsDirHarness({
             root: root.path,
             clock,
-            repositories: store,
+            store,
             modules: [schedulerModule()],
         });
         harnesses.push(setup.harness);

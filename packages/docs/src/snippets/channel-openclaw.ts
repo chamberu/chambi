@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { openclawChannel } from '@chamvi/channel-openclaw';
 import {
     Engine,
-    createMemoryRepositories,
+    createMemoryStore,
     defineTool,
 } from '@chamvi/core';
 import type { Agent } from '@chamvi/core';
@@ -21,7 +21,7 @@ export function createEngine(agents: Agent[]) {
     });
 
     const engine = new Engine({
-        repositories: createMemoryRepositories(),
+        store: createMemoryStore(),
         agents,
         // tools reach it with ctx.channels.findOneOrFail('openclaw')
         channels: [openclaw],

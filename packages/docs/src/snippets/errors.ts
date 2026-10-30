@@ -4,14 +4,14 @@ import {
     LeaseLostError,
     RunStatus,
 } from '@chamvi/core';
-import type { Agent, Repositories } from '@chamvi/core';
+import type { Agent, IStore } from '@chamvi/core';
 
 declare const logger: { error(fields: object, message: string): void };
 
-export function createEngine(store: Repositories, agents: Agent[]) {
+export function createEngine(store: IStore, agents: Agent[]) {
     // #region on-error
     const engine = new Engine({
-        repositories: store,
+        store,
         agents,
         onError: (error, run) => {
             if (error instanceof LeaseLostError) {

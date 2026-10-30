@@ -7,7 +7,7 @@
 
 import type { IClock } from '../../clock/index.ts';
 
-export type MemoryRepositoriesOptions = {
+export type MemoryStoreOptions = {
     clock?: IClock;
 };
 

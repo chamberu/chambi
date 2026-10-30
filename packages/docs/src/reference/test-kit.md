@@ -12,11 +12,11 @@ npm install --save-dev @chamvi/test-kit @chamvi/core vitest
 
 ```ts
 function describeRepositoryContract(
-    create: (clock: ControllableClock) => Repositories | Promise<Repositories>,
+    create: (clock: ControllableClock) => IStore | Promise<IStore>,
 ): void;
 ```
 
-Registers the Vitest suite every `Repositories` implementation must pass. `create` is called once per test with a fresh `ControllableClock` and must return a fresh, empty repositories that uses that clock for every expiry decision.
+Registers the Vitest suite every `IStore` implementation must pass. `create` is called once per test with a fresh `ControllableClock` and must return a fresh, empty store that uses that clock for every expiry decision.
 
 <<< @/snippets/repository-contract.ts#contract
 

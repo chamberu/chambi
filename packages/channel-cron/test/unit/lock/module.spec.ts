@@ -7,19 +7,19 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ILockRepository } from '@chamvi/core';
-import { createMemoryRepositories } from '@chamvi/core';
+import { createMemoryStore } from '@chamvi/core';
 import { createRepositoryScheduleLock } from '@chamvi/channel-cron';
 import { ControllableClock } from '@chamvi/test-kit';
 
 const setup = () => {
     const clock = new ControllableClock(new Date('2026-03-01T08:00:00.000Z'));
-    const store = createMemoryRepositories({ clock });
-    return { clock, repositories: store };
+    const store = createMemoryStore({ clock });
+    return { clock, store };
 };
 
 describe('createRepositoryScheduleLock', () => {
     it('first acquirer of a tick wins', async () => {
-        const { repositories: store } = setup();
+        const { store } = setup();
         const a = createRepositoryScheduleLock(store.locks, 'a');
         const b = createRepositoryScheduleLock(store.locks, 'b');
 
@@ -28,7 +28,7 @@ describe('createRepositoryScheduleLock', () => {
     });
 
     it('different ticks do not block each other', async () => {
-        const { repositories: store } = setup();
+        const { store } = setup();
         const lock = createRepositoryScheduleLock(store.locks, 'a');
 
         expect(await lock.acquire('cron:x:y:T1', 600_000)).toBe(true);
@@ -36,7 +36,7 @@ describe('createRepositoryScheduleLock', () => {
     });
 
     it('the lock is never released', async () => {
-        const { clock, repositories: store } = setup();
+        const { clock, store } = setup();
         const lock = createRepositoryScheduleLock(store.locks, 'a');
         const other = createRepositoryScheduleLock(store.locks, 'b');
 

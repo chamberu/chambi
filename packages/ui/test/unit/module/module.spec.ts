@@ -18,8 +18,8 @@ import {
     configModule,
     engineModule,
     httpModule,
-    repositoryModule,
     staticTokensModule,
+    storeModule,
 } from '@chamvi/app';
 import { createModuleHarness } from '@chamvi/app/testing';
 import type { ModuleHarness } from '@chamvi/app/testing';
@@ -57,7 +57,7 @@ async function served(env: Record<string, string> = {}, basePath = '') {
         })],
         modules: [
             configModule({ logger: createRecordingLogger() }),
-            repositoryModule(),
+            storeModule(),
             staticTokensModule(),
             engineModule(),
             httpModule({ metrics: false, rateLimit: false }),

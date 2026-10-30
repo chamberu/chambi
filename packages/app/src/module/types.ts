@@ -10,8 +10,8 @@ import type {
     Engine,
     IChannel,
     IClock,
+    IStore,
     ModelRef,
-    Repositories,
 } from '@chamvi/core';
 import type {
     AgentIssue,
@@ -123,7 +123,7 @@ export type AppTokens = {
     CONFIG: AppConfig;
     LOGGER: ILogger;
     CLOCK: IClock;
-    REPOSITORIES: Repositories;
+    STORE: IStore;
     DATA_SOURCE: DataSource;
     ENGINE: Engine;
     SHUTDOWN: IShutdown;

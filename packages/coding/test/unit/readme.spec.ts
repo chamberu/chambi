@@ -16,7 +16,7 @@ import {
     expect,
     it,
 } from 'vitest';
-import { Engine, createMemoryRepositories } from '@chamvi/core';
+import { Engine, createMemoryStore } from '@chamvi/core';
 import { createWorkspaceManager } from '@chamvi/sandbox';
 import { createLocalSandbox } from '@chamvi/sandbox-local';
 import { createCodingAgent } from '../fixtures/readme-example.ts';
@@ -82,7 +82,7 @@ describe('README example', () => {
             { parts: [{ type: 'text', text: 'Not allowed.' }] },
         ]), workspaces);
         const engine = new Engine({
-            repositories: createMemoryRepositories(),
+            store: createMemoryStore(),
             agents: [agent],
         });
         await engine.start();
@@ -109,7 +109,7 @@ describe('README example', () => {
 
         const run = await engine.getRun(runId);
         expect(run?.status).toBe('completed');
-        const steps = await engine.repositories.steps.find(runId);
+        const steps = await engine.store.steps.find(runId);
         const bash = steps.find((step) => step.kind === 'tool' && step.name === 'bash');
         expect(bash?.error).toMatchObject({ code: 'tool_denied' });
 

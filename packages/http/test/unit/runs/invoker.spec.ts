@@ -46,7 +46,7 @@ async function startRun(app: ReturnType<typeof setup>['app'], token: string, age
 
 describe('run invoker over REST', () => {
     it('records the authenticated principal as the invoker', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const runId = await startRun(app, ALICE_TOKEN);
         expect((await store.runs.findOne(runId))?.trigger.invoker).toEqual({
             id: 'user-1',
@@ -57,7 +57,7 @@ describe('run invoker over REST', () => {
     });
 
     it('records a static token as kind token without a name', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const runId = await startRun(app, ADMIN_TOKEN, 'echo');
         expect((await store.runs.findOne(runId))?.trigger.invoker).toEqual({
             id: 'admin',
@@ -76,7 +76,7 @@ describe('run invoker over REST', () => {
                 claims: { email: 'bob@example.com' },
             };
         };
-        const { app, repositories: store } = createRunTestApp({ auth: [testAuth, bobAuth] });
+        const { app, store } = createRunTestApp({ auth: [testAuth, bobAuth] });
         const runId = await startRun(app, 'bob');
         expect((await store.runs.findOne(runId))?.trigger.invoker).not.toHaveProperty('name');
         const response = await call(app, 'GET', `/runs/${runId}`, { token: READER_TOKEN });
@@ -85,7 +85,7 @@ describe('run invoker over REST', () => {
     });
 
     it('never takes the invoker from the body', async () => {
-        const { app, repositories: store } = setup();
+        const { app, store } = setup();
         const response = await call(app, 'POST', '/agents/echo/runs', {
             token: ADMIN_TOKEN,
             body: {
@@ -110,7 +110,7 @@ describe('run invoker over REST', () => {
                 channels: [webhook.on('/in')],
             }),
         ];
-        const { app, repositories: store } = createRunTestApp({ agents });
+        const { app, store } = createRunTestApp({ agents });
         const response = await call(app, 'POST', '/channels/webhook/intake/in', { token: ADMIN_TOKEN, body: {} });
         expect(response.status).toBe(202);
         const { runId } = await response.json() as { runId: string };
@@ -140,7 +140,7 @@ describe('run invoker over REST', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
             approvalIdOf,
         } = setup();
         const runId = await startRun(app, ALICE_TOKEN);

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import {
     Engine,
     consoleChannel,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineEffectTool,
 } from '@chamvi/core';
@@ -32,7 +32,7 @@ export async function triageIssue(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        repositories: createMemoryRepositories(),
+        store: createMemoryStore(),
         agents: [triage],
         // logs every message a tool sends through it
         channels: [consoleChannel()],

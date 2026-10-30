@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { MemoryConversationRepository, createMemoryRepositories, defineAgent } from '@chamvi/core';
+import { MemoryConversationRepository, createMemoryStore, defineAgent } from '@chamvi/core';
 import type { Engine, IConversationRepository } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import type { IContainer } from 'eldin';
@@ -19,7 +19,7 @@ import {
     AppToken,
     configModule,
     createApp,
-    repositoryModule,
+    storeModule,
 } from '@chamvi/app';
 import type { AppOptions, IApp } from '@chamvi/app';
 import { TOKENS } from '../../utils/app.ts';
@@ -54,7 +54,7 @@ function build(conversations?: AppOptions['conversations'], store?: IConversatio
         ...(conversations !== undefined && { conversations }),
         modules: [
             configModule({ clock, logger }),
-            ...(store ? [repositoryModule({ repositories: { ...createMemoryRepositories({ clock }), conversations: store } })] : []),
+            ...(store ? [storeModule({ store: { ...createMemoryStore({ clock }), conversations: store } })] : []),
             {
                 name: 'test:capture',
                 async setup(value) { container = value; },
@@ -76,7 +76,7 @@ describe('app conversation capability', () => {
     it('disabled_default_keeps_memory_inactive', async () => {
         const built = build();
         await built.app.check({ env });
-        expect(built.container().resolve(AppToken.REPOSITORIES).conversations).toBeInstanceOf(MemoryConversationRepository);
+        expect(built.container().resolve(AppToken.STORE).conversations).toBeInstanceOf(MemoryConversationRepository);
         expect(built.container().has(AppToken.DATA_SOURCE)).toBe(false);
     });
 
@@ -93,14 +93,14 @@ describe('app conversation capability', () => {
         }) as IConversationRepository;
         const built = build({ authorize: () => true }, custom);
         await built.app.check({ env });
-        expect(built.container().resolve(AppToken.REPOSITORIES).conversations!).toBe(custom);
+        expect(built.container().resolve(AppToken.STORE).conversations!).toBe(custom);
         expect(calls).toEqual([]);
     });
 
     it('memory_store_warns_no_restart_durability and uses app clock', async () => {
         const built = build({ authorize: () => true });
         await built.app.check({ env });
-        const store = built.container().resolve(AppToken.REPOSITORIES).conversations!;
+        const store = built.container().resolve(AppToken.STORE).conversations!;
         expect(store).toBeInstanceOf(MemoryConversationRepository);
         const engine = built.container().resolve(AppToken.ENGINE) as Engine;
         expect(await engine.inspectConversation(identity)).toBeUndefined();
@@ -122,8 +122,8 @@ describe('app conversation capability', () => {
         const second = build({ authorize: () => false });
         await first.app.check({ env });
         await second.app.check({ env });
-        const firstRepository = first.container().resolve(AppToken.REPOSITORIES).conversations!;
-        const secondRepository = second.container().resolve(AppToken.REPOSITORIES).conversations!;
+        const firstRepository = first.container().resolve(AppToken.STORE).conversations!;
+        const secondRepository = second.container().resolve(AppToken.STORE).conversations!;
         expect(firstRepository).not.toBe(secondRepository);
         await firstRepository.resolve(identity);
         expect(await secondRepository.findOne(identity)).toBeUndefined();

@@ -12,7 +12,7 @@ describe('public api', () => {
     it.each([
         'migrateStore',
         'pendingMigrations',
-        'createDatabaseRepositories',
+        'createDatabaseStore',
         'DatabaseRunRepository',
         'DatabaseStepRepository',
         'DatabaseCheckpointRepository',

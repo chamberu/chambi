@@ -11,10 +11,10 @@ import { join, relative } from 'node:path';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
-import type { Agent, Repositories } from '@chamvi/core';
+import type { Agent, IStore } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import { customProvider } from 'ai';
 import {
@@ -34,8 +34,8 @@ import {
     createApp,
     engineModule,
     hashAgentFolder,
-    repositoryModule,
     runHooks,
+    storeModule,
 } from '@chamvi/app';
 import type { AppMode, IApp } from '@chamvi/app';
 import {
@@ -70,9 +70,9 @@ function codeAgent(name: string): Agent {
 }
 
 /** A queued run of `name`, dispatched through an engine that never starts. */
-async function queueRun(store: Repositories, clock: ControllableClock, name: string): Promise<string> {
+async function queueRun(store: IStore, clock: ControllableClock, name: string): Promise<string> {
     const engine = new Engine({
-        repositories: store,
+        store,
         clock,
         agents: [codeAgent(name)],
     });
@@ -104,14 +104,14 @@ afterEach(async () => {
 function build(options: {
     mode?: AppMode;
     dir?: string;
-    repositories?: Repositories;
+    store?: IStore;
     clock?: ControllableClock;
     agents?: Agent[];
     env?: Record<string, string>;
 } = {}) {
     const clock = options.clock ?? new ControllableClock(START);
     const logger = createRecordingLogger(clock);
-    const store = options.repositories ?? createMemoryRepositories({ clock });
+    const store = options.store ?? createMemoryStore({ clock });
     const module = new AgentsModule();
     const dir = options.dir ?? root.path;
     const harness = buildHarness({
@@ -125,7 +125,7 @@ function build(options: {
         models: { test: provider() },
         modules: [
             configModule({ clock, logger }),
-            repositoryModule({ repositories: store }),
+            storeModule({ store }),
             engineModule(),
             module,
         ],
@@ -137,7 +137,7 @@ function build(options: {
         harness,
         clock,
         logger,
-        repositories: store,
+        store,
         engine,
         issues: () => harness.container.resolve(AppToken.AGENT_ISSUES)(),
         /** start mode: runs the `started` hooks (the http module's serve step does in an app). */
@@ -162,11 +162,11 @@ describe('agentsModule', () => {
     it('loads the folder at boot before the engine starts', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const runId = await queueRun(store, clock, 'greeter');
 
         const { harness, engine } = build({
-            repositories: store,
+            store,
             clock,
             dir: relative(process.cwd(), root.path),
         });
@@ -181,7 +181,7 @@ describe('agentsModule', () => {
     it('a folder change while stopped cancels the old runs at boot once', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'greeter',
             hash: 'h1',
@@ -190,7 +190,7 @@ describe('agentsModule', () => {
         const old = await queueRun(store, clock, 'greeter');
         clock.advance(1_000);
 
-        const first = build({ repositories: store, clock });
+        const first = build({ store, clock });
         await first.harness.setup();
         await first.engine().idle();
         expect((await store.runs.findOne(old))?.status).toBe('cancelled');
@@ -199,7 +199,7 @@ describe('agentsModule', () => {
         clock.advance(1_000);
         const later = await queueRun(store, clock, 'greeter');
         clock.advance(1_000);
-        const second = build({ repositories: store, clock });
+        const second = build({ store, clock });
         await second.harness.setup();
         await second.engine().idle();
 
@@ -209,7 +209,7 @@ describe('agentsModule', () => {
     it('a normal boot cancels nothing', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'greeter',
             hash: await hashAgentFolder(folder()),
@@ -218,7 +218,7 @@ describe('agentsModule', () => {
         const runId = await queueRun(store, clock, 'greeter');
         clock.advance(1_000);
 
-        const { harness, engine } = build({ repositories: store, clock });
+        const { harness, engine } = build({ store, clock });
         await harness.setup();
         await engine().idle();
 
@@ -235,7 +235,7 @@ describe('agentsModule', () => {
             legacy.update('\0');
         }
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'greeter',
             hash: legacy.digest('hex'),
@@ -244,7 +244,7 @@ describe('agentsModule', () => {
         const runId = await queueRun(store, clock, 'greeter');
         clock.advance(1_000);
 
-        const { harness, engine } = build({ repositories: store, clock });
+        const { harness, engine } = build({ store, clock });
         await harness.setup();
         await engine().idle();
 
@@ -309,7 +309,7 @@ describe('agentsModule', () => {
 
     it('a marker without a folder removes the agent\'s runs at boot', async () => {
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'gone',
             hash: 'h1',
@@ -319,7 +319,7 @@ describe('agentsModule', () => {
         // any entry makes an empty listing authoritative (no unmounted volume)
         await writeFile(join(root.path, '.keep'), '');
 
-        const { harness } = build({ repositories: store, clock });
+        const { harness } = build({ store, clock });
         await harness.setup();
 
         expect((await store.runs.findOne(runId))?.status).toBe('cancelled');
@@ -328,7 +328,7 @@ describe('agentsModule', () => {
 
     it('an empty agents dir (an unmounted volume) removes no marker at boot', async () => {
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'gone',
             hash: 'h1',
@@ -336,7 +336,7 @@ describe('agentsModule', () => {
         });
         const runId = await queueRun(store, clock, 'gone');
 
-        const { harness, logger } = build({ repositories: store, clock });
+        const { harness, logger } = build({ store, clock });
         await harness.setup();
 
         expect((await store.runs.findOne(runId))?.status).toBe('queued');
@@ -346,7 +346,7 @@ describe('agentsModule', () => {
 
     it('a marker of a code agent is left alone at boot', async () => {
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'triage',
             hash: 'h1',
@@ -354,7 +354,7 @@ describe('agentsModule', () => {
         });
 
         const { harness } = build({
-            repositories: store,
+            store,
             clock, 
             agents: [codeAgent('triage')], 
         });
@@ -368,7 +368,7 @@ describe('agentsModule', () => {
         const {
             harness,
             engine,
-            repositories: store,
+            store,
             watch,
             poll,
         } = build();
@@ -401,7 +401,7 @@ describe('agentsModule', () => {
         const {
             harness,
             engine,
-            repositories: store,
+            store,
             logger,
             watch,
             poll,
@@ -490,7 +490,7 @@ describe('agentsModule', () => {
             issues,
             logger,
             clock,
-            repositories: store,
+            store,
             watch,
             poll,
         } = build();
@@ -529,7 +529,7 @@ describe('agentsModule', () => {
         const {
             harness,
             engine,
-            repositories: store,
+            store,
             watch,
             poll,
         } = build();
@@ -550,7 +550,7 @@ describe('agentsModule', () => {
         const {
             harness,
             engine,
-            repositories: store,
+            store,
             logger,
             watch,
             poll,
@@ -606,7 +606,7 @@ describe('agentsModule', () => {
             harness,
             engine,
             clock,
-            repositories: store,
+            store,
             watch,
             poll,
         } = build();
@@ -649,10 +649,10 @@ describe('agentsModule', () => {
     it('job mode loads the folder and runs a folder agent\'s cron trigger', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1', 'test/model', 'greeter', [cronTrigger('0 9 * * *')]) });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const app = createApp({
             models: { test: provider() },
-            modules: [configModule({ clock, logger: createRecordingLogger(clock) }), repositoryModule({ repositories: store })],
+            modules: [configModule({ clock, logger: createRecordingLogger(clock) }), storeModule({ store })],
         });
         apps.push(app);
 

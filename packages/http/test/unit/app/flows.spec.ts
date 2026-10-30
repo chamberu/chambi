@@ -164,7 +164,7 @@ describe('acceptance flows', () => {
         const {
             app,
             engine,
-            repositories: store,
+            store,
         } = setup();
         const deliver = () => call(app, 'POST', '/channels/webhook/intake/issues', {
             token: ADMIN_TOKEN,

@@ -95,12 +95,12 @@ export function waitForRun(ctx: HttpContext, runId: string, opts: WaitForRunOpti
         /** Timeout or abort: answer with whatever the store holds now. */
         function settleLatest(): void {
             if (!stop()) return;
-            ctx.repositories.runs.findOne(runId).then(settle, reject);
+            ctx.store.runs.findOne(runId).then(settle, reject);
         }
 
         async function check(): Promise<void> {
             try {
-                const run = await ctx.repositories.runs.findOne(runId);
+                const run = await ctx.store.runs.findOne(runId);
                 if (done) return;
                 if (!run || WAIT_OVER.has(run.status)) {
                     stop();

@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { createMemoryRepositories, defineAgent } from '@chamvi/core';
+import { createMemoryStore, defineAgent } from '@chamvi/core';
 import { http } from '@chamvi/http';
 import type { Engine } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
@@ -23,7 +23,7 @@ import {
     ModuleName,
     configModule,
     createApp,
-    repositoryModule,
+    storeModule,
 } from '@chamvi/app';
 import type { IApp, ILifecycleHook } from '@chamvi/app';
 import {
@@ -97,7 +97,7 @@ describe('App.stop', () => {
     it('never listens when stop arrives during setup', async () => {
         const gate = deferred();
         const entered = deferred();
-        const real = repositoryModule();
+        const real = storeModule();
         const { app, logger } = build([{
             name: ModuleName.STORE,
             dependencies: [ModuleName.CONFIG],
@@ -225,7 +225,7 @@ describe('App.stop', () => {
             name: ModuleName.STORE,
             dependencies: [ModuleName.CONFIG],
             async setup(container) {
-                container.register(AppToken.REPOSITORIES, { useValue: createMemoryRepositories() });
+                container.register(AppToken.STORE, { useValue: createMemoryStore() });
                 container.registerMany(AppToken.LIFECYCLE_HOOKS, {
                     useValue: {
                         name: 'purge',

@@ -31,7 +31,7 @@ import type {
     ToolContext,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { stableHash } from '../../../src/effect/helpers.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -90,17 +90,17 @@ function setup(
     model: LanguageModel,
     tools: AgentDefinition['tools'],
     opts: {
-        repositories?: ReturnType<typeof createMemoryRepositories>;
+        store?: ReturnType<typeof createMemoryStore>;
         clock?: ControllableClock;
         channels?: IChannel[]
     } = {},
 ) {
     const clock = opts.clock ?? new ControllableClock(new Date(1_000_000));
-    const store = opts.repositories ?? createMemoryRepositories({ clock });
+    const store = opts.store ?? createMemoryStore({ clock });
     const slack = recorder('slack');
     const errors: unknown[] = [];
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [defineAgent({
             name: 'ops',
             instructions: 'You operate.',
@@ -117,7 +117,7 @@ function setup(
     engines.push(engine);
     return {
         engine,
-        repositories: store,
+        store,
         clock,
         slack,
         errors,
@@ -125,7 +125,7 @@ function setup(
 }
 
 async function run(
-    ctx: { engine: Engine; repositories: ReturnType<typeof createMemoryRepositories> },
+    ctx: { engine: Engine; store: ReturnType<typeof createMemoryStore> },
     envelope: { channel?: string; address?: string } = {},
 ) {
     await ctx.engine.start();
@@ -139,8 +139,8 @@ async function run(
     await ctx.engine.idle();
     return {
         runId,
-        run: await ctx.repositories.runs.findOne(runId),
-        steps: await ctx.repositories.steps.find(runId),
+        run: await ctx.store.runs.findOne(runId),
+        steps: await ctx.store.steps.find(runId),
     };
 }
 
@@ -207,7 +207,7 @@ describe('channel outbound', () => {
 
     it('identical emits in one step and after a recovery reach out once', async () => {
         const storeClock = new ControllableClock(new Date(1_000_000));
-        const store = createMemoryRepositories({ clock: storeClock });
+        const store = createMemoryStore({ clock: storeClock });
         const slack = recorder('slack');
         const parallel: MockResponse = {
             parts: [
@@ -239,7 +239,7 @@ describe('channel outbound', () => {
 
         // replica A: its own clock, so its claim is never renewed
         const a = setup(mockModel([parallel]), tools(true), {
-            repositories: store,
+            store,
             clock: new ControllableClock(new Date(1_000_000)),
             channels: [slack.channel, web],
         });
@@ -257,7 +257,7 @@ describe('channel outbound', () => {
         // replica B recovers the run once A's claim expired and redoes the step
         storeClock.advance(1000);
         const b = setup(mockModel([parallel, text('done')]), tools(false), {
-            repositories: store,
+            store,
             clock: storeClock,
             channels: [slack.channel, web],
         });

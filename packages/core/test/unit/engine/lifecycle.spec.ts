@@ -27,14 +27,14 @@ import {
 } from '@chamvi/core';
 import type {
     EngineOptions,
-    Repositories,
+    IStore,
     Run,
     RunEvent,
 } from '@chamvi/core';
 import type { IClock } from '../../../src/clock/index.ts';
 import { systemClock } from '../../../src/clock/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
-import { MemoryRunRepository, createMemoryRepositories } from '../../../src/repository/index.ts';
+import { MemoryRunRepository, createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
@@ -89,9 +89,9 @@ const toolTurn: MockResponse = {
 
 function make(
     model: LanguageModel,
-    opts: Partial<EngineOptions> & { repositories?: Repositories; tools?: () => ToolSet } = {},
+    opts: Partial<EngineOptions> & { store?: IStore; tools?: () => ToolSet } = {},
 ) {
-    const store = opts.repositories ?? createMemoryRepositories({ clock: opts.clock });
+    const store = opts.store ?? createMemoryStore({ clock: opts.clock });
     const errors: unknown[] = [];
     const events: RunEvent[] = [];
     const agent = defineAgent({
@@ -101,7 +101,7 @@ function make(
         tools: opts.tools,
     });
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [agent],
         onError: (error) => {
             errors.push(error);
@@ -116,7 +116,7 @@ function make(
     });
     engines.push(engine);
     return {
-        repositories: store,
+        store,
         engine,
         errors,
         events,
@@ -181,7 +181,7 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
 describe('graceful drain', () => {
     it.each([false, true])('bounds detached approval delivery by the drain deadline (active run: %s)', async (active) => {
         const clock = new ControllableClock();
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const entered = Promise.withResolvers<void>();
         const delivered = Promise.withResolvers<void>();
         let signal: AbortSignal | undefined;
@@ -207,7 +207,7 @@ describe('graceful drain', () => {
                 instructions: 'Test',
                 model: new MockLanguageModelV4({ doStream: async () => new Promise(() => {}) }),
             })],
-            repositories: store,
+            store,
             clock,
             claimTtlMs: 60_000,
             onError: () => {},
@@ -267,7 +267,7 @@ describe('graceful drain', () => {
         const { model, calls } = scripted([{ before: () => sleep(30), response: text('done') }]);
         const {
             engine,
-            repositories: store,
+            store,
             errors,
         } = make(model);
         await engine.start();
@@ -293,7 +293,7 @@ describe('graceful drain', () => {
         const lookup = vi.fn(async () => 'found');
         const {
             engine,
-            repositories: store,
+            store,
             errors,
         } = make(model, {
             tools: () => ({
@@ -342,16 +342,16 @@ describe('graceful drain', () => {
 
     it('an interrupted keyed run blocks its key until it is recovered and completed', async () => {
         const { model, calls } = scripted([toolTurn, 'hang', text('first done'), text('second done')]);
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const keyed = { ...env, concurrencyKey: 'issue-42' };
         const a = make(model, {
-            repositories: store,
+            store,
             tools: lookupTools,
             owner: 'A',
         });
         const bClock = new ManualTimers();
         const b = make(model, {
-            repositories: store,
+            store,
             tools: lookupTools,
             owner: 'B',
             clock: bClock,
@@ -408,7 +408,7 @@ describe('graceful drain', () => {
         });
         const { promise: held, resolve: release } = Promise.withResolvers<void>();
         let holding = false;
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const append = store.steps.insert.bind(store.steps);
         vi.spyOn(store.steps, 'insert').mockImplementation(async (step) => {
             if (step.kind === 'llm' && step.index === 0) {
@@ -419,7 +419,7 @@ describe('graceful drain', () => {
         });
         const clock = new ManualTimers();
         const a = make(model, {
-            repositories: store,
+            store,
             tools,
             owner: 'A',
             clock,
@@ -441,7 +441,7 @@ describe('graceful drain', () => {
         expect((await store.checkpoints.findOne(runId))?.stepIndex).toBe(0);
 
         const b = make(model, {
-            repositories: store,
+            store,
             tools,
             owner: 'B',
         });
@@ -458,7 +458,7 @@ describe('graceful drain', () => {
     it('dispatch during drain stores queued run but does not start it', async () => {
         const clock = new ControllableClock();
         const { model, calls } = scripted([text('done')]);
-        const { engine, repositories: store } = make(model, { clock, claimTtlMs: 900 });
+        const { engine, store } = make(model, { clock, claimTtlMs: 900 });
         await engine.start();
         await engine.drain();
         const tick = vi.spyOn(engine, 'tick');
@@ -491,14 +491,14 @@ describe('recovery', () => {
                 execute: lookup,
             }),
         });
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const a = make(model, {
-            repositories: store,
+            store,
             tools,
             owner: 'A',
         });
         const b = make(model, {
-            repositories: store,
+            store,
             tools,
             owner: 'B',
         });
@@ -533,7 +533,7 @@ describe('recovery', () => {
 
     it('recover ignores runs with a live claim from another owner', async () => {
         const clock = new ControllableClock(new Date(10_000));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.runs.insert(makeRun('live'));
         await store.runs.claim('live', 'other', 60_000);
         await store.runs.insert(makeRun('expired'));
@@ -542,7 +542,7 @@ describe('recovery', () => {
         await store.runs.insert(makeRun('waiting', { status: 'waiting' }));
         clock.advance(1_000);
 
-        const { engine } = make(scripted([]).model, { repositories: store, clock });
+        const { engine } = make(scripted([]).model, { store, clock });
         expect(await engine.recover()).toBe(2);
 
         expect(await store.runs.findOne('live')).toMatchObject({ status: 'running', claim: { owner: 'other' } });
@@ -555,17 +555,17 @@ describe('recovery', () => {
     it('rejects late writes of an execution whose lease expired and was recovered elsewhere', async () => {
         // A's process stalls (its own clock never moves, so it never renews) while the lease expires in the store
         const shared = new ControllableClock();
-        const store = createMemoryRepositories({ clock: shared });
+        const store = createMemoryStore({ clock: shared });
         const { promise: stalled, resolve: release } = Promise.withResolvers<void>();
         const { model, calls } = scripted([{ before: () => stalled, response: text('A late') }, text('B done')]);
         const a = make(model, {
-            repositories: store,
+            store,
             clock: new ControllableClock(),
             owner: 'A',
             claimTtlMs: 1_000,
         });
         const b = make(model, {
-            repositories: store,
+            store,
             clock: shared,
             owner: 'B',
             claimTtlMs: 1_000,
@@ -609,11 +609,11 @@ describe('recovery', () => {
             }
         }
         const clock = new ControllableClock();
-        const store = { ...createMemoryRepositories({ clock }), runs: new FlakyRepository({ clock }) };
+        const store = { ...createMemoryStore({ clock }), runs: new FlakyRepository({ clock }) };
         const { promise: stalled, resolve: release } = Promise.withResolvers<void>();
         const { model, calls } = scripted([{ before: () => stalled, response: text('late') }, text('again')]);
         const { engine, errors } = make(model, {
-            repositories: store,
+            store,
             clock,
             owner: 'A',
             claimTtlMs: 900,
@@ -645,14 +645,14 @@ describe('recovery', () => {
     });
 
     it('finish writes nothing when the claim is taken over after the last ownership check', async () => {
-        const store = { ...createMemoryRepositories(), runs: new TakeoverRepository() };
+        const store = { ...createMemoryStore(), runs: new TakeoverRepository() };
         store.runs.takeoverOn = 'completed';
         const { model } = scripted([text('late')]);
         const {
             engine,
             errors,
             events,
-        } = make(model, { repositories: store, owner: 'A' });
+        } = make(model, { store, owner: 'A' });
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
@@ -668,15 +668,15 @@ describe('recovery', () => {
 
     it('cancel on another replica stops a running run on its next poll', async () => {
         const { model, calls } = scripted(['hang']);
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const clock = new ManualTimers();
         const a = make(model, {
-            repositories: store,
+            store,
             owner: 'A',
             clock,
             claimTtlMs: 900,
         });
-        const b = make(model, { repositories: store, owner: 'B' });
+        const b = make(model, { store, owner: 'B' });
         await a.engine.start();
         const { runId } = await a.engine.dispatch(env);
         await vi.waitFor(() => expect(calls).toHaveLength(1));
@@ -699,7 +699,7 @@ describe('recovery', () => {
         const { model, calls } = scripted([text('never')]);
         const {
             engine,
-            repositories: store,
+            store,
             errors,
         } = make(model);
         await store.runs.insert(makeRun('r1', { status: 'interrupted' }));
@@ -715,9 +715,9 @@ describe('recovery', () => {
     });
 
     it('cancel throws when the execution loses its lease while being cancelled', async () => {
-        const store = { ...createMemoryRepositories(), runs: new TakeoverRepository() };
+        const store = { ...createMemoryStore(), runs: new TakeoverRepository() };
         const { model, calls } = scripted(['hang']);
-        const { engine, errors } = make(model, { repositories: store, owner: 'A' });
+        const { engine, errors } = make(model, { store, owner: 'A' });
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await vi.waitFor(() => expect(calls).toHaveLength(1));

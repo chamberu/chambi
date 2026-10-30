@@ -60,7 +60,7 @@ export async function fireCronSubscription(ctx: CronTickContext): Promise<CronTi
     } = ctx;
     const options = readCronOptions(agent, subscription);
 
-    if (await isOverlapping(engine.repositories.runs, agent.name, subscription.id, options.overlap)) {
+    if (await isOverlapping(engine.store.runs, agent.name, subscription.id, options.overlap)) {
         return { dispatched: false, reason: 'overlap' };
     }
 

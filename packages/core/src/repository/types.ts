@@ -158,8 +158,8 @@ export interface IAgentRevisionRepository {
     findOrFail(): Promise<AgentRevision[]>;
 }
 
-/** Capabilities may be supplied by independent storage implementations. */
-export type Repositories = {
+/** A store of repositories that may use independent storage implementations. */
+export interface IStore {
     runs: IRunRepository;
     steps: IStepRepository;
     checkpoints: ICheckpointRepository;
@@ -170,4 +170,4 @@ export type Repositories = {
     artifacts: IArtifactRepository;
     agentRevisions: IAgentRevisionRepository;
     conversations?: IConversationRepository;
-};
+}

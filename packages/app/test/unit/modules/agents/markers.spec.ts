@@ -6,7 +6,7 @@
  */
 
 import { join } from 'node:path';
-import { Engine, InvalidRunStateError, createMemoryRepositories } from '@chamvi/core';
+import { Engine, InvalidRunStateError, createMemoryStore } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
     afterEach,
@@ -38,9 +38,9 @@ afterEach(async () => {
     await root.remove();
 });
 
-function otherEngine(store: ReturnType<typeof createMemoryRepositories>, clock: ControllableClock): Engine {
+function otherEngine(store: ReturnType<typeof createMemoryStore>, clock: ControllableClock): Engine {
     return new Engine({
-        repositories: store,
+        store,
         clock,
         agents: [],
         onError: () => {},
@@ -52,7 +52,7 @@ describe('revision markers moved by another process', () => {
         ['removed', async (engine: Engine) => {
             await engine.removeAgent('greeter');
         }, /removed this agent's revision marker/],
-        ['moved', async (_engine: Engine, store: ReturnType<typeof createMemoryRepositories>, clock: ControllableClock) => {
+        ['moved', async (_engine: Engine, store: ReturnType<typeof createMemoryStore>, clock: ControllableClock) => {
             await store.agentRevisions.save({
                 agent: 'greeter', 
                 hash: 'h0', 
@@ -62,11 +62,11 @@ describe('revision markers moved by another process', () => {
     ])('a marker %s elsewhere is an issue on the replica whose folder did not change, until it matches again', async (_label, act, message) => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const setup = buildAgentsDirHarness({
             root: root.path,
             clock,
-            repositories: store,
+            store,
         });
         harnesses.push(setup.harness);
         await setup.harness.setup();
@@ -90,7 +90,7 @@ describe('revision markers moved by another process', () => {
     it('a job does not remove an agent whose folder it does not see', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'elsewhere', 
             hash: 'h1', 
@@ -101,7 +101,7 @@ describe('revision markers moved by another process', () => {
             root: root.path,
             mode: 'job',
             clock,
-            repositories: store,
+            store,
         });
         harnesses.push(setup.harness);
 
@@ -119,12 +119,12 @@ describe('a job never reloads an agent', () => {
     it('a job writes the first marker and runs', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const runId = await queueRun(store, clock, 'greeter');
         const setup = buildAgentsDirHarness({
             root: root.path,
             clock,
-            repositories: store,
+            store,
             mode: 'job',
             job: { agent: 'greeter' },
         });
@@ -141,7 +141,7 @@ describe('a job never reloads an agent', () => {
     it('a job moves a different marker when the agent has no unsettled runs', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'greeter', 
             hash: OLD, 
@@ -150,7 +150,7 @@ describe('a job never reloads an agent', () => {
         const setup = buildAgentsDirHarness({
             root: root.path,
             clock,
-            repositories: store,
+            store,
             mode: 'job',
             job: { agent: 'greeter' },
         });
@@ -164,7 +164,7 @@ describe('a job never reloads an agent', () => {
     it('a job with a changed folder fails and cancels nothing', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'greeter', 
             hash: OLD, 
@@ -174,7 +174,7 @@ describe('a job never reloads an agent', () => {
         const setup = buildAgentsDirHarness({
             root: root.path,
             clock,
-            repositories: store,
+            store,
             mode: 'job',
             job: { agent: 'greeter' },
         });
@@ -200,7 +200,7 @@ describe('a job never reloads an agent', () => {
             'triage/agent.ts': agentFile('v1', 'test/model', 'triage'),
         });
         const clock = new ControllableClock(START);
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         await store.agentRevisions.save({
             agent: 'triage', 
             hash: OLD, 
@@ -210,7 +210,7 @@ describe('a job never reloads an agent', () => {
         const setup = buildAgentsDirHarness({
             root: root.path,
             clock,
-            repositories: store,
+            store,
             mode: 'job',
             job: { agent: 'greeter' },
         });

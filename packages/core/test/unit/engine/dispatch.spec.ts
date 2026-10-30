@@ -23,12 +23,12 @@ import {
 } from '@chamvi/core';
 import type {
     EngineOptions,
-    Repositories,
+    IStore,
     Run,
     RunEvent,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { MemoryRunRepository, createMemoryRepositories } from '../../../src/repository/index.ts';
+import { MemoryRunRepository, createMemoryStore } from '../../../src/repository/index.ts';
 import { createChannelContext } from '../../../src/channel/helpers.ts';
 
 const model = {} as LanguageModel;
@@ -38,7 +38,7 @@ const agent = defineAgent({
     instructions: 'x',
 });
 
-/** Lets already-queued microtasks (all memory repositories work) settle; not a sleep. */
+/** Lets already-queued microtasks (all memory store work) settle; not a sleep. */
 const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
 
 /** Engine whose executions block until released, to observe scheduling. */
@@ -95,16 +95,16 @@ afterEach(() => {
     engines.length = 0;
 });
 
-function make(opts: Partial<EngineOptions> & { repositories?: Repositories } = {}) {
-    const store = opts.repositories ?? createMemoryRepositories();
+function make(opts: Partial<EngineOptions> & { store?: IStore } = {}) {
+    const store = opts.store ?? createMemoryStore();
     const engine = new GatedEngine({
-        repositories: store,
+        store,
         agents: [agent],
         onError: () => {},
         ...opts,
     });
     engines.push(engine);
-    return { repositories: store, engine };
+    return { store, engine };
 }
 
 const env = (extra: Record<string, unknown> = {}) => ({
@@ -139,7 +139,7 @@ describe('Engine.dispatch', () => {
     });
 
     it('dispatch dedupes concurrent identical keys', async () => {
-        const { engine, repositories: store } = make();
+        const { engine, store } = make();
         const results = await Promise.all(
             Array.from({ length: 10 }, () => engine.dispatch(env({ idempotencyKey: 'same' }))),
         );
@@ -149,7 +149,7 @@ describe('Engine.dispatch', () => {
     });
 
     it.each(['idempotencyKey', 'concurrencyKey', 'address'])('refuses a %s above TRIGGER_KEY_MAX_LENGTH or with a NUL before any store write', async (key) => {
-        const { engine, repositories: store } = make();
+        const { engine, store } = make();
         for (const value of ['k'.repeat(TRIGGER_KEY_MAX_LENGTH + 1), 'a\u0000b']) {
             await expect(engine.dispatch(env({ [key]: value }))).rejects.toBeInstanceOf(ValidationError);
         }
@@ -165,13 +165,13 @@ describe('Engine.dispatch', () => {
             instructions: 'y',
         });
         expect(() => new Engine({
-            repositories: createMemoryRepositories(),
+            store: createMemoryStore(),
             agents: [agent, other],
         })).toThrow(/"triage" is used more than once/);
     });
 
     it('a redelivery heals an idempotency key whose run was never created', async () => {
-        const { engine, repositories: store } = make();
+        const { engine, store } = make();
         vi.spyOn(store.runs, 'insert').mockRejectedValueOnce(new Error('store down'));
         await expect(engine.dispatch(env({ idempotencyKey: 'k' }))).rejects.toThrow('store down');
         expect((await store.runs.find({})).total).toBe(0);
@@ -184,7 +184,7 @@ describe('Engine.dispatch', () => {
     });
 
     it('concurrent healers of a lost run create it once', async () => {
-        const { engine, repositories: store } = make();
+        const { engine, store } = make();
         vi.spyOn(store.runs, 'insert').mockRejectedValueOnce(new Error('store down'));
         await expect(engine.dispatch(env({ idempotencyKey: 'k' }))).rejects.toThrow('store down');
         const results = await Promise.all(
@@ -196,7 +196,7 @@ describe('Engine.dispatch', () => {
     });
 
     it('dispatch rejects unknown agent', async () => {
-        const { engine, repositories: store } = make();
+        const { engine, store } = make();
         await expect(engine.dispatch(env({ agent: 'nope' }))).rejects.toThrow(AgentNotFoundError);
         await expect(engine.dispatch(env({ agent: 'nope' }))).rejects.toThrow('unknown agent: nope');
         expect((await store.runs.find({})).total).toBe(0);
@@ -227,7 +227,7 @@ describe('Engine.dispatch', () => {
     });
 
     it('does not start a run while a waiting run holds the same concurrencyKey', async () => {
-        const { engine, repositories: store } = make();
+        const { engine, store } = make();
         const other = await engine.dispatch(env({ concurrencyKey: 'c' }));
         await store.runs.update(other.runId, { status: 'waiting' });
         await engine.start();
@@ -266,16 +266,16 @@ describe('Engine.dispatch', () => {
     });
 
     it('same-key runs on two replicas sharing a store never overlap', async () => {
-        const store = { ...createMemoryRepositories(), runs: new SlowStartRepository() };
+        const store = { ...createMemoryStore(), runs: new SlowStartRepository() };
         // real timers: the lease must outlive a renewal delayed by a loaded machine,
         // or the other replica recovers the running run and executes it again
         const a = make({
-            repositories: store,
+            store,
             owner: 'a',
             claimTtlMs: 600,
         });
         const b = make({
-            repositories: store,
+            store,
             owner: 'b',
             claimTtlMs: 600,
         });
@@ -301,9 +301,9 @@ describe('Engine.dispatch', () => {
 
     it('picks up a run unblocked outside this process once the poll fires', async () => {
         const clock = new ControllableClock(new Date('2026-01-01T00:00:00Z'));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const { engine } = make({
-            repositories: store,
+            store,
             clock,
             claimTtlMs: 300,
         });
@@ -325,9 +325,9 @@ describe('Engine.dispatch', () => {
     });
 
     it('a store failure inside a pass is reported, not thrown', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const onError = vi.fn();
-        const { engine } = make({ repositories: store, onError });
+        const { engine } = make({ store, onError });
         vi.spyOn(store.runs, 'find').mockRejectedValueOnce(new Error('boom'));
         await engine.dispatch(env());
         await expect(engine.start()).resolves.toBeUndefined();
@@ -336,7 +336,7 @@ describe('Engine.dispatch', () => {
 
     it('an execute throw marks the run failed and releases the claim', async () => {
         const onError = vi.fn();
-        const { engine, repositories: store } = make({ onError });
+        const { engine, store } = make({ onError });
         engine.failWith = Object.assign(new Error('nope'), { code: 'tool_broke' });
         const updates: Run['status'][] = [];
         engine.on('run.updated', (e) => {
@@ -365,9 +365,9 @@ describe('Engine.dispatch', () => {
     });
 
     it('a throwing lock release does not strand the run', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const onError = vi.fn();
-        const { engine } = make({ repositories: store, onError });
+        const { engine } = make({ store, onError });
         vi.spyOn(store.locks, 'release').mockRejectedValueOnce(new Error('release failed'));
         await engine.start();
         const { runId } = await engine.dispatch(env({ concurrencyKey: 'c' }));
@@ -379,9 +379,9 @@ describe('Engine.dispatch', () => {
 
     it('stop() then start() keeps a single poll chain', async () => {
         const clock = new ControllableClock();
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const { engine } = make({
-            repositories: store,
+            store,
             clock,
             claimTtlMs: 300,
         });
@@ -432,13 +432,13 @@ describe('dispatch keeps lineage private', () => {
     };
 
     it('dispatch drops a parent from the envelope', async () => {
-        const { engine, repositories: store } = make();
+        const { engine, store } = make();
         const { runId } = await engine.dispatch({ ...env(), parent } as never);
         expect((await store.runs.findOne(runId))!.trigger.parent).toBeUndefined();
     });
 
     it("a channel's ctx.dispatch drops a parent", async () => {
-        const { engine, repositories: store } = make();
+        const { engine, store } = make();
         const { runId } = await createChannelContext(engine, { name: 'http' }).dispatch({ ...env(), parent } as never);
         const run = await store.runs.findOne(runId);
         expect(run!.trigger.parent).toBeUndefined();

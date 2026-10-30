@@ -18,7 +18,7 @@ import { engineModule } from '../modules/engine/module.ts';
 import { httpModule } from '../modules/http/module.ts';
 import { schedulerModule } from '../modules/scheduler/module.ts';
 import { staticTokensModule } from '../modules/static-tokens/module.ts';
-import { repositoryModule } from '../modules/repository/module.ts';
+import { storeModule } from '../modules/repository/module.ts';
 import type { AppOptions } from './types.ts';
 
 /** A model createApp accepts: a non-empty string or an object (a LanguageModel). */
@@ -58,7 +58,7 @@ export function buildModules(modules: AppOptions['modules'] = []): IModule[] {
 
     const builtins = [
         configModule(),
-        repositoryModule(),
+        storeModule(),
         staticTokensModule(),
         engineModule(),
         agentsModule(),

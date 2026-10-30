@@ -46,7 +46,7 @@ describePostgres('DatabaseArtifactRepository artifacts', () => {
         await dataSource.destroy();
     });
 
-    it('repositories the bytes as bytea and never loads them with the metadata', async () => {
+    it('store the bytes as bytea and never loads them with the metadata', async () => {
         await store.insert(artifact('a1'), new Uint8Array([0, 1, 255]));
 
         const [{ type }] = await dataSource.query(
@@ -67,7 +67,7 @@ describePostgres('DatabaseArtifactRepository artifacts', () => {
         expect(JSON.stringify(bytes)).toBe(JSON.stringify(new Uint8Array([7, 8, 9])));
     });
 
-    it('repositories a Buffer view and a subarray by their own bytes only', async () => {
+    it('store a Buffer view and a subarray by their own bytes only', async () => {
         const backing = new Uint8Array([1, 2, 3, 4, 5]);
         await store.insert(artifact('a1', { size: 2 }), backing.subarray(1, 3));
         expect(Array.from((await store.read('a1'))!)).toEqual([2, 3]);

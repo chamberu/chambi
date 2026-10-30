@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import type { ChannelSubscription, RunStatusLiteral } from '@chamvi/core';
 import {
     Engine,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { CronTickResult } from '@chamvi/channel-cron';
@@ -22,7 +22,7 @@ const at = (tick: number) => new Date(T.getTime() + tick * 300_000);
 
 function setup(subscriptions: ChannelSubscription[]) {
     const clock = new ControllableClock(T);
-    const store = createMemoryRepositories({ clock });
+    const store = createMemoryStore({ clock });
     const agent = defineAgent({
         name: 'sweep',
         model: textModel(),
@@ -30,7 +30,7 @@ function setup(subscriptions: ChannelSubscription[]) {
         channels: subscriptions,
     });
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [agent],
         channels: [cronChannel()],
         clock,
@@ -43,7 +43,7 @@ function setup(subscriptions: ChannelSubscription[]) {
     });
     return {
         clock,
-        repositories: store,
+        store,
         agent,
         engine,
         fire,
@@ -59,7 +59,7 @@ describe('overlap', () => {
     it.each<RunStatusLiteral>(['queued', 'running', 'waiting', 'interrupted'])(
         'skip: skips while a run of the subscription is %s',
         async (status) => {
-            const { repositories: store, fire } = setup([cron.on('*/5 * * * *')]);
+            const { store, fire } = setup([cron.on('*/5 * * * *')]);
             const id = idOf(await fire(0));
             await store.runs.update(id, { status });
 
@@ -70,7 +70,7 @@ describe('overlap', () => {
     it.each<RunStatusLiteral>(['completed', 'failed', 'cancelled'])(
         'skip: dispatches once the run is %s',
         async (status) => {
-            const { repositories: store, fire } = setup([cron.on('*/5 * * * *')]);
+            const { store, fire } = setup([cron.on('*/5 * * * *')]);
             const id = idOf(await fire(0));
             await store.runs.update(id, { status });
 
@@ -81,7 +81,7 @@ describe('overlap', () => {
     it('skip: runs of another subscription of the same agent do not block', async () => {
         const first = cron.on('*/5 * * * *');
         const second = cron.on('0 * * * *');
-        const { repositories: store, fire } = setup([first, second]);
+        const { store, fire } = setup([first, second]);
         const id = idOf(await fire(0, second));
         await store.runs.update(id, { status: 'running' });
 
@@ -90,7 +90,7 @@ describe('overlap', () => {
 
     it('queue-one: queues one behind an active run', async () => {
         const subscription = cron.on('*/5 * * * *', { overlap: 'queue-one' });
-        const { repositories: store, fire } = setup([subscription]);
+        const { store, fire } = setup([subscription]);
         const run1 = idOf(await fire(0));
         await store.runs.update(run1, { status: 'running' });
 
@@ -105,7 +105,7 @@ describe('overlap', () => {
     it('queue-one: the queued run waits for the running one', async () => {
         const {
             clock,
-            repositories: store,
+            store,
             engine,
             fire,
         } = setup([cron.on('*/5 * * * *', { overlap: 'queue-one' })]);
@@ -128,7 +128,7 @@ describe('overlap', () => {
     });
 
     it('allow: always dispatches', async () => {
-        const { repositories: store, fire } = setup([cron.on('*/5 * * * *', { overlap: 'allow' })]);
+        const { store, fire } = setup([cron.on('*/5 * * * *', { overlap: 'allow' })]);
 
         await fire(0);
         await fire(1);

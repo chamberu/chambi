@@ -17,7 +17,7 @@ import type { ChannelSubscription, IChannel } from '@chamvi/core';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { CronChannelOptions } from '@chamvi/channel-cron';
@@ -37,21 +37,21 @@ describe('cronChannel', () => {
     const make = (
         channels: IChannel<any, any>[],
         agents: ReturnType<typeof agentWith>[],
-        store = createMemoryRepositories(),
+        store = createMemoryStore(),
     ) => {
         const engine = new Engine({
-            repositories: store,
+            store,
             agents,
             channels,
             onError: () => {},
         });
         engines.push(engine);
-        return { engine, repositories: store };
+        return { engine, store };
     };
 
     const quiet = (options: CronChannelOptions = {}) => cronChannel({ onError: () => {}, ...options });
 
-    const runs = async (store: ReturnType<typeof createMemoryRepositories>) => (await store.runs.find({})).data;
+    const runs = async (store: ReturnType<typeof createMemoryStore>) => (await store.runs.find({})).data;
 
     beforeEach(() => {
         vi.useFakeTimers({ now: new Date('2026-03-01T07:59:30Z') });
@@ -71,7 +71,7 @@ describe('cronChannel', () => {
     });
 
     it('fires its subscriptions once the engine started it, through the channel', async () => {
-        const { engine, repositories: store } = make([quiet()], [agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
+        const { engine, store } = make([quiet()], [agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
 
         await vi.advanceTimersByTimeAsync(60_000);
         expect(await runs(store)).toHaveLength(0);
@@ -91,7 +91,7 @@ describe('cronChannel', () => {
         const eu = quiet({ name: 'cron-eu' });
         // a channel named cron that schedules nothing: cron.on() subscriptions validate, but nobody fires them
         const idle: IChannel = { name: 'cron' };
-        const { engine, repositories: store } = make([eu, idle], [agentWith([
+        const { engine, store } = make([eu, idle], [agentWith([
             eu.on('* * * * *', { overlap: 'allow', id: 'eu' }),
             cron.on('* * * * *', { overlap: 'allow', id: 'default' }),
         ])]);
@@ -108,7 +108,7 @@ describe('cronChannel', () => {
     });
 
     it('start({ channels: false }) schedules nothing', async () => {
-        const { engine, repositories: store } = make([quiet()], [agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
+        const { engine, store } = make([quiet()], [agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
         await engine.start({ channels: false });
 
         await vi.advanceTimersByTimeAsync(120_000);
@@ -117,7 +117,7 @@ describe('cronChannel', () => {
     });
 
     it('drain() unschedules, a restart schedules once again', async () => {
-        const { engine, repositories: store } = make([quiet()], [agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
+        const { engine, store } = make([quiet()], [agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
         await engine.start();
         await engine.drain();
 
@@ -131,7 +131,7 @@ describe('cronChannel', () => {
     });
 
     it('follows agents registered after start', async () => {
-        const { engine, repositories: store } = make([quiet()], []);
+        const { engine, store } = make([quiet()], []);
         await engine.start();
 
         await engine.putAgent(agentWith([cron.on('* * * * *', { overlap: 'allow' })]));
@@ -164,7 +164,7 @@ describe('cronChannel', () => {
 
     it('reports a failing lock with agent and subscription and keeps ticking', async () => {
         const error = new Error('lock store down');
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const acquire = store.locks.acquire.bind(store.locks);
         vi.spyOn(store.locks, 'acquire')
             .mockRejectedValueOnce(error)
@@ -186,7 +186,7 @@ describe('cronChannel', () => {
     });
 
     it('two replicas on one store dispatch once per tick', async () => {
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const agent = agentWith([cron.on('* * * * *', { overlap: 'allow' })]);
         const a = make([quiet({ owner: 'a' })], [agent], store);
         const b = make([quiet({ owner: 'b' })], [agent], store);

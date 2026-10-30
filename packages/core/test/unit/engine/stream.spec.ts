@@ -19,7 +19,7 @@ import {
 import { z } from 'zod';
 import { Engine, defineAgent } from '@chamvi/core';
 import type { RunDelta } from '@chamvi/core';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 
 const engines: Engine[] = [];
@@ -38,7 +38,7 @@ const env = {
 };
 
 function make(model: LanguageModel, tools?: () => ToolSet) {
-    const store = createMemoryRepositories();
+    const store = createMemoryStore();
     const agent = defineAgent({
         name: 'triage',
         instructions: 'You triage.',
@@ -46,7 +46,7 @@ function make(model: LanguageModel, tools?: () => ToolSet) {
         tools,
     });
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [agent],
         onError: () => {},
     });
@@ -56,7 +56,7 @@ function make(model: LanguageModel, tools?: () => ToolSet) {
         deltas.push(e.delta);
     });
     return {
-        repositories: store,
+        store,
         engine,
         deltas,
     };
@@ -144,7 +144,7 @@ describe('streaming', () => {
         ]);
         const {
             engine,
-            repositories: store,
+            store,
             deltas,
         } = make(model, lookup);
         await engine.start();
@@ -191,7 +191,7 @@ describe('streaming', () => {
         ]);
         const {
             engine,
-            repositories: store,
+            store,
             deltas,
         } = make(model);
         await engine.start();
@@ -230,7 +230,7 @@ describe('streaming', () => {
         });
         const {
             engine,
-            repositories: store,
+            store,
             deltas,
         } = make(model);
         await engine.start();
@@ -267,7 +267,7 @@ describe('streaming', () => {
             },
             { type: 'error', error: new Error('boom') },
         ]);
-        const { engine, repositories: store } = make(model);
+        const { engine, store } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
@@ -287,7 +287,7 @@ describe('streaming', () => {
             },
             { type: 'error', error: new Error('boom') },
         ]]);
-        const { engine, repositories: store } = make(model);
+        const { engine, store } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
@@ -309,7 +309,7 @@ describe('streaming', () => {
                 input: { q: 1 },
             }],
         }]);
-        const { engine, repositories: store } = make(model, lookup);
+        const { engine, store } = make(model, lookup);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
@@ -323,7 +323,7 @@ describe('streaming', () => {
     it('a model error is not logged by the AI SDK', async () => {
         // onError is passed untyped to streamText; a dependency bump that stops forwarding it fails here
         const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const { engine, repositories: store } = make(mockModel([]));
+        const { engine, store } = make(mockModel([]));
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
@@ -336,7 +336,7 @@ describe('streaming', () => {
 
     it('fails a run whose model stream ends without a finish part after text', async () => {
         const model = rawModel([textChunks('partial')]);
-        const { engine, repositories: store } = make(model);
+        const { engine, store } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
@@ -359,7 +359,7 @@ describe('streaming', () => {
             }],
             [...textChunks('done'), finishChunk('stop')],
         ]);
-        const { engine, repositories: store } = make(model, () => ({
+        const { engine, store } = make(model, () => ({
             lookup: tool({
                 inputSchema: z.object({ q: z.number() }),
                 execute: async () => {
@@ -384,7 +384,7 @@ describe('streaming', () => {
         ['without a raw reason', undefined],
     ])('completes a run whose model reports finish reason other %s', async (_, raw) => {
         const model = rawModel([[...textChunks('answer'), finishChunk('other', raw)]]);
-        const { engine, repositories: store } = make(model);
+        const { engine, store } = make(model);
         await engine.start();
         const { runId } = await engine.dispatch(env);
         await engine.idle();
@@ -416,9 +416,9 @@ describe('streaming', () => {
                 return { stream };
             },
         });
-        const store = createMemoryRepositories();
+        const store = createMemoryStore();
         const engine = new Engine({
-            repositories: store,
+            store,
             agents: [defineAgent({
                 name: 'triage',
                 instructions: 'You triage.',

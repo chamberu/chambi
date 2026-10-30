@@ -7,13 +7,13 @@
 
 import type { IClock } from '@chamvi/core';
 import type { DataSource } from 'typeorm';
-import type { createDatabaseRepositories } from './module.ts';
+import type { createDatabaseStore } from './module.ts';
 
-export type DatabaseRepositoriesOptions = {
+export type DatabaseStoreOptions = {
     /** An initialized Postgres data source listing STORE_ENTITIES and STORE_MIGRATIONS. */
     dataSource: DataSource;
     /** Source of time for leases and expiry (default: systemClock). */
     clock?: IClock;
 };
 
-export type DatabaseRepositories = ReturnType<typeof createDatabaseRepositories>;
+export type DatabaseStore = ReturnType<typeof createDatabaseStore>;

@@ -3,7 +3,7 @@ import { Engine, defineAgent } from '@chamvi/core';
 import {
     STORE_ENTITIES,
     STORE_MIGRATIONS,
-    createDatabaseRepositories,
+    createDatabaseStore,
     migrateStore,
 } from '@chamvi/store-db';
 import { DataSource } from 'typeorm';
@@ -25,9 +25,9 @@ export async function createEngine(model: LanguageModel) {
     await dataSource.initialize();
     await migrateStore(dataSource);
 
-    const repositories = createDatabaseRepositories({ dataSource });
+    const store = createDatabaseStore({ dataSource });
     const engine = new Engine({
-        repositories,
+        store,
         agents: [triage],
     });
     // #endregion setup
@@ -35,7 +35,7 @@ export async function createEngine(model: LanguageModel) {
     // #region purge
     // expired keys and locks stay until purged: purge every hour
     const purge = setInterval(() => {
-        Promise.all([repositories.idempotency.purgeExpired(), repositories.locks.purgeExpired()])
+        Promise.all([store.idempotency.purgeExpired(), store.locks.purgeExpired()])
             .catch((e: unknown) => console.error(e));
     }, 60 * 60 * 1000);
     purge.unref();

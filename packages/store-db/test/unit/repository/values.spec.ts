@@ -15,14 +15,14 @@ import {
 } from 'vitest';
 import type { Checkpoint } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
-import { createDatabaseRepositories } from '@chamvi/store-db';
-import type { DatabaseRepositories } from '@chamvi/store-db';
+import { createDatabaseStore } from '@chamvi/store-db';
+import type { DatabaseStore } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres, truncateRepository } from '../../utils/database.ts';
 import { seedRun } from '../../utils/conversation.ts';
 
-describePostgres('createDatabaseRepositories values', () => {
+describePostgres('createDatabaseStore values', () => {
     let dataSource: DataSource;
-    let store: DatabaseRepositories;
+    let store: DatabaseStore;
 
     beforeAll(async () => {
         dataSource = await createTestDataSource();
@@ -30,7 +30,7 @@ describePostgres('createDatabaseRepositories values', () => {
 
     beforeEach(async () => {
         await truncateRepository(dataSource);
-        store = createDatabaseRepositories({ dataSource, clock: new ControllableClock(new Date(10_000)) });
+        store = createDatabaseStore({ dataSource, clock: new ControllableClock(new Date(10_000)) });
     });
 
     afterAll(async () => {
@@ -112,7 +112,7 @@ describePostgres('createDatabaseRepositories values', () => {
         expect(steps.map((s) => s.name)).toEqual(['zero', 'one-a', 'one-b', 'two']);
     });
 
-    it('repositories NUL characters and lone surrogates as U+FFFD, keeping escaped text and surrogate pairs', async () => {
+    it('store NUL characters and lone surrogates as U+FFFD, keeping escaped text and surrogate pairs', async () => {
         const raw = {
             nul: 'a\u0000b',
             'k\u0000': 1,

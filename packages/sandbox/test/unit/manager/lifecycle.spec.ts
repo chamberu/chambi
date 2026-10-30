@@ -16,7 +16,7 @@ import {
     RunStatus,
     SandboxError,
     approve,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { AgentHooks, Run, RunEvent } from '@chamvi/core';
@@ -62,7 +62,7 @@ function gateHooks(gate: string | undefined): AgentHooks | undefined {
 
 async function run(s: Setup) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryRepositories({ clock });
+    const store = createMemoryStore({ clock });
     const provider = s.provider ?? createFakeProvider({ clock });
     const errors: unknown[] = [];
     const manager = createWorkspaceManager({
@@ -79,7 +79,7 @@ async function run(s: Setup) {
         hooks: gateHooks(s.gate),
     });
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [agent],
         clock,
         onError: () => {},

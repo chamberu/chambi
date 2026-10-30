@@ -15,7 +15,7 @@ import {
 import {
     Engine,
     MemoryConversationRepository,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { mockModel } from '../../utils/mock-model.ts';
@@ -35,7 +35,7 @@ const target = {
 function setup(
     name: string,
     key: string | undefined,
-    store: ReturnType<typeof createMemoryRepositories>,
+    store: ReturnType<typeof createMemoryStore>,
     conversations: MemoryConversationRepository,
 ) {
     const model = mockModel([{ parts: [{ type: 'text', text: 'answer' }] }]);
@@ -48,7 +48,7 @@ function setup(
         conversation: key === undefined ? true : { key },
     });
     const engine = new Engine({
-        repositories: { ...store, conversations },
+        store: { ...store, conversations },
         agents: [agent],
         channels: [channel],
         conversations: { authorize },
@@ -71,7 +71,7 @@ async function dispatch(s: ReturnType<typeof setup>, name: string, text: string,
 }
 describe('stable conversation identity', () => {
     it('recalls the same history after an agent rename and authorizes the actual agent', async () => {
-        const store = createMemoryRepositories(); const conversations = new MemoryConversationRepository();
+        const store = createMemoryStore(); const conversations = new MemoryConversationRepository();
         const first = setup('old-helper', 'support', store, conversations);
         const initial = await dispatch(first, 'old-helper', 'first question', 'event-1');
         await first.engine.start(); await first.engine.idle(); await first.engine.stop();
@@ -93,7 +93,7 @@ describe('stable conversation identity', () => {
         }));
     });
     it('rejects access by the renamed agent before disclosing or deduplicating prior runs', async () => {
-        const store = createMemoryRepositories(); const conversations = new MemoryConversationRepository();
+        const store = createMemoryStore(); const conversations = new MemoryConversationRepository();
         const first = setup('old-helper', 'support', store, conversations);
         await dispatch(first, 'old-helper', 'private history', 'event');
         const renamed = setup('new-helper', 'support', store, conversations);
@@ -103,7 +103,7 @@ describe('stable conversation identity', () => {
         expect(renamed.model.doStreamCalls).toHaveLength(0);
     });
     it('refuses queued work after its agent changes memory key', async () => {
-        const store = createMemoryRepositories(); const conversations = new MemoryConversationRepository();
+        const store = createMemoryStore(); const conversations = new MemoryConversationRepository();
         const initial = setup('helper', 'old-key', store, conversations);
         const queued = await dispatch(initial, 'helper', 'old input');
         const changed = setup('helper', 'new-key', store, conversations);
@@ -112,7 +112,7 @@ describe('stable conversation identity', () => {
         expect(changed.model.doStreamCalls).toHaveLength(0);
     });
     it('defaults to agent name and keeps different keys and chat targets isolated', async () => {
-        const store = createMemoryRepositories(); const conversations = new MemoryConversationRepository();
+        const store = createMemoryStore(); const conversations = new MemoryConversationRepository();
         const first = setup('old-helper', undefined, store, conversations);
         const a = await dispatch(first, 'old-helper', 'private history');
         await first.engine.start(); await first.engine.idle(); await first.engine.stop();

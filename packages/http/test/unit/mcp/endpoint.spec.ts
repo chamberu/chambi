@@ -72,7 +72,7 @@ describe('/mcp', () => {
     });
 
     it('rejects a body over bodyLimit before any tool runs', async () => {
-        const { app, repositories: store } = createRunTestApp({ bodyLimit: 1_024 });
+        const { app, store } = createRunTestApp({ bodyLimit: 1_024 });
         const getRun = vi.spyOn(store.runs, 'findOne');
         const client = await connectMcp(app, ADMIN_TOKEN);
         await expect(callTool(client, 'get_run', { runId: 'x'.repeat(2_048) })).rejects.toThrow(/413|large/i);

@@ -7,7 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { Engine, createMemoryRepositories, defineAgent } from '@chamvi/core';
+import { Engine, createMemoryStore, defineAgent } from '@chamvi/core';
 import type { Agent } from '@chamvi/core';
 import { github, githubChannel } from '@chamvi/github';
 import type { GithubEvent, GithubSubscriptionOptions } from '@chamvi/github';
@@ -48,7 +48,7 @@ type Answer = {
 
 describe('github channel in', () => {
     it('turns a recorded issues.opened delivery into one run per matching agent', async () => {
-        const { app, repositories: store } = createGithubTestApp({ agents: standardAgents() });
+        const { app, store } = createGithubTestApp({ agents: standardAgents() });
         const response = await deliver(app, {
             event: 'issues',
             delivery: 'd-1',
@@ -82,7 +82,7 @@ describe('github channel in', () => {
     });
 
     it('dedupes a redelivery', async () => {
-        const { app, repositories: store } = createGithubTestApp({ agents: standardAgents() });
+        const { app, store } = createGithubTestApp({ agents: standardAgents() });
         await deliver(app, {
             event: 'issues',
             delivery: 'd-1',
@@ -100,7 +100,7 @@ describe('github channel in', () => {
     });
 
     it('starts at most one run per agent', async () => {
-        const { app, repositories: store } = createGithubTestApp({ agents: [agent('twice', { events: ['issues.opened'] }, { events: ['issues'] })] });
+        const { app, store } = createGithubTestApp({ agents: [agent('twice', { events: ['issues.opened'] }, { events: ['issues'] })] });
         const response = await deliver(app, {
             event: 'issues',
             delivery: 'd-1',
@@ -113,7 +113,7 @@ describe('github channel in', () => {
     });
 
     it('rejects a missing or wrong signature with 401', async () => {
-        const { app, repositories: store } = createGithubTestApp({ agents: standardAgents() });
+        const { app, store } = createGithubTestApp({ agents: standardAgents() });
         const missing = await deliver(app, {
             event: 'issues',
             delivery: 'd-1',
@@ -133,7 +133,7 @@ describe('github channel in', () => {
     });
 
     it('checks the event and delivery headers', async () => {
-        const { app, repositories: store } = createGithubTestApp({ agents: standardAgents() });
+        const { app, store } = createGithubTestApp({ agents: standardAgents() });
         const noEvent = await deliver(app, { delivery: 'd-1', body: ISSUES_OPENED });
         expect(noEvent.status).toBe(400);
         const badEvent = await deliver(app, {
@@ -187,7 +187,7 @@ describe('github channel in', () => {
     });
 
     it('acks ping and unmatched events without runs', async () => {
-        const { app, repositories: store } = createGithubTestApp({ agents: standardAgents() });
+        const { app, store } = createGithubTestApp({ agents: standardAgents() });
         const ping = await deliver(app, {
             event: 'ping',
             delivery: 'd-1',
@@ -279,7 +279,7 @@ describe('github channel in', () => {
     });
 
     it('uses the subscription\'s own keys', async () => {
-        const { app, repositories: store } = createGithubTestApp({
+        const { app, store } = createGithubTestApp({
             agents: [
                 agent('keyed', {
                     events: ['issues.opened'],
@@ -307,7 +307,7 @@ describe('github channel in', () => {
     ] as Array<[string, Partial<GithubSubscriptionOptions>]>)('dispatches the other agents past %s, reports it, then 500s', async (_name, broken) => {
         const {
             app,
-            repositories: store,
+            store,
             errors,
         } = createGithubTestApp({
             agents: [
@@ -333,9 +333,9 @@ describe('github channel in', () => {
             name: 'github-ent', 
             clock, 
         });
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const engine = new Engine({
-            repositories: store,
+            store,
             agents: [
                 defineAgent({
                     name: 'ent',
@@ -386,7 +386,7 @@ describe('github channel in', () => {
     });
 
     it('answers 404 below the channel path', async () => {
-        const { app, repositories: store } = createGithubTestApp({ agents: standardAgents() });
+        const { app, store } = createGithubTestApp({ agents: standardAgents() });
         const response = await deliver(app, {
             event: 'issues',
             delivery: 'd-1',
@@ -398,7 +398,7 @@ describe('github channel in', () => {
     });
 
     it('sets no address for an event without issue or pull request', async () => {
-        const { app, repositories: store } = createGithubTestApp({ agents: [agent('pushes', { events: ['push'] })] });
+        const { app, store } = createGithubTestApp({ agents: [agent('pushes', { events: ['push'] })] });
         const response = await deliver(app, {
             event: 'push',
             delivery: 'd-1',
@@ -430,7 +430,7 @@ describe('github channel in', () => {
         expect(failed.status).toBe(500);
         expect(await failed.json()).toMatchObject({ status: 500, message: 'Internal Server Error' });
         expect(broken.errors).toHaveLength(1);
-        const { data } = await broken.repositories.runs.find({});
+        const { data } = await broken.store.runs.find({});
         expect(data.map((r) => r.agent).sort()).toEqual(['first', 'third']);
     });
 

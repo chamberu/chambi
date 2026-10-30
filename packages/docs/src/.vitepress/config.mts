@@ -76,7 +76,7 @@ export default defineConfig({
                 activeMatch: '/guide/',
             },
             {
-                text: 'Repositories',
+                text: 'Stores & repositories',
                 link: '/repositories/',
                 activeMatch: '/repositories/',
             },
@@ -150,10 +150,10 @@ export default defineConfig({
             ],
             '/repositories/': [
                 {
-                    text: 'Repositories',
+                    text: 'Stores & repositories',
                     items: [
                         { text: 'Repository Contract', link: '/repositories/' },
-                        { text: 'Memory repositories', link: '/repositories/memory' },
+                        { text: 'Memory store', link: '/repositories/memory' },
                         { text: 'Writing a Repository', link: '/repositories/writing-a-repository' },
                         { text: 'TypeORM', link: '/repositories/typeorm' },
                     ],

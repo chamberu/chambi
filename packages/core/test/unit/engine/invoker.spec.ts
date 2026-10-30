@@ -26,7 +26,7 @@ import type {
     RunContext,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { gateTool, recordApprovals } from '../../utils/approvals.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
@@ -64,7 +64,7 @@ type Setup = {
 
 function setup(s: Setup) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = createMemoryRepositories({ clock });
+    const store = createMemoryStore({ clock });
     const agent = defineAgent({
         name: 'release',
         instructions: 'You release.',
@@ -75,7 +75,7 @@ function setup(s: Setup) {
         hooks: s.hooks,
     });
     const engine = new Engine({
-        repositories: store,
+        store,
         agents: [agent],
         clock,
         claimTtlMs: 30,
@@ -85,7 +85,7 @@ function setup(s: Setup) {
     const notifier = recordApprovals(engine);
     return {
         clock,
-        repositories: store,
+        store,
         engine,
         notifier,
     };
@@ -106,7 +106,7 @@ const toolNames = (model: ReturnType<typeof mockModel>, i: number) => (model.doS
 
 describe('invoker', () => {
     it('stores a copy of the invoker on the run', async () => {
-        const { engine, repositories: store } = setup({ model: mockModel([]) });
+        const { engine, store } = setup({ model: mockModel([]) });
         const invoker = { ...alice, permissions: [...alice.permissions] };
         const { runId } = await engine.dispatch(env(invoker));
         invoker.permissions.push('*');
@@ -117,7 +117,7 @@ describe('invoker', () => {
     });
 
     it('keeps only the invoker fields', async () => {
-        const { engine, repositories: store } = setup({ model: mockModel([]) });
+        const { engine, store } = setup({ model: mockModel([]) });
         const { runId } = await engine.dispatch(env({ ...alice, token: 'secret-bearer' }));
         expect((await store.runs.findOne(runId))?.trigger.invoker).toEqual(alice);
     });
@@ -132,7 +132,7 @@ describe('invoker', () => {
         ['a non-string permission', { ...alice, permissions: ['ok', 1] }],
         ['a non-string name', { ...alice, name: 42 }],
     ])('rejects %s before any write', async (_label, invoker) => {
-        const { engine, repositories: store } = setup({ model: mockModel([]) });
+        const { engine, store } = setup({ model: mockModel([]) });
         await expect(engine.dispatch(env(invoker, 'key-1'))).rejects.toBeInstanceOf(ValidationError);
         expect((await store.runs.find({})).data).toHaveLength(0);
         // the idempotency key was not claimed either
@@ -142,7 +142,7 @@ describe('invoker', () => {
     });
 
     it('dedupes a key per invoker: the same invoker gets the first run', async () => {
-        const { engine, repositories: store } = setup({ model: mockModel([]) });
+        const { engine, store } = setup({ model: mockModel([]) });
         const first = await engine.dispatch(env(alice, 'same'));
         const second = await engine.dispatch(env({ ...alice, permissions: [] }, 'same'));
         expect(second).toEqual({ runId: first.runId, deduplicated: true });
@@ -150,7 +150,7 @@ describe('invoker', () => {
     });
 
     it('gives two invokers with the same key a run each', async () => {
-        const { engine, repositories: store } = setup({ model: mockModel([]) });
+        const { engine, store } = setup({ model: mockModel([]) });
         const first = await engine.dispatch(env(alice, 'same'));
         const bob: Invoker = {
             id: 'u-bob',
@@ -191,7 +191,7 @@ describe('invoker', () => {
     });
 
     it('claims the key under <agent>:<source>:<kind>:<id>, each part URI-encoded', async () => {
-        const { engine, repositories: store } = setup({ model: mockModel([]) });
+        const { engine, store } = setup({ model: mockModel([]) });
         const scopes: string[] = [];
         const claimKey = store.idempotency.claim.bind(store.idempotency);
         store.idempotency.claim = (scope, ...rest) => {
@@ -210,7 +210,7 @@ describe('invoker', () => {
     it('hands the invoker to the tool factory and the agent hooks', async () => {
         const seen: Array<Invoker | undefined> = [];
         const model = mockModel([callTool('deploy'), text('done')]);
-        const { engine, repositories: store } = setup({
+        const { engine, store } = setup({
             model,
             tools: ({ run }) => {
                 seen.push(run.trigger.invoker);
@@ -299,7 +299,7 @@ describe('tool policy', () => {
         let executed = 0;
         let checks = 0;
         const model = mockModel([callTool('deploy'), text('could not deploy')]);
-        const { engine, repositories: store } = setup({
+        const { engine, store } = setup({
             model,
             tools: () => ({
                 deploy: tool({
@@ -332,7 +332,7 @@ describe('tool policy', () => {
     ])('records a model call to %s (%s) with code %s', async (_, toolName, code) => {
         let executed = 0;
         const model = mockModel([callTool(toolName), text('done')]);
-        const { engine, repositories: store } = setup({
+        const { engine, store } = setup({
             model,
             tools: () => ({
                 deploy: tool({
@@ -368,7 +368,7 @@ describe('tool policy', () => {
         const model = mockModel([callTool('deploy'), text('done')]);
         const {
             engine,
-            repositories: store,
+            store,
             notifier,
         } = setup({
             model,
@@ -432,7 +432,7 @@ describe('tool policy', () => {
         });
         const {
             engine,
-            repositories: store,
+            store,
             clock,
             notifier,
         } = setup({
@@ -449,7 +449,7 @@ describe('tool policy', () => {
 
         // redeployed with a tighter policy: deploy is refused now
         const tightened = new Engine({
-            repositories: store,
+            store,
             agents: [defineAgent({
                 name: 'release',
                 instructions: 'You release.',
@@ -481,7 +481,7 @@ describe('tool policy', () => {
         const model = mockModel([callTool('deploy'), text('done')]);
         const {
             engine,
-            repositories: store,
+            store,
             notifier,
         } = setup({
             model,

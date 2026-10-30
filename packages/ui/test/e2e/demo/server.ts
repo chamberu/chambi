@@ -9,7 +9,7 @@ import { z } from 'zod';
 import {
     Engine,
     approve,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -33,10 +33,10 @@ const capture: IChannel = {
     out: () => Promise.resolve(),
 };
 
-const store = createMemoryRepositories();
+const store = createMemoryStore();
 
 const engine = new Engine({
-    repositories: store,
+    store,
     agents: [
         defineAgent({
             name: 'deploy',

@@ -8,9 +8,9 @@
 import {
     ChamviError,
     InvalidAgentDefinitionError,
-    createMemoryRepositories,
+    createMemoryStore,
 } from '@chamvi/core';
-import type { IClock, Repositories } from '@chamvi/core';
+import type { IClock, IStore } from '@chamvi/core';
 import type { IContainer } from 'eldin';
 import type { IModule } from 'orkos';
 import type { DataSource } from 'typeorm';
@@ -29,16 +29,16 @@ import { destroyQuietly, isPurgingRepository, maskPassword } from './helpers.ts'
 import { createPurgeTimer } from './purge.ts';
 import type {
     IPurgeTimer,
-    RepositoryModuleOptions,
+    StoreModuleOptions,
 } from './types.ts';
 
-/** Registers separate capability repositories, sharing one DataSource for PostgreSQL. */
-export class RepositoryModule implements IModule {
+/** Registers a store of separate capability repositories, sharing one DataSource for PostgreSQL. */
+export class StoreModule implements IModule {
     readonly name: string = ModuleName.STORE;
 
     readonly dependencies = [ModuleName.CONFIG];
 
-    protected options: RepositoryModuleOptions;
+    protected options: StoreModuleOptions;
 
     protected purge: IPurgeTimer | undefined;
 
@@ -48,7 +48,7 @@ export class RepositoryModule implements IModule {
     /** The connect timeout of a data source built from a URL. */
     protected connectTimeoutMs: number = STORE_CONNECT_TIMEOUT_MS;
 
-    constructor(options: RepositoryModuleOptions = {}) {
+    constructor(options: StoreModuleOptions = {}) {
         this.options = options;
     }
 
@@ -61,31 +61,31 @@ export class RepositoryModule implements IModule {
         const url = this.options.url ?? config.store.url;
         const migrate = context.mode === 'migrate' || config.store.migrate;
 
-        let repositories: Repositories;
-        if (this.options.repositories) {
-            ({ repositories } = this.options);
+        let store: IStore;
+        if (this.options.store) {
+            ({ store } = this.options);
         } else if (this.options.dataSource) {
             if (!this.options.dataSource.isInitialized) {
-                throw new InvalidAgentDefinitionError('repositoryModule({ dataSource }) needs an initialized data source.');
+                throw new InvalidAgentDefinitionError('storeModule({ dataSource }) needs an initialized data source.');
             }
             container.register(AppToken.DATA_SOURCE, { useValue: this.options.dataSource });
-            repositories = await this.databaseRepositories(context, this.options.dataSource, clock, migrate);
+            store = await this.databaseStore(context, this.options.dataSource, clock, migrate);
         } else if (typeof url === 'string') {
-            repositories = await this.connect(container, logger, context, url, clock, migrate);
+            store = await this.connect(container, logger, context, url, clock, migrate);
         } else {
-            repositories = createMemoryRepositories({ clock });
+            store = createMemoryStore({ clock });
             if (!config.dev) {
                 logger.warn(MEMORY_STORE_WARNING);
             }
         }
 
-        container.register(AppToken.REPOSITORIES, { useValue: repositories });
+        container.register(AppToken.STORE, { useValue: store });
 
-        if (context.conversations && !container.has(AppToken.DATA_SOURCE) && !this.options.repositories) {
+        if (context.conversations && !container.has(AppToken.DATA_SOURCE) && !this.options.store) {
             logger.warn(MEMORY_CONVERSATION_WARNING);
         }
 
-        const purging = Object.values(repositories).filter(isPurgingRepository);
+        const purging = Object.values(store).filter(isPurgingRepository);
         if (context.mode === 'start' && !context.check && config.store.purgeIntervalMs > 0 && purging.length > 0) {
             const purge = createPurgeTimer({
                 repositories: purging,
@@ -123,7 +123,7 @@ export class RepositoryModule implements IModule {
         url: string,
         clock: IClock,
         migrate: boolean,
-    ): Promise<Repositories> {
+    ): Promise<IStore> {
         // lazy: an in-memory app never loads TypeORM
         const { DataSource: DataSourceClass } = await import('typeorm');
         const { STORE_ENTITIES, STORE_MIGRATIONS } = await import('@chamvi/store-db');
@@ -147,18 +147,18 @@ export class RepositoryModule implements IModule {
 
         // orkos never tears down a module whose setup threw, so close what was opened here
         try {
-            const repositories = await this.databaseRepositories(context, dataSource, clock, migrate);
+            const store = await this.databaseStore(context, dataSource, clock, migrate);
             this.created = dataSource;
-            return repositories;
+            return store;
         } catch (error) {
             await destroyQuietly(dataSource, logger, url);
             throw maskPassword(error, url);
         }
     }
 
-    protected async databaseRepositories(context: AppContext, dataSource: DataSource, clock: IClock, migrate: boolean): Promise<Repositories> {
+    protected async databaseStore(context: AppContext, dataSource: DataSource, clock: IClock, migrate: boolean): Promise<IStore> {
         const {
-            createDatabaseRepositories,
+            createDatabaseStore,
             migrateStore, 
             pendingMigrations, 
         } = await import('@chamvi/store-db');
@@ -179,10 +179,10 @@ export class RepositoryModule implements IModule {
         }
 
         throwIfStopped(context);
-        return createDatabaseRepositories({ dataSource, clock });
+        return createDatabaseStore({ dataSource, clock });
     }
 }
 
-export function repositoryModule(options?: RepositoryModuleOptions): IModule {
-    return new RepositoryModule(options);
+export function storeModule(options?: StoreModuleOptions): IModule {
+    return new StoreModule(options);
 }

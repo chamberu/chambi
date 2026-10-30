@@ -23,7 +23,7 @@ export type AppConfig = {
         closeTimeoutMs: number;
     };
     store: {
-        /** DATABASE_URL; unset selects in-memory repositories. */
+        /** DATABASE_URL; unset selects in-memory store. */
         url?: string;
         migrate: boolean;
         purgeIntervalMs: number;

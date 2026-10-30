@@ -22,7 +22,7 @@ import {
     defineTool,
 } from '@chamvi/core';
 import type { IChannel } from '@chamvi/core';
-import { createMemoryRepositories } from '../../../src/repository/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockPart, MockResponse } from '../../utils/mock-model.ts';
@@ -47,7 +47,7 @@ const text = (t: string): MockResponse => ({ parts: [{ type: 'text', text: t }] 
 const flush = () => new Promise<void>((resolve) => { setTimeout(resolve, 5); });
 
 function createEngine(
-    store: ReturnType<typeof createMemoryRepositories>,
+    store: ReturnType<typeof createMemoryStore>,
     clock: ControllableClock,
     model: LanguageModel,
     tools: ToolSet,
@@ -55,7 +55,7 @@ function createEngine(
 ) {
     const errors: unknown[] = [];
     const engine = new Engine({
-        repositories: store,
+        store,
         clock,
         claimTtlMs: 30,
         channels,
@@ -87,7 +87,7 @@ async function dispatch(engine: Engine): Promise<string> {
 describe('approval replay', () => {
     it('a call id a provider reuses in a later step is another approval', async () => {
         const clock = new ControllableClock(new Date(START));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const deployed: string[] = [];
         const deploy = defineTool({
             inputSchema: z.object({ env: z.string() }),
@@ -122,7 +122,7 @@ describe('approval replay', () => {
 
     it('a pending call that finished before a drain does not run again after recovery', async () => {
         const clock = new ControllableClock(new Date(START));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const deployed: string[] = [];
         let hold = false;
         let release: (() => void) | undefined;
@@ -179,7 +179,7 @@ describe('approval replay', () => {
 
     it('parallel identical effect calls that approve() both wait and share one application', async () => {
         const clock = new ControllableClock(new Date(START));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         let applied = 0;
         const post = defineEffectTool({
             inputSchema: z.object({ msg: z.string() }),
@@ -216,7 +216,7 @@ describe('approval replay', () => {
 
     it('a resume while a slow channel still delivers starts one execution that cancel reaches', async () => {
         const clock = new ControllableClock(new Date(START));
-        const store = createMemoryRepositories({ clock });
+        const store = createMemoryStore({ clock });
         const slack: IChannel = {
             name: 'slack',
             // hangs until the engine aborts the attempt

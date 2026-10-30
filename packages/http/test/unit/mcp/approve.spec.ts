@@ -24,7 +24,7 @@ async function waitingGate(agent = 'gate') {
     const { runId } = await response.json() as { runId: string };
     await setup.engine.start();
     await setup.engine.idle();
-    const run = await setup.repositories.runs.findOne(runId);
+    const run = await setup.store.runs.findOne(runId);
     expect(run?.status).toBe('waiting');
     return {
         ...setup, 
@@ -47,7 +47,7 @@ describe('mcp approve_run', () => {
         expect(result.structuredContent).toEqual({ runId: setup.runId, status: 'queued' });
 
         await setup.engine.idle();
-        expect((await setup.repositories.runs.findOne(setup.runId))?.status).toBe('completed');
+        expect((await setup.store.runs.findOne(setup.runId))?.status).toBe('completed');
 
         const again = await callTool(client, 'approve_run', args);
         expect(again.isError).toBe(true);
@@ -65,7 +65,7 @@ describe('mcp approve_run', () => {
         });
         expect(result.isError).toBe(true);
         expect(textOf(result)).toBe('Missing permission "agent:gate:approve".');
-        expect((await setup.repositories.runs.findOne(setup.runId))?.status).toBe('waiting');
+        expect((await setup.store.runs.findOne(setup.runId))?.status).toBe('waiting');
         await client.close();
         await setup.engine.drain();
     });
@@ -79,7 +79,7 @@ describe('mcp approve_run', () => {
             approved: false, 
         });
         expect(result.isError).toBe(true);
-        expect((await setup.repositories.runs.findOne(setup.runId))?.status).toBe('waiting');
+        expect((await setup.store.runs.findOne(setup.runId))?.status).toBe('waiting');
         await client.close();
         await setup.engine.drain();
     });
@@ -120,7 +120,7 @@ describe('mcp approve_run', () => {
         });
         expect(result.isError).toBeFalsy();
         await setup.engine.idle();
-        const steps = await setup.repositories.steps.find(setup.runId);
+        const steps = await setup.store.steps.find(setup.runId);
         expect(steps.find((s) => s.kind === 'wait')?.output).toMatchObject({ selected: ['a'] });
         await client.close();
         await setup.engine.drain();

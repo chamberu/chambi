@@ -8,7 +8,7 @@
 import { cron } from '@chamvi/channel-cron';
 import {
     InvalidAgentDefinitionError,
-    createMemoryRepositories,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { Agent } from '@chamvi/core';
@@ -27,7 +27,7 @@ import {
     ModuleName,
     configModule,
     createApp,
-    repositoryModule,
+    storeModule,
 } from '@chamvi/app';
 import type { IApp } from '@chamvi/app';
 import {
@@ -64,17 +64,17 @@ function sweep(model: Agent['definition']['model'], channels = [cron.on('*/5 * *
 function build(agents: Agent[], modules: IModule[] = []) {
     const clock = new ControllableClock(new Date('2026-10-21T08:00:00Z'));
     const logger = createRecordingLogger(clock);
-    const store = createMemoryRepositories({ clock });
+    const store = createMemoryStore({ clock });
     const app = createApp({
         agents,
-        modules: [configModule({ clock, logger }), repositoryModule({ repositories: store }), ...modules],
+        modules: [configModule({ clock, logger }), storeModule({ store }), ...modules],
     });
     apps.push(app);
     return {
         app,
         clock,
         logger,
-        repositories: store,
+        store,
         env: { CHAMVI_DRAIN_TIMEOUT_MS: String(DRAIN_MS) },
     };
 }
@@ -84,7 +84,7 @@ describe('App.runJob', () => {
         const {
             app,
             env,
-            repositories: store,
+            store,
         } = build([sweep(textModel())]);
 
         const result = await app.runJob({ env, agent: 'sweep' });
@@ -156,7 +156,7 @@ describe('App.runJob', () => {
             subscription: 'cron:0 * * * *', 
         });
         expect(result).toMatchObject({ status: 'completed', exitCode: 0 });
-        expect((await named.repositories.runs.findOne(result.runId as string))?.trigger).toMatchObject({ channel: 'cron', trigger: 'cron:0 * * * *' });
+        expect((await named.store.runs.findOne(result.runId as string))?.trigger).toMatchObject({ channel: 'cron', trigger: 'cron:0 * * * *' });
     });
 
     it('serves no http during a job', async () => {
@@ -186,7 +186,7 @@ describe('App.runJob', () => {
             app,
             env,
             clock,
-            repositories: store,
+            store,
         } = build([sweep(hangingModel())]);
         let result: Awaited<ReturnType<IApp['runJob']>> | undefined;
         let stopped = false;
@@ -225,7 +225,7 @@ describe('App.runJob', () => {
             await writeTree(dir.path, { 'greeter/agent.ts': agentFile('v1', 'test/model', 'greeter', [cronTrigger('*/5 * * * *')]) });
             const clock = new ControllableClock(new Date('2026-10-21T08:00:00Z'));
             const logger = createRecordingLogger(clock);
-            const store = createMemoryRepositories({ clock });
+            const store = createMemoryStore({ clock });
             const old = 'c'.repeat(64);
             await store.agentRevisions.save({
                 agent: 'greeter', 
@@ -235,7 +235,7 @@ describe('App.runJob', () => {
             const runId = await queueRun(store, clock, 'greeter');
             const app = createApp({
                 models: { test: provider() },
-                modules: [configModule({ clock, logger }), repositoryModule({ repositories: store })],
+                modules: [configModule({ clock, logger }), storeModule({ store })],
             });
             apps.push(app);
 

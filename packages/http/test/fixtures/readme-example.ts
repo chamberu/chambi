@@ -1,5 +1,5 @@
 import type { LanguageModel } from 'ai';
-import { Engine, createMemoryRepositories, defineAgent } from '@chamvi/core';
+import { Engine, createMemoryStore, defineAgent } from '@chamvi/core';
 import {
     createHttpApp,
     createShutdown,
@@ -19,7 +19,7 @@ export async function createAgentServer(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        repositories: createMemoryRepositories(),
+        store: createMemoryStore(),
         agents: [echo],
         // REST runs carry channel http, MCP runs channel mcp
         channels: [httpChannel(), mcpChannel()],
