@@ -26,7 +26,7 @@ Packages live in `packages/*`. `@chamvi/app`, `@chamvi/channel-cron`, `@chamvi/c
 ## Detailed Guides
 
 - **[Project Structure](.agents/structure.md)**: Workspace layout, existing and planned packages, core module map
-- **[Architecture](.agents/architecture.md)**: Run lifecycle and statuses, channels and the envelope, durable approvals and hooks, repository contracts, idempotency and effects
+- **[Architecture](.agents/architecture.md)**: Run lifecycle and statuses, channels and the envelope, untrusted-content taint and outbound gates (shell excluded), durable approvals and hooks, repository contracts, idempotency and effects
 - **[Testing](.agents/testing.md)**: Vitest setup, source aliasing, in-memory repositories, repository contracts suite
 - **[Conventions](.agents/conventions.md)**: Tooling, naming rules, commits, release flow, external references (`.agents/references/`)
 - **[Design](.agents/design.md)**: Brand direction, colour tokens, type, logo and docs landing page rules

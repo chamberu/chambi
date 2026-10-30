@@ -2,6 +2,24 @@
 
 Implement the capability interfaces from `@chamvi/core` and assemble them into a plain `IStore` object. Pass it to `new Engine({ store, agents })`. A backend can expose its own assembly factory, as `createMemoryStore()` and `createDatabaseStore()` do.
 
+## Persist run taint
+
+`Run.taint` is optional and has shape `{ at: Date; source: string }`. Persist it on insert and update, preserve it on unrelated updates, return independent copies, and hydrate `taint.at` as a `Date` on every read, including claims/recovery paths. Do not silently drop it when selecting run columns or serializing JSON. Missing taint remains absent, not an empty object.
+
+The engine owns monotonic, first-write taint: it keeps the first exposure's timestamp/source, shares the persistence write across parallel tool calls, and does not clear it on replay, extraction or handoff. This is an engine invariant, **not** a new repository compare-and-set API or a claim that arbitrary direct store writes cannot overwrite it. Custom stores must durably apply that field through the normal guarded run updates before untrusted results can be exposed.
+
+For `@chamvi/store-db`, apply migration `RunTaint1792800000000`, which adds nullable `chamvi_runs.taint` JSONB. It conservatively backfills legacy unfinished runs (`queued`, `running`, `waiting`, `interrupted`) with `{ at: <migration time>, source: 'migration:legacy-run' }`: their old checkpoints may already contain unclassified content. Terminal legacy runs remain untainted. Custom backends need equivalent schema support and unfinished-run backfill before resuming pre-upgrade work; otherwise old content can bypass the new gate. Do not infer trust from an absent field on a legacy unfinished run.
+
+### Upgrade without mixed versions
+
+This upgrade does **not** support rolling deployments with old and new runtimes sharing a store:
+
+1. Stop **all old ingress, workers and approval pollers** on every replica, including scheduled jobs. Wait for them to exit; draining executions alone is not sufficient if an old process can still poll or accept input.
+2. Run the migration and unfinished-run backfill while all old processes are stopped.
+3. Start **only new binaries** against the migrated store.
+
+An old approval poller can publish the private argument-bearing `waiting.body` from a new automatic gate instead of its safe notification. An old worker can also create or checkpoint untainted runs after the one-time backfill. A notification lock does not make mixed versions compatible. Custom backends must follow the same stop/backfill/start sequence. See [Multiple replicas](/deployment/replicas#upgrading-to-untrusted-content-gates).
+
 ## Prove it with the contract suite
 
 `@chamvi/test-kit` ships `describeRepositoryContract`, the Vitest suite every store must pass. It is the same suite `createMemoryStore()` runs.

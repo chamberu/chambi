@@ -2,6 +2,16 @@
 
 Running more than one replica of an agent app relies on the store. Core, the TypeORM store, HTTP intake and `@chamvi/channel-cron` coordinate through that shared store.
 
+## Upgrading to untrusted-content gates
+
+This upgrade requires downtime. **Do not run old and new runtimes against the same store**, even temporarily during a rolling deployment.
+
+1. Stop **all old ingress, workers and approval pollers** across every replica and scheduled job. Wait for the processes to exit; draining executions alone is not sufficient.
+2. With all old processes stopped, apply `RunTaint1792800000000` (or the equivalent custom-store migration and unfinished-run backfill).
+3. Start **only new binaries** against the migrated store. Resumed legacy unfinished runs are conservatively tainted and may require outbound approval.
+
+Old approval pollers do not understand the safe notification field: they can post a new gate's private argument-bearing `waiting.body` to its source channel. Old ingress and workers can create or checkpoint untainted runs after the one-time backfill. Shared claims and notification locks do not prevent either version-compatibility problem. See [Writing a repository](/repositories/writing-a-repository#persist-run-taint) for the persistence requirements.
+
 ## What core already guarantees
 
 With a shared, durable store such as the [TypeORM store](/repositories/typeorm) (`createMemoryStore()` cannot be shared), several `Engine`s coordinate without a leader:

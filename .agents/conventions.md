@@ -25,6 +25,13 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 - Single quotes, semicolons, and braces around every control-flow body, including single statements (enforced by ESLint).
 - Package scope `@chamvi/*`, Apache-2.0 license (`LICENSE` plus `NOTICE` in the root and every package), all packages public.
 
+## Trust classifications
+
+- Declare content/exfiltration boundaries in `trust`, never in tool descriptions or permission names. `defineTool()` and `defineEffectTool()` use boolean or async input/context predicates for `untrustedResult` and `outbound`; agent tool-name overrides are booleans only. Third-party tools are trusted until classified. A new external reader or writer should carry an explicit classification and a regression for its resolved input/destination.
+- Keep the trust gate after before-hook input rewrites/validation and before effect lookup/execution. Trust approval arguments stay in the private inbox/API; only a generic notification goes to the source. Source/default-address exemptions fix destinations, not message content.
+- Preserve `Run.taint` in custom stores, including nested `Date` revival. Do not reset it on replay, child handoff or extraction. Conversation recall is conservatively untrusted; agent state remains trusted pending separate provenance work.
+- Do not present taint as a shell policy or complete injection defense. Shell remains ungated (#88 is separate), provider-executed tools bypass local execution, and model-provider exposure is outside this boundary. The opt-in GitHub file-proposal tools (030b) are implemented in the working tree pending review/release; do not describe that as a shipped release. See [architecture](architecture.md#untrusted-content-and-outbound-gates).
+
 ## File Organization
 
 - **Every file under `src/` and `test/` starts with the copyright header** (config files such as `tsdown.config.ts` and `test/vitest.config.ts` do not; neither does `test/fixtures/readme-example.ts`, which the README embeds verbatim):

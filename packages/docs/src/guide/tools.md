@@ -1,6 +1,53 @@
 # Tools & Tool Errors
 
-chamvi tools are AI SDK tools. Build them with `tool()` from `ai`, or with `defineTool()` when a tool needs the run context (`context.run`, `context.state`, `context.artifacts`; see [Tools and their context](/guide/agents#tools-and-their-context)), and pass them to the agent's `tools`. chamvi does not wrap or replace them, with one exception: [effect tools](/guide/effect-tools) are wrapped so their side effect applies at most once.
+chamvi tools are AI SDK tools. Build them with `tool()` from `ai`, or with `defineTool()` when a tool needs the run context (`context.run`, `context.state`, `context.artifacts`; see [Tools and their context](/guide/agents#tools-and-their-context)), and pass them to the agent's `tools`. The engine applies policy checks, hooks and declared trust gates around local execution; [effect tools](/guide/effect-tools) also record their results so their side effect applies at most once per effect key.
+
+## Untrusted content and outbound tools
+
+`defineTool()` and `defineEffectTool()` accept `trust` classifications:
+
+```ts
+trust: {
+    untrustedResult: true,
+    outbound: async (input, ctx) => input.destination !== ctx.run.trigger.address,
+}
+```
+
+Each flag accepts a boolean or `(input, ctx) => boolean | Promise<boolean>`. `untrustedResult` marks content returned by an external reader; `outbound` marks an operation that can send content to another destination. The engine evaluates predicates against the final input after `beforeToolExecution` and input validation. An effect tool is not automatically outbound, and a third-party tool is **trusted by default** until classified.
+
+Classify third-party tools or override a tool's flags by its name in the agent's tool set:
+
+```ts
+trust: {
+    onTainted: 'approve', // default; use 'deny' to reject outbound calls
+    tools: {
+        external_search: { untrustedResult: true },
+        send_report: { outbound: true },
+    },
+}
+```
+
+Agent overrides accept **booleans only**, including `false` to replace a tool's classification. `IChannel.untrusted: true` opts an input channel into the same boundary; GitHub and the generic webhook channel opt in. The first exposure is persisted as optional `Run.taint: { at: Date, source: string }` before an untrusted result reaches the model. It survives approval replay and recovery, propagates to handoff children, and is conservatively set when conversation messages or notes are recalled. Failed taint persistence fails execution rather than returning unrecorded content.
+
+Once tainted, an outbound call requires a durable approval by default, or becomes a `ToolDeniedError` with `onTainted: 'deny'`. The check runs before effect lookup/execution. Decisions bind the final arguments, so changed arguments need another approval. Full arguments stay in the private inbox/API; source-channel notifications contain only a generic review notice. See [Automatic outbound gates](/guide/approvals#automatic-outbound-gates).
+
+Channel sends to the run's original source destination or a configured `defaultAddress` are exempt. This fixes the **destination**, not the content: it does not sanitize a message or prevent sensitive data from being sent there.
+
+### Quarantined extraction
+
+Use `extract(ctx, { schema, content, instructions?, model? })` from `@chamvi/core` inside an executing tool call to return only validated structured data from a separate, tool-less model call. It uses `resolveModel()` and requires a schema with an output validator. The helper's raw content, model messages and provider error details do not enter the parent transcript; failures become a generic `ValidationError`.
+
+Only a conservative JSON Schema allowlist can avoid adding taint: literal enums/constants, booleans/null, numbers, closed objects, arrays of at most 10 allowed items, and patterned strings of at most 200 characters. References, combinators, unknown keywords and unrestricted strings are outside it and taint the run as `extract`, including on replay. Existing taint is never cleared. SDK schema validation is followed by an independent check of the actual returned value against the allowed structure, including transformed values. The effect cache stores versioned **raw model JSON**, not a transformed result; a cache hit validates that raw value again and repeats the independent check before returning. This cache is private durable storage, not a parent-transcript message or a place to store credentials.
+
+Prefer string model references for durable memoization. Explicit `LanguageModel` object overrides bypass the effect cache: objects with the same provider and model id can still use different endpoints or middleware. With no override, extraction uses a separate configured-default cache namespace and assumes that model configuration stays stable across resumes of the run. String overrides are keyed by their reference and make the same stable-configuration assumption.
+
+Extraction calls, like other model calls made inside tools, do not count toward the parent loop's step/token budgets or `run.usage`. They do receive the run's abort signal, including its execution timeout. See [Budgets & Timeouts](/guide/budgets).
+
+Allowed structure is not a guarantee of truthful or harmless values. Returning raw content alongside the extraction defeats the quarantine. The content still reaches the selected model provider, which is outside this boundary.
+
+### What is not covered
+
+Shell execution is **not gated**, even when its output taints a run; it can read, write or exfiltrate. Shell command policy and classifier work (#88) are separate. Agent state remains trusted pending separate provenance work. Provider-executed tools without local `execute` are not locally gated. GitHub read tools send model-selected queries, paths and refs to the GitHub API without an outbound gate. If its operator or request logs must not receive arbitrary run data without approval, classify those readers as outbound via `trust.tools`. These controls are not a sandbox, DLP system or complete prompt-injection defense.
 
 ## Errors go back to the model
 
@@ -32,7 +79,7 @@ A recovered run repeats the step that was in progress when the process died. A p
 
 <<< @/snippets/tool-web.ts#agent
 
-Everything the tool returns is written by strangers, and a page can carry instructions aimed at the model. The tool description marks results as untrusted; say so in the instructions too, and keep side effects behind [approvals](/guide/approvals) when an agent reads the web.
+Everything the tool returns is written by strangers, and a page can carry instructions aimed at the model. `web_fetch` declares `trust.untrustedResult: true`, so its results taint the run. Say so in the instructions too, and classify outbound tools or keep side effects behind [approvals](/guide/approvals) when an agent reads the web.
 
 ## Restricting tools per invoker
 
