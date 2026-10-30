@@ -12,7 +12,12 @@ import {
     expect,
     it,
 } from 'vitest';
-import { STORE_MIGRATIONS, migrateStore, pendingMigrations } from '@chamvi/store-db';
+import {
+    DatabaseRunRepository,
+    STORE_MIGRATIONS,
+    migrateStore,
+    pendingMigrations,
+} from '@chamvi/store-db';
 import { TableName } from '../../../src/entities/constants.ts';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import type { TestDataSourceOptions } from '../../utils/database.ts';
@@ -40,17 +45,72 @@ describePostgres('schema', () => {
         await expect(assertSchemaMatchesMetadata(ds)).resolves.toBeUndefined();
     });
 
+    it('taints legacy nonterminal runs at migration time while leaving terminal and new runs clean', async () => {
+        const ds = await create({ migrate: false });
+        const prior = new DataSource({
+            ...ds.options,
+            migrations: STORE_MIGRATIONS.filter((migration) => migration.name !== 'RunTaint1792800000000'),
+        });
+
+        await prior.initialize();
+
+        try {
+            await migrateStore(prior);
+
+            for (const status of ['queued', 'running', 'waiting', 'interrupted', 'completed', 'failed', 'cancelled']) {
+                await prior.query(
+                    'INSERT INTO chamvi_runs (id, agent, status, trigger, usage, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $6)',
+                    [status, 'helper', status, JSON.stringify({
+                        id: status,
+                        agent: 'helper',
+                        trigger: 'message',
+                        channel: 'chat',
+                        payload: {},
+                        receivedAt: '2026-10-28T00:00:00.000Z',
+                    }), JSON.stringify({ inputTokens: 0, outputTokens: 0 }), new Date('2026-10-28T00:00:00.000Z')],
+                );
+            }
+        } finally {
+            await prior.destroy();
+        }
+
+        await expect(pendingMigrations(ds)).resolves.toEqual(['RunTaint1792800000000']);
+
+        const [beforeMigration]: { at: Date }[] = await ds.query('SELECT clock_timestamp() AS at');
+
+        await migrateStore(ds);
+
+        const [afterMigration]: { at: Date }[] = await ds.query('SELECT clock_timestamp() AS at');
+        const runs = new DatabaseRunRepository({ dataSource: ds });
+
+        for (const status of ['queued', 'running', 'waiting', 'interrupted']) {
+            const existing = await runs.findOneOrFail(status);
+
+            expect(existing.status).toBe(status);
+            expect(existing.taint?.source).toBe('migration:legacy-run');
+            expect(existing.taint?.at).toBeInstanceOf(Date);
+            expect(existing.taint!.at.getTime()).toBeGreaterThanOrEqual(beforeMigration!.at.getTime());
+            expect(existing.taint!.at.getTime()).toBeLessThanOrEqual(afterMigration!.at.getTime());
+        }
+
+        await seedRun(ds, 'new-clean');
+
+        for (const id of ['completed', 'failed', 'cancelled', 'new-clean']) {
+            expect((await runs.findOneOrFail(id)).taint).toBeUndefined();
+        }
+    });
+
     it('upgrades legacy orphan checkpoints and steps without losing data while enforcing new run references', async () => {
         const ds = await create({ migrate: false });
         const prior = new DataSource({
             ...ds.options,
-            migrations: STORE_MIGRATIONS.filter((migration) => migration.name !== 'Conversations1792713600000'),
+            migrations: STORE_MIGRATIONS.slice(0, STORE_MIGRATIONS.findIndex((migration) => migration.name === 'Conversations1792713600000')),
         });
 
         await prior.initialize();
         dataSources.push(prior);
         await migrateStore(prior);
-        expect(await pendingMigrations(ds)).toEqual(['Conversations1792713600000']);
+        expect(await pendingMigrations(ds)).toEqual(['Conversations1792713600000', 'RunTaint1792800000000']);
 
         const insertCheckpoint = (runId: string) => ds.query(
             'INSERT INTO chamvi_checkpoints (run_id, step_index, messages, finish_reason, created_at) VALUES ($1, 3, $2, $3, $4)',
@@ -198,7 +258,7 @@ describePostgres('schema', () => {
 
         const migrations: { name: string }[] = await ds.query('SELECT name FROM migrations ORDER BY id');
 
-        expect(migrations.map((m) => m.name)).toEqual(['Init1792195200000', 'Artifacts1792368000000', 'IdempotencyScope1792454400000', 'KvKeyCollation1792540800000', 'AgentRevisions1792627200000', 'Conversations1792713600000']);
+        expect(migrations.map((m) => m.name)).toEqual(STORE_MIGRATIONS.map((migration) => migration.name));
 
         const tables: { table_name: string }[] = await ds.query(
             'SELECT table_name FROM information_schema.tables WHERE table_name = ANY($1::text[])',
@@ -218,6 +278,7 @@ describePostgres('schema', () => {
             'KvKeyCollation1792540800000',
             'AgentRevisions1792627200000',
             'Conversations1792713600000',
+            'RunTaint1792800000000',
         ]);
         await migrateStore(ds);
         expect(await pendingMigrations(ds)).toEqual([]);
@@ -250,6 +311,16 @@ describePostgres('schema', () => {
 
         expect(await tablesIn('other')).toBe(Object.values(TableName).length);
         expect(await tablesIn('public')).toBe(0);
+
+        const taintColumns = () => ds.query(
+            'SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3',
+            ['other', TableName.RUNS, 'taint'],
+        );
+
+        expect(await taintColumns()).toHaveLength(1);
+        await ds.undoLastMigration({ transaction: 'each' });
+        expect(await taintColumns()).toHaveLength(0);
+        expect(await tablesIn('other')).toBe(Object.values(TableName).length);
 
         await ds.undoLastMigration({ transaction: 'each' });
 

@@ -28,6 +28,8 @@ export type Budget = {
     timeoutMs?: number;
 };
 
+export type RunTaint = { at: Date; source: string };
+
 export type RunContext = {
     runId: string;
     agent: string;
@@ -45,6 +47,8 @@ export type WaitPoint = {
     toolCallId: string;
     title: string;
     body?: string;
+    /** Safe channel notification instead of private approval arguments. */
+    notification?: string;
     /** The choices of the request; absent for a plain yes or no. */
     options?: ApprovalOption[];
     /** Set (true) only when several options may be selected. */
@@ -63,6 +67,8 @@ export type Run = {
     id: string;
     agent: string;
     status: RunStatusLiteral;
+    /** First exposure to untrusted content; never cleared by execution. */
+    taint?: RunTaint;
     trigger: TriggerEnvelope;
     concurrencyKey?: string;
     /** Where the run came from on its channel (`trigger.address`). */

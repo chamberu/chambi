@@ -383,6 +383,8 @@ export class Engine implements IEngine {
             id: runId,
             agent: trigger.agent,
             status: RunStatus.QUEUED,
+            taint: (parent ? (await this.store.runs.findOne(parent.runId))?.taint : undefined) ??
+                (this.channels.get(trigger.channel)?.untrusted ? { at: now, source: `channel:${trigger.channel}` } : undefined),
             trigger,
             concurrencyKey: trigger.concurrencyKey,
             address: trigger.address,
@@ -1490,7 +1492,7 @@ export class Engine implements IEngine {
                     runId: run.id,
                     agent: run.agent,
                     title: waiting.title,
-                    body: waiting.body ?? '',
+                    body: waiting.notification ?? waiting.body ?? '',
                     ...(waiting.slot !== undefined ? { slot: waiting.slot } : {}),
                     approvalId: waiting.approvalId,
                     expiresAt: waiting.expiresAt,

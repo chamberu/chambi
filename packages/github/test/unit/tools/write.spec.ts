@@ -212,6 +212,8 @@ describe('write tools', () => {
             labels: ['bug', 'p1'],
         };
 
+        fake.labels.set('octo/demo', input.labels.map((name) => ({ name })));
+
         expect(await callTool(tools, 'github_add_labels', input, ctx)).toEqual({ labels: ['bug', 'p1'] });
         expect(await callTool(tools, 'github_add_labels', input, ctx)).toEqual({ labels: ['bug', 'p1'] });
 

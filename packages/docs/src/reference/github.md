@@ -70,6 +70,24 @@ const MERGE_STATES: readonly ['clean', 'unstable', 'has_hooks'];
 
 <<< ../../../github/src/tools/types.ts{ts}
 
+## Opt-in file proposals
+
+`createGithubApp({ ..., proposals: { repos: { 'acme/agents': { paths: ['agents/**', 'skills/**'] } } } })` enables `github_propose_change` in `app.writeTools()`. Without `proposals`, `app.writeTools()` does not include it. `GithubAppOptions.proposals` uses `GithubProposalsOptions`; configuration is validated and copied at app construction.
+
+The input is `GithubProposeChangeInput`: `{ repo, path, content, reason }`. It returns `{ number, url, base, head }` after creating or updating one stable branch and open PR for the agent/path, based on the repository's default branch. Every repository/path must match the configured allowlist; unsafe/ambiguous paths and `.github/**` are always refused before GitHub requests. There is no general file-write tool, automatic merge or local config hot reload. Review and merge through the existing PR flow; normal folder reload picks up merged configuration.
+
+This is an outbound effect tool, subject to [untrusted-run approval](/guide/tools#untrusted-content-and-outbound-tools). The initial branch is `chamvi/<agent>/<path-slug>-<path-hash>`, and the fixed effect key `<runId>:propose:<repo>:<path>` permits one proposal per run/path. Later runs reuse its open PR. After closure or merge, new proposals use a fresh `-g-<previous-pr-number>` branch from the current default branch. Content already matching that base produces a no-change validation error, not an empty PR. Paginated commit ancestry reconciles lost effects without reverting newer content, including closed/merged PRs whose branches were deleted. Preserve proposal commits and PR ownership markers for recovery.
+
+Pinned Git-tree reads reject symlinks, submodules and non-directory parents; regular-file executable mode is preserved. Diffs use observed base/head SHAs, include rename sources, and reject missing/truncated data and the 300-file comparison cap. Commits have the observed head as their sole parent and refs advance without force. Ref movement detected before or after PR publication fails closed, but can leave an already published PR to review.
+
+**Exclusive tool ownership of proposal branches is required.** Serialize runs for the same agent/repository/path; external writes, force resets and deletion of active branches are unsupported. Checks cover an observed head, not an immutable branch. Ref updates and PR publication are not atomic, and no check guarantees future PR contents after its final observation. Review the current head before merging. GitHub App permissions must allow contents and pull-request writes. See the [package README's tools section](https://github.com/chamvi/chamvi/blob/master/packages/github/README.md#tools) for details.
+
+Proposal reconciliation scans each historical PR independently and returns immediately on a matching run marker. A missing marker at GitHub's 250-commit PR cap fails closed. New updates stop at 249 commits: close or merge the proposal to allow a fresh generation. Already-capped historical PRs may require manual recovery. Unpublished branches are checked back to the pinned comparison's merge base, so independent base advancement does not invalidate proposal ownership.
+
+## Content trust
+
+The GitHub channel opts into untrusted ingress, and GitHub reads return untrusted content. Creating issues, pull requests and file proposals, merging, and commenting on another issue/PR are outbound. A comment on the source issue/PR is exempt. Adding only labels that already exist in the target repository is also exempt; introducing a new label name, or failing to resolve the repository's label vocabulary, remains outbound. Closing an issue is not classified outbound. Adding labels still taints the run: GitHub returns all labels on the issue, including externally controlled existing names. These destination/finite-label exemptions do not sanitize message content or replace authorization. See [Tools](/guide/tools#untrusted-content-and-outbound-tools) and [Approvals](/guide/approvals#automatic-outbound-gates).
+
 ## Git credentials
 
 ```ts

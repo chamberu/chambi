@@ -536,6 +536,38 @@ export function describeRepositoryContract(
             expect((await store.runs.findOne('r1'))?.claim).toEqual(before?.claim);
         });
 
+        it('run taint persists on insert and update with a Date timestamp', async () => {
+            const { store } = await setup();
+            const taint = { at: new Date('2026-10-30T12:34:56.789Z'), source: 'tool:web_fetch' };
+
+            await store.runs.insert(makeRun('tainted', { taint }));
+            await store.runs.insert(makeRun('clean'));
+
+            expect((await store.runs.findOne('clean'))?.taint).toBeUndefined();
+
+            const inserted = await store.runs.findOneOrFail('tainted');
+
+            expect(inserted.taint).toEqual(taint);
+            expect(inserted.taint?.at).toBeInstanceOf(Date);
+
+            const patched = await store.runs.update('clean', { taint });
+
+            expect(patched.taint).toEqual(taint);
+            expect(patched.taint?.at).toBeInstanceOf(Date);
+
+            for (const id of ['tainted', 'clean']) {
+                const updated = await store.runs.update(id, { status: RunStatus.RUNNING });
+
+                expect(updated.taint).toEqual(taint);
+                expect(updated.taint?.at).toBeInstanceOf(Date);
+
+                const stored = await store.runs.findOneOrFail(id);
+
+                expect(stored.taint).toEqual(taint);
+                expect(stored.taint?.at).toBeInstanceOf(Date);
+            }
+        });
+
         it('run.address and trigger.channel round-trip', async () => {
             const { store } = await setup();
             const run = makeRun('r1', { address: 'owner/repo#7' });

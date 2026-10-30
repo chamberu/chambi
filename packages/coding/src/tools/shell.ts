@@ -30,6 +30,7 @@ import {
     requirePath,
     requireString,
     signalOf,
+    untrustedWorkspaceResult,
     workspaceOf,
 } from './helpers.ts';
 import { startJob } from './jobs.ts';
@@ -118,6 +119,7 @@ async function runCommand(
 
 export function bashTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number): Tool<BashInput, BashResult | BashJobResult> {
     return defineTool<BashInput, BashResult | BashJobResult>({
+        trust: { taint: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
         description: 'Run a shell command in the workspace (bash when the image has it, else sh), e.g. to install dependencies, build or run tests. ' +
             'Before shell work in a new subtree, obtain its repository guidance with read_file or read_repository_instructions (when available). ' +
             'The shell keeps its working directory and exported variables from one call to the next (not functions, aliases or options); ' +

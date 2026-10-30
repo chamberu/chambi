@@ -36,6 +36,7 @@ import {
     withOctokit,
 } from './helpers.ts';
 import { toPullRequest } from './pulls.ts';
+import { createPullRequest, toCreated } from './pull-operation.ts';
 import type {
     GithubCreatedPullRequest,
     GithubMergeResult,
@@ -120,20 +121,6 @@ function pullRequestKey(input: CreatePullRequestInput, ctx: ToolContext): string
     ]);
 }
 
-function toCreated(data: {
-    number: number;
-    html_url: string;
-    base: { ref: string };
-    head: { ref: string; label?: string | null }
-}): GithubCreatedPullRequest {
-    return {
-        number: data.number,
-        url: data.html_url,
-        base: data.base.ref,
-        head: data.head.label ?? data.head.ref,
-    };
-}
-
 /**
  * `github_create_pull_request` and `github_merge_pull_request`, which never
  * bypasses protection: it refuses (ToolDeniedError, before the merge
@@ -145,6 +132,7 @@ function toCreated(data: {
 export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMethod: GithubMergeMethod }): ToolSet {
     return {
         github_create_pull_request: defineEffectTool<CreatePullRequestInput, GithubCreatedPullRequest>({
+            trust: { guardWhenTainted: true },
             description: 'Open a pull request from a pushed branch (`branch`, or `owner:branch` for a fork) into `base` (default the repository\'s default branch). ' +
                 'Applied at most once per run for the same input; GitHub refuses a second open pull request for the same head and base.',
             inputSchema: objectSchema<CreatePullRequestInput>({
@@ -216,25 +204,18 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
 
                 const marker = effectMarker(pullRequestKey(input, options.context));
 
-                return withOctokit(app, options.context, { owner, repo }, async (octokit) => {
-                    const base = given ?? (await octokit.request('GET /repos/{owner}/{repo}', { owner, repo })).data.default_branch;
-                    const { data } = await octokit.request('POST /repos/{owner}/{repo}/pulls', {
-                        owner,
-                        repo,
-                        // as given: GitHub takes a branch of the base repository unqualified
-                        head: input.head,
-                        base,
-                        title,
-                        body: `${body}\n\n${marker}`,
-                        draft: input.draft === true,
-                    });
-
-                    return toCreated(data);
-                });
+                return withOctokit(app, options.context, { owner, repo }, async (octokit) => createPullRequest(octokit, { owner, repo }, {
+                    head: input.head,
+                    base: given,
+                    title,
+                    body: `${body}\n\n${marker}`,
+                    draft: input.draft === true,
+                }));
             },
         }),
 
         github_merge_pull_request: defineEffectTool<MergeInput, GithubMergeResult>({
+            trust: { guardWhenTainted: true },
             description: 'Merge a pull request at the head commit you checked (`sha`, from github_get_pull_request or github_get_pull_request_checks). ' +
                 'Refused while the head moved, it is a draft or closed, GitHub has not computed its mergeability, it conflicts, is blocked or behind, ' +
                 'a required check is not green or has not reported yet, the required checks cannot be read, no check reported at all, ' +

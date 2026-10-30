@@ -6,6 +6,7 @@
  */
 
 import { bindConversationRun } from '../../conversation/context.ts';
+import { assertTrust, bindTrust, markUntrusted } from '../../trust/module.ts';
 import { ToolLoopAgent, isStepCount } from 'ai';
 import type {
     LanguageModel,
@@ -162,6 +163,14 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         signal,
     };
 
+    bindTrust(runContext, {
+        taint: run.taint,
+        policy: agent.definition.trust,
+        now: () => clock.now(),
+        persist: (taint) => ctx.update({ taint }),
+        engine: ctx.engine,
+    });
+
     bindRunSnapshot(runContext);
 
     if (ctx.conversation) {
@@ -176,6 +185,10 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     let model: LanguageModel;
 
     try {
+        if (ctx.conversation?.snapshot.messages.length || ctx.conversation?.snapshot.noteKeys.length) {
+            await markUntrusted({ run: runContext }, 'conversation:recall');
+        }
+
         model = toLanguageModel(ctx.model, ctx.models, agent.name);
         assembled = assembleTools(ctx, runContext, (request) => {
             suspended.push(request);
@@ -258,6 +271,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         modelCallEnded = false;
 
         try {
+            assertTrust(runContext);
             assertTranscriptMessages(step.response.messages);
 
             const finishedAt = clock.now();
@@ -375,6 +389,9 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             }
 
             const startedAt = clock.now();
+
+            assertTrust(runContext);
+
             const result = await executePendingCall({
                 call,
                 tools,
@@ -383,6 +400,8 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 messages: prompt,
                 signal,
             });
+
+            assertTrust(runContext);
 
             if (suspended.length > 0) {
                 return 'paused';
@@ -542,6 +561,8 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         let streamError: { error: unknown } | undefined;
 
         for await (const part of stream.fullStream) {
+            assertTrust(runContext);
+
             if (part.type === 'start-step') {
                 streamStep++;
             } else if (part.type === 'text-delta' || part.type === 'reasoning-delta') {

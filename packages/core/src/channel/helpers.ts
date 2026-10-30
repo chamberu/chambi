@@ -6,6 +6,7 @@
  */
 
 import { conversationFor } from '../conversation/context.ts';
+import { gateOutbound } from '../trust/module.ts';
 import { isObject } from 'smob';
 import { requestApproval } from '../approval/request.ts';
 import type { ApprovalDecision, ApprovalRequestInput } from '../approval/types.ts';
@@ -84,6 +85,7 @@ function assertEmitMessage(message: unknown): asserts message is EmitMessage {
  */
 function createChannelHandle(
     run: RunContext,
+    execution: RunContext,
     effects: IEffectRepository,
     inflight: Inflight,
     channel: IChannel<any, any>,
@@ -184,6 +186,17 @@ function createChannelHandle(
         const key = message.key ?? effectKey;
         const captured = { ...message };
         const work = (async () => {
+            const fixed = (name === run.trigger.channel && target === run.trigger.address) ||
+                target === channel.defaultAddress;
+
+            if (!fixed) {
+                await gateOutbound({ run: execution }, 'channel.emit', {
+                    channel: name,
+                    address: target,
+                    message: captured,
+                });
+            }
+
             const source = capture && target === fallback ? capture : undefined;
 
             if (source) {
@@ -273,6 +286,7 @@ export function createToolChannels(
 ): ToolChannels {
     const inflight: Inflight = new Map();
     const conversation = conversationFor(run);
+    // Snapshot destination authority, but retain the original execution identity for trust gates.
     const trusted = conversation ? {
         runId: conversation.run.id,
         agent: conversation.run.agent,
@@ -284,6 +298,7 @@ export function createToolChannels(
     );
     const handle = (channel: IChannel<any, any>) => createChannelHandle(
         trusted,
+        run,
         effects,
         inflight,
         channel,

@@ -4,8 +4,8 @@ Every agent has a budget. `defineAgent()` fills in the defaults, and your values
 
 | Field | Default | Kind | Effect |
 |---|---|---|---|
-| `maxSteps` | `20` | stop condition | Model calls per run, across all executions |
-| `maxTokens` | none | stop condition | Input plus output tokens per run, across all executions |
+| `maxSteps` | `20` | stop condition | Parent agent-loop steps per run, across all executions |
+| `maxTokens` | none | stop condition | Parent agent-loop input plus output tokens per run, across all executions |
 | `timeoutMs` | `900_000` (15 min) | abort signal | Wall-clock limit **per execution** |
 
 <<< @/snippets/agents.ts#define{25-29}
@@ -18,7 +18,9 @@ Every agent has a budget. `defineAgent()` fills in the defaults, and your values
 | The step or token limit is reached and the last step was a final answer | `completed` | |
 | The execution ran longer than `timeoutMs` | `failed` | `Timeout` |
 
-The step budget counts checkpointed steps, so a run resumed after a crash or an approval continues with what is left. The token budget adds the usage of earlier executions (`run.usage`) to the current one.
+The step budget counts checkpointed steps, so a run resumed after a crash or an approval continues with what is left. The token budget adds the usage of earlier executions (`run.usage`) to the current one. These are stop conditions checked after a step, not hard provider-side token ceilings.
+
+Step/token budgets and `run.usage` cover only the parent agent loop. Model calls made inside tools, including `extract()` and direct AI SDK calls using `resolveModel()`, are not included. Nested calls must pass `context.run.signal` to share the execution timeout; `extract()` does this automatically.
 
 The timeout restarts with every execution. A run that waits two days for an approval is not timed out by that wait; only the time spent executing counts, per execution. The timeout aborts the `run.signal` your tools receive, so pass it on to long-running work.
 

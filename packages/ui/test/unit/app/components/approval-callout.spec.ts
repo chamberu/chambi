@@ -57,6 +57,22 @@ const waiting = {
 };
 
 describe('ApprovalCallout', () => {
+    it('warns when the run consumed untrusted content', async () => {
+        const html = await render(wireRun({
+            status: 'waiting',
+            waiting,
+            taint: { source: 'web.fetch', at: '2026-10-30T10:00:00.000Z' },
+        }));
+
+        expect(html).toContain('This run consumed untrusted content. Review this request carefully before approving.');
+    });
+
+    it('does not warn for a run without taint', async () => {
+        const html = await render(wireRun({ status: 'waiting', waiting }));
+
+        expect(html).not.toContain('approval-untrusted-content');
+    });
+
     it('the approval callout shows title and body', async () => {
         const html = await render(wireRun({
             status: 'waiting',

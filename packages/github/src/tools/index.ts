@@ -30,6 +30,7 @@ export type {
     GithubLabel,
     GithubMergeResult,
     GithubPullRequest,
+    GithubProposeChangeInput,
     GithubPullRequestChecks,
     GithubPullRequestList,
     GithubPullRequestSummary,

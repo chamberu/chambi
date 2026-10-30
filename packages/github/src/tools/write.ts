@@ -9,7 +9,8 @@ import type { ToolExecutionOptions, ToolSet } from 'ai';
 import { ValidationError, defineEffectTool, effectMarker } from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
 import { isObject } from 'smob';
-import { isSameLogin } from '../app/helpers.ts';
+import { isChannelOf, isSameLogin } from '../app/helpers.ts';
+import { parseAddress } from '../channel/helpers.ts';
 import type { IGithubApp } from '../app/types.ts';
 import { ISSUE_TITLE_MAX_CHARS, LABELS_MAX } from './constants.ts';
 import {
@@ -101,8 +102,44 @@ function requireReason(value: unknown): CloseInput['reason'] {
  * a `beforeToolExecution` hook that calls approve() for it).
  */
 export function createWriteTools(app: IGithubApp): ToolSet {
+    const repositoryLabels = new WeakMap<ToolContext, Map<string, Promise<Set<string> | undefined>>>();
+
     return {
         github_add_labels: defineEffectTool<LabelsInput, GithubIssueLabels>({
+            trust: {
+                taint: true,
+                guardWhenTainted: async (input, ctx) => {
+                    const { owner, repo } = parseRepo(input.repo.toLowerCase());
+                    const labels = requireLabels(input.labels);
+                    let repositories = repositoryLabels.get(ctx);
+
+                    if (!repositories) {
+                        repositories = new Map();
+                        repositoryLabels.set(ctx, repositories);
+                    }
+
+                    const key = `${owner}/${repo}`;
+                    let pending = repositories.get(key);
+
+                    if (!pending) {
+                        // Existing names form a fixed vocabulary; missing names can create new labels.
+                        pending = withOctokit(app, ctx, { owner, repo }, async (octokit) => {
+                            const existing = await octokit.paginate('GET /repos/{owner}/{repo}/labels', {
+                                owner,
+                                repo,
+                                per_page: 100,
+                            });
+
+                            return new Set(existing.map((label) => label.name));
+                        }).catch(() => undefined);
+                        repositories.set(key, pending);
+                    }
+
+                    const existing = await pending;
+
+                    return existing === undefined || labels.some((label) => !existing.has(label));
+                },
+            },
             description: 'Add labels to an issue or pull request (existing labels stay). Use names from github_list_labels.',
             inputSchema: numberSchema<LabelsInput>('issue', {
                 labels: {
@@ -132,6 +169,18 @@ export function createWriteTools(app: IGithubApp): ToolSet {
         }),
 
         github_create_comment: defineEffectTool<CommentInput, GithubComment>({
+            trust: {
+                guardWhenTainted: (input, ctx) => {
+                    const { channel, address } = ctx.run.trigger;
+                    const source = parseAddress(address);
+                    const { owner, repo } = parseRepo(input.repo);
+                    const number = requireInteger(input.number, 'number', 1);
+
+                    return !isChannelOf(app, channel) || source === undefined ||
+                        source.owner.toLowerCase() !== owner.toLowerCase() ||
+                        source.repo.toLowerCase() !== repo.toLowerCase() || source.number !== number;
+                },
+            },
             description: 'Comment on an issue or pull request. One comment per issue per step: put everything for one issue into one call; a second call for the same issue in the same step returns the first comment and posts nothing.',
             inputSchema: numberSchema<CommentInput>('issue', {
                 body: {
@@ -194,6 +243,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
         }),
 
         github_close_issue: defineEffectTool<CloseInput, GithubClosedIssue>({
+            trust: { guardWhenTainted: false },
             description: 'Close an issue, as completed or not planned.',
             inputSchema: numberSchema<CloseInput>('issue', {
                 reason: {
@@ -248,6 +298,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
         }),
 
         github_create_issue: defineEffectTool<IssueInput, GithubCreatedIssue>({
+            trust: { guardWhenTainted: true },
             description: 'Open an issue, e.g. a report or a question for the maintainers. Applied at most once per run for the same input.',
             inputSchema: objectSchema<IssueInput>({
                 repo: REPO_PROPERTY,

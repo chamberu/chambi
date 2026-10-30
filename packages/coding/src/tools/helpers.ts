@@ -114,6 +114,13 @@ export async function workspaceOf(
     return workspaces.get(context.run.runId, id);
 }
 
+/** Repository-backed workspaces can return content controlled by other authors. */
+export async function untrustedWorkspaceResult(workspaces: CodingWorkspaces, input: unknown, context: ToolContext): Promise<boolean> {
+    const workspace = await workspaceOf(workspaces, inputObject(input), context);
+
+    return workspace.info.repo !== undefined;
+}
+
 /** The call's abort signal combined with the run's. */
 export function signalOf(abortSignal: AbortSignal | undefined, context: ToolContext): AbortSignal {
     const { signal } = context.run;

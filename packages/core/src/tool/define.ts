@@ -9,7 +9,7 @@ import { tool } from 'ai';
 import type { Tool, ToolExecuteFunction } from 'ai';
 import type { StateSchema } from '../state/types.ts';
 import { toolContextSchema } from './constants.ts';
-import type { ToolContext } from './types.ts';
+import type { ToolContext, ToolTrust } from './types.ts';
 
 /**
  * An AI SDK `tool()` whose `execute` receives the run's ToolContext
@@ -19,6 +19,7 @@ export function defineTool<I, O, S extends StateSchema = StateSchema>(
     def: Tool<I, O, ToolContext<S>> & {
         execute: ToolExecuteFunction<I, O, ToolContext<S>>;
         contextSchema?: never;
+        trust?: ToolTrust<I, S>;
     },
 ): Tool<I, O, ToolContext<S>> {
     // tool()'s overloads cannot see the generic S
