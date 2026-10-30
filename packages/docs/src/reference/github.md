@@ -70,7 +70,7 @@ const MERGE_STATES: readonly ['clean', 'unstable', 'has_hooks'];
 
 ## Opt-in file proposals
 
-`createGithubApp({ ..., proposals: { repos: { 'acme/agents': { paths: ['agents/**', 'skills/**'] } } } })` enables `github_propose_change` in `app.writeTools()` and `githubWriteTools(app)`. Without `proposals`, neither tool set includes it. `GithubAppOptions.proposals` uses `GithubProposalsOptions`; configuration is validated and copied at app construction.
+`createGithubApp({ ..., proposals: { repos: { 'acme/agents': { paths: ['agents/**', 'skills/**'] } } } })` enables `github_propose_change` in `app.writeTools()`. Without `proposals`, `app.writeTools()` does not include it. `GithubAppOptions.proposals` uses `GithubProposalsOptions`; configuration is validated and copied at app construction.
 
 The input is `GithubProposeChangeInput`: `{ repo, path, content, reason }`. It returns `{ number, url, base, head }` after creating or updating one stable branch and open PR for the agent/path, based on the repository's default branch. Every repository/path must match the configured allowlist; unsafe/ambiguous paths and `.github/**` are always refused before GitHub requests. There is no general file-write tool, automatic merge or local config hot reload. Review and merge through the existing PR flow; normal folder reload picks up merged configuration.
 

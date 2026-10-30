@@ -188,8 +188,12 @@ async function readFile(octokit: GithubOctokit, target: RepoTarget, path: string
     throw new ValidationError('Proposal path must not be empty.');
 }
 
+const MAX_PULL_PAGES = 10;
+const MAX_HISTORY_COMMITS = 250;
+
 async function findPulls(octokit: GithubOctokit, target: RepoTarget, branch: string) {
     const pulls = [];
+    let pageCount = 0;
     const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/pulls', {
         ...target,
         state: 'all',
@@ -197,6 +201,14 @@ async function findPulls(octokit: GithubOctokit, target: RepoTarget, branch: str
     });
 
     for await (const page of pages) {
+        pageCount += 1;
+
+        // A full final page may have more results. Never select a generation from
+        // incomplete discovery, even if the matching PRs were on earlier pages.
+        if (pageCount >= MAX_PULL_PAGES && page.data.length >= 100) {
+            throw new ValidationError('Proposal PR discovery limit exceeded; manual review is required.');
+        }
+
         pulls.push(...page.data.filter((item) => (item.head.ref === branch || item.head.ref.startsWith(`${branch}-g-`)) &&
             item.head.repo?.full_name.toLowerCase() === `${target.owner}/${target.repo}`.toLowerCase()));
     }
@@ -219,20 +231,76 @@ function selectBranch(root: string, pulls: ProposalPull[]): string {
     return open[0]?.head.ref ?? (previous === 0 ? root : `${root}-g-${previous}`);
 }
 
-async function hasEffect(octokit: GithubOctokit, target: RepoTarget, sha: string, marker: string, branch: string): Promise<boolean> {
-    const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/commits', {
+async function pullHasEffect(
+    octokit: GithubOctokit,
+    target: RepoTarget,
+    pull: ProposalPull,
+    marker: string,
+    budget: { remaining: number },
+): Promise<boolean> {
+    // GitHub retains PR commits after merge/deletion. Comparing today's base SHA
+    // to the head instead can erase the very commits needed for reconciliation.
+    const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/pulls/{pull_number}/commits', {
         ...target,
-        sha,
+        pull_number: pull.number,
         per_page: 100,
     });
+    let inspected = 0;
+    let found = false;
 
     for await (const page of pages) {
-        const found = page.data.some((commit) => commit.commit.message.includes(marker) &&
-            commit.commit.message.includes(`<!-- chamvi:proposal=${branch} -->`));
+        inspected += page.data.length;
+        budget.remaining -= page.data.length;
 
-        if (found) {
+        // The PR endpoint silently caps results at 250 commits.
+        if (inspected >= MAX_HISTORY_COMMITS || budget.remaining < 0) {
+            throw new ValidationError('Proposal history limit exceeded; manual review is required.');
+        }
+
+        found ||= page.data.some((commit) => commit.commit.message.includes(marker) &&
+            commit.commit.message.includes(`<!-- chamvi:proposal=${pull.head.ref} -->`));
+    }
+
+    return found;
+}
+
+async function orphanHasEffect(
+    octokit: GithubOctokit,
+    target: RepoTarget,
+    sha: string,
+    base: string,
+    marker: string,
+    branch: string,
+): Promise<boolean> {
+    // An unpublished branch has no PR commit list. Only follow its tool-owned,
+    // single-parent chain, refusing ambiguity rather than missing an older effect.
+    let remaining = MAX_HISTORY_COMMITS;
+
+    while (sha !== base && remaining > 0) {
+        remaining -= 1;
+
+        const { data: commit } = await octokit.request('GET /repos/{owner}/{repo}/git/commits/{commit_sha}', {
+            ...target,
+            commit_sha: sha,
+        });
+
+        if (!commit.message.includes(`<!-- chamvi:proposal=${branch} -->`)) {
+            throw new ValidationError('Proposal commit ancestry is not proposal-owned; manual review is required.');
+        }
+
+        if (commit.parents.length !== 1 || !commit.parents[0]?.sha) {
+            throw new ValidationError('Proposal commit ancestry is not a single-parent chain; manual review is required.');
+        }
+
+        if (commit.message.includes(marker)) {
             return true;
         }
+
+        sha = commit.parents[0].sha;
+    }
+
+    if (sha !== base) {
+        throw new ValidationError('Proposal history limit exceeded; manual review is required.');
     }
 
     return false;
@@ -279,6 +347,7 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
 
                 return withOctokit(app, ctx, target, async (octokit) => {
                     const pulls = await findPulls(octokit, target, root);
+                    const budget = { remaining: MAX_HISTORY_COMMITS };
 
                     for (const pull of pulls) {
                         if (!pull.body?.includes(`<!-- chamvi:proposal=${pull.head.ref} -->`)) {
@@ -287,7 +356,7 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
 
                         // A later run replaces the body and tip marker, but not commit ancestry.
                         // The PR head SHA also survives merge and deletion of its branch.
-                        if (await hasEffect(octokit, target, pull.head.sha, effectMarker(key), pull.head.ref)) {
+                        if (await pullHasEffect(octokit, target, pull, effectMarker(key), budget)) {
                             if (pull.state === 'open') {
                                 const base = await headOf(octokit, target, pull.base.ref);
 
@@ -353,7 +422,9 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
                     }
 
                     // Finish publication after a lost checkpoint without overwriting a later run.
-                    const applied = await hasEffect(octokit, target, head, effect, branch);
+                    const applied = pull ?
+                        await pullHasEffect(octokit, target, pull, effect, { remaining: MAX_HISTORY_COMMITS }) :
+                        await orphanHasEffect(octokit, target, head, baseSha, effect, branch);
                     const file = await readFile(octokit, target, input.path, head);
 
                     if (!applied) {

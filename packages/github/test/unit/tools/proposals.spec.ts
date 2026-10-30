@@ -74,15 +74,17 @@ function setup(policy = POLICY) {
         return filesAt(refs.get(`heads/${branch}`) ?? refs.get('heads/main')!);
     };
 
-    fake.route('GET', '/repos/:owner/:repo/commits', ({ query }) => {
-        const all = ancestors(query.sha!);
+    fake.route('GET', '/repos/:owner/:repo/pulls/:number/commits', ({ params, query }) => {
+        const proposal = pulls.find((item) => item.number === Number(params.number))!;
+        const head = proposal.state === 'open' ? refs.get(`heads/${proposal.head.ref}`)! : proposal.head.sha;
+        const all = ancestors(head).filter((item) => item.sha !== 'base-sha' && !item.sha.startsWith('old-')).reverse().slice(0, 250);
         const page = Number(query.page ?? 1);
         const perPage = Number(query.per_page ?? 100);
 
         return {
             status: 200,
             body: all.slice((page - 1) * perPage, page * perPage),
-            headers: all.length > page * perPage ? { link: `<https://github.test/repos/octo/demo/commits?sha=${query.sha}&per_page=${perPage}&page=${page + 1}>; rel="next"` } : undefined,
+            headers: all.length > page * perPage ? { link: `<https://github.test/repos/octo/demo/pulls/${params.number}/commits?per_page=${perPage}&page=${page + 1}>; rel="next"` } : undefined,
         };
     });
     fake.route('GET', '/repos/:owner/:repo/git/commits/:sha', ({ params }) => {
@@ -94,6 +96,7 @@ function setup(policy = POLICY) {
                 sha: params.sha,
                 message: commit.message,
                 tree: { sha: commit.tree },
+                parents: commit.parents.map((sha) => ({ sha })),
             },
         };
     });
@@ -623,6 +626,139 @@ describe('github_propose_change', () => {
         expect(fixture.current()).toMatchObject({ commits: 0, posts: 0 });
     });
 
+    it('does not scan default history for a fresh branch or an absent effect', async () => {
+        const fixture = setup();
+
+        for (let index = 0; index < 500; index += 1) {
+            fixture.history.set(`old-${index}`, {
+                tree: 'base-tree',
+                message: 'Default history',
+                parents: index === 0 ? [] : [`old-${index - 1}`],
+            });
+        }
+
+        fixture.history.get('base-sha')!.parents = ['old-499'];
+        await replay(fixture, 'r1');
+        await replay(fixture, 'r2', { ...INPUT, content: 'next' });
+
+        expect(fixture.fake.requests.some((request) => request.method === 'GET' && request.path === '/repos/octo/demo/commits')).toBe(false);
+        expect(fixture.fake.requests.some((request) => request.path.includes('/git/commits/old-'))).toBe(false);
+        expect(fixture.current().commits).toBe(2);
+    });
+
+    it('replays historical markers when the merged base equals the deleted PR head', async () => {
+        const fixture = setup();
+        const first = await replay(fixture, 'r1');
+
+        await replay(fixture, 'r2', { ...INPUT, content: 'later' });
+
+        const branch = fixture.current().pull!.head.ref;
+        const head = fixture.refs.get(`heads/${branch}`)!;
+
+        fixture.close(true, true);
+        fixture.current().pull!.base.sha = head;
+        expect(await replay(fixture, 'r1')).toEqual(first);
+        expect(fixture.current().commits).toBe(2);
+    });
+
+    it('fails closed before publication when proposal history reaches the reconciliation limit', async () => {
+        const fixture = setup();
+
+        await fixture.call();
+
+        const branch = fixture.current().pull!.head.ref;
+        let parent = fixture.refs.get(`heads/${branch}`)!;
+
+        for (let index = 0; index < 250; index += 1) {
+            const sha = `owned-${index}`;
+
+            fixture.history.set(sha, {
+                tree: fixture.history.get(parent)!.tree,
+                message: `Other run\n<!-- chamvi:proposal=${branch} -->`,
+                parents: [parent],
+            });
+            parent = sha;
+        }
+
+        fixture.refs.set(`heads/${branch}`, parent);
+
+        const before = fixture.fake.requests.length;
+
+        await expect(replay(fixture, 'r1')).rejects.toThrow(/history limit/);
+        expect(fixture.fake.requests.slice(before).filter((request) => request.path.endsWith('/pulls/12/commits'))).toHaveLength(3);
+        expect(fixture.current()).toMatchObject({
+            commits: 1,
+            posts: 1,
+            patches: 0,
+        });
+    });
+
+    it('retains historical effects behind an unmarked commit on a PR', async () => {
+        const fixture = setup();
+
+        await fixture.call();
+
+        const branch = fixture.current().pull!.head.ref;
+        const commit = fixture.history.get('commit-1')!;
+
+        fixture.history.set('merge', {
+            tree: commit.tree,
+            message: 'Manual update',
+            parents: ['commit-1'],
+        });
+        fixture.refs.set(`heads/${branch}`, 'merge');
+        expect(await replay(fixture, 'r1')).toMatchObject({ number: 12 });
+        expect(fixture.current().commits).toBe(1);
+    });
+
+    it('fails closed on an unmarked orphan ancestor rather than replaying an older effect', async () => {
+        const fixture = setup();
+
+        fixture.failNextCreate();
+        await expect(replay(fixture, 'r1')).rejects.toThrow();
+
+        const branch = Array.from(fixture.refs.keys()).find((ref) => ref !== 'heads/main')!;
+        const commit = fixture.history.get('commit-1')!;
+
+        fixture.history.set('manual', {
+            tree: commit.tree,
+            message: 'Manual update',
+            parents: ['commit-1'],
+        });
+        fixture.history.set('owned', {
+            tree: commit.tree,
+            message: `Later tool update\n<!-- chamvi:proposal=${branch.slice(6)} -->`,
+            parents: ['manual'],
+        });
+        fixture.refs.set(branch, 'owned');
+        await expect(replay(fixture, 'r1')).rejects.toThrow(/ancestry is not proposal-owned/);
+        expect(fixture.current()).toMatchObject({ commits: 1, posts: 1 });
+    });
+
+    it('fails closed on incomplete PR discovery rather than creating another generation', async () => {
+        const fixture = setup();
+
+        await fixture.call();
+
+        for (let index = 0; index < 1000; index += 1) {
+            fixture.pulls.unshift({
+                number: 100 + index,
+                state: 'closed',
+                head: { ref: `unrelated-${index}`, repo: { full_name: 'octo/demo' } },
+            });
+        }
+
+        const before = fixture.fake.requests.length;
+
+        await expect(replay(fixture, 'r2')).rejects.toThrow(/PR discovery limit/);
+        expect(fixture.fake.requests.slice(before).filter((request) => request.path.endsWith('/pulls'))).toHaveLength(10);
+        expect(fixture.current()).toMatchObject({
+            commits: 1,
+            posts: 1,
+            patches: 0,
+        });
+    });
+
     it('rejects missing diff data', async () => {
         const fixture = setup();
 
@@ -647,7 +783,11 @@ describe('github_propose_change', () => {
         const proposal = fixture.pulls.pop()!;
 
         for (let index = 0; index < 100; index += 1) {
-            fixture.pulls.push({ ...proposal, head: { ...proposal.head, ref: `unrelated-${index}` } });
+            fixture.pulls.push({
+                ...proposal,
+                number: 100 + index,
+                head: { ...proposal.head, ref: `unrelated-${index}` },
+            });
         }
 
         fixture.pulls.push(proposal);
@@ -665,6 +805,8 @@ describe('github_propose_change', () => {
             parent = sha;
         }
 
+        fixture.history.get('commit-1')!.message = 'Earlier commit';
+        fixture.history.get(parent)!.message = `Later proposal\n<!-- chamvi:proposal=${proposal.head.ref} -->\n${effectMarker('r1:propose:octo/demo:config/agent.yaml')}`;
         fixture.refs.set(`heads/${proposal.head.ref}`, parent);
         expect(await replay(fixture, 'r1')).toEqual(first);
         expect(fixture.fake.requests.some((request) => request.query.page === '2')).toBe(true);
