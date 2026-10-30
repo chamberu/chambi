@@ -63,7 +63,6 @@ describe('public api', () => {
         expectTypeOf<core.UserContent>().toEqualTypeOf<sdk.UserContent>();
         expectTypeOf<core.AssistantContent>().toEqualTypeOf<sdk.AssistantContent>();
         expectTypeOf<core.TextPart>().toEqualTypeOf<sdk.TextPart>();
-        expectTypeOf<core.ImagePart>().toEqualTypeOf<sdk.ImagePart>();
         expectTypeOf<core.FilePart>().toEqualTypeOf<sdk.FilePart>();
         expectTypeOf<core.AgentInstruction>().toEqualTypeOf<sdk.SystemModelMessage | sdk.UserModelMessage | sdk.AssistantModelMessage>();
         expectTypeOf<core.AgentDefinition['instructions']>().toEqualTypeOf<string | readonly core.AgentInstruction[]>();

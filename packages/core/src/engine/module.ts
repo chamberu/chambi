@@ -241,51 +241,81 @@ export class Engine implements IContextProvider {
             models: this.models,
             agentModel: (name: string) => this.agents.get(name)?.definition.model,
         } satisfies ModelContext);
+
         this.provided.set(HANDOFF_CONTEXT, this.createHandoffHost());
-        bindConversationIntake(this, async (channel, envelope, target) => {
-            if (this.channels.get(channel.name) !== channel) throw new ValidationError('Conversation intake needs the registered channel object.');
-            const capability = this.conversationCapability();
-            const copied = structuredClone(target);
-            const input = structuredClone(envelope);
-            const agent = this.agents.get(input.agent);
-            const key = agent && conversationKey(agent.definition);
-            if (key === undefined) throw new ValidationError('The agent has not enabled conversations.');
-            const identity: ConversationIdentity = {
-                agent: key,
-                channel: channel.name,
-                account: copied?.account,
-                chat: copied?.chat,
-                audience: copied?.audience,
-            };
-            assertConversationIdentity(identity);
-            assertConversationText(copied?.text, capability.limits.maxItemBytes);
-            for (const field of ['id', 'idempotencyKey', 'concurrencyKey', 'address'] as const) {
-                if (input[field] !== undefined) assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
-            }
-            const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
-            await capability.allow(ConversationOperation.DISPATCH, identity, input.agent, invoker);
-            // Validate caller keys before resolve can create any conversation rows.
-            assertTriggerKey('idempotency key', input.idempotencyKey);
-            assertTriggerKey('concurrency key', input.concurrencyKey);
-            const current = await capability.repository.findOne(identity);
-            const proposed = current ?? {
-                id: identityId(identity),
-                generation: 0,
-                identity,
-            };
-            if (input.concurrencyKey !== undefined && input.concurrencyKey !== conversationConcurrencyKey(proposed)) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
-            const scope = await capability.repository.resolve(identity);
-            const concurrencyKey = conversationConcurrencyKey(scope);
-            if (input.concurrencyKey !== undefined && input.concurrencyKey !== concurrencyKey) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
-            return this.createRun({
-                ...input,
-                channel: channel.name,
-                concurrencyKey,
-            }, undefined, { scope, text: copied.text });
-        });
-        for (const agent of opts.agents) this.assertRegistrable(agent);
+
+        bindConversationIntake(
+            this,
+            async (channel, envelope, target) => {
+                if (this.channels.get(channel.name) !== channel) {
+                    throw new ValidationError('Conversation intake needs the registered channel object.');
+                }
+
+                const capability = this.conversationCapability();
+                const copied = structuredClone(target);
+                const input = structuredClone(envelope);
+                const agent = this.agents.get(input.agent);
+                const key = agent && conversationKey(agent.definition);
+
+                if (key === undefined) {
+                    throw new ValidationError('The agent has not enabled conversations.');
+                }
+
+                const identity: ConversationIdentity = {
+                    agent: key,
+                    channel: channel.name,
+                    account: copied?.account,
+                    chat: copied?.chat,
+                    audience: copied?.audience,
+                };
+
+                assertConversationIdentity(identity);
+                assertConversationText(copied?.text, capability.limits.maxItemBytes);
+
+                for (const field of ['id', 'idempotencyKey', 'concurrencyKey', 'address'] as const) {
+                    if (input[field] !== undefined) assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
+                }
+
+                const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
+                await capability.allow(ConversationOperation.DISPATCH, identity, input.agent, invoker);
+
+                // Validate caller keys before resolve can create any conversation rows.
+                assertTriggerKey('idempotency key', input.idempotencyKey);
+                assertTriggerKey('concurrency key', input.concurrencyKey);
+
+                const current = await capability.repository.findOne(identity);
+                const proposed = current ?? {
+                    id: identityId(identity),
+                    generation: 0,
+                    identity,
+                };
+
+                if (input.concurrencyKey !== undefined && input.concurrencyKey !== conversationConcurrencyKey(proposed)) {
+                    throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+                }
+
+                const scope = await capability.repository.resolve(identity);
+                const concurrencyKey = conversationConcurrencyKey(scope);
+
+                if (input.concurrencyKey !== undefined && input.concurrencyKey !== concurrencyKey) {
+                    throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+                }
+
+                return this.createRun({
+                    ...input,
+                    channel: channel.name,
+                    concurrencyKey,
+                }, undefined, { scope, text: copied.text });
+            },
+        );
+
+        for (const agent of opts.agents) {
+            this.assertRegistrable(agent);
+        }
+
         // eslint-disable-next-line no-console
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));
+
         this.queue = new RunQueue({
             store: this.store,
             getAgent: (name) => this.getAgent(name),
@@ -661,16 +691,23 @@ export class Engine implements IContextProvider {
         }
 
         const signal = AbortSignal.any([this.preparationController.signal, ...(options.signal ? [options.signal] : [])]);
+
         const run = async () => {
             signal.throwIfAborted();
             const agents = [...new Set([...this.agents.values(), ...(options.agents ?? [])])];
             const runtimeBeforeChecks = this.skillRuntime;
-            for (const agent of agents) this.checkAgentSkills(agent);
+
+            for (const agent of agents) {
+                this.checkAgentSkills(agent);
+            }
+
             // A first runtime selected late in the pass must also receive earlier empty captures.
             if (this.skillRuntime !== runtimeBeforeChecks) {
                 for (const agent of agents) this.checkAgentSkills(agent);
             }
+
             const unprepared = agents.filter((agent) => !this.preparedSkills.has(agent));
+
             if (this.skillRuntime) {
                 const pending = await this.skillRuntime.prepare(unprepared, { signal });
                 signal.throwIfAborted();
@@ -683,6 +720,7 @@ export class Engine implements IContextProvider {
                 for (const agent of unprepared) this.preparedSkills.set(agent, EMPTY_SKILL_CONTRIBUTION);
             }
         };
+
         // Register ownership before run() can invoke external provider code.
         const done = Promise.resolve().then(run);
         this.preparing.add(done);
@@ -736,37 +774,41 @@ export class Engine implements IContextProvider {
             signal,
             done: Promise.resolve(),
         };
-        attempt.done = Promise.resolve().then(async () => {
-            try {
-                signal.throwIfAborted();
-                await this.prepare({ signal });
-                signal.throwIfAborted();
-                this.draining = false;
-                this.started = true;
-                this.queue.resume();
-                // Verification failures above propagate; ordinary recovery keeps its existing reporting behavior.
-                await this.recover().catch((error: unknown) => this.onError(error));
-                signal.throwIfAborted();
-                if (options.channels ?? true) {
-                    await this.startChannels(signal);
-                }
 
-                signal.throwIfAborted();
-                this.queue.startPolling();
-                await this.queue.pump();
-                signal.throwIfAborted();
-            } catch (error) {
-                this.started = false;
-                await this.queue.halt();
-                await this.stopChannels();
-                throw error;
-            } finally {
-                if (this.startup === attempt) {
-                    this.startup = undefined;
+        attempt.done = Promise.resolve()
+            .then(async () => {
+                try {
+                    signal.throwIfAborted();
+                    await this.prepare({ signal });
+                    signal.throwIfAborted();
+                    this.draining = false;
+                    this.started = true;
+                    this.queue.resume();
+                    // Verification failures above propagate; ordinary recovery keeps its existing reporting behavior.
+                    await this.recover().catch((error: unknown) => this.onError(error));
+                    signal.throwIfAborted();
+                    if (options.channels ?? true) {
+                        await this.startChannels(signal);
+                    }
+
+                    signal.throwIfAborted();
+                    this.queue.startPolling();
+                    await this.queue.pump();
+                    signal.throwIfAborted();
+                } catch (error) {
+                    this.started = false;
+                    await this.queue.halt();
+                    await this.stopChannels();
+                    throw error;
+                } finally {
+                    if (this.startup === attempt) {
+                        this.startup = undefined;
+                    }
                 }
-            }
-        });
+            });
+
         this.startup = attempt;
+
         return attempt.done;
     }
 
@@ -780,7 +822,9 @@ export class Engine implements IContextProvider {
         const admission = this.queue.halt();
         this.preparationController.abort();
         this.startup?.controller.abort();
+
         const startup = this.startup?.done;
+
         const done = (async () => {
             if (startup) {
                 await startup.catch(() => {});
@@ -793,12 +837,15 @@ export class Engine implements IContextProvider {
             await admission;
             await this.stopChannels();
         })();
+
         this.stopping = done;
+
         void done.then(() => {
             if (this.stopping === done) {
                 this.stopping = undefined;
             }
         });
+
         return done;
     }
 

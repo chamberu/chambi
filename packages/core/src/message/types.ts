@@ -10,7 +10,6 @@ export type {
     AssistantContent,
     AssistantModelMessage,
     FilePart,
-    ImagePart,
     ModelMessage,
     SystemModelMessage,
     TextPart,

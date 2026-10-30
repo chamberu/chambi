@@ -74,17 +74,22 @@ export type AgentDefinition<S extends StateSchema = StateSchema> = {
      * `'<provider>/<model id>'` (resolved through EngineOptions.models) or a
      * LanguageModel object; without it the agent uses EngineOptions.model.
      */
-    model?: ModelRef;
-    instructions: AgentInstructions;
-    readonly skills?: readonly SkillInput[];
+    model?: ModelRef,
+
+    instructions: AgentInstructions,
+
+    readonly skills?: readonly SkillInput[],
+
     /**
      * The channels that start the agent's runs (e.g. `cron.on('0 8 * * 1-5')`);
      * every subscription names a channel registered on the engine, ids are
      * unique per agent.
      */
     channels?: ChannelSubscription[];
+
     /** Shared-store execution cap across all channels; omitted or false adds no cap. */
     concurrencyMaxRuns?: number | false;
+
     /**
      * The agent's tools: a plain `ToolSet` (the default), or a factory for
      * dynamic sets, called once per execution with the same ToolContext the
@@ -92,6 +97,7 @@ export type AgentDefinition<S extends StateSchema = StateSchema> = {
      * context as `context` in `execute`.
      */
     tools?: ToolSet | ((ctx: ToolContext<S>) => ToolSet);
+
     /**
      * Per tool name, the context of a tool that is not chamvi's (e.g. a
      * third-party tool with its own `contextSchema`), passed through unchanged
@@ -100,22 +106,28 @@ export type AgentDefinition<S extends StateSchema = StateSchema> = {
      * defineAgent for a plain set, a failed run for a factory).
      */
     toolsContext?: Record<string, unknown>;
+
     /**
      * Tool hooks (see AgentHooks). AI SDK tools declaring their own
      * `needsApproval` are refused (nothing answers that request).
      */
     hooks?: AgentHooks;
+
     /** Filters the merged tool set (state tools included) per run, e.g. requireToolPermission(). */
     toolPolicy?: ToolPolicy;
+
     /** Record<collection, StandardSchemaV1>. */
     state?: S;
+
     budget?: Partial<Budget>;
+
     /**
      * Structured output (AI SDK `Output`, e.g. `Output.object({ schema })`):
      * a completed run's `output` is the parsed value instead of the text; a
      * final answer that does not parse fails the run with a ValidationError.
      */
     output?: OutputInterface;
+
     /**
      * Opts the agent into conversation memory (needs
      * EngineOptions.conversations); runs that come with no conversation still

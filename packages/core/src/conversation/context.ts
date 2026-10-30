@@ -46,6 +46,9 @@ export function bindConversationIntake(engine: Engine, dispatch: Intake): void {
 
 export function dispatchConversation(engine: Engine, channel: Pick<IChannel, 'name'>, envelope: ChannelDispatchEnvelope, target: ConversationTarget): Promise<DispatchResult> {
     const dispatch = intake.get(engine);
-    if (!dispatch) return Promise.reject(new ValidationError('Conversation intake is unavailable.'));
+    if (!dispatch) {
+        return Promise.reject(new ValidationError('Conversation intake is unavailable.'));
+    }
+
     return dispatch(channel, envelope, target);
 }

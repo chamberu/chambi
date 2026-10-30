@@ -37,15 +37,20 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
     const seen = new Set<string>();
     for (const subscription of def.channels ?? []) {
         assertConcurrencyMaxRuns(subscription.concurrencyMaxRuns, `Agent "${def.name}" subscription "${subscription.id}" concurrencyMaxRuns`);
+
         if (seen.has(subscription.id)) {
             throw new InvalidAgentDefinitionError(
                 `Agent "${def.name}" has duplicate subscription id "${subscription.id}".`,
             );
         }
+
         seen.add(subscription.id);
     }
 
-    const skills = snapshotSkillInputs(def.skills, typeof def.tools === 'function' ? {} : def.tools ?? {});
+    const skills = snapshotSkillInputs(
+        def.skills,
+        typeof def.tools === 'function' ? {} : def.tools ?? {}
+    );
 
     // a factory's set is only known per execution, the engine checks it there
     if (typeof def.tools !== 'function') {
