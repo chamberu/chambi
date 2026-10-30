@@ -14,6 +14,7 @@ import {
     optionalBoolean,
     optionalPath,
     signalOf,
+    untrustedWorkspaceResult,
     workspaceOf,
 } from './helpers.ts';
 import type { CodingWorkspaces, GitDiffResult } from './types.ts';
@@ -26,6 +27,7 @@ type GitDiffInput = {
 
 export function gitDiffTool(workspaces: CodingWorkspaces): Tool<GitDiffInput, GitDiffResult> {
     return defineTool<GitDiffInput, GitDiffResult>({
+        trust: { untrustedResult: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
         description: 'Show the changes in the workspace: git status --short (untracked files as ??) and the unified diff of the working tree ' +
             'against the index, or of the index against HEAD with staged: true.',
         inputSchema: objectSchema<GitDiffInput>({

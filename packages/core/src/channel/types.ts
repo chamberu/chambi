@@ -64,6 +64,8 @@ export type ChannelSendOptions = {
  */
 export interface IChannel<TInput = ChannelRequest, TOutput = Response> {
     readonly name: string;
+    /** Intake authored by external parties taints every triggered run. */
+    readonly untrusted?: boolean;
     /**
      * Where `emit()` and `approve()` send when the tool names no address and
      * the run did not come from this channel (e.g. OpenClaw's `deliver.to`);

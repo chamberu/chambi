@@ -10,6 +10,34 @@ import type { Run, Step } from '@chamvi/core';
 import { serializeRun, serializeStep } from '../../../src/runs/helpers.ts';
 
 describe('serializeRun', () => {
+    it('serializes the first untrusted source and time on the wire', () => {
+        const now = new Date('2026-10-30T10:00:00.000Z');
+        const run: Run = {
+            id: 'r1',
+            agent: 'gate',
+            status: 'waiting',
+            taint: { at: now, source: 'web.fetch' },
+            trigger: {
+                id: 't1',
+                agent: 'gate',
+                trigger: 'http',
+                channel: 'http',
+                payload: undefined,
+                receivedAt: now,
+            },
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: now,
+            updatedAt: now,
+        };
+        const view = serializeRun(run);
+
+        expect(view.taint).toEqual(run.taint);
+        expect(JSON.parse(JSON.stringify(view)).taint).toEqual({
+            at: '2026-10-30T10:00:00.000Z',
+            source: 'web.fetch',
+        });
+    });
+
     it('drops the claim and keeps every other key', () => {
         const now = new Date(0);
         const run: Run = {

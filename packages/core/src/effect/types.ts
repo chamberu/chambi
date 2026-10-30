@@ -10,7 +10,7 @@ import type { AgentHooks } from '../agent/types.ts';
 import type { ApprovalRequest } from '../engine/execute/types.ts';
 import type { IEffectRepository } from '../repository/types.ts';
 import type { StateSchema } from '../state/types.ts';
-import type { ToolContext } from '../tool/types.ts';
+import type { AgentTrust, ToolContext } from '../tool/types.ts';
 import type { EFFECT, EFFECT_HOOKS } from './constants.ts';
 
 export type EffectHooks = {
@@ -36,6 +36,10 @@ export type ToolCallFrame = {
     stepIndex: number;
     /** How many approve() calls this tool call made so far. */
     approvals: number;
+    /** Automatic bound approvals never consume ordinary approve() ordinals. */
+    boundApprovals?: number;
+    /** The final-input classification captured before the tool can mutate its input. */
+    untrustedResult?: boolean;
     /** Where approve() reads the recorded decisions. */
     effects: IEffectRepository;
     /** Set by the approve() that suspended the call; the wrapper answers it with a placeholder. */
@@ -45,6 +49,7 @@ export type ToolCallFrame = {
 };
 
 export type WrapToolsOptions = {
+    trust?: AgentTrust;
     /** Re-checks every call: a refused one throws ToolNotAllowedError. */
     allow?: (toolName: string) => boolean;
     /** The agent's tool hooks, run for every call of every tool. */

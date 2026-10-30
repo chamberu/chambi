@@ -263,6 +263,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .chip-queued::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--c); }
 .chip-running { --c: var(--ch-run); --t: var(--ch-run-tint); }
 .chip-running::before { border-radius: 50%; box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 25%, transparent); animation: ch-pulse 1.4s ease-in-out infinite; }
+.chip-untrusted { --c: var(--ch-wait); --t: var(--ch-wait-tint); }
+.taint-warning { color: var(--ch-wait); font-weight: 500; }
 .chip-waiting { --c: var(--ch-wait); --t: var(--ch-wait-tint); }
 .chip-waiting::before { width: 3px; height: 8px; background: transparent; box-shadow: -2px 0 0 0 var(--c), 2px 0 0 0 var(--c); margin: 0 2px; }
 .chip-completed { --c: var(--ch-ok); --t: var(--ch-ok-tint); }

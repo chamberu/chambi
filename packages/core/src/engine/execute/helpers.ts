@@ -37,6 +37,7 @@ import { createAgentState } from '../../state/module.ts';
 import { createStateTools } from '../../state/tools.ts';
 import { TOOL_CONTEXT_MISSING } from '../../tool/constants.ts';
 import { hasToolContext } from '../../tool/helpers.ts';
+import { assertAgentTrust } from '../../trust/asserts.ts';
 import type { ToolContext } from '../../tool/types.ts';
 import type { TriggerEnvelope } from '../../trigger/types.ts';
 import { MAX_ERROR_CAUSE_LENGTH } from './constants.ts';
@@ -187,6 +188,7 @@ export function assembleTools(
 
     if (!userTools && !schema && !Object.keys(ctx.skills?.tools ?? {}).length) {
         ctx.skills?.checkTools({});
+        assertAgentTrust(ctx.agent.definition.trust, {});
 
         if (agentToolsContext) {
             assertToolsContext(ctx.agent.name, {}, agentToolsContext);
@@ -217,6 +219,7 @@ export function assembleTools(
 
     // a factory's set is only known here: refused like defineAgent refuses a plain one
     assertNoNeedsApproval(ctx.agent.name, tools);
+    assertAgentTrust(ctx.agent.definition.trust, tools);
 
     const toolsContext: Record<string, unknown> = {};
 
@@ -238,6 +241,7 @@ export function assembleTools(
         return {
             tools: wrapToolsForRun(tools, toolContext, ctx.store.effects, {
                 hooks,
+                trust: ctx.agent.definition.trust,
                 onSuspend,
                 stepIndex,
             }),
@@ -251,6 +255,7 @@ export function assembleTools(
         tools: wrapToolsForRun(tools, toolContext, ctx.store.effects, {
             allow,
             hooks,
+            trust: ctx.agent.definition.trust,
             onSuspend,
             stepIndex,
         }),

@@ -10,11 +10,21 @@ import type { ToolChannels } from '../channel/types.ts';
 import type { RunContext } from '../run/types.ts';
 import type { IAgentState, StateSchema } from '../state/types.ts';
 
+/** Operator-authored classifications, evaluated on the final validated input. */
+export type ToolTrust<I = any, S extends StateSchema = StateSchema> = {
+    untrustedResult?: boolean | ((input: I, ctx: ToolContext<S>) => boolean | Promise<boolean>);
+    outbound?: boolean | ((input: I, ctx: ToolContext<S>) => boolean | Promise<boolean>);
+};
+
+export type AgentTrust = {
+    onTainted?: 'approve' | 'deny';
+    tools?: Record<string, { untrustedResult?: boolean; outbound?: boolean }>;
+};
+
 /**
- * What a chamvi tool (built with `defineTool` or `defineEffectTool`) gets as
- * `context` in `execute`: one object per execution, shared by every call of
- * it and by the tools factory. Treat it as immutable. Values provided on the
- * engine (`engine.provide`) are reached with `inject(ctx, key)`, never as a field.
+ * What a chamvi tool gets as `context`: one object per execution, shared by
+ * every call and the tools factory. Treat it as immutable. Engine-provided
+ * values are reached with `inject(ctx, key)`, never as a field.
  */
 export type ToolContext<S extends StateSchema = StateSchema> = {
     /**

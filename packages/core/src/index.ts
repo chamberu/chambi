@@ -15,6 +15,7 @@ export * from './conversation/index.ts';
 export * from './effect/index.ts';
 export * from './engine/index.ts';
 export * from './errors/index.ts';
+export * from './extract/index.ts';
 export * from './handoff/index.ts';
 export * from './message/index.ts';
 export * from './model/index.ts';

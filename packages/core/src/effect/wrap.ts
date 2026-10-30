@@ -9,7 +9,8 @@ import type { ToolExecutionOptions, ToolSet } from 'ai';
 import { isObject } from 'smob';
 import { ToolNotAllowedError } from '../errors/index.ts';
 import type { IEffectRepository } from '../repository/types.ts';
-import type { ToolContext } from '../tool/types.ts';
+import type { ToolContext, ToolTrust } from '../tool/types.ts';
+import { assertTrust, gateOutbound, markUntrusted } from '../trust/module.ts';
 import { SUSPENDED_RESULT } from '../approval/constants.ts';
 import { SuspendSignal } from '../approval/request.ts';
 import { EFFECT, EFFECT_HOOKS } from './constants.ts';
@@ -107,6 +108,8 @@ export function wrapToolsForRun(
     } = options;
     const inflight = new Map<string, Promise<unknown>>();
     const wrapped: ToolSet = {};
+    // Public ToolContext is mutable; trust authority belongs to the original execution.
+    const execution = { run: ctx.run };
 
     for (const [name, def] of Object.entries(tools)) {
         const effectHooks = (def as { [EFFECT_HOOKS]?: EffectHooks })[EFFECT_HOOKS];
@@ -158,24 +161,56 @@ export function wrapToolsForRun(
                 throw new ToolNotAllowedError(name);
             }
         };
-        const before = async (input: unknown, callOptions: unknown): Promise<unknown> => {
-            if (!hooks.beforeToolExecution) {
-                return input;
-            }
+        const trust: ToolTrust = { ...(def as { trust?: ToolTrust }).trust, ...options.trust?.tools?.[name] };
+        const classified = trust.untrustedResult || trust.outbound;
+        const matches = async (flag: ToolTrust['outbound'], input: unknown) => (typeof flag === 'function' ? flag(input, ctx) : flag === true);
+        const untrusted = async () => {
+            const frame = currentToolCall();
 
-            const next = await hooks.beforeToolExecution({
+            if (!frame?.suspended && frame?.untrustedResult) {
+                await markUntrusted(execution, `tool:${name}`);
+            }
+        };
+        const readResult = async <T>(work: () => T | PromiseLike<T>): Promise<T> => {
+            try {
+                return await work();
+            } catch (error) {
+                await untrusted();
+
+                throw error;
+            }
+        };
+        const readIterable = async function* (iterable: AsyncIterable<unknown>) {
+            try {
+                yield* iterable;
+            } catch (error) {
+                await untrusted();
+
+                throw error;
+            }
+        };
+        const before = async (input: unknown, callOptions: unknown): Promise<unknown> => {
+            assertTrust(execution.run, Boolean(classified));
+
+            const next = await hooks.beforeToolExecution?.({
                 toolName: name,
                 toolCallId: toolCallIdOf(callOptions),
                 input,
             }, ctx);
+            const final = next === undefined || next === input ? input : await validateToolInput(name, def.inputSchema, next);
+            const frame = currentToolCall()!;
 
-            if (next === undefined || next === input) {
-                return input;
+            frame.untrustedResult = await matches(trust.untrustedResult, final);
+
+            if (await matches(trust.outbound, final)) {
+                await gateOutbound(execution, name, final);
             }
 
-            return validateToolInput(name, def.inputSchema, next);
+            return final;
         };
         const after = async (input: unknown, output: unknown, callOptions: unknown): Promise<unknown> => {
+            await untrusted();
+
             if (!hooks.afterToolExecution) {
                 return output;
             }
@@ -191,7 +226,7 @@ export function wrapToolsForRun(
         };
 
         if (!(EFFECT in def)) {
-            if (!hooks.beforeToolExecution && !hooks.afterToolExecution) {
+            if (!classified && !hooks.beforeToolExecution && !hooks.afterToolExecution) {
                 wrapped[name] = {
                     ...def,
                     execute: (input: unknown, callOptions: unknown) => inFrame(callOptions, () => {
@@ -222,9 +257,9 @@ export function wrapToolsForRun(
 
                         markStreaming();
 
-                        const iterable = execute.call(def, final, callOptions) as AsyncIterable<unknown>;
+                        const iterable = readIterable(execute.call(def, final, callOptions) as AsyncIterable<unknown>);
 
-                        if (!hooks.afterToolExecution) {
+                        if (!hooks.afterToolExecution && !trust.untrustedResult) {
                             yield* iterable;
 
                             return;
@@ -234,6 +269,8 @@ export function wrapToolsForRun(
                         let last: unknown;
 
                         for await (const chunk of iterable) {
+                            await untrusted();
+
                             if (held) {
                                 yield last;
                             }
@@ -255,12 +292,20 @@ export function wrapToolsForRun(
                     check();
 
                     const final = await before(input, callOptions);
-                    let result: unknown = await execute.call(def, final, callOptions);
+                    let result: unknown = await readResult(() => execute.call(def, final, callOptions));
 
                     // a streaming result of a plain function: its final value
                     if (isAsyncIterable(result)) {
                         markStreaming();
-                        result = await lastOf(result);
+
+                        const iterable = result;
+
+                        result = await lastOf((async function* () {
+                            for await (const chunk of readIterable(iterable)) {
+                                await untrusted();
+                                yield chunk;
+                            }
+                        })());
                     }
 
                     return after(final, result, callOptions);
@@ -277,7 +322,7 @@ export function wrapToolsForRun(
                 return stored.result;
             }
 
-            const remote = await effectHooks?.alreadyApplied?.(key, input, ctx);
+            const remote = await readResult(() => effectHooks?.alreadyApplied?.(key, input, ctx));
 
             if (remote !== undefined) {
                 await store.save(key, remote);
@@ -286,11 +331,11 @@ export function wrapToolsForRun(
             }
 
             // streaming tools yield; the effect's result is the last value
-            let result: unknown = await execute.call(def, input, callOptions);
+            let result: unknown = await readResult(() => execute.call(def, input, callOptions));
 
             if (isAsyncIterable(result)) {
                 markStreaming();
-                result = await lastOf(result);
+                result = await lastOf(readIterable(result));
             }
 
             // The effect already happened: a failing write must not fail the call.

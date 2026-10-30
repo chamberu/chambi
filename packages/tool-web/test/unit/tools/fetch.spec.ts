@@ -11,7 +11,8 @@ import {
     it,
     vi,
 } from 'vitest';
-import type { ChamviError } from '@chamvi/core';
+import type { Tool } from 'ai';
+import type { ChamviError, ToolTrust } from '@chamvi/core';
 import { ValidationError } from '@chamvi/core';
 import { ControllableClock } from '@chamvi/test-kit';
 import {
@@ -56,6 +57,12 @@ function codeOf(error: unknown): string | undefined {
 const PAGE = '<html><head><title>Changelog</title></head><body><main><h2>1.2.0</h2><p>Fixed <a href="/i/1">#1</a>.</p></main></body></html>';
 
 describe('web_fetch', () => {
+    it('classifies page contents as untrusted and request URLs as outbound', () => {
+        const tool = webTools().web_fetch as Tool & { trust: ToolTrust };
+
+        expect(tool.trust).toEqual({ untrustedResult: true, outbound: true });
+    });
+
     it('returns a page as markdown with its title', async () => {
         const { web, fetchPage } = setup();
 

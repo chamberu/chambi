@@ -8,6 +8,7 @@
 import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
 import { assertInstructions } from '../message/helpers.ts';
+import { assertAgentTrust } from '../trust/asserts.ts';
 import { snapshotSkillInputs } from '../skill/helpers.ts';
 import type { StateSchema } from '../state/types.ts';
 import {
@@ -31,6 +32,7 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
     }
 
     assertInstructions(def.instructions);
+    assertAgentTrust(def.trust, typeof def.tools === 'function' ? undefined : def.tools);
     assertConcurrencyMaxRuns(def.concurrencyMaxRuns, `Agent "${def.name}" concurrencyMaxRuns`);
     conversationKey(def);
 

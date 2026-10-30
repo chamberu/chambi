@@ -14,7 +14,12 @@ import {
     PrimaryColumn,
 } from 'typeorm';
 import type { Relation } from 'typeorm';
-import type { Run, RunStatusLiteral, Usage } from '@chamvi/core';
+import type {
+    Run,
+    RunStatusLiteral,
+    RunTaint,
+    Usage,
+} from '@chamvi/core';
 import { OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
 import { ConversationEntity } from './conversation.ts';
 
@@ -98,6 +103,14 @@ export class RunEntity {
         transformer: OPTIONAL_JSON_TRANSFORMER,
     })
     waiting!: Record<string, unknown> | null;
+
+    @Column({
+        name: 'taint',
+        type: 'jsonb',
+        nullable: true,
+        transformer: OPTIONAL_JSON_TRANSFORMER,
+    })
+    taint!: RunTaint | null;
 
     @Column({
         name: 'claim_owner',

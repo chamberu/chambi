@@ -8,7 +8,7 @@
 import type { Tool, ToolExecuteFunction, ToolExecutionOptions } from 'ai';
 import type { StateSchema } from '../state/types.ts';
 import { defineTool } from '../tool/define.ts';
-import type { ToolContext } from '../tool/types.ts';
+import type { ToolContext, ToolTrust } from '../tool/types.ts';
 import { EFFECT, EFFECT_HOOKS } from './constants.ts';
 import type { EffectHooks, EffectTool } from './types.ts';
 
@@ -24,6 +24,7 @@ export function effectMarker(effectKey: string): string {
 export function defineEffectTool<I, O, S extends StateSchema = StateSchema>(def: Tool<I, O, ToolContext<S>> & {
     execute: ToolExecuteFunction<I, O, ToolContext<S>>;
     contextSchema?: never;
+    trust?: ToolTrust<I, S>;
     /**
      * Default: `${ctx.run.runId}:${toolName}:${stableHash(input)}`.
      * `options` are the AI SDK call options (`toolCallId`, `messages`), e.g. to key by model step.
