@@ -31,17 +31,20 @@ describe('mockModel', () => {
             { parts: [{ type: 'text', text: 'done' }] },
         ]);
         const first = await generateText({ model, prompt: 'hi' });
+
         expect(first.toolCalls.map((c) => c.toolName)).toEqual(['a', 'b']);
         expect(first.text).toBe('thinking');
         expect(first.usage.inputTokens).toBe(3);
 
         // the counter is shared between generate and stream
         const second = streamText({ model, prompt: 'hi' });
+
         expect(await second.text).toBe('done');
     });
 
     it('throws when the script is exhausted', async () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'only' }] }]);
+
         await generateText({ model, prompt: 'hi' });
         await expect(generateText({
             model,

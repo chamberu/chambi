@@ -25,11 +25,13 @@ import type { CronChannel, CronChannelOptions } from './types.ts';
  */
 export function cronChannel(options: CronChannelOptions = {}): CronChannel {
     assertCronChannelOptions(options);
+
     const name = options.name ?? CRON_CHANNEL_NAME;
     let scheduler: IScheduler | undefined;
 
     const stop = async () => {
         const current = scheduler;
+
         scheduler = undefined;
         await current?.stop();
     };
@@ -39,6 +41,7 @@ export function cronChannel(options: CronChannelOptions = {}): CronChannel {
         async start(ctx) {
             // a start without a stop in between replaces the schedule, never doubles it
             await stop();
+
             const next = createScheduler({
                 engine: ctx.engine,
                 channel: name,
@@ -47,12 +50,15 @@ export function cronChannel(options: CronChannelOptions = {}): CronChannel {
                 lockTtlMs: options.lockTtlMs,
                 onError: options.onError,
             });
+
             scheduler = next;
             await next.start();
         },
         stop,
         on: (expression, subscriptionOptions) => createCronSubscription(name, expression, subscriptionOptions),
     };
+
     markCronChannel(channel);
+
     return channel;
 }

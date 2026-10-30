@@ -42,25 +42,33 @@ function inspectInventory(directory: string): SkillBundleInventory {
     const entries: SkillBundleInventory = new Map();
     const pending = [{ path: '', depth: 0 }];
     let files = 0;
+
     while (pending.length) {
         const current = pending.pop()!;
         const absolute = join(directory, current.path);
         const identity = fs.lstatSync(absolute, { bigint: true });
+
         if (!identity.isDirectory()) {
             invalidSkill(current.path || '.', 'expected a regular directory without symlinks');
         }
 
         entries.set(current.path, identity);
+
         const handle = fs.opendirSync(absolute);
+
         try {
             let child = handle.readSync();
+
             while (child) {
                 const path = current.path ? `${current.path}/${child.name}` : child.name;
+
                 if (child.name.startsWith('.') || child.name.includes('\\') || SKILL_CONTROL_PATTERN.test(child.name)) {
                     invalidSkill(current.path || '.', 'hidden or invalid paths are unsupported');
                 }
 
-                if (entries.has(path) || pending.some((entry) => entry.path === path)) {
+                const hasPendingEntry = !entries.has(path) && pending.some((entry) => entry.path === path);
+
+                if (entries.has(path) || hasPendingEntry) {
                     invalidSkill(path, 'duplicate decoded inventory path');
                 }
 
@@ -69,6 +77,7 @@ function inspectInventory(directory: string): SkillBundleInventory {
                 }
 
                 const stat = fs.lstatSync(join(directory, path), { bigint: true });
+
                 if (stat.isDirectory()) {
                     if (current.depth >= SKILL_MAX_DIRECTORY_DEPTH) {
                         invalidSkill(path, 'directory nesting exceeds 64 levels');
@@ -90,10 +99,12 @@ function inspectInventory(directory: string): SkillBundleInventory {
         } finally {
             handle.closeSync();
         }
+
         if (!sameIdentity(identity, fs.lstatSync(absolute, { bigint: true }))) {
             invalidSkill(current.path || '.', 'directory changed during inspection');
         }
     }
+
     if (!entries.get('SKILL.md')?.isFile()) {
         invalidSkill('SKILL.md', 'root file is required');
     }
@@ -105,13 +116,16 @@ function readBoundedFile(directory: string, path: string, expected: BigIntStats)
     const limit = path === 'SKILL.md' ?
         SKILL_MAX_FRONTMATTER_BYTES + SKILL_MAX_BODY_BYTES + 10 :
         SKILL_MAX_REFERENCE_BYTES;
+
     if (expected.size > BigInt(limit)) {
         invalidSkill(path, 'file exceeds its byte limit');
     }
 
     const descriptor = fs.openSync(join(directory, path), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+
     try {
         const before = fs.fstatSync(descriptor, { bigint: true });
+
         if (!before.isFile() || !sameIdentity(expected, before)) {
             invalidSkill(path, 'file changed before reading');
         }
@@ -119,14 +133,17 @@ function readBoundedFile(directory: string, path: string, expected: BigIntStats)
         const buffer = Buffer.alloc(Number(before.size) + 1);
         let length = 0;
         let count = fs.readSync(descriptor, buffer, length, buffer.length - length, null);
+
         while (count > 0) {
             length += count;
+
             if (length === buffer.length) {
                 invalidSkill(path, 'file grew during reading');
             }
 
             count = fs.readSync(descriptor, buffer, length, buffer.length - length, null);
         }
+
         if (BigInt(length) !== before.size || !sameIdentity(before, fs.fstatSync(descriptor, { bigint: true }))) {
             invalidSkill(path, 'file changed during reading');
         }
@@ -139,7 +156,9 @@ function readBoundedFile(directory: string, path: string, expected: BigIntStats)
 
 function readSnapshot(directory: string) {
     validateSkillDirectory(directory);
+
     const root = resolve(directory);
+
     try {
         const before = inspectInventory(root);
         const files = [...before].filter(([, stat]) => stat.isFile()).sort(([a], [b]) => compareSkillPaths(a, b));
@@ -147,34 +166,48 @@ function readSnapshot(directory: string) {
         const contents = new Map<string, string>();
         const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
         let total = 0;
+
         for (const [path, identity] of files) {
             if (BigInt(total) + identity.size > BigInt(SKILL_MAX_TOTAL_BYTES)) {
                 invalidSkill('.', 'bundle exceeds 1 MiB');
             }
 
             const buffer = readBoundedFile(root, path, identity);
+
             total += buffer.length;
+
             let content: string;
+
             try {
                 content = decoder.decode(buffer);
             } catch {
                 invalidSkill(path, 'file must be valid UTF-8 text');
             }
+
             if (content.includes('\0')) {
                 invalidSkill(path, 'binary content is unsupported');
             }
 
             contents.set(path, content);
+
             const pathBytes = Buffer.from(path);
+
             hash.update(`${pathBytes.length}:`).update(pathBytes).update(`${buffer.length}:`).update(buffer);
         }
+
         const after = inspectInventory(root);
-        if (before.size !== after.size || [...before].some(([path, identity]) => !after.has(path) || !sameIdentity(identity, after.get(path)!))) {
+
+        const hasChangedEntry = before.size === after.size &&
+            [...before].some(([path, identity]) => !after.has(path) || !sameIdentity(identity, after.get(path)!));
+
+        if (before.size !== after.size || hasChangedEntry) {
             invalidSkill('.', 'bundle changed during loading');
         }
 
         const document = parseSkillDocument(contents.get('SKILL.md')!);
+
         contents.delete('SKILL.md');
+
         return {
             document,
             hash: hash.digest('hex'),
@@ -196,11 +229,13 @@ export function hashSkillBundle(directory: string): string {
 
 export function readSkillBundle(descriptor: ApprovedSkill): SkillBundle {
     validateApprovedSkill(descriptor);
+
     const {
         document,
         hash,
         contents,
     } = readSnapshot(descriptor.directory);
+
     if (document.name !== descriptor.name) {
         invalidSkill('SKILL.md', 'name does not match the approved descriptor');
     }

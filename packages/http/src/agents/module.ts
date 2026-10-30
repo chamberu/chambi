@@ -36,7 +36,9 @@ export function registerAgentRoutes(app: App, ctx: HttpContext): void {
 
     app.get('/agents', defineCoreHandler(async (event) => {
         await authorize(event, ctx, Permission.RUN_READ);
+
         const hookChannels = new Set(ctx.channels.filter(isWebhookChannel).map((channel) => channel.name));
+
         return {
             data: ctx.agents.list().map((agent) => summarizeAgent(agent, ctx.basePath, hookChannels)),
             issues: ctx.agentIssues(),
@@ -45,39 +47,51 @@ export function registerAgentRoutes(app: App, ctx: HttpContext): void {
 
     app.get('/schedules', defineCoreHandler(async (event) => {
         await authorize(event, ctx, Permission.RUN_READ);
+
         return { data: listSchedules(ctx.agents.list(), ctx.clock.now()) };
     }));
 
     app.get('/agents/:name/state/kv', defineCoreHandler(async (event) => {
         await authorize(event, ctx, Permission.STATE_READ);
+
         const agent = requireAgent(ctx.agents, param(event, 'name'));
+
         return { data: await ctx.store.state.find(agent.name, parseKvListQuery(event.searchParams)) };
     }));
 
     app.get('/agents/:name/state/kv/:key', defineCoreHandler(async (event) => {
         await authorize(event, ctx, Permission.STATE_READ);
+
         const agent = requireAgent(ctx.agents, param(event, 'name'));
         const key = param(event, 'key');
         const value = await ctx.store.state.findOne(agent.name, key);
+
         return { key, value: value ?? null };
     }));
 
     app.patch('/agents/:name/state/kv/:key', defineCoreHandler(async (event) => {
         await authorize(event, ctx, Permission.STATE_WRITE);
+
         const agent = requireAgent(ctx.agents, param(event, 'name'));
         const key = param(event, 'key');
         const body = await validateBody(kvContainer, await readJsonBody(event, ctx.bodyLimit), { required: true });
+
         await ctx.store.state.set(agent.name, key, body.value);
+
         return { key, value: body.value };
     }));
 
     app.get('/agents/:name/state/collections/:collection', defineCoreHandler(async (event) => {
         await authorize(event, ctx, Permission.STATE_READ);
+
         const agent = requireAgent(ctx.agents, param(event, 'name'));
         const collection = param(event, 'collection');
+
         assertCollection(agent, collection);
+
         const query = parseCollectionQuery(event.searchParams);
         const docs = await ctx.store.state.findDocuments(agent.name, collection, query);
+
         return { data: docs.map(serializeDoc) };
     }));
 }

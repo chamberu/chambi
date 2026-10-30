@@ -14,10 +14,14 @@ import { TIMER_MAX_MS } from './constants.ts';
 import type { WebToolsOptions, WebToolsOptionsNormalized } from './types.ts';
 
 function positiveInteger(value: unknown, name: string, fallback: number, max = Number.MAX_SAFE_INTEGER): number {
-    if (value === undefined) return fallback;
+    if (value === undefined) {
+        return fallback;
+    }
+
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > max) {
         throw new InvalidAgentDefinitionError(`webTools() ${name} must be an integer from 1 to ${max}.`);
     }
+
     return value;
 }
 
@@ -26,18 +30,23 @@ export function normalizeOptions(options: WebToolsOptions): WebToolsOptionsNorma
     if (!isObject(options)) {
         throw new InvalidAgentDefinitionError('webTools() options must be an object.');
     }
+
     if (options.client !== undefined && !isClient(options.client)) {
         throw new InvalidAgentDefinitionError('webTools() client must be a hapic client.');
     }
+
     for (const name of ['lookup', 'allowUrl'] as const) {
         if (options[name] !== undefined && typeof options[name] !== 'function') {
             throw new InvalidAgentDefinitionError(`webTools() ${name} must be a function.`);
         }
     }
+
     const clock = options.clock ?? systemClock;
+
     if (!isObject(clock) || typeof clock.now !== 'function' || typeof clock.setTimeout !== 'function') {
         throw new InvalidAgentDefinitionError('webTools() clock must have now() and setTimeout().');
     }
+
     return {
         client: options.client ?? createClient(),
         lookup: options.lookup ?? systemLookup,

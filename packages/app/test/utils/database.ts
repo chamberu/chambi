@@ -17,6 +17,8 @@ export type PostgresConnection = {
 };
 
 declare module 'vitest' {
+    // Vitest's augmentation name is fixed by its public API.
+    // eslint-disable-next-line @typescript-eslint/naming-convention
     export interface ProvidedContext {
         postgres: PostgresConnection;
     }
@@ -35,6 +37,7 @@ export async function createTestDatabaseUrl(): Promise<string> {
     }
 
     const database = `chamvi_test_${randomUUID().replaceAll('-', '')}`;
+
     await createDatabase({
         options: {
             type: 'postgres',
@@ -48,5 +51,6 @@ export async function createTestDatabaseUrl(): Promise<string> {
 
     const user = encodeURIComponent(postgres.username);
     const password = encodeURIComponent(postgres.password);
+
     return `postgres://${user}:${password}@${postgres.host}:${postgres.port}/${database}`;
 }

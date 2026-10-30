@@ -39,13 +39,16 @@ async function entriesOf(options: {
         modules: [configModule({ logger }), options.module ?? staticTokensModule(), ...(options.extra ?? [])],
     });
     const entries: AuthenticatorEntry[] = harness.container.resolveAll(AppToken.AUTHENTICATORS);
+
     await harness.stop();
+
     return { entries, logger };
 }
 
 describe('staticTokensModule', () => {
     it('is named and depends on the config module', () => {
         const module = staticTokensModule();
+
         expect(module.name).toBe(ModuleName.STATIC_TOKENS);
         expect(module.dependencies).toEqual([ModuleName.CONFIG]);
     });
@@ -96,6 +99,7 @@ describe('staticTokensModule', () => {
 
     it('nothing without tokens outside dev', async () => {
         const { entries, logger } = await entriesOf({});
+
         expect(entries).toEqual([]);
         expect(logger.entries).toEqual([]);
     });
@@ -104,10 +108,14 @@ describe('staticTokensModule', () => {
         const { entries, logger } = await entriesOf({ dev: true });
 
         expect(entries).toHaveLength(1);
+
         const warnings = logger.entries.filter((entry) => entry.msg.includes('CHAMVI_TOKENS'));
+
         expect(warnings).toHaveLength(1);
         expect(warnings[0]!.level).toBe('warn');
+
         const token = warnings[0]!.token as string;
+
         expect(token.length).toBeGreaterThanOrEqual(32);
         await expect(entries[0]!.authenticator(bearer(token))).resolves.toEqual({
             id: 'dev',

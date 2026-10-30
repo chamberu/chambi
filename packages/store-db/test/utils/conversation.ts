@@ -11,6 +11,7 @@ import { DatabaseConversationRepository, DatabaseRunRepository } from '@chamvi/s
 
 export async function seedRun(dataSource: DataSource, id: string, overrides: Partial<Run> = {}): Promise<void> {
     const now = new Date('2026-10-28T00:00:00.000Z');
+
     await new DatabaseRunRepository({ dataSource }).insert({
         id,
         agent: 'helper',
@@ -34,6 +35,7 @@ export async function seedRun(dataSource: DataSource, id: string, overrides: Par
 export class SeededConversationRepository extends DatabaseConversationRepository {
     override async beginTurn(scope: ConversationScope, runId: string, text: string, limits: ResolvedConversationLimits) {
         await seedRun(this.dataSource, runId);
+
         return super.beginTurn(scope, runId, text, limits);
     }
 }

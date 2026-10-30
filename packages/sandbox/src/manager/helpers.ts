@@ -56,7 +56,9 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
     if (!isObject(options)) {
         throw new InvalidAgentDefinitionError('createWorkspaceManager() needs an options object.');
     }
+
     const { provider } = options;
+
     if (
         !isObject(provider) ||
         typeof provider.create !== 'function' ||
@@ -65,6 +67,7 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
     ) {
         throw new InvalidAgentDefinitionError('provider must be an ISandboxProvider (create, find, collectGarbage).');
     }
+
     if (options.deployment !== undefined) {
         try {
             assertDeployment(options.deployment);
@@ -72,24 +75,31 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
             throw new InvalidAgentDefinitionError((error as Error).message);
         }
     }
+
     if (options.isSettled !== undefined && typeof options.isSettled !== 'function') {
         throw new InvalidAgentDefinitionError('isSettled must be a function.');
     }
+
     assertImageOption(options.image);
     assertSandboxEnv(options.env);
     resolveLimits(options.limits);
+
     if (options.allowRepo !== undefined && typeof options.allowRepo !== 'function') {
         throw new InvalidAgentDefinitionError('allowRepo must be a function.');
     }
+
     if (options.allowImage !== undefined && typeof options.allowImage !== 'function') {
         throw new InvalidAgentDefinitionError('allowImage must be a function.');
     }
+
     if (options.repositoryInstructions !== undefined && typeof options.repositoryInstructions !== 'boolean') {
         throw new InvalidAgentDefinitionError('repositoryInstructions must be a boolean.');
     }
+
     if (options.maxWorkspacesPerRun !== undefined && (!Number.isSafeInteger(options.maxWorkspacesPerRun) || options.maxWorkspacesPerRun < 1)) {
         throw new InvalidAgentDefinitionError(`maxWorkspacesPerRun must be an integer of at least 1, got ${JSON.stringify(options.maxWorkspacesPerRun)}.`);
     }
+
     if (options.gcIntervalMs !== undefined && (
         !Number.isSafeInteger(options.gcIntervalMs) ||
         options.gcIntervalMs < 0 ||
@@ -98,34 +108,50 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
         // a Node timer above 2^31 - 1 fires after 1 ms, so the collector would run back to back
         throw new InvalidAgentDefinitionError(`gcIntervalMs must be an integer from 0 to ${GC_INTERVAL_MAX_MS}, got ${JSON.stringify(options.gcIntervalMs)}.`);
     }
+
     if (options.onError !== undefined && typeof options.onError !== 'function') {
         throw new InvalidAgentDefinitionError('onError must be a function.');
     }
+
     credentialSources(options.credentials);
+
     if (options.depth !== undefined && (!Number.isSafeInteger(options.depth) || options.depth < 1)) {
         throw new InvalidAgentDefinitionError('depth must be an integer of at least 1.');
     }
+
     authorEnv(options.author);
     assertPushPolicy(options.push);
 }
 
 /** The credential sources as a list, else InvalidAgentDefinitionError. */
 export function credentialSources(credentials: WorkspaceManagerOptions['credentials']): IGitCredentials[] {
-    if (credentials === undefined) return [];
+    if (credentials === undefined) {
+        return [];
+    }
+
     const sources = Array.isArray(credentials) ? credentials : [credentials];
-    if (sources.some((source) => !isObject(source) || typeof (source as Partial<IGitCredentials>).get !== 'function')) {
+
+    const hasInvalidSource = sources.some((source) => !isObject(source) || typeof (source as Partial<IGitCredentials>).get !== 'function');
+
+    if (hasInvalidSource) {
         throw new InvalidAgentDefinitionError('credentials must be git credential sources (an object with get()), or a list of them.');
     }
+
     return sources;
 }
 
 /** The `GIT_AUTHOR_*`/`GIT_COMMITTER_*` variables of `author`, else InvalidAgentDefinitionError. */
 export function authorEnv(author: GitAuthor | undefined): Record<string, string> {
-    if (author === undefined) return {};
+    if (author === undefined) {
+        return {};
+    }
+
     const valid = (value: unknown) => typeof value === 'string' && value.trim().length > 0 && !/[\0\r\n<>]/.test(value);
+
     if (!isObject(author) || !valid(author.name) || !valid(author.email)) {
         throw new InvalidAgentDefinitionError('author must be { name, email }: non-empty strings without NUL, line breaks, < or >.');
     }
+
     return {
         GIT_AUTHOR_NAME: author.name,
         GIT_AUTHOR_EMAIL: author.email,
@@ -135,12 +161,28 @@ export function authorEnv(author: GitAuthor | undefined): Record<string, string>
 }
 
 function assertPushPolicy(push: PushPolicy | undefined): void {
-    if (push === undefined) return;
+    if (push === undefined) {
+        return;
+    }
+
     const fail = (rule: string) => new InvalidAgentDefinitionError(`push ${rule}`);
-    if (!isObject(push)) throw fail('must be an object { mode?, allowForce?, allowBranch?, channel? }.');
-    if (push.mode !== undefined && push.mode !== 'auto' && push.mode !== 'approve') throw fail('mode must be "auto" or "approve".');
-    if (push.allowForce !== undefined && typeof push.allowForce !== 'boolean') throw fail('allowForce must be a boolean.');
-    if (push.allowBranch !== undefined && typeof push.allowBranch !== 'function') throw fail('allowBranch must be a function.');
+
+    if (!isObject(push)) {
+        throw fail('must be an object { mode?, allowForce?, allowBranch?, channel? }.');
+    }
+
+    if (push.mode !== undefined && push.mode !== 'auto' && push.mode !== 'approve') {
+        throw fail('mode must be "auto" or "approve".');
+    }
+
+    if (push.allowForce !== undefined && typeof push.allowForce !== 'boolean') {
+        throw fail('allowForce must be a boolean.');
+    }
+
+    if (push.allowBranch !== undefined && typeof push.allowBranch !== 'function') {
+        throw fail('allowBranch must be a function.');
+    }
+
     if (push.channel !== undefined && (typeof push.channel !== 'string' || push.channel.length === 0)) {
         throw fail('channel must be a non-empty channel name.');
     }
@@ -157,26 +199,38 @@ export function isExpired(workspace: IWorkspace, now: Date): boolean {
 
 /** chamvi errors pass through; anything else becomes a SandboxError `<what>: <message>` with the cause. */
 export function toSandboxError(error: unknown, what: string): ChamviError {
-    if (error instanceof ChamviError) return error;
-    const message = error instanceof Error ? error.message : String(error);
+    if (error instanceof ChamviError) {
+        return error;
+    }
+
+    const message = Error.isError(error) ? error.message : String(error);
+
     return new SandboxError(`${what}: ${message}`, { cause: error });
 }
 
 /** A string or undefined, else a ValidationError (a tool error the model can correct). */
 export function optionalString(value: unknown, name: string): string | undefined {
-    if (value === undefined) return undefined;
+    if (value === undefined) {
+        return undefined;
+    }
+
     if (typeof value !== 'string') {
         throw new ValidationError(`${name} must be a string.`);
     }
+
     return value;
 }
 
 /** A boolean or undefined, else a ValidationError. */
 export function optionalBoolean(value: unknown, name: string): boolean | undefined {
-    if (value === undefined) return undefined;
+    if (value === undefined) {
+        return undefined;
+    }
+
     if (typeof value !== 'boolean') {
         throw new ValidationError(`${name} must be a boolean.`);
     }
+
     return value;
 }
 
@@ -185,6 +239,7 @@ export function inputObject(input: unknown): Record<string, unknown> {
     if (!isObject(input)) {
         throw new ValidationError('The tool input must be an object.');
     }
+
     return input;
 }
 
@@ -199,7 +254,10 @@ export function optionalObjectSchema<T>(properties: Record<string, JSONSchema7>)
 
 /** Redact strings after collection too, including metadata and nested instruction context. */
 export function redactToolResult<T>(workspace: IWorkspace, result: T): T {
-    if (!workspace.redact) return result;
+    if (!workspace.redact) {
+        return result;
+    }
+
     return JSON.parse(JSON.stringify(result, (_key, value: unknown) => (
         typeof value === 'string' ? workspace.redact!(value) : value
     ))) as T;
@@ -207,6 +265,7 @@ export function redactToolResult<T>(workspace: IWorkspace, result: T): T {
 
 export function toToolResult(workspace: IWorkspace, reused: boolean, instructions: RepositoryInstructions | null): WorkspaceToolResult {
     const { info } = workspace;
+
     return redactToolResult(workspace, {
         workspace: workspace.id,
         root: WORKSPACE_ROOT,

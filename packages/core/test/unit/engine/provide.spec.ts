@@ -35,7 +35,10 @@ type Service = { id: string };
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -67,7 +70,9 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
             errors.push(error);
         },
     });
+
     engines.push(engine);
+
     return {
         store,
         engine,
@@ -82,7 +87,9 @@ async function runOn(engine: Engine, store: ReturnType<typeof createMemoryStore>
         channel: 'http',
         payload: {},
     });
+
     await engine.idle();
+
     return { runId, run: await store.runs.findOne(runId) };
 }
 
@@ -99,13 +106,17 @@ describe('engine.provide', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 seen.push(inject(context, KEY));
+
                 return 'ok';
             },
         });
         const { engine, store } = setup(mockModel([callTool('use'), text('done')]), { use });
+
         engine.provide(KEY, value);
         await engine.start();
+
         const { run } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
         expect(seen).toHaveLength(1);
         expect(seen[0]).toBe(value);
@@ -117,11 +128,15 @@ describe('engine.provide', () => {
         let seen: unknown;
         const { engine, store } = setup(mockModel([text('done')]), (ctx) => {
             seen = inject(ctx, KEY);
+
             return {};
         });
+
         engine.provide(KEY, value);
         await engine.start();
+
         const { run } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
         expect(seen).toBe(value);
     });
@@ -134,18 +149,23 @@ describe('engine.provide', () => {
             inputSchema: z.object({}),
             effectKey: (_input, ctx) => {
                 seen.effectKey = inject(ctx, KEY);
+
                 return 'k1';
             },
             alreadyApplied: async (_key, _input, ctx) => {
                 seen.alreadyApplied = inject(ctx, KEY);
+
                 return undefined;
             },
             execute: async () => 'applied',
         });
         const { engine, store } = setup(mockModel([callTool('apply'), text('done')]), { apply });
+
         engine.provide(KEY, value);
         await engine.start();
+
         const { run } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
         expect(seen.effectKey).toBe(value);
         expect(seen.alreadyApplied).toBe(value);
@@ -159,28 +179,38 @@ describe('engine.provide', () => {
         const { engine, store } = setup(mockModel([callTool('apply'), text('done')]), (ctx) => {
             contexts.push(ctx);
             seen.push(inject(ctx, KEY));
+
             return {
                 apply: defineEffectTool({
                     inputSchema: z.object({}),
                     alreadyApplied: async (_key, _input, hookCtx) => {
                         contexts.push(hookCtx);
                         seen.push(inject(hookCtx, KEY));
+
                         return undefined;
                     },
                     execute: async (_input, { context }) => {
                         contexts.push(context);
                         seen.push(inject(context, KEY));
+
                         return 'applied';
                     },
                 }),
             };
         });
+
         engine.provide(KEY, value);
         await engine.start();
+
         const { run } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
         expect(seen).toHaveLength(3);
-        for (const s of seen) expect(s).toBe(value);
+
+        for (const s of seen) {
+            expect(s).toBe(value);
+        }
+
         expect(contexts[1]).toBe(contexts[0]);
         expect(contexts[2]).toBe(contexts[0]);
     });
@@ -193,11 +223,13 @@ describe('engine.provide', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 seen.push(tryInject(context, MISSING), tryInject(context, PROVIDED));
+
                 return 'ok';
             },
         });
         const { engine, store } = setup(mockModel([callTool('use'), text('done')]), { use });
         const value: Service = { id: 's1' };
+
         engine.provide(PROVIDED, value);
         await engine.start();
         await runOn(engine, store);
@@ -211,13 +243,16 @@ describe('engine.provide', () => {
         let caught: unknown;
         const { engine, store } = setup(mockModel([text('done')]), (ctx) => {
             expect(inject(ctx, a)).toEqual({ id: 'a' });
+
             try {
                 inject(ctx, b);
             } catch (error) {
                 caught = error;
             }
+
             return {};
         });
+
         engine.provide(a, { id: 'a' });
         await engine.start();
         await runOn(engine, store);
@@ -231,11 +266,15 @@ describe('engine.provide', () => {
         let seen: unknown;
         const { engine, store } = setup(mockModel([text('done')]), (ctx) => {
             seen = inject(ctx, KEY);
+
             return {};
         });
+
         await engine.start();
         engine.provide(KEY, value);
+
         const { run } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
         expect(seen).toBe(value);
     });
@@ -243,6 +282,7 @@ describe('engine.provide', () => {
     it('provide refuses a foreign key, undefined and a second value', () => {
         const { engine } = setup(mockModel([]), {});
         const foreign = { name: 'x' } as ContextKey<number>;
+
         expect(() => engine.provide(foreign, 1)).toThrow(InvalidAgentDefinitionError);
         // a key of another @chamvi/core copy (a package that resolved its own) reads the same
         expect(() => engine.provide(foreign, 1)).toThrow(
@@ -251,6 +291,7 @@ describe('engine.provide', () => {
         );
 
         const KEY = defineContextKey<Service | undefined>('service');
+
         expect(() => engine.provide(KEY, undefined)).toThrow(InvalidAgentDefinitionError);
         expect(() => engine.provide(KEY, undefined)).toThrow('Context "service" needs a value.');
 
@@ -265,15 +306,21 @@ describe('engine.provide', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 inject(context, KEY);
+
                 return 'ok';
             },
         });
         const model = mockModel([callTool('use'), text('done')]);
         const { engine, store } = setup(model, { use });
+
         await engine.start();
+
         const { runId, run } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
+
         const step = await toolStep(store, runId, 'use');
+
         expect((step?.error as { code: string } | undefined)?.code).toBe('context_not_provided');
         expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain('Context \\"service\\" is not provided');
     });
@@ -285,18 +332,25 @@ describe('engine.provide', () => {
             inputSchema: z.object({}),
             alreadyApplied: async (_key, _input, ctx) => {
                 inject(ctx, KEY);
+
                 return undefined;
             },
             execute: async () => {
                 executed++;
+
                 return 'applied';
             },
         });
         const { engine, store } = setup(mockModel([callTool('apply'), text('done')]), { apply });
+
         await engine.start();
+
         const { runId, run } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
+
         const step = await toolStep(store, runId, 'apply');
+
         expect((step?.error as { code: string } | undefined)?.code).toBe('context_not_provided');
         expect(executed).toBe(0);
     });
@@ -310,10 +364,14 @@ describe('engine.provide', () => {
             errors,
         } = setup(model, (ctx) => {
             inject(ctx, KEY);
+
             return {};
         });
+
         await engine.start();
+
         const { run } = await runOn(engine, store);
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('context_not_provided');
         expect(model.doStreamCalls).toHaveLength(0);
@@ -328,19 +386,26 @@ describe('engine.provide', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 contexts.push(context);
+
                 return inject(context, KEY).secret === 'sekr3t-ctx-value' ? 'ok' : 'wrong';
             },
         });
         const { engine, store } = setup(mockModel([callTool('use'), text('done')]), { use });
+
         engine.provide(KEY, { secret: 'sekr3t-ctx-value' });
         await engine.start();
+
         const { runId, run } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
         expect((await toolStep(store, runId, 'use'))?.output).toBe('ok');
 
         const ctx = contexts[0]!;
+
         expect(Reflect.ownKeys(ctx).map(String).sort()).toEqual(['artifacts', 'channels', 'run', 'state']);
+
         const secret = 'sekr3t-ctx-value';
+
         expect(JSON.stringify(ctx.run)).not.toContain(secret);
         expect(JSON.stringify(await store.steps.find(runId))).not.toContain(secret);
         expect(JSON.stringify(await store.checkpoints.findOne(runId))).not.toContain(secret);
@@ -352,12 +417,14 @@ describe('engine.provide', () => {
         const seen: unknown[] = [];
         const factory = (ctx: ToolContext) => {
             seen.push(inject(ctx, KEY));
+
             return {};
         };
         const first = setup(mockModel([text('done')]), factory);
         const second = setup(mockModel([text('done')]), factory);
         const one: Service = { id: 'one' };
         const two: Service = { id: 'two' };
+
         first.engine.provide(KEY, one);
         second.engine.provide(KEY, two);
         await first.engine.start();

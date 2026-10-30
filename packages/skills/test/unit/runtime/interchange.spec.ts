@@ -32,26 +32,42 @@ const candidate = (inputs: Parameters<typeof defineAgent>[0]['skills']) => defin
 });
 
 class InspectedRuntime extends SkillRuntime {
-    get attestations() { return this.attestedSkills; }
+    get attestations() {
+        return this.attestedSkills;
+    }
 }
 
 describe('runtime structural interchange', () => {
     it('accepts a separate module copy with the same protocol and shares original source identity and receiver', async () => {
         const original = ready(); let calls = 0;
-        const raw = { skills: [original], async load() { expect(this).toBe(raw); calls++; return [original]; } };
+        const raw = {
+            skills: [original],
+            async load() {
+                expect(this).toBe(raw); calls++;
+
+                return [original];
+            },
+        };
         const one = defineSkillSource(raw);
+
         vi.resetModules();
+
         const other = await import('@chamvi/skills');
         const two = other.defineSkillSource(raw);
+
         expect(one.runtime).not.toBe(two.runtime);
         expect(one.runtime.protocol).toBe(two.runtime.protocol);
-        raw.load = async () => { throw new Error('changed loader must not run'); };
+        raw.load = async () => {
+            throw new Error('changed loader must not run');
+        };
+
         const e = new Engine({
             store: createMemoryStore(),
             model: mockModel([]),
             skills: [one],
             agents: [candidate([two, other.defineSkill(original)])],
         });
+
         await Promise.all([e.prepare(), e.prepare()]);
         await e.stop(); await e.start(); await e.stop();
         expect(calls).toBe(1);
@@ -59,6 +75,7 @@ describe('runtime structural interchange', () => {
     it('validates same-protocol payloads structurally before any source loads', () => {
         const { runtime } = ready();
         const load = vi.fn(async () => []);
+
         expect(() => candidate([{
             runtime,
             load,
@@ -76,16 +93,23 @@ describe('runtime structural interchange', () => {
         const runtime = new InspectedRuntime([]);
         const controller = new AbortController();
         const first = candidate([ready()]);
+
         runtime.checkAgent(first, first.definition.skills ?? []);
+
         const pending = await runtime.prepare([first], { signal: controller.signal });
+
         expect(runtime.attestations.size).toBe(0);
         controller.abort();
         expect(() => pending.commit()).toThrow();
         expect(runtime.attestations.size).toBe(0);
+
         const second = candidate([ready()]);
+
         runtime.checkAgent(second, second.definition.skills ?? []);
+
         const successful = await runtime.prepare([second], { signal: new AbortController().signal });
         const contributions = successful.commit();
+
         expect(runtime.attestations.size).toBe(1);
         expect(Object.isFrozen(contributions)).toBe(true);
         expect(Object.isFrozen(contributions[0]?.contribution)).toBe(true);
@@ -106,8 +130,15 @@ describe('runtime structural interchange', () => {
             model,
             agents: capture === 'constructor' ? [a] : [],
         });
-        if (capture === 'checkAgent') e.checkAgent(a);
-        if (capture === 'prepare') await e.prepare({ agents: [a] });
+
+        if (capture === 'checkAgent') {
+            e.checkAgent(a);
+        }
+
+        if (capture === 'prepare') {
+            await e.prepare({ agents: [a] });
+        }
+
         Object.assign(a.definition, {
             skills: [{
                 ...original,
@@ -117,12 +148,14 @@ describe('runtime structural interchange', () => {
         });
         await expect(e.prepare({ agents: [a] })).resolves.toBeUndefined();
         await e.putAgent(a); await e.start(); await e.stop(); await e.start();
+
         const run = await e.dispatch({
             agent: 'test',
             channel: 'test',
             trigger: 'test',
             payload: {},
         });
+
         await e.idle(); await e.stop();
         expect((await e.store.steps.find(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'content' });
     });
@@ -135,19 +168,24 @@ describe('runtime structural interchange', () => {
             model,
             agents: [empty],
         });
+
         Object.assign(empty.definition, { skills: [original] });
+
         const late = defineAgent({
             name: 'late',
             instructions: '',
             skills: [original],
         });
+
         await e.prepare({ agents: [late] }); await e.start(); await e.stop(); await e.start();
+
         const run = await e.dispatch({
             agent: 'test',
             channel: 'test',
             trigger: 'test',
             payload: {},
         });
+
         await e.idle(); await e.stop();
         expect((await e.getRun(run.runId))?.status).toBe('completed');
         expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).not.toContain('approved_skills');
@@ -163,6 +201,7 @@ describe('runtime structural interchange', () => {
             agents: [],
         });
         const a = candidate([defineSkill({ ...original, version: '2' })]);
+
         expect(() => e.checkAgent(a)).toThrow(/conflicting identity/i);
         Object.assign(a.definition, { skills: [defineSkill({ ...original, name: 'corrected' })] });
         expect(() => e.checkAgent(a)).not.toThrow();

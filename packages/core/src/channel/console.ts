@@ -17,23 +17,36 @@ import type { ConsoleChannelOptions, IChannel } from './types.ts';
  */
 export function consoleChannel(options: ConsoleChannelOptions = {}): IChannel {
     const name = options.name ?? 'console';
+
     assertChannelName(name);
+
     // eslint-disable-next-line no-console
     const write = options.write ?? ((line: string) => console.log(line));
+
     return {
         name,
         defaultAddress: name,
         async out(message) {
             try {
                 const lines = message.body.split('\n');
+
                 write(`[chamvi] ${message.kind}: ${message.title ?? lines[0]} (agent ${message.agent}, run ${message.runId}, key ${message.key})`);
-                for (const line of lines) write(line);
+
+                for (const line of lines) {
+                    write(line);
+                }
+
                 if (message.kind === 'approval') {
                     if (message.options !== undefined && message.options.length > 0) {
                         write(message.multiple === true ? 'select one or more:' : 'select one:');
-                        for (const option of message.options) write(`option ${option.id}: ${option.label}`);
+
+                        for (const option of message.options) {
+                            write(`option ${option.id}: ${option.label}`);
+                        }
                     }
+
                     const until = message.expiresAt ? ` waits until ${message.expiresAt.toISOString()}` : ' waits';
+
                     write(`approval ${message.approvalId}${until}`);
                 }
             } catch {

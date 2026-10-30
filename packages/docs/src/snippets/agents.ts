@@ -21,6 +21,7 @@ const saveReport = defineTool({
     inputSchema: z.object({}),
     execute: async (_input, { context }) => {
         await context.state.set('lastReport', context.run.trigger.receivedAt.toISOString());
+
         return { saved: true };
     },
 });
@@ -88,6 +89,7 @@ const saveChart = defineEffectTool({
             filename: 'chart.png',
             data: await renderChart(points),
         });
+
         return { artifactId: artifact.id };
     },
 });

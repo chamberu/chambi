@@ -23,13 +23,19 @@ type SendOptions = {
 /** A request with a socket address (the rate limiter keys by it). */
 function send(app: App, path: string, options: SendOptions = {}): Promise<Response> {
     const headers = new Headers();
-    if (options.body !== undefined) headers.set('content-type', options.contentType ?? 'application/json');
+
+    if (options.body !== undefined) {
+        headers.set('content-type', options.contentType ?? 'application/json');
+    }
+
     const request = new Request(`http://test${path}`, {
         method: options.method ?? 'POST',
         headers,
         body: options.body,
     });
+
     (request as Request & { ip?: string }).ip = '10.0.0.1';
+
     return app.fetch(request);
 }
 
@@ -48,11 +54,13 @@ describe('extra routes', () => {
             routes: [route({
                 handler: async (_request, ctx) => {
                     const value = await ctx.engine.store.state.findOneOrFail('echo', 'missing');
+
                     return { status: 200, body: { value } };
                 },
             })],
         });
         const response = await send(app, '/extra');
+
         expect(response.status).toBe(404);
         expect(await response.json()).toMatchObject({ code: 'repository_not_found' });
     });
@@ -60,6 +68,7 @@ describe('extra routes', () => {
     it('serves an extra route under basePath', async () => {
         const { app } = createTestApp({ basePath: '/api', routes: [route()] });
         const response = await send(app, '/api/extra');
+
         expect(response.status).toBe(202);
         expect(await response.json()).toEqual({ ok: true });
     });
@@ -67,17 +76,19 @@ describe('extra routes', () => {
     it('hands the route context', async () => {
         let seen: HttpRouteContext | undefined;
         const {
-            app, 
-            engine, 
-            clock, 
+            app,
+            engine,
+            clock,
         } = createTestApp({
             routes: [route({
                 handler: async (_request, ctx) => {
                     seen = ctx;
+
                     return { status: 204 };
                 },
             })],
         });
+
         await send(app, '/extra');
         expect(seen?.engine).toBe(engine);
         expect(seen?.clock).toBe(clock);
@@ -95,10 +106,12 @@ describe('extra routes', () => {
                     body = request.body;
                     method = request.method;
                     contentType = request.headers.get('content-type');
+
                     return { status: 204 };
                 },
             })],
         });
+
         await send(app, '/extra', { body: '{"a":1}' });
         expect(body).toBeNull();
         expect(method).toBe('POST');
@@ -111,12 +124,15 @@ describe('extra routes', () => {
             routes: [route({
                 handler: async ({ readBody }) => {
                     const decoder = new TextDecoder();
+
                     texts.push(decoder.decode(await readBody()), decoder.decode(await readBody()));
+
                     return { status: 204 };
                 },
             })],
         });
         const response = await send(app, '/extra', { body: '{"a":1}' });
+
         expect(response.status).toBe(204);
         expect(texts).toEqual(['{"a":1}', '{"a":1}']);
     });
@@ -124,6 +140,7 @@ describe('extra routes', () => {
     it('answers a body-less result', async () => {
         const { app } = createTestApp({ routes: [route({ handler: async () => ({ status: 204 }) })] });
         const response = await send(app, '/extra');
+
         expect(response.status).toBe(204);
         expect(await response.text()).toBe('');
     });
@@ -136,6 +153,7 @@ describe('extra routes', () => {
                 route({ path: '/limited' }),
             ],
         });
+
         expect((await send(app, '/open')).status).toBe(202);
         expect((await send(app, '/open')).status).toBe(202);
         expect((await send(app, '/limited')).status).toBe(202);
@@ -151,6 +169,7 @@ describe('extra routes', () => {
                 route({ path: '/Mixed', rateLimit: false }),
             ],
         });
+
         expect((await send(app, '/API/Open')).status).toBe(202);
         expect((await send(app, '/api/OPEN')).status).toBe(202);
         expect((await send(app, '/api/mixed')).status).toBe(202);
@@ -163,11 +182,13 @@ describe('extra routes', () => {
             routes: [route({
                 handler: async (request: HttpRouteRequest) => {
                     received = new TextDecoder().decode(await request.readBody());
+
                     return { status: 202 };
                 },
             })],
         });
         const body = '{"a":"é", "b" : "\\u00e9"}';
+
         expect((await send(app, '/extra', { body })).status).toBe(202);
         expect(received).toBe(body);
     });
@@ -178,10 +199,12 @@ describe('extra routes', () => {
             routes: [route({
                 handler: async (request) => {
                     size = (await request.readBody()).byteLength;
+
                     return { status: 202 };
                 },
             })],
         });
+
         expect((await send(app, '/extra')).status).toBe(202);
         expect(size).toBe(0);
     });
@@ -190,6 +213,7 @@ describe('extra routes', () => {
         const reading = route({
             handler: async (request) => {
                 await request.readBody();
+
                 return { status: 202 };
             },
         });
@@ -198,6 +222,7 @@ describe('extra routes', () => {
             body: 'payload=x',
             contentType: 'application/x-www-form-urlencoded',
         });
+
         expect(response.status).toBe(415);
         expect(await response.json()).toMatchObject({ status: 415, code: 'unsupported_media_type' });
     });
@@ -206,13 +231,17 @@ describe('extra routes', () => {
         const reading = route({
             handler: async (request) => {
                 await request.readBody();
+
                 return { status: 202 };
             },
         });
         const { app } = createTestApp({ bodyLimit: 8, routes: [reading] });
         const response = await send(app, '/extra', { body: '{"a":"0123456789"}' });
+
         expect(response.status).toBe(413);
+
         const body = await response.json() as Record<string, unknown>;
+
         expect(body).toMatchObject({ status: 413 });
         expect(Object.keys(body).sort()).toEqual(['code', 'message', 'status']);
     });
@@ -226,18 +255,21 @@ describe('extra routes', () => {
             })],
         });
         const response = await send(app, '/extra');
+
         expect(response.status).toBe(401);
         expect(await response.json()).toEqual({
-            status: 401, 
-            code: 'unauthorized', 
-            message: 'bad signature', 
+            status: 401,
+            code: 'unauthorized',
+            message: 'bad signature',
         });
     });
 
     it('renders other errors as 500 and reports them', async () => {
         const errors: unknown[] = [];
         const { app } = createTestApp({
-            onError: (error) => { errors.push(error); },
+            onError: (error) => {
+                errors.push(error);
+            },
             routes: [route({
                 handler: async () => {
                     throw new Error('boom');
@@ -245,6 +277,7 @@ describe('extra routes', () => {
             })],
         });
         const response = await send(app, '/extra');
+
         expect(response.status).toBe(500);
         expect(await response.json()).toMatchObject({ status: 500, message: 'Internal Server Error' });
         expect(errors).toHaveLength(1);
@@ -287,13 +320,16 @@ describe('prefix routes, headers and byte bodies', () => {
                 prefix: true,
                 handler: async ({ subpath }) => {
                     seen.push(subpath);
+
                     return { status: 200, body: 'ok' };
                 },
             })],
         });
+
         for (const path of ['/ui', '/ui/', '/ui/a/b.js?x=1', '/ui/%252e%252e/x']) {
             expect((await get(app, path)).status).toBe(200);
         }
+
         expect(seen).toEqual(['', '/', '/a/b.js', '/%252e%252e/x']);
         expect((await get(app, '/uix')).status).toBe(404);
         expect((await app.fetch(new Request('http://test/ui/a', { method: 'POST' }))).status).toBe(404);
@@ -309,10 +345,12 @@ describe('prefix routes, headers and byte bodies', () => {
                 prefix: true,
                 handler: async ({ subpath }) => {
                     seen = subpath;
+
                     return { status: 204 };
                 },
             })],
         });
+
         expect((await get(app, '/api/UI/Assets/App.JS')).status).toBe(204);
         expect(seen).toBe('/Assets/App.JS');
     });
@@ -327,10 +365,12 @@ describe('prefix routes, headers and byte bodies', () => {
                 prefix: true,
                 handler: async ({ subpath }) => {
                     seen = subpath;
+
                     return { status: 204 };
                 },
             })],
         });
+
         expect((await get(app, '/api/ui/assets/x.js')).status).toBe(204);
         expect(seen).toBe('/assets/x.js');
     });
@@ -341,10 +381,12 @@ describe('prefix routes, headers and byte bodies', () => {
             routes: [route({
                 handler: async ({ subpath }) => {
                     seen = subpath;
+
                     return { status: 204 };
                 },
             })],
         });
+
         await send(app, '/extra');
         expect(seen).toBe('');
     });
@@ -361,6 +403,7 @@ describe('prefix routes, headers and byte bodies', () => {
             })],
         });
         const response = await get(app, '/extra');
+
         expect(response.status).toBe(200);
         expect(response.headers.get('content-type')).toBe('image/png');
         expect(response.headers.get('cache-control')).toBe('no-cache');
@@ -370,6 +413,7 @@ describe('prefix routes, headers and byte bodies', () => {
     it('a byte body without content-type is application/octet-stream', async () => {
         const { app } = createTestApp({ routes: [route({ method: 'GET', handler: async () => ({ status: 200, body: new Uint8Array([1, 2]) }) })] });
         const response = await get(app, '/extra');
+
         expect(response.headers.get('content-type')).toBe('application/octet-stream');
         expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([1, 2]);
     });
@@ -380,26 +424,29 @@ describe('prefix routes, headers and byte bodies', () => {
                 route({
                     method: 'GET',
                     handler: async () => ({
-                        status: 200, 
-                        headers: { 'content-type': 'text/html; charset=utf-8' }, 
-                        body: '<p>hi</p>', 
+                        status: 200,
+                        headers: { 'content-type': 'text/html; charset=utf-8' },
+                        body: '<p>hi</p>',
                     }),
                 }),
                 route({
                     method: 'GET',
                     path: '/json',
                     handler: async () => ({
-                        status: 200, 
-                        headers: { 'x-extra': '1' }, 
-                        body: { a: 1 }, 
+                        status: 200,
+                        headers: { 'x-extra': '1' },
+                        body: { a: 1 },
                     }),
                 }),
             ],
         });
         const html = await get(app, '/extra');
+
         expect(html.headers.get('content-type')).toBe('text/html; charset=utf-8');
         expect(await html.text()).toBe('<p>hi</p>');
+
         const json = await get(app, '/json');
+
         expect(json.headers.get('x-extra')).toBe('1');
         expect(await json.json()).toEqual({ a: 1 });
     });
@@ -410,6 +457,7 @@ describe('prefix routes, headers and byte bodies', () => {
             routes: [route({ method: 'GET', handler: async () => ({ status: 200, body: new Uint8Array([7]) }) })],
         });
         const response = await get(app, '/extra', { origin: 'http://elsewhere' });
+
         expect(response.headers.get('access-control-allow-origin')).toBe('*');
         expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([7]);
     });
@@ -418,8 +466,10 @@ describe('prefix routes, headers and byte bodies', () => {
         const bases: string[] = [];
         const handler: HttpRoute['handler'] = async (_request, ctx) => {
             bases.push(ctx.basePath);
+
             return { status: 204 };
         };
+
         await send(createTestApp({ basePath: '/api', routes: [route({ handler })] }).app, '/api/extra');
         await send(createTestApp({ routes: [route({ handler })] }).app, '/extra');
         expect(bases).toEqual(['/api', '']);
@@ -427,33 +477,33 @@ describe('prefix routes, headers and byte bodies', () => {
 
     it.each([
         ['a route under a prefix route of the same method', [route({
-            method: 'GET', 
-            path: '/ui', 
-            prefix: true, 
+            method: 'GET',
+            path: '/ui',
+            prefix: true,
         }), route({ method: 'GET', path: '/ui/x' })]],
         ['a route at the path of a prefix route', [route({ method: 'GET', path: '/ui' }), route({
-            method: 'GET', 
-            path: '/ui', 
-            prefix: true, 
+            method: 'GET',
+            path: '/ui',
+            prefix: true,
         })]],
         ['two nested prefix routes', [route({
-            method: 'GET', 
-            path: '/ui/a', 
-            prefix: true, 
+            method: 'GET',
+            path: '/ui/a',
+            prefix: true,
         }), route({
-            method: 'GET', 
-            path: '/UI', 
-            prefix: true, 
+            method: 'GET',
+            path: '/UI',
+            prefix: true,
         })]],
         ['a prefix route at the metrics path', [route({
-            method: 'GET', 
-            path: '/ops/metrics', 
-            prefix: true, 
+            method: 'GET',
+            path: '/ops/metrics',
+            prefix: true,
         })]],
         ['a prefix route above the metrics path', [route({
-            method: 'GET', 
-            path: '/ops', 
-            prefix: true, 
+            method: 'GET',
+            path: '/ops',
+            prefix: true,
         })]],
     ])('refuses %s', (_name, routes) => {
         expect(() => createTestApp({ metrics: { metricsPath: '/ops/metrics' }, routes: [...routes] }))
@@ -464,10 +514,10 @@ describe('prefix routes, headers and byte bodies', () => {
         expect(() => createTestApp({
             metrics: undefined,
             routes: [route({
-                method: 'GET', 
-                path: '/metrics', 
-                prefix: true, 
-            })], 
+                method: 'GET',
+                path: '/metrics',
+                prefix: true,
+            })],
         }))
             .toThrow(InvalidAgentDefinitionError);
     });
@@ -475,20 +525,20 @@ describe('prefix routes, headers and byte bodies', () => {
     it('allows a route under a prefix route for another method', () => {
         expect(() => createTestApp({
             routes: [route({
-                method: 'GET', 
-                path: '/ui', 
-                prefix: true, 
-            }), route({ method: 'POST', path: '/ui/x' })], 
+                method: 'GET',
+                path: '/ui',
+                prefix: true,
+            }), route({ method: 'POST', path: '/ui/x' })],
         })).not.toThrow();
     });
 
     it('allows a sibling path that only shares the prefix text', () => {
         expect(() => createTestApp({
             routes: [route({
-                method: 'GET', 
-                path: '/ui', 
-                prefix: true, 
-            }), route({ method: 'GET', path: '/uix' })], 
+                method: 'GET',
+                path: '/ui',
+                prefix: true,
+            }), route({ method: 'GET', path: '/uix' })],
         })).not.toThrow();
     });
 
@@ -498,10 +548,12 @@ describe('prefix routes, headers and byte bodies', () => {
             routes: [route({
                 handler: async (_request, ctx) => {
                     names = ctx.agents.map((agent) => agent.name);
+
                     return { status: 204 };
                 },
             })],
         });
+
         await engine.putAgent(defineAgent({
             name: 'late',
             model: textModel(),

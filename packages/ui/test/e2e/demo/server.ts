@@ -53,6 +53,7 @@ const engine = new Engine({
                             body: `Rolls the demo release out to ${env}.`,
                             address: 'ops',
                         });
+
                         return decision.approved ? { deployed: env } : { denied: decision.reason ?? 'denied' };
                     },
                 }),
@@ -79,6 +80,7 @@ const engine = new Engine({
                                 { id: '2.0.0', label: 'Major 2.0.0' },
                             ],
                         });
+
                         return { released: decision.selected?.[0] ?? null };
                     },
                 }),

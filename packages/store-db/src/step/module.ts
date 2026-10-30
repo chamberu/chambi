@@ -35,12 +35,17 @@ export class DatabaseStepRepository implements IStepRepository {
             where: { runId },
             order: { index: 'ASC', seq: 'ASC' },
         });
+
         return entities.map((entity) => toStep(entity));
     }
 
     async findOrFail(runId: string): Promise<Step[]> {
         const result = await this.find(runId);
-        if (result.length === 0) throw new RepositoryNotFoundError('steps');
+
+        if (result.length === 0) {
+            throw new RepositoryNotFoundError('steps');
+        }
+
         return result;
     }
 }

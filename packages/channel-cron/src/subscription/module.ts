@@ -23,13 +23,15 @@ export function createCronSubscription(
     options: CronSubscriptionOptions = {},
 ): ChannelSubscription {
     assertConcurrencyMaxRuns(options.concurrencyMaxRuns, 'cron.on() concurrencyMaxRuns');
+
     try {
         CronExpressionParser.parse(expression, options.timezone ? { tz: options.timezone } : {});
     } catch (e) {
         throw new InvalidAgentDefinitionError(
-            `Invalid cron expression "${expression}": ${e instanceof Error ? e.message : String(e)}`,
+            `Invalid cron expression "${expression}": ${Error.isError(e) ? e.message : String(e)}`,
         );
     }
+
     if (options.timezone !== undefined) {
         try {
             // cron-parser takes any zone name; Intl refuses one it does not know
@@ -38,10 +40,13 @@ export function createCronSubscription(
             throw new InvalidAgentDefinitionError(`Cron "${expression}" has an invalid timezone "${String(options.timezone)}".`);
         }
     }
+
     const overlap = options.overlap ?? 'skip';
+
     if (!OVERLAP_POLICIES.includes(overlap)) {
         throw new InvalidAgentDefinitionError(`Cron "${expression}" has an unknown overlap policy "${String(overlap)}".`);
     }
+
     if (options.id !== undefined && (typeof options.id !== 'string' || options.id.length === 0)) {
         throw new InvalidAgentDefinitionError(`Cron "${expression}" needs a non-empty id.`);
     }

@@ -14,17 +14,21 @@ import { messageOf, requestError } from '../request/asserts.ts';
 /** An absolute http(s) URL without credentials, else a ValidationError. */
 export function parseWebUrl(input: string | URL): URL {
     let url: URL;
+
     try {
         url = new URL(input);
     } catch {
         throw new ValidationError('url must be an absolute http or https URL.');
     }
+
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         throw new ValidationError(`Only http and https URLs can be fetched, not ${url.protocol}.`);
     }
+
     if (url.username || url.password) {
         throw new ValidationError('A URL with credentials cannot be fetched.');
     }
+
     return url;
 }
 
@@ -37,24 +41,39 @@ export function parseWebUrl(input: string | URL): URL {
  */
 export async function checkUrl(url: URL, options: WebToolsOptionsNormalized, signal: AbortSignal): Promise<void> {
     const decision = options.allowUrl?.(url);
+
     if (decision === false) {
         throw new ValidationError(`${url.href} is not allowed.`);
     }
-    if (decision === true) return;
+
+    if (decision === true) {
+        return;
+    }
+
     const host = url.hostname.startsWith('[') ? url.hostname.slice(1, -1) : url.hostname;
     let addresses: string[];
+
     if (isIP(host) !== 0) {
         addresses = [host];
     } else {
         try {
             addresses = (await options.lookup(host, signal)).map((entry) => entry.address);
         } catch (error) {
-            if (signal.aborted) throw error;
+            if (signal.aborted) {
+                throw error;
+            }
+
             throw requestError(`${host} could not be resolved: ${messageOf(error)}`);
         }
-        if (addresses.length === 0) throw requestError(`${host} has no address.`);
+
+        if (addresses.length === 0) {
+            throw requestError(`${host} has no address.`);
+        }
     }
-    if (addresses.some((address) => isBlockedAddress(address))) {
+
+    const hasBlockedAddress = addresses.some((address) => isBlockedAddress(address));
+
+    if (hasBlockedAddress) {
         throw new ValidationError(`${host} is no public address; web_fetch reaches public addresses only.`);
     }
 }

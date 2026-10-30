@@ -34,11 +34,13 @@ export function openclawChannel(options: OpenclawChannelOptions): IChannel {
 
     const out = async (message: ChannelMessage, address: string, opts: ChannelSendOptions): Promise<void> => {
         opts.signal?.throwIfAborted();
+
         const controller = new AbortController();
         const timeout = requestError(`OpenClaw did not answer within ${resolved.timeoutMs}ms.`);
         const timer = resolved.clock.setTimeout(() => controller.abort(timeout), resolved.timeoutMs);
         const signal = opts.signal ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
         const aborted = (): unknown => (opts.signal?.aborted ? opts.signal.reason : timeout);
+
         try {
             const body: OpenclawHookBody = {
                 message: renderMessage(message, resolved),
@@ -50,6 +52,7 @@ export function openclawChannel(options: OpenclawChannelOptions): IChannel {
                 ...(resolved.deliver.accountId === undefined ? {} : { accountId: resolved.deliver.accountId }),
             };
             let response: Response;
+
             try {
                 response = await resolved.fetch(resolved.url, {
                     method: 'POST',
@@ -62,21 +65,32 @@ export function openclawChannel(options: OpenclawChannelOptions): IChannel {
                     signal,
                 });
             } catch (error) {
-                if (signal.aborted) throw aborted();
+                if (signal.aborted) {
+                    throw aborted();
+                }
+
                 throw requestError(`OpenClaw request failed: ${fetchErrorMessage(error, secrets)}`);
             }
+
             if (response.ok) {
                 // admitted; the answer (`{ ok, runId }`) is not needed
                 await response.body?.cancel().catch(() => undefined);
+
                 return;
             }
+
             let text: string;
+
             try {
                 text = await response.text();
             } catch (error) {
-                if (signal.aborted) throw aborted();
-                text = error instanceof Error ? error.message : String(error);
+                if (signal.aborted) {
+                    throw aborted();
+                }
+
+                text = Error.isError(error) ? error.message : String(error);
             }
+
             throw responseError(response.status, text, response.headers.get('retry-after'), secrets);
         } finally {
             timer.clear();

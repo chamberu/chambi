@@ -26,9 +26,13 @@ export function landedModelSteps(steps: readonly StepWire[]): number {
 
 function pruneLive(live: Record<number, LiveText>, landed: number): Record<number, LiveText> {
     const next: Record<number, LiveText> = {};
+
     for (const [key, value] of Object.entries(live)) {
-        if (Number(key) >= landed) next[Number(key)] = value;
+        if (Number(key) >= landed) {
+            next[Number(key)] = value;
+        }
     }
+
     return next;
 }
 
@@ -47,17 +51,29 @@ export function mergeRunEvent(state: RunDetailState, event: RunStreamEvent): Run
             live: SETTLED_STATUSES.includes(event.run.status) ? {} : state.live,
         };
     }
+
     if (event.type === 'step') {
-        if (state.steps.some((step) => step.index === event.step.index)) return state;
+        const alreadyHasStep = state.steps.some((step) => step.index === event.step.index);
+
+        if (alreadyHasStep) {
+            return state;
+        }
+
         const steps = [...state.steps, event.step].sort((a, b) => a.index - b.index);
+
         return {
             ...state,
             steps,
             live: pruneLive(state.live, landedModelSteps(steps)),
         };
     }
-    if (event.step < landedModelSteps(state.steps)) return state;
+
+    if (event.step < landedModelSteps(state.steps)) {
+        return state;
+    }
+
     const current = state.live[event.step] ?? { text: '', reasoning: '' };
+
     return {
         ...state,
         live: {
@@ -71,7 +87,10 @@ export function mergeRunEvent(state: RunDetailState, event: RunStreamEvent): Run
 }
 
 export function lastStepIndex(steps: readonly StepWire[]): number | undefined {
-    if (steps.length === 0) return undefined;
+    if (steps.length === 0) {
+        return undefined;
+    }
+
     return Math.max(...steps.map((step) => step.index));
 }
 
@@ -82,8 +101,13 @@ export function canCancel(run: RunWire, permissions: readonly string[]): boolean
 /** The run this one was started from (a hand-off), with the run page's label; undefined for none or an unknown kind. */
 export function parentOf(run: RunWire): { runId: string; label: string } | undefined {
     const { parent } = run.trigger;
-    if (!parent || typeof parent.runId !== 'string') return undefined;
+
+    if (!parent || typeof parent.runId !== 'string') {
+        return undefined;
+    }
+
     const label = Object.hasOwn(PARENT_LABELS, parent.kind) ? PARENT_LABELS[parent.kind] : undefined;
+
     return label ? { runId: parent.runId, label } : undefined;
 }
 
@@ -92,8 +116,14 @@ export function isSettled(run: RunWire): boolean {
 }
 
 export function formatTokens(count: number): string {
-    if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+    if (count >= 1_000_000) {
+        return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    }
+
+    if (count >= 1000) {
+        return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+    }
+
     return String(count);
 }
 
@@ -103,13 +133,18 @@ export function formatDuration(ms: number): string {
     const minutes = Math.floor((total % 3600) / 60);
     const seconds = total % 60;
     const pad = (value: number) => String(value).padStart(2, '0');
+
     return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
 }
 
 /** How long a run took, or runs so far. */
 export function runDuration(run: RunWire, now: number): number | undefined {
-    if (!run.startedAt) return undefined;
+    if (!run.startedAt) {
+        return undefined;
+    }
+
     const end = run.finishedAt ? Date.parse(run.finishedAt) : now;
+
     return end - Date.parse(run.startedAt);
 }
 
@@ -120,7 +155,10 @@ export function shortId(id: string): string {
 
 /** The JSON of a value, pretty, for a code block; `undefined` reads as `—`. */
 export function toJson(value: unknown): string {
-    if (value === undefined) return '—';
+    if (value === undefined) {
+        return '—';
+    }
+
     try {
         return JSON.stringify(value, null, 2);
     } catch {

@@ -84,6 +84,7 @@ export async function readRepositoryInstructions(
     const redact = (text: string) => (workspace.redact ? workspace.redact(text) : text);
     const diagnostics = createDiagnosticList(redact);
     const requested = paths ?? ['.'];
+
     if (!Array.isArray(requested)) {
         throw new ValidationError('paths must be a list of workspace paths.');
     }
@@ -92,51 +93,82 @@ export async function readRepositoryInstructions(
     let totalBytes = 0;
     let stopped = false;
     const stop = (message: string) => {
-        if (stopped) return;
+        if (stopped) {
+            return;
+        }
+
         stopped = true;
         diagnostics.add('.', 'limit', message);
     };
     /** Counts one inspection or reference; false (and stopped) past the bound. */
     const count = () => {
-        if (stopped) return false;
-        if (references >= INSTRUCTION_REFERENCES_MAX) {
-            stop(`More than ${INSTRUCTION_REFERENCES_MAX} paths and references were looked at; the rest were skipped.`);
+        if (stopped) {
             return false;
         }
+
+        if (references >= INSTRUCTION_REFERENCES_MAX) {
+            stop(`More than ${INSTRUCTION_REFERENCES_MAX} paths and references were looked at; the rest were skipped.`);
+
+            return false;
+        }
+
         references++;
+
         return true;
     };
 
     const expiry = new AbortController();
     const execScript = async (args: string[]) => {
-        if (signal?.aborted) throw new SandboxError('Repository instruction discovery aborted.');
+        if (signal?.aborted) {
+            throw new SandboxError('Repository instruction discovery aborted.');
+        }
+
         const left = deadline - clock.now().getTime();
-        if (left <= 0) throw new DeadlineSignal();
+
+        if (left <= 0) {
+            throw new DeadlineSignal();
+        }
+
         const timeoutMs = Math.min(INSTRUCTION_EXEC_TIMEOUT_MS, left);
         const execDeadline = clock.now().getTime() + timeoutMs;
         const operation = new AbortController();
         const execSignal = AbortSignal.any(signal ?
             [signal, expiry.signal, operation.signal] : [expiry.signal, operation.signal]);
+
         // Bound the whole call, including credential refresh and a provider's transport grace.
         return new Promise<ExecResult>((resolve, reject) => {
             let settled = false;
             const timer = clock.setTimeout(() => operation.abort(), timeoutMs);
             const finish = () => {
-                if (settled) return false;
+                if (settled) {
+                    return false;
+                }
+
                 settled = true;
                 timer.clear();
                 execSignal.removeEventListener('abort', onAbort);
+
                 return true;
             };
             function onAbort() {
-                if (!finish()) return;
-                if (signal?.aborted) reject(new SandboxError('Repository instruction discovery aborted.'));
-                else if (expiry.signal.aborted || clock.now().getTime() >= deadline) reject(new DeadlineSignal());
-                else reject(new SandboxError('Repository instruction discovery timed out.'));
+                if (!finish()) {
+                    return;
+                }
+
+                if (signal?.aborted) {
+                    reject(new SandboxError('Repository instruction discovery aborted.'));
+                } else if (expiry.signal.aborted || clock.now().getTime() >= deadline) {
+                    reject(new DeadlineSignal());
+                } else {
+                    reject(new SandboxError('Repository instruction discovery timed out.'));
+                }
+
                 operation.abort();
             }
             execSignal.addEventListener('abort', onAbort, { once: true });
+
             let pending: Promise<ExecResult>;
+
             try {
                 pending = workspace.exec(['/bin/sh', '-c', DISCOVERY_SCRIPT, 'sh', ...args], {
                     cwd: '.',
@@ -146,15 +178,25 @@ export async function readRepositoryInstructions(
             } catch (error) {
                 pending = Promise.reject(error);
             }
+
             pending.then((response) => {
-                if (settled) return;
-                if (execSignal.aborted || clock.now().getTime() >= execDeadline) {
-                    onAbort();
+                if (settled) {
                     return;
                 }
-                if (finish()) resolve(response);
+
+                if (execSignal.aborted || clock.now().getTime() >= execDeadline) {
+                    onAbort();
+
+                    return;
+                }
+
+                if (finish()) {
+                    resolve(response);
+                }
             }, (error: unknown) => {
-                if (finish()) reject(error);
+                if (finish()) {
+                    reject(error);
+                }
             });
         });
     };
@@ -163,17 +205,24 @@ export async function readRepositoryInstructions(
     /** Inspects the paths not inspected yet, in batches. */
     const inspect = async (list: string[]) => {
         const pending = [...new Set(list.filter((path) => !statuses.has(path)))];
+
         while (pending.length > 0) {
             const batch: string[] = [];
             let bytes = 0;
+
             for (let next = pending[0]; next !== undefined; next = pending[0]) {
-                if (batch.length >= INSPECT_BATCH_MAX_PATHS || (batch.length > 0 && bytes + byteLength(next) > INSPECT_BATCH_MAX_BYTES)) break;
+                if (batch.length >= INSPECT_BATCH_MAX_PATHS || (batch.length > 0 && bytes + byteLength(next) > INSPECT_BATCH_MAX_BYTES)) {
+                    break;
+                }
+
                 bytes += byteLength(next);
                 batch.push(next);
                 pending.shift();
             }
+
             const result = await execScript(['inspect', ...batch]);
             const found = parseInspectOutput(result, batch.length);
+
             batch.forEach((path, index) => statuses.set(path, found[index]!));
         }
     };
@@ -182,16 +231,22 @@ export async function readRepositoryInstructions(
     const report = (path: string, status: InspectionStatus | { kind: 'unreadable' }, missing?: 'missing-include') => {
         switch (status.kind) {
             case 'absent':
-                if (missing) diagnostics.add(path, missing, 'The included file does not exist.');
+                if (missing) {
+                    diagnostics.add(path, missing, 'The included file does not exist.');
+                }
+
                 return;
             case 'link':
                 diagnostics.add(pathPrefix(path, status.at), 'unsupported-file', LINK_MESSAGE);
+
                 return;
             case 'denied':
                 diagnostics.add(pathPrefix(path, status.at - 1), 'unreadable', DENIED_MESSAGE);
+
                 return;
             case 'unreadable':
                 diagnostics.add(path, 'unreadable', UNREADABLE_MESSAGE);
+
                 return;
             case 'file':
                 // a regular file is no failure
@@ -206,13 +261,19 @@ export async function readRepositoryInstructions(
 
     /** Reads and records a file once per request; undefined when it failed (reported once). */
     const load = async (path: string, include: boolean): Promise<Node> => {
-        if (nodes.has(path)) return nodes.get(path);
+        if (nodes.has(path)) {
+            return nodes.get(path);
+        }
+
         if (sources.length >= INSTRUCTION_SOURCES_MAX) {
             stop(`More than ${INSTRUCTION_SOURCES_MAX} instruction files; the rest were skipped.`);
+
             return undefined;
         }
+
         const outcome = parseReadOutput(await execScript(['read', path]));
         let node: Node;
+
         if (outcome.kind !== 'bytes') {
             report(path, outcome, include ? 'missing-include' : undefined);
         } else if (outcome.bytes.byteLength > INSTRUCTION_SOURCE_MAX_BYTES) {
@@ -221,13 +282,16 @@ export async function readRepositoryInstructions(
             stop(`The instruction files exceed ${INSTRUCTION_TOTAL_MAX_BYTES} bytes together; the rest were skipped.`);
         } else {
             let text: string | undefined;
+
             try {
                 text = new TextDecoder('utf-8', { fatal: true }).decode(outcome.bytes);
             } catch {
                 diagnostics.add(path, 'invalid-utf8', 'The file is not valid UTF-8.');
             }
+
             if (text !== undefined) {
                 totalBytes += outcome.bytes.byteLength;
+
                 // redacted before anything reads it, the digest is of the bytes on disk
                 const content = redact(text);
                 const source: RepositoryInstructionSource = {
@@ -237,49 +301,85 @@ export async function readRepositoryInstructions(
                     scopes: [],
                     includedBy: [],
                 };
+
                 sources.push(source);
                 node = { source, includes: parseIncludes(content) };
             }
         }
+
         nodes.set(path, node);
+
         return node;
     };
 
     const visited = new Map<string, number>();
     const visit = async (path: string, scope: string, parent: string | undefined, ancestry: string[]): Promise<void> => {
-        if (stopped) return;
-        const node = await load(path, parent !== undefined);
-        if (!node) return;
-        if (!node.source.scopes.includes(scope)) node.source.scopes.push(scope);
-        if (parent !== undefined && !node.source.includedBy.includes(parent)) node.source.includedBy.push(parent);
-        if (ancestry.includes(path)) {
-            diagnostics.add(path, 'cycle', 'The file includes itself through the files it includes.');
+        if (stopped) {
             return;
         }
+
+        const node = await load(path, parent !== undefined);
+
+        if (!node) {
+            return;
+        }
+
+        if (!node.source.scopes.includes(scope)) {
+            node.source.scopes.push(scope);
+        }
+
+        if (parent !== undefined && !node.source.includedBy.includes(parent)) {
+            node.source.includedBy.push(parent);
+        }
+
+        if (ancestry.includes(path)) {
+            diagnostics.add(path, 'cycle', 'The file includes itself through the files it includes.');
+
+            return;
+        }
+
         const key = `${path}\0${scope}`;
         // A shorter route can reach descendants that exceeded the depth limit before.
         const previousDepth = visited.get(key);
-        if (previousDepth !== undefined && previousDepth <= ancestry.length) return;
+
+        if (previousDepth !== undefined && previousDepth <= ancestry.length) {
+            return;
+        }
+
         visited.set(key, ancestry.length);
 
         const depth = ancestry.length + 1;
         const targets: Array<{ reference: string; target: IncludeTarget }> = [];
+
         for (const reference of node.includes) {
-            if (!count()) break;
+            if (!count()) {
+                break;
+            }
+
             targets.push({ reference, target: resolveInclude(path, reference) });
         }
+
         await inspect(targets.flatMap(({ target }) => (target.kind === 'path' && depth <= INSTRUCTION_INCLUDE_DEPTH_MAX ? [target.path] : [])));
+
         for (const { reference, target } of targets) {
-            if (stopped) return;
+            if (stopped) {
+                return;
+            }
+
             if (target.kind === 'diagnostic') {
                 diagnostics.add(reference, target.code, target.message);
+
                 continue;
             }
+
             if (depth > INSTRUCTION_INCLUDE_DEPTH_MAX) {
                 diagnostics.add(target.path, 'limit', `Includes nest deeper than ${INSTRUCTION_INCLUDE_DEPTH_MAX} levels.`);
+
                 continue;
             }
+
             const status = statuses.get(target.path)!;
+
             if (status.kind === 'file') {
                 await visit(target.path, scope, path, [...ancestry, path]);
             } else {
@@ -291,62 +391,93 @@ export async function readRepositoryInstructions(
     const collect = async () => {
         // the requested paths
         const accepted: string[] = [];
+
         for (const raw of requested.slice(0, INSTRUCTION_PATHS_MAX)) {
             if (typeof raw !== 'string' || raw.length === 0 || raw.includes('\0')) {
                 throw new ValidationError('paths must be non-empty strings without NUL.');
             }
+
             if (byteLength(raw) > INSTRUCTION_PATH_MAX_BYTES) {
                 diagnostics.add(raw, 'limit', `The path is longer than ${INSTRUCTION_PATH_MAX_BYTES} bytes.`);
+
                 continue;
             }
+
             let path: string;
+
             try {
                 path = resolveWorkspacePath(raw);
             } catch {
                 diagnostics.add(raw, 'outside-workspace', 'The path is not inside the workspace.');
+
                 continue;
             }
+
             accepted.push(path);
         }
+
         if (requested.length > INSTRUCTION_PATHS_MAX) {
             diagnostics.add('.', 'limit', `Only the first ${INSTRUCTION_PATHS_MAX} paths were looked at.`);
         }
+
         result.paths = accepted;
 
         const inspectable = accepted.filter((path) => path !== '.' && !isGitPath(path));
+
         await inspect(inspectable.filter(() => count()));
 
         // the directories each path reaches, in request order
         const directories: string[] = [];
+
         for (const path of accepted) {
-            if (stopped) break;
+            if (stopped) {
+                break;
+            }
+
             let chain: string[];
+
             if (path === '.') {
                 chain = ['.'];
             } else if (isGitPath(path)) {
                 diagnostics.add(path, 'unsupported-file', 'Paths in .git are never read.');
+
                 continue;
             } else {
                 const status = statuses.get(path);
-                if (!status) break;
+
+                if (!status) {
+                    break;
+                }
+
                 const components = path.split('/').length;
+
                 if (status.kind === 'link') {
                     report(path, status);
                     chain = directoryChain(pathPrefix(path, status.at - 1));
                 } else if (status.kind === 'denied') {
                     report(path, status);
-                    if (status.at < 2) continue;
+
+                    if (status.at < 2) {
+                        continue;
+                    }
+
                     chain = directoryChain(pathPrefix(path, status.at - 2));
                 } else {
                     chain = directoryChain(pathPrefix(path, status.kind === 'dir' ? components : components - 1));
                 }
             }
+
             for (const dir of chain) {
-                if (directories.includes(dir)) continue;
+                if (directories.includes(dir)) {
+                    continue;
+                }
+
                 if (directories.length >= INSTRUCTION_DIRECTORIES_MAX) {
                     diagnostics.add('.', 'limit', `More than ${INSTRUCTION_DIRECTORIES_MAX} directories; the deeper ones were skipped.`);
+
                     break;
                 }
+
                 directories.push(dir);
             }
         }
@@ -354,22 +485,36 @@ export async function readRepositoryInstructions(
         // root first, then each level, each level in code-point order
         const depthOf = (dir: string) => (dir === '.' ? 0 : dir.split('/').length);
         const order = (a: string, b: string) => {
-            if (a === b) return 0;
+            if (a === b) {
+                return 0;
+            }
+
             return a < b ? -1 : 1;
         };
+
         directories.sort((a, b) => depthOf(a) - depthOf(b) || order(a, b));
 
         const candidates: Array<{ dir: string; path: string }> = [];
+
         for (const dir of directories) {
             for (const name of INSTRUCTION_FILES) {
-                if (!count()) break;
+                if (!count()) {
+                    break;
+                }
+
                 candidates.push({ dir, path: dir === '.' ? name : `${dir}/${name}` });
             }
         }
+
         await inspect(candidates.map(({ path }) => path));
+
         for (const { dir, path } of candidates) {
-            if (stopped) break;
+            if (stopped) {
+                break;
+            }
+
             const status = statuses.get(path)!;
+
             if (status.kind === 'file') {
                 await visit(path, dir, undefined, []);
             } else {
@@ -386,15 +531,22 @@ export async function readRepositoryInstructions(
         complete: true,
     };
     const timer = clock.setTimeout(() => expiry.abort(), INSTRUCTION_REQUEST_TIMEOUT_MS);
+
     try {
         await collect();
     } catch (error) {
-        if (!(error instanceof DeadlineSignal)) throw error;
+        if (!(error instanceof DeadlineSignal)) {
+            throw error;
+        }
+
         stop(`The request took longer than ${INSTRUCTION_REQUEST_TIMEOUT_MS / 1000} s; the rest was skipped.`);
     } finally {
         timer.clear();
     }
-    if (signal?.aborted) throw new SandboxError('Repository instruction discovery aborted.');
+
+    if (signal?.aborted) {
+        throw new SandboxError('Repository instruction discovery aborted.');
+    }
 
     const redactedPaths = result.paths.map(redact);
     const redactedSources = sources.map((source) => ({
@@ -403,9 +555,11 @@ export async function readRepositoryInstructions(
         scopes: source.scopes.map(redact),
         includedBy: source.includedBy.map(redact),
     }));
+
     if (expiry.signal.aborted || clock.now().getTime() >= deadline) {
         stop(`The request took longer than ${INSTRUCTION_REQUEST_TIMEOUT_MS / 1000} s; the rest was skipped.`);
     }
+
     return {
         commit: result.commit,
         paths: redactedPaths,

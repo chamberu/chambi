@@ -35,7 +35,7 @@ export function createUsageError(message: string): ChamviError {
  * error (the signal handler decides), else 1.
  */
 export function exitCodeOf(error: unknown): 0 | 1 | 2 {
-    if (!(error instanceof Error)) {
+    if (!(Error.isError(error))) {
         return EXIT_CODE.FAILURE;
     }
 
@@ -44,6 +44,7 @@ export function exitCodeOf(error: unknown): 0 | 1 | 2 {
     }
 
     const { code } = error as { code?: unknown };
+
     if (typeof code === 'string' && USAGE_ERROR_CODES.includes(code)) {
         return EXIT_CODE.USAGE;
     }
@@ -71,17 +72,21 @@ function kebabCase(name: string): string {
 export function assertKnownArgs(args: Record<string, unknown>, def: ArgsDef): void {
     const known = new Set<string>(['_']);
     let positionals = 0;
+
     for (const [name, arg] of Object.entries(def)) {
         known.add(name);
         known.add(camelCase(name));
         known.add(kebabCase(name));
+
         if (arg.type === 'positional') {
             positionals++;
+
             continue;
         }
 
         const alias = 'alias' in arg ? arg.alias : undefined;
         const aliases: unknown[] = Array.isArray(alias) ? alias : [alias];
+
         aliases.forEach((value) => {
             if (typeof value === 'string') {
                 known.add(value);
@@ -96,13 +101,14 @@ export function assertKnownArgs(args: Record<string, unknown>, def: ArgsDef): vo
     }
 
     const rest = Array.isArray(args._) ? args._ : [];
+
     if (rest.length > positionals) {
         throw createUsageError(`Unexpected argument ${String(rest[positionals])}.`);
     }
 }
 
 export function messageOf(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    return Error.isError(error) ? error.message : String(error);
 }
 
 /** The CliContext bound to this process; `cliPath` is the bin (`dist/cli.mjs`), which `chamvi dev` spawns. */
@@ -127,6 +133,7 @@ export function processContext(cliPath: string = process.argv[1] ?? ''): CliCont
         cliPath,
         linkToParent: () => {
             const { stdin } = process;
+
             stdin.once('end', () => {
                 // the watcher (this process's parent) leads the dev group: end the group, else this process alone
                 try {

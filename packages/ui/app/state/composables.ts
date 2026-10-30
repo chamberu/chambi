@@ -32,26 +32,41 @@ export function useAgentState(client: IApiClient, agent: Ref<string | undefined>
 
     const loadKv = async (name: string, offset: number, current: number) => {
         const page = await client.listKv(name, { limit: KV_PAGE_SIZE, offset });
-        if (current !== generation) return;
+
+        if (current !== generation) {
+            return;
+        }
+
         kv.value = offset === 0 ? page : [...kv.value, ...page];
         moreKv.value = page.length === KV_PAGE_SIZE;
     };
 
     watch(agent, async (name) => {
         const current = ++generation;
+
         kv.value = [];
         moreKv.value = false;
         collections.value = [];
         docs.value = {};
         error.value = undefined;
-        if (!name) return;
+
+        if (!name) {
+            return;
+        }
+
         try {
             const { data: agents } = await client.listAgents();
-            if (current !== generation) return;
+
+            if (current !== generation) {
+                return;
+            }
+
             collections.value = agents.find((a) => a.name === name)?.state ?? [];
             await loadKv(name, 0, current);
         } catch (e) {
-            if (current === generation) error.value = asApiError(e);
+            if (current === generation) {
+                error.value = asApiError(e);
+            }
         }
     }, { immediate: true });
 
@@ -63,7 +78,11 @@ export function useAgentState(client: IApiClient, agent: Ref<string | undefined>
         error,
         async loadMoreKv() {
             const name = agent.value;
-            if (!name) return;
+
+            if (!name) {
+                return;
+            }
+
             try {
                 await loadKv(name, kv.value.length, generation);
             } catch (e) {
@@ -72,13 +91,23 @@ export function useAgentState(client: IApiClient, agent: Ref<string | undefined>
         },
         async loadCollection(collection: string) {
             const name = agent.value;
-            if (!name) return;
+
+            if (!name) {
+                return;
+            }
+
             const current = generation;
+
             try {
                 const list = await client.listDocs(name, collection, { limit: DOC_PAGE_SIZE });
-                if (current === generation) docs.value = { ...docs.value, [collection]: list };
+
+                if (current === generation) {
+                    docs.value = { ...docs.value, [collection]: list };
+                }
             } catch (e) {
-                if (current === generation) error.value = asApiError(e);
+                if (current === generation) {
+                    error.value = asApiError(e);
+                }
             }
         },
     };

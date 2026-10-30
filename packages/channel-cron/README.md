@@ -36,7 +36,7 @@
 npm install @chamvi/channel-cron @chamvi/core --save
 ```
 
-ESM only, Node.js `>=22`. `@chamvi/core` is a peer dependency; [`hubwire`](https://www.npmjs.com/package/hubwire) (croner inside) and [`cron-parser`](https://www.npmjs.com/package/cron-parser) are installed with the package.
+ESM only, Node.js `>=24.3.0`. `@chamvi/core` is a peer dependency; [`hubwire`](https://www.npmjs.com/package/hubwire) (croner inside) and [`cron-parser`](https://www.npmjs.com/package/cron-parser) are installed with the package.
 
 ## Usage
 

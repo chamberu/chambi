@@ -33,10 +33,14 @@ export function registerChannelRoutes(app: App, ctx: HttpContext): void {
                 }, channelCtx);
             } catch (error) {
                 // a body refused part-way (readRequestBody) leaves bytes unread that would stall a keep-alive socket
-                if (isHTTPError(error) && error.statusCode === 413) event.response.headers.set('connection', 'close');
+                if (isHTTPError(error) && error.statusCode === 413) {
+                    event.response.headers.set('connection', 'close');
+                }
+
                 throw error;
             }
         });
+
         app.post(path, handler);
         app.post(`${path}{/*rest}`, handler);
     }

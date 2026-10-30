@@ -42,6 +42,7 @@ describe('credentialRequest', () => {
 describe('staticGitCredentials', () => {
     it('answers a token for its host, with a GitHub username by default', async () => {
         const credentials = staticGitCredentials([{ host: 'github.com', token: TOKEN }]);
+
         await expect(credentials.get(request('https://github.com/octo/demo.git'))).resolves.toEqual({
             username: 'x-access-token',
             password: TOKEN,
@@ -59,6 +60,7 @@ describe('staticGitCredentials', () => {
             path: 'Octo/Demo',
             token: 'ghp_repository_token',
         }]);
+
         await expect(credentials.get(request('https://github.com/Acme/service.git'))).resolves.toMatchObject({ password: TOKEN });
         await expect(credentials.get(request('https://github.com/ACME/Service'))).resolves.toMatchObject({ password: TOKEN });
         await expect(credentials.get(request('https://github.com/octo/demo.git'))).resolves.toMatchObject({ password: 'ghp_repository_token' });
@@ -69,11 +71,12 @@ describe('staticGitCredentials', () => {
         const credentials = staticGitCredentials([
             { host: 'gitlab.example.com', token: 'glpat-aaaa' },
             {
-                host: 'git.example.com', 
-                username: 'deploy', 
-                token: 'tok-bbbb', 
+                host: 'git.example.com',
+                username: 'deploy',
+                token: 'tok-bbbb',
             },
         ]);
+
         await expect(credentials.get(request('https://gitlab.example.com/g/r.git'))).resolves.toMatchObject({ username: 'oauth2' });
         await expect(credentials.get(request('https://git.example.com/g/r.git'))).resolves.toMatchObject({ username: 'deploy' });
     });
@@ -81,17 +84,18 @@ describe('staticGitCredentials', () => {
     it('matches the host case-insensitively and the path by whole segments, the longest prefix first', async () => {
         const credentials = staticGitCredentials([
             {
-                host: 'GitHub.com', 
-                path: 'octo', 
-                token: 'owner-token', 
+                host: 'GitHub.com',
+                path: 'octo',
+                token: 'owner-token',
             },
             {
-                host: 'github.com', 
-                path: 'octo/demo', 
-                token: 'repo-token', 
+                host: 'github.com',
+                path: 'octo/demo',
+                token: 'repo-token',
             },
             { host: 'github.com', token: 'host-token' },
         ]);
+
         await expect(credentials.get(request('https://github.com/octo/demo.git'))).resolves.toMatchObject({ password: 'repo-token' });
         await expect(credentials.get(request('https://github.com/octo/other.git'))).resolves.toMatchObject({ password: 'owner-token' });
         await expect(credentials.get(request('https://github.com/octopus/demo.git'))).resolves.toMatchObject({ password: 'host-token' });
@@ -100,10 +104,11 @@ describe('staticGitCredentials', () => {
 
     it('answers nothing for a path below no entry and for the bare host of a path entry', async () => {
         const credentials = staticGitCredentials([{
-            host: 'github.com', 
-            path: '/octo/', 
-            token: TOKEN, 
+            host: 'github.com',
+            path: '/octo/',
+            token: TOKEN,
         }]);
+
         await expect(credentials.get(request('https://github.com/other/demo.git'))).resolves.toBeUndefined();
         await expect(credentials.get(request('https://github.com/'))).resolves.toBeUndefined();
         await expect(credentials.get(request('https://github.com/octo/demo'))).resolves.toMatchObject({ password: TOKEN });
@@ -117,23 +122,26 @@ describe('staticGitCredentials', () => {
             [{ host: 'github.com/x', token: TOKEN }],
             [{ host: 'github.com', token: `${TOKEN}\n` }],
             [{
-                host: 'github.com', 
-                token: TOKEN, 
-                username: 'a\tb', 
+                host: 'github.com',
+                token: TOKEN,
+                username: 'a\tb',
             }],
             [{
-                host: 'github.com', 
-                token: TOKEN, 
-                path: 'a/../b', 
+                host: 'github.com',
+                token: TOKEN,
+                path: 'a/../b',
             }],
         ];
+
         for (const entries of cases) {
             let error: unknown;
+
             try {
                 staticGitCredentials(entries as never);
             } catch (e) {
                 error = e;
             }
+
             expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
             expect((error as Error).message).not.toContain(TOKEN);
         }
@@ -146,6 +154,7 @@ describe('resolveGitCredential', () => {
         const source = (name: string, answer?: { username: string; password: string }) => ({
             get: async () => {
                 calls.push(name);
+
                 return answer;
             },
         });
@@ -154,18 +163,25 @@ describe('resolveGitCredential', () => {
             source('b', { username: 'u', password: 'p-1234' }),
             source('c', { username: 'u', password: 'p-5678' }),
         ], request('https://github.com/o/r.git'));
+
         expect(credential).toEqual({ username: 'u', password: 'p-1234' });
         expect(calls).toEqual(['a', 'b']);
     });
 
     it('refuses an answer git cannot take, without echoing it', async () => {
         const promise = resolveGitCredential([{ get: async () => ({ username: 'u', password: 'secret\nvalue' }) }], request('https://github.com/o/r.git'));
+
         await expect(promise).rejects.toThrow(SandboxError);
         await expect(promise).rejects.not.toThrow(/secret/);
     });
 
     it('wraps a failing source in a SandboxError naming the repository', async () => {
-        const promise = resolveGitCredential([{ get: async () => { throw new Error('GitHub 502'); } }], request('https://github.com/o/r.git'));
+        const promise = resolveGitCredential([{
+            get: async () => {
+                throw new Error('GitHub 502');
+            },
+        }], request('https://github.com/o/r.git'));
+
         await expect(promise).rejects.toThrow(SandboxError);
         await expect(promise).rejects.toThrow(/github\.com\/o\/r.*GitHub 502/);
     });

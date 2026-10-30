@@ -15,6 +15,7 @@ import type { CryptoKey, JWK, JWTPayload } from 'jose';
 export async function createSigningKey(kid = 'k1'): Promise<{ privateKey: CryptoKey; jwk: JWK }> {
     const { privateKey, publicKey } = await generateKeyPair('RS256', { modulusLength: 2048 });
     const jwk = await exportJWK(publicKey);
+
     return {
         privateKey,
         jwk: {

@@ -21,8 +21,11 @@ export function defineContextKey<T>(name: string): ContextKey<T> {
     if (typeof name !== 'string' || name.length === 0) {
         throw new InvalidAgentDefinitionError('defineContextKey() needs a non-empty name.');
     }
+
     const key: ContextKey<T> = Object.freeze({ name });
+
     registerContextKey(key);
+
     return key;
 }
 
@@ -34,13 +37,20 @@ export function tryInject<T, S extends StateSchema = StateSchema>(
     ctx: ToolContext<S>,
     key: ContextKey<T>,
 ): T | undefined {
-    if (!isContextKey(key)) return undefined;
+    if (!isContextKey(key)) {
+        return undefined;
+    }
+
     return providedOf(ctx)?.get(key) as T | undefined;
 }
 
 /** Like tryInject, but throws ContextNotProvidedError (naming the key only) without a value. */
 export function inject<T, S extends StateSchema = StateSchema>(ctx: ToolContext<S>, key: ContextKey<T>): T {
     const value = tryInject(ctx, key);
-    if (value === undefined) throw new ContextNotProvidedError(contextKeyName(key));
+
+    if (value === undefined) {
+        throw new ContextNotProvidedError(contextKeyName(key));
+    }
+
     return value;
 }

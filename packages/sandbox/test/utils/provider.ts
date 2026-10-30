@@ -76,13 +76,18 @@ export function createFakeProvider(options: {
     const track = (workspace: ScriptedWorkspace): ScriptedWorkspace => {
         const dispose = workspace.dispose.bind(workspace);
         let recorded = false;
+
         workspace.dispose = async () => {
             // a stopped (gone) handle's dispose counts too: it removes the container
-            if (!recorded) provider.disposed.push(workspace.id);
+            if (!recorded) {
+                provider.disposed.push(workspace.id);
+            }
+
             recorded = true;
             await dispose();
         };
         provider.workspaces.set(workspace.id, workspace);
+
         return workspace;
     };
     const provider: FakeProvider = {
@@ -105,14 +110,23 @@ export function createFakeProvider(options: {
         },
         async create(input): Promise<IWorkspace> {
             // a real provider never answers in the same tick
-            await new Promise<void>((resolve) => { setImmediate(resolve); });
+            await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+            });
             provider.created.push(input);
-            if (provider.gate) await provider.gate;
+
+            if (provider.gate) {
+                await provider.gate;
+            }
+
             if (nextCreateError) {
                 const error = nextCreateError;
+
                 nextCreateError = undefined;
+
                 throw error;
             }
+
             const now = clock.now();
             const workspace = createScriptedWorkspace(options.onExec, {
                 runId: input.runId,
@@ -125,21 +139,33 @@ export function createFakeProvider(options: {
                 createdAt: now,
                 expiresAt: new Date(now.getTime() + (input.limits?.maxLifetimeMs ?? DEFAULT_LIMITS.maxLifetimeMs)),
             }, randomUUID());
+
             track(workspace);
             provider.deployments.set(workspace.id, input.deployment ?? DEFAULT_DEPLOYMENT);
+
             return workspace;
         },
         async find(runId, options) {
-            await new Promise<void>((resolve) => { setImmediate(resolve); });
+            await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+            });
             provider.findCalls.push({ runId, options });
-            if (provider.findGate) await provider.findGate;
+
+            if (provider.findGate) {
+                await provider.findGate;
+            }
+
             if (nextFindError) {
                 const error = nextFindError;
+
                 nextFindError = undefined;
+
                 throw error;
             }
+
             const deployment = options?.deployment ?? DEFAULT_DEPLOYMENT;
             const now = clock.now().getTime();
+
             return provider.workspaces.values().toArray().filter((workspace) => !workspace.disposed &&
                 workspace.info.runId === runId &&
                 workspace.info.expiresAt.getTime() > now &&
@@ -147,22 +173,36 @@ export function createFakeProvider(options: {
         },
         stop(id, stopOptions = {}) {
             const workspace = provider.workspaces.get(id)!;
+
             workspace.disposed = true;
-            if (stopOptions.removed) return;
+
+            if (stopOptions.removed) {
+                return;
+            }
+
             const restarted = createScriptedWorkspace(options.onExec, workspace.info, id);
-            for (const [path, content] of workspace.files) restarted.files.set(path, content);
+
+            for (const [path, content] of workspace.files) {
+                restarted.files.set(path, content);
+            }
+
             track(restarted);
         },
         async collectGarbage(options) {
             provider.gcCalls++;
             provider.gcOptions.push(options);
+
             if (nextGcError) {
                 const error = nextGcError;
+
                 nextGcError = undefined;
+
                 throw error;
             }
+
             return 0;
         },
     };
+
     return provider;
 }

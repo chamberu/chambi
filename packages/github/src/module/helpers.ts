@@ -40,7 +40,9 @@ export function createGithubAppFromEnv(env: Env, options: Partial<GithubAppOptio
         if (typeof options[key] !== 'undefined') {
             return options[key];
         }
+
         fromEnv.add(key);
+
         return reader();
     };
 
@@ -64,12 +66,14 @@ export function createGithubAppFromEnv(env: Env, options: Partial<GithubAppOptio
     } catch (error) {
         if (error instanceof InvalidAgentDefinitionError) {
             const key = [...fromEnv].find((option) => error.message.startsWith(`${option} `));
+
             if (key) {
                 // createGithubApp ends some messages with `, got "<value>".`; an env value is never echoed
                 const rule = error.message.slice(key.length).replace(/, got [\s\S]*$/, '.');
                 throw new InvalidAgentDefinitionError(`${VARIABLES[key]}${rule}`);
             }
         }
+
         throw error;
     }
 }

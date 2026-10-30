@@ -40,8 +40,10 @@ export async function runHooks(container: IContainer, phase: Exclude<LifecyclePh
 export async function runHooks(container: IContainer, phase: LifecyclePhase, ...args: unknown[]): Promise<void> {
     const context = container.resolve(AppToken.CONTEXT);
     const hooks = container.resolveAll(AppToken.LIFECYCLE_HOOKS);
+
     for (const hook of hooks) {
         const fn = hook[phase] as ((...input: unknown[]) => void | Promise<void>) | undefined;
+
         if (!fn) {
             continue;
         }

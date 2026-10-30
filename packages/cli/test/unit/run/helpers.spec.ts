@@ -54,11 +54,13 @@ describe('assertKnownArgs', () => {
 
     it('rejects --colour on a command without it', () => {
         let error: unknown;
+
         try {
             assertKnownArgs({ _: [], colour: true }, def);
         } catch (e) {
             error = e;
         }
+
         expect(error).toBeInstanceOf(ChamviError);
         expect((error as ChamviError).code).toBe(CLI_USAGE_ERROR_CODE);
         expect((error as Error).message).toContain('--colour');

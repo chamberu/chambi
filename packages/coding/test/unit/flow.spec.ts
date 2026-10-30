@@ -34,7 +34,10 @@ import { FIXTURE_FILES, createFixture } from '../utils/setup.ts';
 const cleanups: Array<() => Promise<void> | void> = [];
 
 afterEach(async () => {
-    for (const cleanup of cleanups.reverse()) await cleanup();
+    for (const cleanup of cleanups.reverse()) {
+        await cleanup();
+    }
+
     cleanups.length = 0;
 });
 
@@ -49,8 +52,11 @@ const call = (toolName: string, input: unknown): MockResponse => ({
 describe('coding flow (local)', () => {
     it('creates a workspace, runs the tests and disposes it with the run', async () => {
         const fixture = await createFixture();
+
         cleanups.push(() => fixture.cleanup());
+
         const root = await mkdtemp(join(tmpdir(), 'chamvi-coding-flow-'));
+
         cleanups.push(() => rm(root, { recursive: true, force: true }));
 
         const manager = createWorkspaceManager({
@@ -58,7 +64,9 @@ describe('coding flow (local)', () => {
             allowFileRepos: true,
             gcIntervalMs: 0,
         });
+
         cleanups.push(() => manager.close());
+
         const agent = defineAgent({
             name: 'coder',
             instructions: 'You run the tests of a repository.',
@@ -75,6 +83,7 @@ describe('coding flow (local)', () => {
             agents: [agent],
             onError: () => {},
         });
+
         cleanups.push(() => engine.stop());
         manager.attach(engine);
         await engine.start();
@@ -85,19 +94,26 @@ describe('coding flow (local)', () => {
             channel: 'http',
             payload: {},
         });
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('tests failed with exit code 1');
 
         const steps = await store.steps.find(runId);
         const create = steps.find((step) => step.kind === 'tool' && step.name === 'create_workspace');
+
         expect(create?.error).toBeUndefined();
         expect(create?.output).toMatchObject({ repo: fixture.url, commit: fixture.commit });
+
         const bash = steps.find((step) => step.kind === 'tool' && step.name === 'bash');
+
         expect(bash?.error).toBeUndefined();
+
         const result = bash?.output as ExecResult;
+
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain('1 failing');
         expect(result.timedOut).toBe(false);
@@ -120,16 +136,22 @@ describe('repository guidance through Engine checkpoints', () => {
             'src/CLAUDE.md': nestedContent,
             'other/AGENTS.md': 'unrelated guidance\n',
         });
+
         cleanups.push(() => fixture.cleanup());
+
         const root = await mkdtemp(join(tmpdir(), 'chamvi-instruction-flow-'));
+
         cleanups.push(() => rm(root, { recursive: true, force: true }));
+
         const makeManager = () => createWorkspaceManager({
             provider: createLocalSandbox({ root }),
             allowFileRepos: true,
             gcIntervalMs: 0,
         });
         const firstManager = makeManager();
+
         cleanups.push(() => firstManager.close());
+
         const model = mockModel([
             call('create_workspace', { repo: fixture.url }),
             call('read_file', { path: 'src/a.ts' }),
@@ -144,24 +166,32 @@ describe('repository guidance through Engine checkpoints', () => {
             tools: { ...manager.tools(), ...codingTools(manager) },
             hooks: {
                 async beforeToolExecution(info, context) {
-                    if (info.toolName === 'bash') await approve(context, { title: 'Continue after review?' });
+                    if (info.toolName === 'bash') {
+                        await approve(context, { title: 'Continue after review?' });
+                    }
+
                     return info.input;
                 },
             },
         });
         const store = createMemoryStore();
         const first = new Engine({ store, agents: [agentFor(firstManager)] });
+
         cleanups.push(() => first.stop());
         firstManager.attach(first);
         await first.start();
+
         const { runId } = await first.dispatch({
             agent: 'instruction-coder',
             trigger: 'http',
             channel: 'http',
             payload: {},
         });
+
         await first.idle();
+
         const paused = await store.runs.findOne(runId);
+
         expect(paused?.status).toBe('waiting');
 
         const beforeRestart = await store.steps.find(runId);
@@ -183,6 +213,7 @@ describe('repository guidance through Engine checkpoints', () => {
             scopes: ['src'],
             includedBy: [],
         };
+
         expect(rootInstructions.sources).toEqual([rootSource]);
         expect(nestedInstructions.sources).toEqual([rootSource, nestedSource]);
         expect(nestedInstructions.diagnostics).toEqual([
@@ -195,18 +226,25 @@ describe('repository guidance through Engine checkpoints', () => {
             .flatMap((message) => message.content)
             .filter((part) => part.type === 'tool-result')
             .map((part) => ({ name: part.toolName, output: part.output }));
+
         expect(resultsAt(2)).toEqual(expect.arrayContaining([
             { name: 'create_workspace', output: { type: 'json', value: created!.output } },
             { name: 'read_file', output: { type: 'json', value: initialRead!.output } },
         ]));
 
         await first.stop();
+
         const workspace = await firstManager.get(runId);
+
         await workspace.writeFile('src/CLAUDE.md', updatedContent);
         await firstManager.close();
+
         const secondManager = makeManager();
+
         cleanups.push(() => secondManager.close());
+
         const second = new Engine({ store, agents: [agentFor(secondManager)] });
+
         cleanups.push(() => second.stop());
         secondManager.attach(second);
         await second.start();
@@ -218,11 +256,15 @@ describe('repository guidance through Engine checkpoints', () => {
             { name: 'create_workspace', output: { type: 'json', value: created!.output } },
             { name: 'read_file', output: { type: 'json', value: initialRead!.output } },
         ]));
+
         const steps = await store.steps.find(runId);
         const reads = steps.filter((step) => step.kind === 'tool' && step.name === 'read_file');
+
         expect(reads).toHaveLength(2);
         expect(reads[0]!.output).toEqual(initialRead!.output);
+
         const refreshed = (reads[1]!.output as { instructions: RepositoryInstructions }).instructions;
+
         expect(refreshed.sources).toEqual([
             rootSource,
             {

@@ -6,14 +6,14 @@ import {
     effectMarker,
 } from '@chamvi/core';
 
-interface Comment {
+interface IComment {
     id: number;
     url: string;
 }
 
 declare const model: LanguageModel;
-declare function findComment(issue: number, marker: string): Promise<Comment | undefined>;
-declare function postComment(issue: number, body: string): Promise<Comment>;
+declare function findComment(issue: number, marker: string): Promise<IComment | undefined>;
+declare function postComment(issue: number, body: string): Promise<IComment>;
 
 // #region reconcile
 const comment = defineEffectTool({

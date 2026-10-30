@@ -27,10 +27,6 @@ import type { Env } from '../env/types.ts';
 import type { ILogger } from '../logger/types.ts';
 import type { ModelProviders, ProviderConfig } from '../models/types.ts';
 
-/** The container and module contracts a module factory is written against (eldin, orkos). */
-export type { IContainer } from 'eldin';
-export type { IModule } from 'orkos';
-
 export type AppMode = 'start' | 'job' | 'migrate';
 
 export type AppContext = {
@@ -85,9 +81,9 @@ export type GitCredentialSource = {
         runId: string;
         signal?: AbortSignal;
     }): Promise<{
-        username: string; 
-        password: string; 
-        expiresAt?: Date 
+        username: string;
+        password: string;
+        expiresAt?: Date
     } | undefined>;
 };
 

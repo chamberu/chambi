@@ -46,6 +46,7 @@ export class GithubModule implements IModule {
             credentials,
             ...appOptions
         } = options;
+
         this.channelOptions = channel ?? {};
         this.app = app ?? createGithubAppFromEnv(env ?? process.env, appOptions);
         this.credentials = credentials === false ? undefined : githubAppCredentials(this.app, credentials);
@@ -63,10 +64,13 @@ export class GithubModule implements IModule {
             // a failed agent of a delivery (filter, key, dispatch) belongs in the app's log
             onError: this.channelOptions.onError ?? ((error) => logger.error('github channel error', error)),
         });
+
         container.registerMany(AppToken.CHANNELS, { useValue: channel });
+
         if (this.credentials) {
             container.registerMany(AppToken.GIT_CREDENTIALS, { useValue: this.credentials });
         }
+
         container.registerMany(AppToken.LIFECYCLE_HOOKS, {
             useValue: {
                 name: this.name,

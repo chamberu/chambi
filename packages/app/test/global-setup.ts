@@ -11,6 +11,7 @@ import type { PostgresConnection } from './utils/database.ts';
 
 export default async function setup(project: TestProject) {
     let container;
+
     try {
         container = await new PostgreSqlContainer('postgres:18-alpine')
             .withCommand(['postgres', '-c', 'max_connections=200'])
@@ -20,9 +21,11 @@ export default async function setup(project: TestProject) {
             throw e;
         }
 
-        const message = e instanceof Error ? e.message : String(e);
+        const message = Error.isError(e) ? e.message : String(e);
+
         // eslint-disable-next-line no-console
         console.warn(`[@chamvi/app] Docker is not available, skipping the Postgres tests: ${message}. Start Docker to run them.`);
+
         return undefined;
     }
 
@@ -32,6 +35,7 @@ export default async function setup(project: TestProject) {
         username: container.getUsername(),
         password: container.getPassword(),
     };
+
     project.provide('postgres', connection);
 
     return async () => {

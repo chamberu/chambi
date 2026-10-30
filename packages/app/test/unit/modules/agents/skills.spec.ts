@@ -21,6 +21,7 @@ import type { Harness } from '../../../utils/harness.ts';
 
 let root: Awaited<ReturnType<typeof createTempDir>>;
 const harnesses: Harness[] = [];
+
 beforeEach(async () => {
     root = await createTempDir();
 });
@@ -49,7 +50,9 @@ function sourceAgent(instructions = 'v1', channel = '') {
 
 function build(check = false) {
     const setup = buildAgentsDirHarness({ root: root.path, check });
+
     harnesses.push(setup.harness);
+
     return setup;
 }
 
@@ -60,6 +63,7 @@ function controlledSourceAgent(instructions = 'v2', failure = 'mismatch') {
         state.attempts++;
         await writeFile(${path}, JSON.stringify(state));
         if (!state.ready) throw new Error('${failure}' === 'transient' ? 'source temporarily unavailable' : 'skill preparation failed');`;
+
     return `import { readFile, writeFile } from 'node:fs/promises';
         export default { name: 'greeter', definition: { model: 'test/model', instructions: '${instructions}',
             skills: [${runtimeInput(prepare)}],
@@ -76,12 +80,15 @@ async function startControlledReload(failure = 'mismatch') {
         'keeper/agent.ts': agentFile('keeper', 'test/model', 'keeper'),
         'provider.json': JSON.stringify({ attempts: 0, ready: false }),
     });
+
     const setup = build();
+
     await setup.harness.setup();
     await setup.watch();
     await writeTree(join(root.path, 'greeter'), { 'agent.ts': controlledSourceAgent('v2', failure) });
     await setup.poll();
     await setup.poll();
+
     return setup;
 }
 
@@ -94,9 +101,12 @@ async function pollTimes(setup: ReturnType<typeof build>, count: number) {
 describe('folder skill verification', () => {
     it.each(['after-first', 'during-second'] as const)('keeps the old agent, marker and queued run when shutdown arrives %s preparation', async (phase) => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const setup = build();
+
         await setup.harness.setup();
         await setup.watch();
+
         const current = setup.engine();
         const original = current.getAgent('greeter');
         const revision = current.agentRevision('greeter');
@@ -108,24 +118,34 @@ describe('folder skill verification', () => {
         const reason = new Error('app stopped before registry mutation');
         const prepare = current.prepare.bind(current);
         let attempts = 0;
+
         vi.spyOn(current, 'prepare').mockImplementation(async (options) => {
             const attempt = ++attempts;
+
             if (phase === 'during-second' && attempt === 2) {
                 entered.resolve();
                 await release.promise;
             }
+
             await prepare(options);
-            if (phase === 'after-first' && attempt === 1) setup.harness.controller.abort(reason);
+
+            if (phase === 'after-first' && attempt === 1) {
+                setup.harness.controller.abort(reason);
+            }
         });
+
         try {
             await writeTree(join(root.path, 'greeter'), { 'agent.ts': agentFile('v2') });
             await setup.poll();
+
             const reload = setup.poll();
+
             if (phase === 'during-second') {
                 await entered.promise;
                 setup.harness.controller.abort(reason);
                 release.resolve();
             }
+
             await reload;
             expect(current.getAgent('greeter')).toBe(original);
             expect(current.agentRevision('greeter')).toBe(revision);
@@ -138,7 +158,9 @@ describe('folder skill verification', () => {
 
     it('aborts boot on required verification failure before a revision or registration', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': sourceAgent() });
+
         const setup = build();
+
         await expect(setup.harness.setup()).rejects.toThrow(/skill/i);
         expect(setup.engine().getAgent('greeter')).toBeUndefined();
         expect(await setup.store.agentRevisions.findOne('greeter')).toBeUndefined();
@@ -146,7 +168,9 @@ describe('folder skill verification', () => {
 
     it('keeps static definition failures tolerant and never loads their source', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': sourceAgent('v1', "channels: [{ channel: 'unknown', id: 'unknown', options: {} }],") });
+
         const setup = build();
+
         await setup.harness.setup();
         expect(setup.issues()[0]?.message).toContain('unknown channel');
         expect(setup.engine().getAgent('greeter')).toBeUndefined();
@@ -154,7 +178,9 @@ describe('folder skill verification', () => {
 
     it('check validates folder headers without loading the source or writing revisions', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': sourceAgent() });
+
         const setup = build(true);
+
         await setup.harness.setup();
         expect(setup.issues()).toEqual([]);
         expect(await setup.store.agentRevisions.findOne('greeter')).toBeUndefined();
@@ -162,12 +188,16 @@ describe('folder skill verification', () => {
 
     it('hot reload retains the old agent, marker and queued run when verification fails', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const setup = build();
+
         await setup.harness.setup();
         await setup.watch();
+
         const previous = setup.engine().getAgent('greeter');
         const marker = await setup.store.agentRevisions.findOne('greeter');
         const runId = await queueRun(setup.store, setup.clock, 'greeter');
+
         await writeTree(join(root.path, 'greeter'), { 'agent.ts': sourceAgent('v2') });
         await setup.poll();
         await setup.poll();
@@ -179,16 +209,21 @@ describe('folder skill verification', () => {
 
     it.each(['mismatch', 'transient'])('backs off %s preparation failures and recovers without a folder edit', async (failure) => {
         const setup = await startControlledReload(failure);
+
         expect((await providerState()).attempts).toBe(1);
         expect(setup.issues()).toHaveLength(1);
+
         let attempts = 1;
+
         for (const delay of [2, 4, 8, 16, 32, 60, 60]) {
             await pollTimes(setup, delay - 1);
             expect((await providerState()).attempts).toBe(attempts);
             await setup.poll();
             expect((await providerState()).attempts).toBe(++attempts);
         }
+
         const state = await providerState();
+
         await writeFile(join(root.path, 'provider.json'), JSON.stringify({ ...state, ready: true }));
         await pollTimes(setup, 59);
         expect(setup.engine().getAgent('greeter')?.definition.instructions).toBe('v1');
@@ -201,6 +236,7 @@ describe('folder skill verification', () => {
 
     it('resets backoff when changed content becomes stable', async () => {
         const setup = await startControlledReload();
+
         await pollTimes(setup, 2);
         expect((await providerState()).attempts).toBe(2);
         await writeTree(join(root.path, 'greeter'), { 'agent.ts': controlledSourceAgent('v3') });
@@ -216,6 +252,7 @@ describe('folder skill verification', () => {
 
     it('resumes retries when an unstable edit returns to the failing content', async () => {
         const setup = await startControlledReload();
+
         await writeTree(join(root.path, 'greeter'), { 'agent.ts': controlledSourceAgent('unstable') });
         await setup.poll();
         await writeTree(join(root.path, 'greeter'), { 'agent.ts': controlledSourceAgent() });
@@ -231,18 +268,23 @@ describe('folder skill verification', () => {
 
     it.each(['revert', 'remove'])('clears preparation issues and backoff after %s', async (change) => {
         const setup = await startControlledReload();
+
         await pollTimes(setup, 2);
         expect((await providerState()).attempts).toBe(2);
+
         if (change === 'revert') {
             await writeTree(join(root.path, 'greeter'), { 'agent.ts': agentFile('v1') });
         } else {
             await rm(join(root.path, 'greeter'), { recursive: true });
         }
+
         await pollTimes(setup, 2);
         expect(setup.issues()).toEqual([]);
+
         if (change === 'remove') {
             expect(setup.engine().getAgent('greeter')).toBeUndefined();
         }
+
         await writeTree(join(root.path, 'greeter'), { 'agent.ts': controlledSourceAgent() });
         await pollTimes(setup, 2);
         expect((await providerState()).attempts).toBe(3);

@@ -22,11 +22,12 @@ export default defineComponent({
         const title = computed(() => {
             const { title: text, highlight } = hero.value;
             const index = highlight ? text.indexOf(highlight) : -1;
+
             if (!highlight || index === -1) {
                 return {
-                    before: text, 
-                    highlight: '', 
-                    after: '', 
+                    before: text,
+                    highlight: '',
+                    after: '',
                 };
             }
 

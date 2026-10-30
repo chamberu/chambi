@@ -88,6 +88,7 @@ export async function dispatchExamples(model: LanguageModel, auth: Authenticator
     });
 
     const run = await engine.getRun(withFile.runId);
+
     run?.trigger.attachments; // [{ id, runId, agent, mediaType: 'image/png', filename: 'crash.png', size, createdAt }]
     // #endregion attachments
 
@@ -103,6 +104,7 @@ export const resolve = defineTool({
         await context.channels.findOne()?.emit({ body: summary });
         // any registered channel with out; the address is required off the source channel
         await context.channels.findOneOrFail('console').emit({ title: 'Resolved', body: summary }, 'on-call');
+
         return 'reported';
     },
 });
@@ -123,9 +125,9 @@ export function createEngine(model: LanguageModel) {
 
 // #region custom
 type ChatPost = {
-    channel: string; 
-    text: string; 
-    user: string 
+    channel: string;
+    text: string;
+    user: string
 };
 
 /** A chat bridge: messages in at POST /channels/chat, answers out to the chat's API. */
@@ -139,10 +141,14 @@ export function chatChannel(options: { secret: string; apiUrl: string }): IChann
             if (request.headers.get('authorization') !== `Bearer ${options.secret}`) {
                 return new Response(null, { status: 401 });
             }
+
             // 413 above the limit
             const bytes = await readRequestBody(request, { limit: 64 * 1024 });
             const post = JSON.parse(new TextDecoder().decode(bytes)) as ChatPost;
-            if (typeof post.text !== 'string') throw new ValidationError('text is required.');
+
+            if (typeof post.text !== 'string') {
+                throw new ValidationError('text is required.');
+            }
 
             // dispatches as this channel (envelope channel 'chat'), never as another
             const { runId } = await ctx.dispatch({
@@ -151,6 +157,7 @@ export function chatChannel(options: { secret: string; apiUrl: string }): IChann
                 payload: post,
                 address: post.channel,
             });
+
             return Response.json({ runId }, { status: 202 });
         },
 
@@ -169,8 +176,11 @@ export function chatChannel(options: { secret: string; apiUrl: string }): IChann
                 }),
                 signal: opts.signal,
             });
+
             // throw on failure: an emit records nothing, an approval is re-sent on the next poll
-            if (!response.ok) throw new Error(`Chat answered ${response.status}.`);
+            if (!response.ok) {
+                throw new Error(`Chat answered ${response.status}.`);
+            }
         },
     };
 }

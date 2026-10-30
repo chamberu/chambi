@@ -38,6 +38,7 @@ describe('bin build', () => {
         expect((await cli.exited(60_000)).code).toBe(0);
 
         const port = await freePort();
+
         cli = spawnCli(['start'], { cwd: app.cwd, env: startEnv(port) });
         await waitForOk(`http://127.0.0.1:${port}/readyz`);
         cli.child.kill('SIGTERM');

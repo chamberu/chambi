@@ -50,15 +50,19 @@ describe('GitHub burst admission', () => {
             concurrencyMaxRuns: 2,
             channels: [github.on('issues.opened', { concurrencyMaxRuns: 1 })],
             model: new MockLanguageModelV4({
-                doStream: (options) => mockModel([{
-                    parts: options.prompt.some((message) => message.role === 'tool') ?
-                        [{ type: 'text', text: 'done' }] :
-                        [{
-                            type: 'tool-call',
-                            toolName: 'hold',
-                            input: {},
-                        }],
-                }]).doStream(options),
+                doStream: (options) => {
+                    const hasToolMessage = options.prompt.some((message) => message.role === 'tool');
+
+                    return mockModel([{
+                        parts: hasToolMessage ?
+                            [{ type: 'text', text: 'done' }] :
+                            [{
+                                type: 'tool-call',
+                                toolName: 'hold',
+                                input: {},
+                            }],
+                    }]).doStream(options);
+                },
             }),
             tools: (ctx) => ({
                 hold: defineTool({
@@ -68,6 +72,7 @@ describe('GitHub burst admission', () => {
                         entered.push(ctx.run.runId);
                         active++;
                         peak = Math.max(peak, active);
+
                         try {
                             await new Promise<void>((resolve) => {
                                 releases.set(ctx.run.runId, resolve);
@@ -76,6 +81,7 @@ describe('GitHub burst admission', () => {
                         } finally {
                             active--;
                         }
+
                         return 'inspected';
                     },
                 }),
@@ -87,13 +93,17 @@ describe('GitHub burst admission', () => {
             model: textModel(),
             channels: [],
         });
+
         engine = new Engine({
             store,
             clock,
             agents: [agent, other],
             channels: [channel],
-            onError: (error) => { errors.push(error); },
+            onError: (error) => {
+                errors.push(error);
+            },
         });
+
         const app = createHttpApp({
             engine,
             auth: [async () => undefined],
@@ -102,44 +112,59 @@ describe('GitHub burst admission', () => {
             channelRateLimits: { github: false },
             metrics: false,
         });
+
         await engine.start();
+
         const ids: string[] = [];
+
         for (let i = 0; i < 5; i++) {
             const body = JSON.parse(BODY);
+
             body.issue.number = i + 1;
+
             const response = await deliver(app, {
                 event: 'issues',
                 delivery: `burst-${i}`,
                 body: JSON.stringify(body),
             });
+
             expect(response.status).toBe(202);
+
             const result = await response.json() as { runs: Array<{ runId: string }> };
             const id = result.runs[0]!.runId;
+
             ids.push(id);
             expect(await store.runs.findOne(id)).toMatchObject({ id, agent: 'triage' });
         }
+
         await vi.waitFor(() => expect(entered).toHaveLength(1));
         expect((await store.runs.find({ agent: 'triage', status: ['queued'] })).total).toBe(4);
+
         const side = await engine.dispatch({
             agent: 'other',
             channel: 'github',
             trigger: 'manual',
             payload: {},
         });
+
         await vi.waitFor(async () => expect((await store.runs.findOne(side.runId))?.status).toBe('completed'));
+
         for (let i = 0; i < ids.length; i++) {
             await vi.waitFor(() => expect(entered).toHaveLength(i + 1));
             releases.get(entered[i]!)!();
             await vi.waitFor(async () => expect((await store.runs.findOne(entered[i]!))?.status).toBe('completed'));
         }
+
         expect(peak).toBe(1);
         expect((await store.runs.find({ agent: 'triage', status: ['completed'] })).total).toBe(5);
+
         const invalid = await deliver(app, {
             event: 'issues',
             delivery: 'invalid',
             body: BODY,
             secret: 'wrong-secret',
         });
+
         expect(invalid.status).toBe(401);
         expect((await store.runs.find({ agent: 'triage' })).total).toBe(5);
         expect(errors).toEqual([]);

@@ -31,6 +31,7 @@ describe('toLanguageModel', () => {
                 throw 'nope';
             },
         };
+
         expect(() => toLanguageModel('a/b', models, 'ops')).toThrow('Model "a/b" could not be resolved: nope');
     });
 });

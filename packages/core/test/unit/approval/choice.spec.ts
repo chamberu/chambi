@@ -39,7 +39,10 @@ const START = 1_000_000;
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -75,7 +78,9 @@ function setup(model: LanguageModel, channels: IChannel[] = []) {
             const decision = typeof via === 'string' ?
                 await context.channels.findOneOrFail(via).approve({ ...rest, address: 'ops' }) :
                 await approve(context, request);
+
             decisions.push(decision);
+
             return decision.approved ? `picked ${(decision.selected ?? []).join(',')}` : 'denied';
         },
     });
@@ -94,7 +99,9 @@ function setup(model: LanguageModel, channels: IChannel[] = []) {
             errors.push(error);
         },
     });
+
     engines.push(engine);
+
     return {
         clock,
         store,
@@ -106,14 +113,18 @@ function setup(model: LanguageModel, channels: IChannel[] = []) {
 
 async function dispatch(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: 'release',
         trigger: 'http',
         channel: 'http',
         payload: {},
     });
+
     await engine.idle();
+
     const run = await store.runs.findOne(runId);
+
     return { runId, run };
 }
 
@@ -134,6 +145,7 @@ describe('approve() with options', () => {
         }), text('done')]);
         const { store, engine } = setup(model);
         const { run } = await dispatch(engine, store);
+
         expect(run?.status).toBe('waiting');
         expect(run?.waiting?.options).toEqual([
             {
@@ -149,6 +161,7 @@ describe('approve() with options', () => {
     it('keeps a plain wait point free of option keys', async () => {
         const plain = setup(mockModel([ask({ title: 'Deploy?' }), text('done')]));
         const { run } = await dispatch(plain.engine, plain.store);
+
         expect(Object.keys(run?.waiting ?? {})).not.toContain('options');
         expect(Object.keys(run?.waiting ?? {})).not.toContain('multiple');
 
@@ -158,6 +171,7 @@ describe('approve() with options', () => {
             multiple: false,
         }), text('done')]));
         const second = await dispatch(single.engine, single.store);
+
         expect(second.run?.waiting?.options).toEqual(OPTIONS);
         expect(Object.keys(second.run?.waiting ?? {})).not.toContain('multiple');
     });
@@ -205,15 +219,19 @@ describe('approve() with options', () => {
     ])('refuses %s as a tool error', async (_, extra) => {
         const { store, engine } = setup(mockModel([ask({ title: 'Pick?', ...extra }), text('done')]));
         const { runId, run } = await dispatch(engine, store);
+
         expect(run?.status).toBe('completed');
         expect(run?.waiting).toBeUndefined();
+
         const tools = (await store.steps.find(runId)).filter((s) => s.kind === 'tool');
+
         expect(tools[0]).toMatchObject({ name: 'pick', error: { code: 'validation_error' } });
     });
 
     it('takes multiple: false without options as a plain request', async () => {
         const { store, engine } = setup(mockModel([ask({ title: 'Deploy?', multiple: false }), text('done')]));
         const { run } = await dispatch(engine, store);
+
         expect(run?.status).toBe('waiting');
         expect(Object.keys(run?.waiting ?? {})).not.toContain('options');
         expect(Object.keys(run?.waiting ?? {})).not.toContain('multiple');
@@ -228,6 +246,7 @@ describe('approve() with options', () => {
         ];
         const { store, engine } = setup(mockModel([ask({ title: 'Pick?', options }), text('done')]));
         const { run } = await dispatch(engine, store);
+
         expect(run?.waiting?.options).toEqual(options);
     });
 });
@@ -235,7 +254,11 @@ describe('approve() with options', () => {
 async function paused(request: unknown) {
     const ctx = setup(mockModel([ask(request), text('done')]));
     const { runId, run } = await dispatch(ctx.engine, ctx.store);
-    if (!run?.waiting) throw new Error('not waiting');
+
+    if (!run?.waiting) {
+        throw new Error('not waiting');
+    }
+
     return {
         ...ctx,
         runId,
@@ -256,6 +279,7 @@ describe('answering an approval with options', () => {
             options: OPTIONS,
             multiple: true,
         });
+
         await engine.approve(runId, {
             approvalId: waiting.approvalId,
             approved: true,
@@ -264,7 +288,9 @@ describe('answering an approval with options', () => {
         await engine.idle();
         expect(decisions).toEqual([{ approved: true, selected: ['a', 'c'] }]);
         expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed' });
+
         const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
+
         expect(wait?.input).toEqual({
             toolCallId: 'c1',
             title: 'Pick?',
@@ -281,6 +307,7 @@ describe('answering an approval with options', () => {
             waiting,
             decisions,
         } = await paused({ title: 'Pick?', options: OPTIONS });
+
         await engine.approve(runId, {
             approvalId: waiting.approvalId,
             approved: true,
@@ -317,18 +344,22 @@ describe('answering an approval with options', () => {
             runId,
             waiting,
         } = await paused(request);
+
         await expect(engine.approve(runId, {
             approvalId: waiting.approvalId,
             approved,
             selected: selected as string[],
         })).rejects.toThrow(ValidationError);
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('waiting');
         expect(run?.waiting).toEqual(waiting);
     });
 
     it('checks the state before the selection', async () => {
         const { engine, runId } = await paused(SINGLE);
+
         await expect(engine.approve(runId, {
             approvalId: 'stale',
             approved: true,
@@ -345,6 +376,7 @@ describe('answering an approval with options', () => {
             waiting,
             decisions,
         } = await paused(MULTIPLE);
+
         await engine.approve(runId, {
             approvalId: waiting.approvalId,
             approved: false,
@@ -353,9 +385,13 @@ describe('answering an approval with options', () => {
         });
         await engine.idle();
         expect(decisions).toEqual([{ approved: false, reason: 'none' }]);
+
         const effect = await store.effects.findOne(`approval:${runId}:${waiting.approvalId}`);
+
         expect(effect?.result).toEqual({ approved: false, reason: 'none' });
+
         const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
+
         expect(Object.keys(wait?.output as object)).not.toContain('selected');
     });
 
@@ -367,11 +403,14 @@ describe('answering an approval with options', () => {
             decisions,
             store,
         } = await paused({ ...SINGLE, timeoutMs: 1000 });
+
         clock.advance(1000);
         await engine.tick();
         await engine.idle();
         expect(decisions).toEqual([{ approved: false, reason: 'approval timed out' }]);
+
         const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
+
         expect(wait?.input).toMatchObject({ options: OPTIONS });
     });
 
@@ -383,10 +422,13 @@ describe('answering an approval with options', () => {
             waiting,
             decisions,
         } = await paused(PLAIN);
+
         await engine.approve(runId, { approvalId: waiting.approvalId, approved: true });
         await engine.idle();
         expect(decisions).toEqual([{ approved: true }]);
+
         const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
+
         expect(wait?.input).toEqual({ toolCallId: 'c1', title: 'Deploy?' });
         expect(Object.keys(wait?.output as object)).not.toContain('selected');
     });
@@ -409,6 +451,7 @@ describe('answering an approval with options', () => {
             payload: {},
             receivedAt: now,
         };
+
         // a row the code before options wrote: no options or multiple keys
         await store.runs.insert({
             id: runId,
@@ -451,7 +494,9 @@ describe('answering an approval with options', () => {
         expect(decisions).toEqual([{ approved: true }]);
         expect(Object.keys(decisions[0]!)).not.toContain('selected');
         expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed' });
+
         const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
+
         expect(wait?.output).toMatchObject({ approvalId: '0:c1:0', approved: true });
         expect(Object.keys(wait?.output as object)).not.toContain('selected');
     });
@@ -493,6 +538,7 @@ describe('delivering an approval with options', () => {
             text('done'),
         ]);
         const { engine, store } = setup(model, [rec]);
+
         await dispatch(engine, store);
         expect(sent).toHaveLength(1);
         expect(sent[0]).toMatchObject({
@@ -520,6 +566,7 @@ describe('delivering an approval with options', () => {
                 plainSent.push(message);
             },
         }]);
+
         await dispatch(plain.engine, plain.store);
         expect(plainSent).toHaveLength(1);
         expect(Object.keys(plainSent[0]!)).not.toContain('options');
@@ -555,8 +602,13 @@ describe('replaying an answered approval with options', () => {
                             inputSchema: z.object({}),
                             execute: async (_input, { context }) => {
                                 const decision = await approve(context, (decisions.length === 0 ? first : second) as never);
+
                                 decisions.push(decision);
-                                if (decisions.length === 1) await gate;
+
+                                if (decisions.length === 1) {
+                                    await gate;
+                                }
+
                                 return decision.approved ? 'picked' : 'denied';
                             },
                         }),
@@ -564,7 +616,9 @@ describe('replaying an answered approval with options', () => {
                 })],
                 onError: () => {},
             });
+
             engines.push(engine);
+
             return engine;
         };
         const call: MockResponse = {
@@ -576,24 +630,35 @@ describe('replaying an answered approval with options', () => {
             }],
         };
         const stale = make(mockModel([call, text('done')]), frozen);
+
         await stale.start();
+
         const { runId } = await stale.dispatch({
             agent: 'release',
             trigger: 'http',
             channel: 'http',
             payload: {},
         });
+
         await stale.idle();
+
         const run = await store.runs.findOne(runId);
-        if (!run?.waiting) throw new Error('not waiting');
+
+        if (!run?.waiting) {
+            throw new Error('not waiting');
+        }
+
         await stale.approve(runId, { approvalId: run.waiting.approvalId, ...answer });
         await vi.waitFor(() => expect(decisions).toHaveLength(1));
 
         clock.advance(31);
+
         const fresh = make(mockModel([text('done')]), clock);
+
         await fresh.start();
         await fresh.idle();
         release();
+
         return {
             store,
             runId,
@@ -613,6 +678,7 @@ describe('replaying an answered approval with options', () => {
             runId,
             decisions,
         } = await replay(MULTIPLE, MULTIPLE, { approved: true, selected: ['c', 'a'] });
+
         expect(decisions).toEqual([
             { approved: true, selected: ['a', 'c'] },
             { approved: true, selected: ['a', 'c'] },
@@ -627,26 +693,31 @@ describe('replaying an answered approval with options', () => {
             options: [{ id: 'a', label: 'Alpha' }],
             multiple: true,
         }, { approved: true, selected: ['a', 'c'] });
+
         expect(decisions[1]).toEqual({ approved: false, reason: 'options changed' });
     });
 
     it('denies a replayed request that became a single choice', async () => {
         const { decisions } = await replay(MULTIPLE, { title: 'Pick?', options: OPTIONS }, { approved: true, selected: ['a', 'c'] });
+
         expect(decisions[1]).toEqual({ approved: false, reason: 'options changed' });
     });
 
     it('denies a replayed request that became plain', async () => {
         const { decisions } = await replay(MULTIPLE, { title: 'Pick?' }, { approved: true, selected: ['a'] });
+
         expect(decisions[1]).toEqual({ approved: false, reason: 'options changed' });
     });
 
     it('denies a replayed request that gained options', async () => {
         const { decisions } = await replay({ title: 'Pick?' }, MULTIPLE, { approved: true });
+
         expect(decisions[1]).toEqual({ approved: false, reason: 'options changed' });
     });
 
     it('keeps a recorded denial whatever the replayed request offers', async () => {
         const { decisions } = await replay(MULTIPLE, { title: 'Pick?' }, { approved: false });
+
         expect(decisions).toEqual([{ approved: false }, { approved: false }]);
     });
 
@@ -656,6 +727,7 @@ describe('replaying an answered approval with options', () => {
             options: [{ id: 'c', label: 'Gamma' }, { id: 'a', label: 'Alpha' }, { id: 'd', label: 'Delta' }],
             multiple: true,
         }, { approved: true, selected: ['a', 'c'] });
+
         expect(decisions[1]).toEqual({ approved: true, selected: ['c', 'a'] });
     });
 });

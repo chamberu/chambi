@@ -25,7 +25,10 @@ const ALICE_TOKEN = 'alice';
 
 /** `Bearer alice`: an authup-like principal with claims. */
 async function aliceAuth(request: Request): Promise<Principal | undefined> {
-    if (request.headers.get('authorization') !== `Bearer ${ALICE_TOKEN}`) return undefined;
+    if (request.headers.get('authorization') !== `Bearer ${ALICE_TOKEN}`) {
+        return undefined;
+    }
+
     return {
         id: 'user-1',
         kind: 'authup',
@@ -40,7 +43,9 @@ function setup() {
 
 async function startRun(app: ReturnType<typeof setup>['app'], token: string, agent = 'gate'): Promise<string> {
     const response = await call(app, 'POST', `/agents/${agent}/runs`, { token });
+
     expect(response.status).toBe(202);
+
     return (await response.json() as { runId: string }).runId;
 }
 
@@ -48,6 +53,7 @@ describe('run invoker over REST', () => {
     it('records the authenticated principal as the invoker', async () => {
         const { app, store } = setup();
         const runId = await startRun(app, ALICE_TOKEN);
+
         expect((await store.runs.findOne(runId))?.trigger.invoker).toEqual({
             id: 'user-1',
             kind: 'authup',
@@ -59,6 +65,7 @@ describe('run invoker over REST', () => {
     it('records a static token as kind token without a name', async () => {
         const { app, store } = setup();
         const runId = await startRun(app, ADMIN_TOKEN, 'echo');
+
         expect((await store.runs.findOne(runId))?.trigger.invoker).toEqual({
             id: 'admin',
             kind: 'token',
@@ -68,7 +75,10 @@ describe('run invoker over REST', () => {
 
     it('never takes an email claim as the name, so readers never see it', async () => {
         const bobAuth = async (request: Request): Promise<Principal | undefined> => {
-            if (request.headers.get('authorization') !== 'Bearer bob') return undefined;
+            if (request.headers.get('authorization') !== 'Bearer bob') {
+                return undefined;
+            }
+
             return {
                 id: 'user-2',
                 kind: 'oidc',
@@ -78,8 +88,11 @@ describe('run invoker over REST', () => {
         };
         const { app, store } = createRunTestApp({ auth: [testAuth, bobAuth] });
         const runId = await startRun(app, 'bob');
+
         expect((await store.runs.findOne(runId))?.trigger.invoker).not.toHaveProperty('name');
+
         const response = await call(app, 'GET', `/runs/${runId}`, { token: READER_TOKEN });
+
         expect(response.status).toBe(200);
         expect(await response.text()).not.toContain('bob@example.com');
     });
@@ -90,13 +103,14 @@ describe('run invoker over REST', () => {
             token: ADMIN_TOKEN,
             body: {
                 invoker: {
-                    id: 'forged', 
-                    kind: 'user', 
-                    permissions: ['*'], 
-                }, 
+                    id: 'forged',
+                    kind: 'user',
+                    permissions: ['*'],
+                },
             },
         });
         const { runId } = await response.json() as { runId: string };
+
         expect((await store.runs.findOne(runId))?.trigger.invoker?.id).toBe('admin');
     });
 
@@ -112,8 +126,11 @@ describe('run invoker over REST', () => {
         ];
         const { app, store } = createRunTestApp({ agents });
         const response = await call(app, 'POST', '/channels/webhook/intake/in', { token: ADMIN_TOKEN, body: {} });
+
         expect(response.status).toBe(202);
+
         const { runId } = await response.json() as { runId: string };
+
         expect((await store.runs.findOne(runId))?.trigger).not.toHaveProperty('invoker');
     });
 
@@ -122,17 +139,19 @@ describe('run invoker over REST', () => {
         const runId = await startRun(app, ALICE_TOKEN);
 
         const one = await (await call(app, 'GET', `/runs/${runId}`, { token: READER_TOKEN })).json();
+
         expect(one.trigger.invoker).toEqual({
-            id: 'user-1', 
-            kind: 'authup', 
-            name: 'alice', 
+            id: 'user-1',
+            kind: 'authup',
+            name: 'alice',
         });
 
         const list = await (await call(app, 'GET', '/runs', { token: READER_TOKEN })).json();
+
         expect(list.data[0].trigger.invoker).toEqual({
-            id: 'user-1', 
-            kind: 'authup', 
-            name: 'alice', 
+            id: 'user-1',
+            kind: 'authup',
+            name: 'alice',
         });
     });
 
@@ -144,6 +163,7 @@ describe('run invoker over REST', () => {
             approvalIdOf,
         } = setup();
         const runId = await startRun(app, ALICE_TOKEN);
+
         await engine.start();
         await engine.idle();
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');
@@ -152,10 +172,12 @@ describe('run invoker over REST', () => {
             token: ALICE_TOKEN,
             body: { approvalId: await approvalIdOf(runId), approved: true },
         });
+
         expect(response.status).toBe(202);
         await engine.idle();
 
         const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
+
         expect((wait?.output as { approver?: unknown }).approver).toEqual({
             id: 'user-1',
             kind: 'authup',
@@ -165,23 +187,28 @@ describe('run invoker over REST', () => {
 
         const view = await (await call(app, 'GET', `/runs/${runId}`, { token: READER_TOKEN })).json();
         const waitView = view.steps.find((s: { kind: string }) => s.kind === 'wait');
+
         expect(waitView.output.approver).toEqual({
-            id: 'user-1', 
-            kind: 'authup', 
-            name: 'alice', 
+            id: 'user-1',
+            kind: 'authup',
+            name: 'alice',
         });
         expect(waitView.output.approved).toBe(true);
 
         const events = await readEvents(await call(app, 'GET', `/runs/${runId}/stream`, { token: READER_TOKEN }));
+
         expect(events.length).toBeGreaterThan(0);
+
         for (const event of events) {
             expect(event.data).not.toContain('tool:gate:deploy');
         }
+
         const runEvent = JSON.parse(events[0]!.data);
+
         expect(runEvent.trigger.invoker).toEqual({
-            id: 'user-1', 
-            kind: 'authup', 
-            name: 'alice', 
+            id: 'user-1',
+            kind: 'authup',
+            name: 'alice',
         });
         await engine.drain();
     });

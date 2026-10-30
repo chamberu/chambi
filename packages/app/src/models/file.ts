@@ -65,6 +65,7 @@ function readProvider(value: unknown, field: string): ProviderConfig {
     }
 
     const provider: ProviderConfig = { type: value.type };
+
     if (typeof value.apiKey !== 'undefined') {
         provider.apiKey = readSecretValue(value.apiKey, `${field}.apiKey`, false);
     }
@@ -83,9 +84,11 @@ function readProvider(value: unknown, field: string): ProviderConfig {
         }
 
         const headers: Record<string, SecretValue> = {};
+
         for (const [name, header] of Object.entries(value.headers)) {
             const headerField = `${field}.headers.${name}`;
             const lower = assertHeaderName(name, headerField);
+
             if (Object.hasOwn(headers, lower)) {
                 fail(`${headerField} repeats a header name (header names are case-insensitive).`);
             }
@@ -108,6 +111,7 @@ function readProvider(value: unknown, field: string): ProviderConfig {
 export async function readConfigFile(path: string): Promise<ConfigFile> {
     const label = basename(path);
     let text: string;
+
     try {
         text = await readFile(path, 'utf8');
     } catch {
@@ -115,6 +119,7 @@ export async function readConfigFile(path: string): Promise<ConfigFile> {
     }
 
     let data: unknown;
+
     try {
         data = JSON.parse(text);
     } catch {
@@ -132,6 +137,7 @@ export async function readConfigFile(path: string): Promise<ConfigFile> {
     }
 
     const config: ConfigFile = { providers: {} };
+
     if (typeof data.model !== 'undefined') {
         if (typeof data.model !== 'string' || data.model.length === 0) {
             fail(`${label}: model must be a non-empty string.`);
@@ -147,6 +153,7 @@ export async function readConfigFile(path: string): Promise<ConfigFile> {
 
         for (const [name, provider] of Object.entries(data.providers)) {
             const field = `${label}: providers.${name}`;
+
             if (!isProviderName(name)) {
                 fail(`${field} is no provider name (must match ^[a-z0-9]+(-[a-z0-9]+)*$, at most 64 characters).`);
             }

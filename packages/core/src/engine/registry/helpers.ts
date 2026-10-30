@@ -18,6 +18,7 @@ export function agentCancelReason(agent: string, kind: 'replaced' | 'removed', r
             message: `Agent "${agent}" was removed; its unsettled runs were cancelled.`,
         };
     }
+
     return {
         code: ErrorCode.AGENT_REPLACED,
         message: revision === undefined ?
@@ -41,12 +42,15 @@ export async function withAgentLock<T>(ctx: RegistryContext, name: string, fn: (
     const key = `agents:${name}`;
     const owner = randomUUID();
     const deadline = ctx.clock.now().getTime() + AGENT_LOCK_TTL_MS;
+
     while (!await ctx.store.locks.acquire(key, owner, AGENT_LOCK_TTL_MS)) {
         if (ctx.clock.now().getTime() >= deadline) {
             throw new InvalidRunStateError(`The registry lock of agent "${name}" was not released within ${AGENT_LOCK_TTL_MS}ms.`);
         }
+
         await delay(ctx, ctx.claimTtlMs / 3);
     }
+
     try {
         return await fn();
     } finally {

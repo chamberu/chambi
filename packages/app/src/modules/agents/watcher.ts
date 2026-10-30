@@ -77,6 +77,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         const message = marker === undefined ?
             `${agent}: another process sharing the store removed this agent's revision marker; this replica does not run it until its folder changes. Every process sharing the store must see the same folders.` :
             `${agent}: another process sharing the store registered other content for this agent; this replica does not run it until its folder matches. Every process sharing the store must see the same folders.`;
+
         issues.set(agent, {
             agent,
             message,
@@ -102,26 +103,36 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
      */
     const apply = async (name: string, hash: string): Promise<'done' | 'unstable'> => {
         attempted.set(name, hash);
+
         const previousRetry = preparationRetries.get(name);
+
         preparationRetries.delete(name);
+
         if (codeNames.has(name)) {
             record(name, `${name}: a code agent has this name; the folder is not loaded.`);
+
             return 'done';
         }
 
         let loaded: LoadedAgent;
+
         try {
             loaded = await loadAgent(join(root, name));
         } catch (error) {
             if (await changedSince(name, hash)) {
                 attempted.delete(name);
+
                 return 'unstable';
             }
+
             record(name, relativize(messageOf(error), root));
+
             return 'done';
         }
+
         if (loaded.hash !== hash) {
             attempted.delete(name);
+
             return 'unstable';
         }
 
@@ -130,6 +141,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
             engine.checkAgent(loaded.agent);
         } catch (error) {
             record(name, relativize(messageOf(error), root));
+
             return 'done';
         }
 
@@ -146,14 +158,17 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
             }
 
             const delay = Math.min((previousRetry?.delay ?? pollMs) * 2, Math.max(pollMs, SKILL_PREPARATION_RETRY_MAX_MS));
+
             preparationRetries.set(name, { delay, at: clock.now().getTime() + delay });
             record(name, relativize(messageOf(error), root));
+
             return 'done';
         }
 
         try {
             // a marker from before HASH_IGNORE_PATTERNS holds the same content: moved, never a cancel
             const formerRevision = await formerAgentFolderHash(join(root, name), hash);
+
             signal?.throwIfAborted();
             await engine.putAgent(loaded.agent, {
                 revision: hash,
@@ -165,20 +180,27 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
             // refused before any store write (a model that cannot resolve, a subscription to an unknown channel): an issue until the content changes
             if (error instanceof InvalidAgentDefinitionError) {
                 record(name, relativize(messageOf(error), root));
+
                 return 'done';
             }
+
             // a job never reloads: the marker differs while the agent has unsettled runs
             if (role === 'job' && error instanceof InvalidRunStateError) {
                 const message = `${name}: ${messageOf(error)} ${JOB_CONFLICT_HINT}`;
+
                 conflicts.set(name, message);
                 record(name, message);
+
                 return 'done';
             }
+
             throw error;
         }
+
         applied.set(name, hash);
         issues.delete(name);
         drifted.delete(name);
+
         return 'done';
     };
 
@@ -190,16 +212,31 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
      * folders would cancel each other's runs.
      */
     const checkMarkers = async (): Promise<void> => {
-        if (applied.size === 0) return;
+        if (applied.size === 0) {
+            return;
+        }
+
         const markers = new Map((await engine.store.agentRevisions.find()).map((marker) => [marker.agent, marker.hash]));
+
         for (const [name, hash] of applied) {
-            if (seen.get(name) !== hash) continue;
-            const marker = markers.get(name);
-            if (marker === hash) {
-                if (drifted.delete(name)) issues.delete(name);
+            if (seen.get(name) !== hash) {
                 continue;
             }
-            if (drifted.has(name)) continue;
+
+            const marker = markers.get(name);
+
+            if (marker === hash) {
+                if (drifted.delete(name)) {
+                    issues.delete(name);
+                }
+
+                continue;
+            }
+
+            if (drifted.has(name)) {
+                continue;
+            }
+
             drifted.add(name);
             recordDrift(name, marker);
         }
@@ -208,50 +245,70 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
     const poll = async (): Promise<void> => {
         if (!await isDirectory(root)) {
             // an unmounted volume must not remove every agent
-            if (!rootGone) logger.warn('the agents dir is gone; its agents stay loaded until it is back');
+            if (!rootGone) {
+                logger.warn('the agents dir is gone; its agents stay loaded until it is back');
+            }
+
             rootGone = true;
+
             return;
         }
+
         if (await isEmptyDirectory(root)) {
             // an empty mount point (a volume not mounted yet) removes nothing either
-            if (!rootGone) logger.warn(EMPTY_ROOT_MESSAGE);
+            if (!rootGone) {
+                logger.warn(EMPTY_ROOT_MESSAGE);
+            }
+
             rootGone = true;
+
             return;
         }
+
         rootGone = false;
 
         const names = await listAgentFolders(root);
         const present = new Set(names);
+
         for (const name of names) {
             missing.delete(name);
+
             let hash: string;
+
             try {
                 hash = await hashAgentFolder(join(root, name));
             } catch {
                 // removed while polling: the next poll sees it gone
                 continue;
             }
+
             const previous = seen.get(name);
+
             seen.set(name, hash);
+
             if (hash !== previous) {
                 if (preparationRetries.delete(name)) {
                     attempted.delete(name);
                 }
+
                 continue;
             }
 
             const retry = preparationRetries.get(name);
+
             if (hash === attempted.get(name)) {
                 if (!retry || clock.now().getTime() < retry.at) {
                     continue;
                 }
             }
+
             if (hash === applied.get(name)) {
                 // back to the registered content: nothing to reload (the marker check re-reads a moved marker)
                 attempted.set(name, hash);
                 preparationRetries.delete(name);
                 issues.delete(name);
                 drifted.delete(name);
+
                 continue;
             }
 
@@ -265,10 +322,15 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         }
 
         const tracked = new Set([...seen.keys(), ...applied.keys(), ...issues.keys()]);
+
         for (const name of tracked) {
-            if (present.has(name)) continue;
+            if (present.has(name)) {
+                continue;
+            }
+
             if (!missing.has(name)) {
                 missing.add(name);
+
                 continue;
             }
 
@@ -278,9 +340,11 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
                 } catch (error) {
                     // still missing on the next poll: removed then
                     logger.error('agent removal failed', error, { agent: name });
+
                     continue;
                 }
             }
+
             missing.delete(name);
             drifted.delete(name);
             seen.delete(name);
@@ -294,7 +358,10 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
     };
 
     const arm = () => {
-        if (stopped) return;
+        if (stopped) {
+            return;
+        }
+
         timer = clock.setTimeout(() => {
             timer = undefined;
             inFlight = poll()
@@ -311,41 +378,65 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
     return {
         async boot() {
             const names = await listAgentFolders(root);
+
             for (const name of names) {
                 for (let attempt = 1; ; attempt++) {
-                    if (signal?.aborted) throw signal.reason;
+                    if (signal?.aborted) {
+                        throw signal.reason;
+                    }
+
                     let hash: string;
+
                     try {
                         hash = await hashAgentFolder(join(root, name));
                     } catch (error) {
                         record(name, relativize(messageOf(error), root));
+
                         break;
                     }
+
                     seen.set(name, hash);
-                    if (await apply(name, hash) === 'done') break;
+
+                    if (await apply(name, hash) === 'done') {
+                        break;
+                    }
+
                     if (attempt >= BOOT_LOAD_ATTEMPTS) {
                         // the watcher loads it once it is stable
                         record(name, `${name}: changed while loading; it is loaded once it stays unchanged for one poll.`);
+
                         break;
                     }
                 }
             }
 
-            if (role !== 'start') return;
+            if (role !== 'start') {
+                return;
+            }
+
             if (await isEmptyDirectory(root)) {
                 // an empty mount point must not remove every agent with a marker
                 logger.warn(EMPTY_ROOT_MESSAGE);
                 rootGone = true;
+
                 return;
             }
+
             const folders = new Set(names);
+
             for (const marker of await engine.store.agentRevisions.find()) {
-                if (folders.has(marker.agent) || codeNames.has(marker.agent)) continue;
+                if (folders.has(marker.agent) || codeNames.has(marker.agent)) {
+                    continue;
+                }
+
                 await engine.removeAgent(marker.agent);
             }
         },
         start() {
-            if (started || stopped) return;
+            if (started || stopped) {
+                return;
+            }
+
             started = true;
             arm();
         },

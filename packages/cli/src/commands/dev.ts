@@ -36,6 +36,7 @@ export function createDevCommand(context: CliContext): CommandDef<typeof DEV_ARG
         args: DEV_ARGS,
         async run({ args }) {
             assertKnownArgs(args, DEV_ARGS);
+
             const entry = await resolveEntry({
                 cwd: context.cwd,
                 entry: args.entry,
@@ -66,6 +67,7 @@ export function createDevCommand(context: CliContext): CommandDef<typeof DEV_ARG
                 forwarded.add(signal);
                 child.kill(signal);
             };
+
             listeners.set('SIGINT', () => forward('SIGINT'));
             listeners.set('SIGTERM', () => forward('SIGTERM'));
             listeners.set('SIGHUP', () => forward('SIGTERM'));
@@ -78,11 +80,14 @@ export function createDevCommand(context: CliContext): CommandDef<typeof DEV_ARG
                     child.once('exit', (exitCode: number | null, signal: NodeJS.Signals | null) => {
                         if (typeof exitCode === 'number') {
                             resolve(exitCode);
+
                             return;
                         }
+
                         resolve(signal && forwarded.has(signal) ? EXIT_CODE.OK : EXIT_CODE.FAILURE);
                     });
                 });
+
                 context.setExitCode(code);
             } catch (error) {
                 context.stderr(`chamvi dev: ${messageOf(error)}\n`);

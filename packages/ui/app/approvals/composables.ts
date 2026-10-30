@@ -21,6 +21,7 @@ import type { AnswerResult, ApprovalLink } from './types.ts';
 
 function reasonOf(reason: string | undefined): { reason?: string } {
     const trimmed = reason?.trim();
+
     return trimmed ? { reason: trimmed } : {};
 }
 
@@ -41,19 +42,26 @@ export function useApprovals(client: IApiClient) {
                 limit: INBOX_PAGE_SIZE,
                 offset: 0,
             });
+
             runs.value = page.data.filter((run) => run.waiting);
             error.value = undefined;
+
             return undefined;
         } catch (e) {
             error.value = asApiError(e);
+
             return retryDelayOf(error.value);
         }
     }, INBOX_POLL_MS);
+
     poller.start();
     onScopeDispose(() => poller.stop());
 
     async function answer(run: RunWire, approved: boolean, reason?: string, selected?: string[]): Promise<AnswerResult> {
-        if (!run.waiting) return 'already-answered';
+        if (!run.waiting) {
+            return 'already-answered';
+        }
+
         try {
             await client.approve(run.id, {
                 approvalId: run.waiting.approvalId,
@@ -62,10 +70,17 @@ export function useApprovals(client: IApiClient) {
                 // a denial selects nothing
                 ...(approved && selected && selected.length > 0 ? { selected: [...selected] } : {}),
             });
+
             return 'answered';
         } catch (e) {
-            if (e instanceof ApiError && e.status === 409) return 'already-answered';
-            if (e instanceof ApiError && e.status === 403) return 'forbidden';
+            if (e instanceof ApiError && e.status === 409) {
+                return 'already-answered';
+            }
+
+            if (e instanceof ApiError && e.status === 403) {
+                return 'forbidden';
+            }
+
             throw e;
         } finally {
             void poller.refresh();
@@ -96,24 +111,43 @@ export function useLinkedApproval(client: IApiClient, target: Ref<ApprovalLink |
     let generation = 0;
 
     const link = computed<ApprovalLink | undefined>(() => {
-        if (!target.value) return undefined;
+        if (!target.value) {
+            return undefined;
+        }
+
         const approvalId = target.value.approvalId ?? pinned.value;
+
         return approvalId ? { runId: target.value.runId, approvalId } : { runId: target.value.runId };
     });
 
     async function load(): Promise<void> {
         const { value } = target;
         const current = ++generation;
-        if (!value) return;
+
+        if (!value) {
+            return;
+        }
+
         try {
             const detail: Partial<RunDetail> = { ...await client.getRun(value.runId) };
+
             delete detail.steps;
-            if (current !== generation) return;
+
+            if (current !== generation) {
+                return;
+            }
+
             run.value = detail as RunWire;
             error.value = undefined;
-            if (!value.approvalId && !pinned.value) pinned.value = run.value.waiting?.approvalId;
+
+            if (!value.approvalId && !pinned.value) {
+                pinned.value = run.value.waiting?.approvalId;
+            }
         } catch (e) {
-            if (current !== generation) return;
+            if (current !== generation) {
+                return;
+            }
+
             error.value = asApiError(e);
         }
     }
@@ -124,7 +158,12 @@ export function useLinkedApproval(client: IApiClient, target: Ref<ApprovalLink |
         pinned.value = undefined;
         void load();
     }, { immediate: true });
-    if (reload) watch(reload, () => { void load(); });
+
+    if (reload) {
+        watch(reload, () => {
+            void load();
+        });
+    }
 
     return {
         run,

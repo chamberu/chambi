@@ -22,12 +22,16 @@ export function createSkillCatalog(input: readonly Skill[]): SkillCatalog {
     }
 
     const snapshots = input.map(copySkill);
+
     composeSkillIdentities(snapshots);
     assertSkillContents(snapshots);
+
     const unique = new Map<string, Skill>();
+
     for (const skill of snapshots) {
         unique.set(skill.name, skill);
     }
+
     const bundles = unique.values().toArray().sort((a, b) => compareSkillPaths(a.name, b.name));
     const skills = Object.freeze(bundles.map((skill) => Object.freeze({
         name: skill.name,
@@ -54,6 +58,7 @@ export function createSkillCatalog(input: readonly Skill[]): SkillCatalog {
         JSON.stringify(metadata, null, 2).replaceAll('<', '\\u003c'),
         '</approved_skills>',
     ].join('\n') : '';
+
     return Object.freeze({
         skills,
         instructions,

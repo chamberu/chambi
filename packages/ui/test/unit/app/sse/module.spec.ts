@@ -21,6 +21,7 @@ import type { FakeAnswer } from '../../../utils/fetch.ts';
 
 async function collect(chunks: string[]): Promise<SseEvent[]> {
     const events: SseEvent[] = await Array.fromAsync(parseEventStream(sse(chunks).body!));
+
     return events;
 }
 
@@ -46,14 +47,24 @@ function setup(answers: FakeAnswer[]) {
     const stream = openRunStream({
         client,
         runId: 'r1',
-        onEvent: (event) => { events.push(event); },
-        onSettled: () => { settled++; done(); },
-        onError: (error) => { errors.push(error); done(); },
+        onEvent: (event) => {
+            events.push(event);
+        },
+        onSettled: () => {
+            settled++; done();
+        },
+        onError: (error) => {
+            errors.push(error); done();
+        },
         sleep: async (ms) => {
             delays.push(ms);
-            if (answers.length === 0) done();
+
+            if (answers.length === 0) {
+                done();
+            }
         },
     });
+
     return {
         stream,
         requests,
@@ -94,6 +105,7 @@ describe('parseEventStream', () => {
             },
         });
         const events: SseEvent[] = await Array.fromAsync(parseEventStream(body));
+
         expect(events).toEqual([{ event: 'message', data: 'é' }]);
     });
 });
@@ -107,6 +119,7 @@ describe('openRunStream', () => {
             'event: ping\ndata:\n\n',
             run('completed'),
         ])]);
+
         await s.finished;
         expect(s.events).toEqual([
             { type: 'run', run: { id: 'r1', status: 'running' } },
@@ -136,6 +149,7 @@ describe('openRunStream', () => {
             token: async () => 't',
             fetch,
         });
+
         await new Promise<void>((resolve) => {
             openRunStream({
                 client,
@@ -153,6 +167,7 @@ describe('openRunStream', () => {
             sse([run('running'), step(2), step(3)]),
             sse([step(4), run('completed')]),
         ]);
+
         await s.finished;
         expect(s.requests).toHaveLength(2);
         expect(s.requests[0]!.headers.has('last-event-id')).toBe(false);
@@ -163,12 +178,15 @@ describe('openRunStream', () => {
 
     it('backs off on repeated failures, the last delay repeating', async () => {
         const s = setup([
-            () => { throw new TypeError('network'); },
+            () => {
+                throw new TypeError('network');
+            },
             new Response('', { status: 502 }),
             sse([]),
             sse([]),
             sse([]),
         ]);
+
         await s.finished;
         expect(s.delays).toEqual([1000, 2000, 5000, 10_000, 10_000]);
         s.stream.close();
@@ -176,6 +194,7 @@ describe('openRunStream', () => {
 
     it('resets the backoff once an event arrived', async () => {
         const s = setup([sse([]), sse([]), sse([run('running')]), sse([])]);
+
         await s.finished;
         expect(s.delays).toEqual([1000, 2000, 1000, 2000]);
         s.stream.close();
@@ -190,6 +209,7 @@ describe('openRunStream', () => {
             }, 503, { 'retry-after': '7' }),
             sse([run('completed')]),
         ]);
+
         await s.finished;
         expect(s.delays).toEqual([7000]);
         expect(s.settled()).toBe(1);
@@ -204,6 +224,7 @@ describe('openRunStream', () => {
             }, 429, { 'retry-after': '30' }),
             sse([run('completed')]),
         ]);
+
         await s.finished;
         expect(s.delays).toEqual([30000]);
         expect(s.errors).toEqual([]);
@@ -212,6 +233,7 @@ describe('openRunStream', () => {
 
     it('stops after a settled run', async () => {
         const s = setup([sse([run('failed')])]);
+
         await s.finished;
         expect(s.requests).toHaveLength(1);
         expect(s.delays).toEqual([]);
@@ -219,6 +241,7 @@ describe('openRunStream', () => {
 
     it('keeps following a waiting run that the stream ended for', async () => {
         const s = setup([sse([run('waiting')]), sse([run('cancelled')])]);
+
         await s.finished;
         expect(s.requests).toHaveLength(2);
         expect(s.settled()).toBe(1);
@@ -230,6 +253,7 @@ describe('openRunStream', () => {
             code: 'run_not_found',
             message: 'gone',
         }, 404)]);
+
         await s.finished;
         expect(s.errors).toHaveLength(1);
         expect(s.errors[0]).toMatchObject({ status: 404, code: 'run_not_found' });
@@ -240,6 +264,7 @@ describe('openRunStream', () => {
         let seen: AbortSignal | null | undefined;
         const { fetch } = createFakeFetch([(request) => {
             seen = request.signal;
+
             return new Promise<Response>((_resolve, reject) => {
                 request.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
             });
@@ -254,12 +279,21 @@ describe('openRunStream', () => {
             client,
             runId: 'r1',
             onEvent: () => {},
-            onError: (e) => { errors.push(e); },
-            sleep: async () => { throw new Error('no reconnect after close'); },
+            onError: (e) => {
+                errors.push(e);
+            },
+            sleep: async () => {
+                throw new Error('no reconnect after close');
+            },
         });
-        await new Promise((resolve) => { setTimeout(resolve, 0); });
+
+        await new Promise((resolve) => {
+            setTimeout(resolve, 0);
+        });
         stream.close();
-        await new Promise((resolve) => { setTimeout(resolve, 0); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 0);
+        });
         expect(seen?.aborted).toBe(true);
         expect(errors).toEqual([]);
     });

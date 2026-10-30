@@ -37,7 +37,11 @@ function dispatchFailed(): Response {
 /** True when the App itself sent the delivery (its comment, label, ...). */
 async function isSelfSent(app: IGithubApp, event: GithubEvent): Promise<boolean> {
     const { sender } = event.payload;
-    if (sender?.type !== 'Bot') return false;
+
+    if (sender?.type !== 'Bot') {
+        return false;
+    }
+
     return isSameLogin(sender.login, await app.botLogin());
 }
 
@@ -60,19 +64,27 @@ export async function receiveDelivery(
     ctx: ChannelContext,
     options: ResolvedGithubChannelOptions,
 ): Promise<Response> {
-    if (subpath !== '') throw new NotFoundError({ message: 'The GitHub channel takes deliveries at its own path only.' });
+    if (subpath !== '') {
+        throw new NotFoundError({ message: 'The GitHub channel takes deliveries at its own path only.' });
+    }
+
     const signature = request.headers.get('x-hub-signature-256');
+
     if (signature === null) {
         throw new UnauthorizedError({ message: 'The X-Hub-Signature-256 header is missing.' });
     }
+
     const { name, delivery } = readHeaders(request);
     const body = await readRequestBody(request, { limit: options.bodyLimit });
+
     if (body.byteLength > 0 && !isJsonMediaType(request.headers.get('content-type'))) {
         throw new UnsupportedMediaTypeError({ message: 'The delivery must be application/json; set the App\'s webhook content type to JSON.' });
     }
+
     if (!options.app.verifySignature(body, signature)) {
         throw new UnauthorizedError({ message: 'The delivery signature does not match.' });
     }
+
     const event = toGithubEvent(body, name, delivery);
     const address = eventAddress(event);
 
@@ -91,11 +103,16 @@ export async function receiveDelivery(
         subscriptions: readonly ChannelSubscription[];
         first: ChannelSubscription;
     }> = [];
+
     for (const agent of ctx.engine.listAgents()) {
         try {
             const subscriptions = agent.definition.channels ?? [];
             const first = subscriptions.find((s) => matchesGithubSubscription(s, options.name, event));
-            if (!first) continue;
+
+            if (!first) {
+                continue;
+            }
+
             matches.push({
                 agent: agent.name,
                 subscriptions,
@@ -109,13 +126,19 @@ export async function receiveDelivery(
     // the loop guard: a delivery the App sent itself starts only subscriptions that opted in
     const selfSent = matches.length > 0 && await isSelfSent(options.app, event);
     const envelopes: ChannelDispatchEnvelope[] = [];
+
     for (const match of matches) {
         try {
             const subscription = selfSent ?
                 match.subscriptions.find((s) => acceptsSelfSent(s, event) && matchesGithubSubscription(s, options.name, event)) :
                 match.first;
-            if (!subscription) continue;
+
+            if (!subscription) {
+                continue;
+            }
+
             const concurrencyKey = subscription.concurrencyKey?.(event);
+
             envelopes.push({
                 agent: match.agent,
                 trigger: subscription.id,
@@ -130,9 +153,11 @@ export async function receiveDelivery(
     }
 
     const result: GithubWebhookResult = { delivery, runs: [] };
+
     for (const envelope of envelopes) {
         try {
             const { runId, deduplicated } = await ctx.dispatch(envelope);
+
             result.runs.push({
                 agent: envelope.agent,
                 runId,
@@ -142,5 +167,6 @@ export async function receiveDelivery(
             fail(error);
         }
     }
+
     return failed ? dispatchFailed() : Response.json(result, { status: 202 });
 }

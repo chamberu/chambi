@@ -156,6 +156,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
 
     async resolve(identity: ConversationIdentity): Promise<ConversationScope> {
         const id = identityId(identity);
+
         await this.conversations.createQueryBuilder().insert()
             .values(asValues<ConversationEntity>({
                 id,
@@ -167,17 +168,23 @@ export class DatabaseConversationRepository implements IConversationRepository {
                 generation: 0,
                 activeRunId: null,
             })).orIgnore().execute();
+
         return scopeOf(await this.conversations.findOneByOrFail({ id }));
     }
 
     async findOne(identity: ConversationIdentity): Promise<ConversationScope | undefined> {
         const row = await this.conversations.findOneBy({ id: identityId(identity) });
+
         return row ? scopeOf(row) : undefined;
     }
 
     async findOneOrFail(identity: ConversationIdentity): Promise<ConversationScope> {
         const result = await this.findOne(identity);
-        if (result === undefined) throw new RepositoryNotFoundError('conversations');
+
+        if (result === undefined) {
+            throw new RepositoryNotFoundError('conversations');
+        }
+
         return result;
     }
 
@@ -185,6 +192,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
         // withDatabaseLock is session-advisory; this row lock must share the writes' transaction.
         return this.dataSource.transaction(async (manager) => {
             const row = await manager.withRepository(this.conversations).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+
             return fn(manager, row);
         });
     }
@@ -193,6 +201,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
         if (!row || row.generation !== scope.generation) {
             throw new InvalidRunStateError('The conversation scope is stale: it was reset or deleted.');
         }
+
         return row;
     }
 
@@ -204,7 +213,9 @@ export class DatabaseConversationRepository implements IConversationRepository {
 
     async activeRun(scope: ConversationScope): Promise<string | undefined> {
         assertConversationScope(scope);
+
         const row = await this.conversations.findOneBy({ id: scope.id, generation: scope.generation });
+
         return row?.activeRunId ?? undefined;
     }
 
@@ -212,9 +223,14 @@ export class DatabaseConversationRepository implements IConversationRepository {
         assertConversationScope(scope);
         assertRunId(runId);
         assertConversationText(text, CONVERSATION_LIMITS_MAX.maxItemBytes);
+
         return this.locked(scope.id, async (manager, row) => {
-            if (!row || row.generation !== scope.generation) return { kind: 'stale' };
+            if (!row || row.generation !== scope.generation) {
+                return { kind: 'stale' };
+            }
+
             const where = { scopeId: scope.id, generation: scope.generation };
+
             if (row.activeRunId === runId && row.snapshotCreatedAt !== null) {
                 return {
                     kind: 'ready',
@@ -229,12 +245,19 @@ export class DatabaseConversationRepository implements IConversationRepository {
                     },
                 };
             }
+
             assertConversationText(text, limits.maxItemBytes);
-            if (row.activeRunId !== null && row.activeRunId !== runId) return { kind: 'busy', runId: row.activeRunId };
+
+            if (row.activeRunId !== null && row.activeRunId !== runId) {
+                return { kind: 'busy', runId: row.activeRunId };
+            }
+
             if (await manager.existsBy(ConversationItemEntity, { ...where, id: userItemId(runId) })) {
                 throw new InvalidRunStateError('The conversation turn has already ended.');
             }
+
             await this.trim(manager, row, limits);
+
             const { items, total } = await this.recallItems(manager, scope, limits);
             const notes = await this.readNotes(manager, scope);
             const now = this.clock.now();
@@ -253,6 +276,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
                 createdAt: now,
                 status: 'sent',
             };
+
             await manager.withRepository(this.items).insert(asValues<ConversationItemEntity>({
                 ...where,
                 ...itemValues(item),
@@ -266,6 +290,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
                 snapshotOmitted: snapshot.omitted,
             }));
             await this.trimCount(manager, row.id, row.generation, row.activeRunId, limits.maxStoredItems);
+
             return { kind: 'ready', snapshot };
         });
     }
@@ -280,37 +305,59 @@ export class DatabaseConversationRepository implements IConversationRepository {
         let items: ConversationItem[] = [];
         let bytes = 0;
         let before: string | undefined;
+
         while (items.length < limits.maxItems && bytes < limits.maxHistoryBytes) {
             const query = manager.withRepository(this.items).createQueryBuilder('item')
                 .where(where)
                 // Find options cannot compare a text column's UTF-8 byte length.
                 .andWhere('octet_length(item.text) <= :maxBytes', { maxBytes: limits.maxHistoryBytes - bytes })
                 .orderBy('item.seq', 'DESC').take(100);
-            if (before !== undefined) query.andWhere('item.seq < :before', { before });
+
+            if (before !== undefined) {
+                query.andWhere('item.seq < :before', { before });
+            }
+
             const page = await query.getMany();
-            if (page.length === 0) break;
+
+            if (page.length === 0) {
+                break;
+            }
+
             before = page[page.length - 1]!.seq;
+
             // Newer selected records keep priority; previously skipped records cannot fit a smaller remaining budget.
             const candidates = [...page.reverse().map(itemOf), ...items];
             const selected = new Set(buildSnapshotContent(candidates, [], limits).itemIds);
+
             items = candidates.filter((item) => selected.has(item.id));
             bytes = items.reduce((sum, item) => sum + Buffer.byteLength(item.text, 'utf8'), 0);
         }
+
         return { items, total };
     }
 
     async endTurn(scope: ConversationScope, runId: string, confirmedEmitIds: string[]): Promise<void> {
         assertConversationScope(scope);
         assertRunId(runId);
-        if (!Array.isArray(confirmedEmitIds) || confirmedEmitIds.some((id) => typeof id !== 'string')) {
+
+        const hasInvalidEmitId = Array.isArray(confirmedEmitIds) &&
+            confirmedEmitIds.some((id) => typeof id !== 'string');
+
+        if (!Array.isArray(confirmedEmitIds) || hasInvalidEmitId) {
             throw new ValidationError('The confirmed emit ids must be an array of strings.');
         }
+
         await this.locked(scope.id, async (manager, row) => {
-            if (!row || row.generation !== scope.generation || row.activeRunId !== runId) return;
+            if (!row || row.generation !== scope.generation || row.activeRunId !== runId) {
+                return;
+            }
+
             const pending = await this.pending(manager, scope, runId);
+
             for (const entry of pending) {
                 await manager.update(ConversationItemEntity, { seq: entry.seq }, { status: confirmedEmitIds.includes(entry.id) ? 'sent' : 'unknown' });
             }
+
             await manager.update(ConversationEntity, { id: row.id }, ENDED_TURN);
         });
     }
@@ -319,19 +366,27 @@ export class DatabaseConversationRepository implements IConversationRepository {
         assertConversationScope(scope);
         await this.locked(scope.id, async (manager, row) => {
             const current = this.current(scope, row);
+
             this.owner(current, item?.runId);
             assertEmitItem(item);
+
             const where = {
                 scopeId: scope.id,
                 generation: scope.generation,
                 id: item.id,
             };
             const previous = await manager.findOneBy(ConversationItemEntity, where);
+
             if (previous) {
-                if (!isSameEmit(itemOf(previous), item)) throw new ValidationError('A conversation item of this id exists with other content.');
+                if (!isSameEmit(itemOf(previous), item)) {
+                    throw new ValidationError('A conversation item of this id exists with other content.');
+                }
+
                 return;
             }
+
             const createdAt = this.clock.now();
+
             await manager.withRepository(this.items).insert(asValues<ConversationItemEntity>({
                 ...where,
                 ...itemValues(item),
@@ -349,8 +404,13 @@ export class DatabaseConversationRepository implements IConversationRepository {
                 generation: scope.generation,
                 id: itemId,
             }) : null;
-            if (!entry) throw new InvalidRunStateError('The run does not hold the conversation turn.');
+
+            if (!entry) {
+                throw new InvalidRunStateError('The run does not hold the conversation turn.');
+            }
+
             this.owner(current, entry.runId);
+
             if (entry.status === 'pending') {
                 await manager.update(ConversationItemEntity, { seq: entry.seq }, { status: 'sent' });
             }
@@ -366,77 +426,111 @@ export class DatabaseConversationRepository implements IConversationRepository {
             },
             order: { seq: 'ASC' },
         });
+
         return items.filter((entry) => entry.status === 'pending');
     }
 
     async pendingEmits(scope: ConversationScope, runId: string): Promise<ConversationItem[]> {
         assertConversationScope(scope);
         assertRunId(runId);
+
         return (await this.pending(this.dataSource.manager, scope, runId)).map(itemOf);
     }
 
     async findItems(scope: ConversationScope, query: ConversationFindOptions): Promise<{ data: ConversationItem[]; total: number }> {
         assertConversationScope(scope);
         assertPage(query);
+
         const [rows, total] = await this.items.findAndCount({
             where: { scopeId: scope.id, generation: scope.generation },
             order: { seq: 'ASC' },
             skip: query.offset,
             take: query.limit,
         });
+
         return { data: rows.map(itemOf), total };
     }
 
     async findItemsOrFail(scope: ConversationScope, query: ConversationFindOptions): Promise<{ data: ConversationItem[]; total: number }> {
         const result = await this.findItems(scope, query);
-        if (result.data.length === 0) throw new RepositoryNotFoundError('conversation items');
+
+        if (result.data.length === 0) {
+            throw new RepositoryNotFoundError('conversation items');
+        }
+
         return result;
     }
 
     protected async readNotes(manager: EntityManager, scope: ConversationScope): Promise<ConversationNote[]> {
         const current = await manager.findOneBy(ConversationEntity, { id: scope.id, generation: scope.generation });
-        if (!current) return [];
+
+        if (!current) {
+            return [];
+        }
+
         const rows = await manager.withRepository(this.notes).createQueryBuilder('note')
             .where('note.scopeId = :id AND note.generation = :generation', scope)
             .andWhere('(note.expiresAt IS NULL OR note.expiresAt > :now)', { now: this.clock.now() }).orderBy('note.key', 'ASC').getMany();
+
         return rows.map(noteOf);
     }
 
     async findNotes(scope: ConversationScope, query: ConversationFindOptions): Promise<{ data: ConversationNote[]; total: number }> {
         assertConversationScope(scope);
         assertPage(query);
+
         const notes = await this.readNotes(this.dataSource.manager, scope);
+
         return { data: notes.slice(query.offset, query.offset + query.limit), total: notes.length };
     }
 
     async findNotesOrFail(scope: ConversationScope, query: ConversationFindOptions): Promise<{ data: ConversationNote[]; total: number }> {
         const result = await this.findNotes(scope, query);
-        if (result.data.length === 0) throw new RepositoryNotFoundError('conversation notes');
+
+        if (result.data.length === 0) {
+            throw new RepositoryNotFoundError('conversation notes');
+        }
+
         return result;
     }
 
     async findOneNote(scope: ConversationScope, key: string): Promise<ConversationNote | undefined> {
         assertConversationScope(scope);
-        if (typeof key !== 'string') return undefined;
+
+        if (typeof key !== 'string') {
+            return undefined;
+        }
+
         return (await this.readNotes(this.dataSource.manager, scope)).find((note) => note.key === key);
     }
 
     async findOneNoteOrFail(scope: ConversationScope, key: string): Promise<ConversationNote> {
         const result = await this.findOneNote(scope, key);
-        if (result === undefined) throw new RepositoryNotFoundError('conversation notes');
+
+        if (result === undefined) {
+            throw new RepositoryNotFoundError('conversation notes');
+        }
+
         return result;
     }
 
     async applyNote(scope: ConversationScope, operation: ConversationNoteOperation): Promise<ConversationNoteResult> {
         assertConversationScope(scope);
+
         return this.locked(scope.id, async (manager, row) => {
             const current = this.current(scope, row);
+
             this.owner(current, operation?.source?.runId);
             assertNoteOperationShape(operation);
+
             const where = { scopeId: scope.id, generation: scope.generation };
             const previous = await manager.findOneBy(ConversationOperationEntity, { ...where, id: operation.id });
+
             if (previous) {
-                if (previous.runId !== operation.source.runId || previous.inputHash !== operation.inputHash) throw new ValidationError('The note operation was already applied with another input.');
+                if (previous.runId !== operation.source.runId || previous.inputHash !== operation.inputHash) {
+                    throw new ValidationError('The note operation was already applied with another input.');
+                }
+
                 return previous.kind === 'set' ?
                     {
                         kind: 'set',
@@ -449,13 +543,20 @@ export class DatabaseConversationRepository implements IConversationRepository {
                         removed: previous.removed!,
                     };
             }
+
             const now = this.clock.now();
+
             assertNoteOperationContent(operation, now);
             await manager.delete(ConversationNoteEntity, { ...where, expiresAt: LessThanOrEqual(now) });
+
             const prior = await manager.findOneBy(ConversationNoteEntity, { ...where, key: operation.key });
             let result: ConversationNoteResult;
+
             if (operation.kind === 'set') {
-                if (!prior && await manager.countBy(ConversationNoteEntity, where) >= CONVERSATION_NOTES_MAX) throw new ValidationError(`A conversation holds at most ${CONVERSATION_NOTES_MAX} notes.`);
+                if (!prior && await manager.countBy(ConversationNoteEntity, where) >= CONVERSATION_NOTES_MAX) {
+                    throw new ValidationError(`A conversation holds at most ${CONVERSATION_NOTES_MAX} notes.`);
+                }
+
                 const note: ConversationNote = {
                     key: operation.key,
                     text: operation.text,
@@ -463,7 +564,11 @@ export class DatabaseConversationRepository implements IConversationRepository {
                     createdAt: prior?.createdAt ?? now,
                     updatedAt: now,
                 };
-                if (operation.expiresAt !== undefined) note.expiresAt = operation.expiresAt;
+
+                if (operation.expiresAt !== undefined) {
+                    note.expiresAt = operation.expiresAt;
+                }
+
                 await manager.withRepository(this.notes).upsert(asValues<ConversationNoteEntity>({
                     ...where,
                     ...noteValues(note),
@@ -481,6 +586,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
                     removed: prior !== null,
                 };
             }
+
             await manager.withRepository(this.operations).insert(asValues<ConversationOperationEntity>({
                 ...where,
                 id: operation.id,
@@ -491,17 +597,26 @@ export class DatabaseConversationRepository implements IConversationRepository {
                 removed: result.kind === 'remove' ? result.removed : null,
                 createdAt: now,
             }));
+
             return result;
         });
     }
 
     async reset(identity: ConversationIdentity, options: { keepNotes: boolean }): Promise<ConversationScope> {
-        if (!isObject(options) || typeof options.keepNotes !== 'boolean') throw new ValidationError('The reset options need keepNotes as a boolean.');
+        if (!isObject(options) || typeof options.keepNotes !== 'boolean') {
+            throw new ValidationError('The reset options need keepNotes as a boolean.');
+        }
+
         const scope = await this.resolve(identity);
+
         return this.locked(scope.id, async (manager, row) => {
-            if (!row || row.activeRunId !== null) throw new InvalidRunStateError('The conversation has an active turn and cannot be reset.');
+            if (!row || row.activeRunId !== null) {
+                throw new InvalidRunStateError('The conversation has an active turn and cannot be reset.');
+            }
+
             row.generation += 1;
             await manager.update(ConversationEntity, { id: row.id }, { generation: row.generation, ...ENDED_TURN });
+
             if (options.keepNotes) {
                 await manager.delete(ConversationNoteEntity, { scopeId: row.id, expiresAt: LessThanOrEqual(this.clock.now()) });
                 await manager.update(ConversationNoteEntity, { scopeId: row.id }, { generation: row.generation });
@@ -509,16 +624,25 @@ export class DatabaseConversationRepository implements IConversationRepository {
                 await manager.delete(ConversationNoteEntity, { scopeId: row.id });
                 await manager.delete(ConversationOperationEntity, { scopeId: row.id });
             }
+
             return scopeOf(row);
         });
     }
 
     async delete(identity: ConversationIdentity): Promise<void> {
         const id = identityId(identity);
+
         await this.locked(id, async (manager, row) => {
-            if (!row) return;
-            if (row.activeRunId !== null) throw new InvalidRunStateError('The conversation has an active turn and cannot be deleted.');
+            if (!row) {
+                return;
+            }
+
+            if (row.activeRunId !== null) {
+                throw new InvalidRunStateError('The conversation has an active turn and cannot be deleted.');
+            }
+
             await manager.update(ConversationEntity, { id }, { generation: row.generation + 1, ...ENDED_TURN });
+
             for (const entity of [ConversationItemEntity, ConversationNoteEntity, ConversationOperationEntity]) {
                 await manager.delete(entity, { scopeId: id });
             }
@@ -528,6 +652,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
     protected async trimCount(manager: EntityManager, scopeId: string, generation: number, activeRunId: string | null, max: number): Promise<void> {
         const where = { scopeId, generation };
         let excess = await manager.countBy(ConversationItemEntity, where) - max;
+
         while (excess > 0) {
             const candidates = await manager.find(ConversationItemEntity, {
                 select: { seq: true },
@@ -535,7 +660,11 @@ export class DatabaseConversationRepository implements IConversationRepository {
                 order: { seq: 'ASC' },
                 take: Math.min(excess, 100),
             });
-            if (candidates.length === 0) break;
+
+            if (candidates.length === 0) {
+                break;
+            }
+
             await manager.delete(ConversationItemEntity, { seq: In(candidates.map((entry) => entry.seq)) });
             excess -= candidates.length;
         }
@@ -543,6 +672,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
 
     protected async trim(manager: EntityManager, row: ConversationEntity, limits: ResolvedConversationLimits): Promise<void> {
         const before = new Date(this.clock.now().getTime() - limits.retentionMs);
+
         for (;;) {
             const expired = await manager.find(ConversationItemEntity, {
                 select: { seq: true },
@@ -554,9 +684,14 @@ export class DatabaseConversationRepository implements IConversationRepository {
                 order: { seq: 'ASC' },
                 take: 100,
             });
-            if (expired.length === 0) break;
+
+            if (expired.length === 0) {
+                break;
+            }
+
             await manager.delete(ConversationItemEntity, { seq: In(expired.map((entry) => entry.seq)) });
         }
+
         await manager.delete(ConversationNoteEntity, { scopeId: row.id, expiresAt: LessThanOrEqual(this.clock.now()) });
     }
 
@@ -564,26 +699,44 @@ export class DatabaseConversationRepository implements IConversationRepository {
         const { isSettled } = options;
         let failure: { error: unknown } | undefined;
         let after = '';
+
         for (;;) {
             const page = await this.conversations.createQueryBuilder('scope').where('scope.id > :after', { after }).orderBy('scope.id', 'ASC').take(100).getMany();
-            if (page.length === 0) break;
+
+            if (page.length === 0) {
+                break;
+            }
+
             for (const scope of page) {
                 await this.locked(scope.id, async (manager, row) => {
-                    if (!row) return;
+                    if (!row) {
+                        return;
+                    }
+
                     await this.trim(manager, row, limits);
+
                     const generations = await manager.withRepository(this.items).createQueryBuilder('item')
                         .select('item.generation', 'generation')
                         .where('item.scopeId = :id', { id: row.id })
                         .distinct(true).getRawMany<{ generation: number }>();
+
                     for (const { generation } of generations) {
                         await this.trimCount(manager, row.id, generation, row.activeRunId, limits.maxStoredItems);
                     }
                 });
-                if (!isSettled) continue;
+
+                if (!isSettled) {
+                    continue;
+                }
+
                 let afterOperation: { generation: number; id: string } | undefined;
+
                 for (;;) {
                     const candidates = await this.locked(scope.id, async (manager, row) => {
-                        if (!row) return [];
+                        if (!row) {
+                            return [];
+                        }
+
                         const before = new Date(this.clock.now().getTime() - limits.retentionMs);
                         const query = manager.withRepository(this.operations).createQueryBuilder('operation')
                             .where({
@@ -592,27 +745,44 @@ export class DatabaseConversationRepository implements IConversationRepository {
                                 ...(row.activeRunId === null ? {} : { runId: Not(row.activeRunId) }),
                             })
                             .orderBy('operation.generation', 'ASC').addOrderBy('operation.id', 'ASC').take(100);
+
                         if (afterOperation) {
                             query.andWhere('(operation.generation > :generation OR (operation.generation = :generation AND operation.id > :id))', afterOperation);
                         }
+
                         return query.getMany();
                     });
-                    if (candidates.length === 0) break;
+
+                    if (candidates.length === 0) {
+                        break;
+                    }
+
                     const settled: ConversationOperationEntity[] = [];
+
                     // A classifier may need this same pool; call it without a transaction connection.
                     for (const candidate of candidates) {
                         try {
-                            if (await isSettled(candidate.runId)) settled.push(candidate);
+                            if (await isSettled(candidate.runId)) {
+                                settled.push(candidate);
+                            }
                         } catch (error) {
                             failure ??= { error };
                         }
                     }
+
                     if (settled.length > 0) {
                         await this.locked(scope.id, async (manager, row) => {
-                            if (!row) return;
+                            if (!row) {
+                                return;
+                            }
+
                             const before = this.clock.now().getTime() - limits.retentionMs;
+
                             for (const candidate of settled) {
-                                if (row.activeRunId === candidate.runId || candidate.createdAt.getTime() > before) continue;
+                                if (row.activeRunId === candidate.runId || candidate.createdAt.getTime() > before) {
+                                    continue;
+                                }
+
                                 await manager.delete(ConversationOperationEntity, {
                                     scopeId: row.id,
                                     generation: candidate.generation,
@@ -624,11 +794,16 @@ export class DatabaseConversationRepository implements IConversationRepository {
                             }
                         });
                     }
+
                     afterOperation = candidates[candidates.length - 1]!;
                 }
             }
+
             after = page[page.length - 1]!.id;
         }
-        if (failure) throw failure.error;
+
+        if (failure) {
+            throw failure.error;
+        }
     }
 }

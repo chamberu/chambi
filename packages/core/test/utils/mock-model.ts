@@ -33,6 +33,7 @@ const DEFAULT_USAGE = { inputTokens: 1, outputTokens: 1 };
 
 function usageOf(r: MockResponse): LanguageModelV4Usage {
     const u = r.usage ?? DEFAULT_USAGE;
+
     return {
         inputTokens: {
             total: u.inputTokens,
@@ -50,7 +51,10 @@ function usageOf(r: MockResponse): LanguageModelV4Usage {
 
 function contentOf(r: MockResponse, turn: number): Array<LanguageModelV4Content> {
     return r.parts.map((p, i): LanguageModelV4Content => {
-        if (p.type === 'text') return { type: 'text', text: p.text };
+        if (p.type === 'text') {
+            return { type: 'text', text: p.text };
+        }
+
         return {
             type: 'tool-call',
             toolCallId: p.toolCallId ?? `call-${turn}-${i}`,
@@ -61,7 +65,9 @@ function contentOf(r: MockResponse, turn: number): Array<LanguageModelV4Content>
 }
 
 function finishOf(r: MockResponse): LanguageModelV4FinishReason {
-    return { unified: r.parts.some((p) => p.type === 'tool-call') ? 'tool-calls' : 'stop', raw: undefined };
+    const hasToolCalls = r.parts.some((p) => p.type === 'tool-call');
+
+    return { unified: hasToolCalls ? 'tool-calls' : 'stop', raw: undefined };
 }
 
 /**
@@ -73,13 +79,18 @@ export function mockModel(responses: MockResponse[]) {
     const next = () => {
         const index = turn++;
         const response = responses[index];
-        if (!response) throw new Error('mock script exhausted');
+
+        if (!response) {
+            throw new Error('mock script exhausted');
+        }
+
         return { response, index };
     };
 
     return new MockLanguageModelV4({
         doGenerate: async () => {
             const { response, index } = next();
+
             return {
                 content: contentOf(response, index),
                 finishReason: finishOf(response),
@@ -90,6 +101,7 @@ export function mockModel(responses: MockResponse[]) {
         doStream: async () => {
             const { response, index } = next();
             const chunks: LanguageModelV4StreamPart[] = [{ type: 'stream-start', warnings: [] }];
+
             contentOf(response, index).forEach((part, i) => {
                 if (part.type === 'text') {
                     chunks.push(
@@ -110,6 +122,7 @@ export function mockModel(responses: MockResponse[]) {
                 finishReason: finishOf(response),
                 usage: usageOf(response),
             });
+
             return { stream: simulateReadableStream({ chunks }) };
         },
     });

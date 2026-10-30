@@ -33,18 +33,27 @@ export function resolveAuthenticators(container: IContainer): Authenticator[] {
  */
 export function createDeferredAuthenticator(): { authenticator: Authenticator; resolve(chain: readonly Authenticator[]): void } {
     let authenticators: readonly Authenticator[] = [];
+
     return {
         authenticator: async (request) => {
             let rejection: { error: unknown } | undefined;
+
             for (const authenticator of authenticators) {
                 try {
                     const principal = await authenticator(request);
-                    if (principal) return principal;
+
+                    if (principal) {
+                        return principal;
+                    }
                 } catch (error) {
                     rejection ??= { error };
                 }
             }
-            if (rejection) throw rejection.error;
+
+            if (rejection) {
+                throw rejection.error;
+            }
+
             return undefined;
         },
         resolve(chain) {

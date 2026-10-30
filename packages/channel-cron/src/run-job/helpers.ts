@@ -22,18 +22,23 @@ import { isCronChannel } from '../channel/helpers.ts';
  */
 export function resolveCronSubscription(engine: Engine, agent: Agent, subscriptionId?: string): ChannelSubscription {
     const crons = (agent.definition.channels ?? []).filter((s) => isCronChannel(engine.getChannel(s.channel)));
+
     if (subscriptionId !== undefined) {
         const subscription = crons.find((s) => s.id === subscriptionId);
+
         if (!subscription) {
             throw new InvalidAgentDefinitionError(`Agent "${agent.name}" has no cron subscription "${subscriptionId}".`);
         }
+
         return subscription;
     }
+
     if (crons.length !== 1) {
         throw new InvalidAgentDefinitionError(
             `Agent "${agent.name}" has ${crons.length} cron subscriptions; pass the subscription id.`,
         );
     }
+
     return crons[0] as ChannelSubscription;
 }
 
@@ -43,12 +48,16 @@ export function resolveCronSubscription(engine: Engine, agent: Agent, subscripti
  * out), so a job must not wait for it.
  */
 export async function isQueuedBehindApproval(store: Pick<IRunRepository, 'find'>, run: Run): Promise<boolean> {
-    if (run.status !== 'queued' || run.concurrencyKey === undefined) return false;
+    if (run.status !== 'queued' || run.concurrencyKey === undefined) {
+        return false;
+    }
+
     const { total } = await store.find({
         agent: run.agent,
         status: ['waiting'],
         concurrencyKey: run.concurrencyKey,
         limit: 1,
     });
+
     return total > 0;
 }

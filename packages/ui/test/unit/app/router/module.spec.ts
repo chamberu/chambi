@@ -15,15 +15,16 @@ import { createUiRouter } from '../../../../app/router/module.ts';
 describe('createUiRouter', () => {
     it('resolves the named routes under uiBase', () => {
         const router = createUiRouter(DEV_CONFIG, [], createMemoryHistory('/ui'));
+
         expect(router.resolve({ name: RouteName.RUNS }).href).toBe('/ui/runs');
         expect(router.resolve({ name: RouteName.RUN, params: { id: 'abc' } }).href).toBe('/ui/runs/abc');
         expect(router.resolve({ name: RouteName.APPROVALS }).href).toBe('/ui/approvals');
         expect(router.resolve({ name: RouteName.AGENTS }).href).toBe('/ui/agents');
         expect(router.resolve({ name: RouteName.AGENT, params: { name: 'release-notes' } }).href).toBe('/ui/agents/release-notes');
         expect(router.resolve({
-            name: RouteName.AGENT, 
-            params: { name: 'triage' }, 
-            query: { tab: 'state' }, 
+            name: RouteName.AGENT,
+            params: { name: 'triage' },
+            query: { tab: 'state' },
         }).href).toBe('/ui/agents/triage?tab=state');
         expect(router.resolve({ name: RouteName.SCHEDULES }).href).toBe('/ui/schedules');
         expect(router.resolve({ name: RouteName.LOGIN }).href).toBe('/ui/login');
@@ -33,9 +34,14 @@ describe('createUiRouter', () => {
 
     it('runs the guards in order', async () => {
         const seen: string[] = [];
-        const first: NavigationGuard = () => { seen.push('first'); };
-        const second: NavigationGuard = () => { seen.push('second'); };
+        const first: NavigationGuard = () => {
+            seen.push('first');
+        };
+        const second: NavigationGuard = () => {
+            seen.push('second');
+        };
         const router = createUiRouter(DEV_CONFIG, [first, second], createMemoryHistory('/ui'));
+
         await router.push('/schedules');
         expect(seen).toEqual(['first', 'second']);
         expect(router.currentRoute.value.name).toBe(RouteName.SCHEDULES);
@@ -43,6 +49,7 @@ describe('createUiRouter', () => {
 
     it('opens on the agents overview and sends an unknown path there', async () => {
         const router = createUiRouter(DEV_CONFIG, [], createMemoryHistory('/ui'));
+
         await router.push('/');
         expect(router.currentRoute.value.name).toBe(RouteName.AGENTS);
         await router.push('/nope/x');

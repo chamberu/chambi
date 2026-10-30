@@ -17,7 +17,7 @@ The default workspace image of chamvi's container sandboxes (`@chamvi/sandbox-do
 No language toolchain is baked in. A workspace installs what the repository needs at runtime:
 
 ```bash
-mise use -g node@22        # node, npm and npx on the PATH through mise's shims
+mise use -g node@24        # node, npm and npx on the PATH through mise's shims
 mise install               # whatever .tool-versions, mise.toml, .nvmrc or .python-version name
 apt-get update && apt-get install -y --no-install-recommends libpq-dev
 ```

@@ -20,8 +20,10 @@ export function delay(
     return new Promise<void>((resolve, reject) => {
         if (signal?.aborted) {
             reject(abortError());
+
             return;
         }
+
         const timer = clock.setTimeout(() => {
             signal?.removeEventListener('abort', onAbort);
             resolve();

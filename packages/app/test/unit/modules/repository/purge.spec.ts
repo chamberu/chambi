@@ -10,7 +10,9 @@ import { expect, it } from 'vitest';
 import { createPurgeTimer } from '../../../../src/modules/repository/purge.ts';
 import { createRecordingLogger } from '../../../utils/logger.ts';
 
-const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 it('waits for every capability purge after one fails, before stopping or rearming', async () => {
     const clock = new ControllableClock();
@@ -20,13 +22,26 @@ it('waits for every capability purge after one fails, before stopping or rearmin
     let calls = 0;
     const timer = createPurgeTimer({
         repositories: [
-            { purgeExpired: () => { calls++; return first.promise; } },
-            { purgeExpired: () => { calls++; return second.promise; } },
+            {
+                purgeExpired: () => {
+                    calls++;
+
+                    return first.promise;
+                },
+            },
+            {
+                purgeExpired: () => {
+                    calls++;
+
+                    return second.promise;
+                },
+            },
         ],
         clock,
         logger,
         intervalMs: 100,
     });
+
     timer.start();
     clock.advance(100);
     expect(calls).toBe(2);
@@ -34,8 +49,12 @@ it('waits for every capability purge after one fails, before stopping or rearmin
     await flush();
     clock.advance(500);
     expect(calls).toBe(2);
+
     let stopped = false;
-    const stopping = timer.stop().then(() => { stopped = true; });
+    const stopping = timer.stop().then(() => {
+        stopped = true;
+    });
+
     await flush();
     expect(stopped).toBe(false);
     second.resolve(3);

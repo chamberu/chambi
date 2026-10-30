@@ -25,9 +25,14 @@ import type {
  */
 export function apiMessage(error: unknown): string {
     let message = String(error);
+
     if (isObject(error)) {
-        if (typeof error.message === 'string') ({ message } = error);
+        if (typeof error.message === 'string') {
+            ({ message } = error);
+        }
+
         let { body } = error;
+
         if (typeof body === 'string') {
             try {
                 body = JSON.parse(body);
@@ -35,10 +40,12 @@ export function apiMessage(error: unknown): string {
                 // not JSON: keep the error's message
             }
         }
+
         if (isObject(body) && typeof body.message === 'string') {
             ({ message } = body);
         }
     }
+
     return message.slice(0, API_MESSAGE_MAX_LENGTH);
 }
 
@@ -52,13 +59,20 @@ export function isApiStatus(error: unknown, code: number): boolean {
  * carries it in the `ExitCode` cause; anything else is a SandboxError.
  */
 export function exitCodeOf(status: V1Status): number {
-    if (status.status === 'Success') return 0;
+    if (status.status === 'Success') {
+        return 0;
+    }
+
     if (status.reason === 'NonZeroExitCode') {
         const cause = status.details?.causes?.find((item) => item.reason === 'ExitCode');
         const text = cause?.message;
+
         // Number('') is 0: only digits count as an exit code
-        if (typeof text === 'string' && /^\d{1,3}$/.test(text)) return Number(text);
+        if (typeof text === 'string' && /^\d{1,3}$/.test(text)) {
+            return Number(text);
+        }
     }
+
     throw new SandboxError(`exec failed: ${status.message ?? status.reason ?? 'unknown status'}`);
 }
 
@@ -72,6 +86,7 @@ async function call<T>(action: string, run: () => Promise<T>): Promise<T> {
 
 function execOnce(parts: PodClientParts, name: string, input: PodExecInput): Promise<{ exitCode: number }> {
     const { signal } = input;
+
     if (signal.aborted) {
         return Promise.reject(new SandboxError('exec aborted'));
     }
@@ -82,7 +97,10 @@ function execOnce(parts: PodClientParts, name: string, input: PodExecInput): Pro
         let status: V1Status | undefined;
 
         const settle = (fn: () => void) => {
-            if (settled) return;
+            if (settled) {
+                return;
+            }
+
             settled = true;
             signal.removeEventListener('abort', onAbort);
             fn();
@@ -95,7 +113,10 @@ function execOnce(parts: PodClientParts, name: string, input: PodExecInput): Pro
 
         // buffered until the library attaches its reader after the connect
         const stdin = input.stdin === undefined ? null : new PassThrough();
-        if (stdin) stdin.write(input.stdin);
+
+        if (stdin) {
+            stdin.write(input.stdin);
+        }
 
         parts.exec.exec(
             parts.namespace,
@@ -118,15 +139,23 @@ function execOnce(parts: PodClientParts, name: string, input: PodExecInput): Pro
             },
         ).then((opened) => {
             socket = opened as unknown as ExecSocket;
+
             if (settled) {
                 // aborted while connecting, or a status already in: drop the socket
-                if (status === undefined) socket.close();
+                if (status === undefined) {
+                    socket.close();
+                }
+
                 return;
             }
+
             socket.on('close', () => settle(() => reject(new SandboxError('exec connection closed without an exit status'))));
             socket.on('error', (error) => settle(() => reject(new SandboxError(`exec connection failed: ${error.message}`, { cause: error }))));
+
             // ending stdin closes the whole socket on the older protocols
-            if (stdin && socket.protocol === STDIN_CLOSE_PROTOCOL) stdin.end();
+            if (stdin && socket.protocol === STDIN_CLOSE_PROTOCOL) {
+                stdin.end();
+            }
         }, (error: unknown) => {
             settle(() => reject(new SandboxError(`cannot exec in pod ${name}: ${apiMessage(error)}`, { cause: error })));
         });
@@ -136,6 +165,7 @@ function execOnce(parts: PodClientParts, name: string, input: PodExecInput): Pro
 /** An `IPodClient` over the given API clients; `createPodClient` builds them from a `KubeConfig`. */
 export function createPodClientFrom(parts: PodClientParts): IPodClient {
     const { core, namespace } = parts;
+
     return {
         create: (pod) => call(
             `create pod ${pod.metadata?.name ?? ''}`.trim(),
@@ -150,7 +180,10 @@ export function createPodClientFrom(parts: PodClientParts): IPodClient {
                     gracePeriodSeconds: 0,
                 });
             } catch (error) {
-                if (isApiStatus(error, 404)) return;
+                if (isApiStatus(error, 404)) {
+                    return;
+                }
+
                 throw new SandboxError(`cannot delete pod ${name}: ${apiMessage(error)}`, { cause: error });
             }
         },

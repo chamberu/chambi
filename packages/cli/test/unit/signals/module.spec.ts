@@ -48,6 +48,7 @@ describe('installSignalHandlers', () => {
             forceExitMs,
             stop: () => {
                 stops++;
+
                 return stop.promise;
             },
             setExitCode: (code) => {
@@ -64,6 +65,7 @@ describe('installSignalHandlers', () => {
 
     it('first signal stops and sets 0', async () => {
         const handlers = install();
+
         expect(handlers.signalled).toBe(false);
 
         fake.signals.emit('SIGTERM');
@@ -112,8 +114,10 @@ describe('installSignalHandlers', () => {
     it('the force timer keeps the process alive until it fired or was cleared', () => {
         const options: unknown[] = [];
         const setTimeout = fake.clock.setTimeout.bind(fake.clock);
+
         fake.clock.setTimeout = (fn, ms, opts?: unknown) => {
             options.push(opts);
+
             return setTimeout(fn, ms);
         };
         install();
@@ -160,6 +164,7 @@ describe('installSignalHandlers', () => {
 
     it('dispose removes the listeners', () => {
         const handlers = install();
+
         expect(fake.signals.listenerCount('SIGTERM')).toBe(1);
         expect(fake.signals.listenerCount('SIGINT')).toBe(1);
         handlers.dispose();

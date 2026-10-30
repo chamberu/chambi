@@ -17,11 +17,14 @@ describePostgres('conversation operation retention', () => {
     let dataSource: DataSource;
 
     afterEach(async () => {
-        if (dataSource?.isInitialized) await dataSource.destroy();
+        if (dataSource?.isInitialized) {
+            await dataSource.destroy();
+        }
     });
 
     it('prunes settled records beyond a full page of recoverable records', async () => {
         dataSource = await createTestDataSource();
+
         const clock = new ControllableClock(new Date('2026-10-28T00:00:00.000Z'));
         const store = new SeededConversationRepository({ dataSource, clock });
         const scope = await store.resolve({
@@ -32,13 +35,16 @@ describePostgres('conversation operation retention', () => {
             audience: 'direct',
         });
         const limits = { ...DEFAULT_CONVERSATION_LIMITS, retentionMs: 10_000 };
+
         for (const [runId, prefix, count] of [
             ['recoverable', 'a', 100],
             ['settled', 'z', 105],
         ] as const) {
             await store.beginTurn(scope, runId, 'input', limits);
+
             for (let index = 0; index < count; index++) {
                 const id = `${prefix}-${String(index).padStart(3, '0')}`;
+
                 await store.applyNote(scope, {
                     id,
                     inputHash: id,
@@ -51,11 +57,15 @@ describePostgres('conversation operation retention', () => {
                     },
                 });
             }
+
             await store.endTurn(scope, runId, []);
         }
+
         clock.advance(10_000);
         await store.prune(limits, { isSettled: async (runId) => runId === 'settled' });
+
         const operations = dataSource.getRepository(ConversationOperationEntity);
+
         expect(await operations.countBy({ scopeId: scope.id, runId: 'recoverable' })).toBe(100);
         expect(await operations.countBy({ scopeId: scope.id, runId: 'settled' })).toBe(0);
     });

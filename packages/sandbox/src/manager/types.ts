@@ -7,10 +7,53 @@
 
 import type { ToolSet } from 'ai';
 import type { Engine, IClock, ToolContext } from '@chamvi/core';
-import type { IGitCredentials } from '../credentials/types.ts';
+import type {
+    GitAccess,
+    GitCredential,
+    IGitCredentials,
+    Redactor,
+} from '../credentials/types.ts';
 import type { RepositoryInstructions } from '../instructions/types.ts';
 import type { ISandboxProvider, SandboxLimits } from '../provider/types.ts';
 import type { IWorkspace } from '../workspace/types.ts';
+
+/** The credential handling of one manager; only built when it has credential sources. */
+export type CredentialSupport = {
+    readonly redactor: Redactor;
+    /**
+     * The first credential the sources answer for an https `url` (redacted
+     * from then on), else undefined; undefined for a `file://` repository.
+     * SandboxError for a failing source.
+     */
+    lookup(url: string, access: GitAccess, runId: string, signal?: AbortSignal): Promise<GitCredential | undefined>;
+    /**
+     * Writes the credentials file of `workspace` (raw,
+     * not wrapped) when it has none from this process yet, or one of its
+     * credentials expires within `CREDENTIAL_REFRESH_MS`: the repository's
+     * write credential, else (none, or a failing write lookup, reported to
+     * `onError`) its read credential. A credential already inside that
+     * window is rewritten `CREDENTIAL_RETRY_MS` later at the earliest. A failure goes to
+     * `onError` and is retried `CREDENTIAL_RETRY_MS` later; it never throws.
+     * A workspace this process created anonymously (`fresh`) holds no file
+     * yet; one whose checkout was authenticated holds the read credential,
+     * and one it found again may hold an earlier process's: the first
+     * install overwrites (or clears) both. The file is never read back: it
+     * is writable from inside the workspace, so its content is no secret to
+     * redact.
+     */
+    refresh(workspace: IWorkspace, options?: { fresh?: boolean }): Promise<void>;
+    /** The workspace the manager hands out: redacting and refreshing before each call. One per raw workspace. */
+    wrap(workspace: IWorkspace): IWorkspace;
+};
+
+export type GitToolsContext = {
+    manager: Pick<IWorkspaceManager, 'get'>;
+    /** The credential of an https repository, or undefined (anonymous). */
+    lookup: (url: string, access: GitAccess, runId: string, signal?: AbortSignal) => Promise<GitCredential | undefined>;
+    /** `normalizeRepo` with the manager's rules (`allowFileRepos`, `allowRepo`). */
+    normalize: (repo: string) => string;
+    push: PushPolicy;
+};
 
 export type WorkspaceManagerOptions = {
     provider: ISandboxProvider;

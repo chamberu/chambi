@@ -38,15 +38,19 @@ describe('README example', () => {
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = readme.matchAll(/```typescript\n([\s\S]*?)```/g).map((m) => m[1]).toArray();
+
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
     it('pauses a deploy and asks in the chat once', async () => {
         stubEnv();
+
         const clock = new ControllableClock(new Date('2026-10-21T09:00:00Z'));
         const fake = createFakeOpenclaw({ token: TOKEN, clock });
         const engine = createApprovalEngine(approvalModel('deploy', { env: 'prod' }), { fetch: fake.fetch, clock });
+
         await engine.start();
+
         try {
             const { runId } = await engine.dispatch({
                 agent: 'deployer',
@@ -54,11 +58,14 @@ describe('README example', () => {
                 channel: 'http',
                 payload: { release: 'v1.2.0' },
             });
+
             await engine.idle();
             expect((await engine.getRun(runId))?.status).toBe('waiting');
             expect(fake.dispatched).toHaveLength(1);
+
             const { message } = fake.dispatched[0]!;
             const { approvalId } = (await engine.getRun(runId))!.waiting!;
+
             expect(message).toContain(`Approve or deny: https://chamvi.example/ui/approvals?run=${runId}&approval=${encodeURIComponent(approvalId)}`);
             expect(message).not.toContain('resume_run');
             expect(message).not.toContain('token=');

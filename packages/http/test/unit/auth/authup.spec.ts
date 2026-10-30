@@ -12,7 +12,10 @@ import { authup } from '@chamvi/http';
 function verifierFor(data: TokenVerificationData): ITokenVerifier {
     return {
         verify: async (token) => {
-            if (token === 'good') return data;
+            if (token === 'good') {
+                return data;
+            }
+
             throw new Error('invalid_token');
         },
     };
@@ -33,6 +36,7 @@ const withScope = (scope: string | undefined) => authup({
 describe('authup', () => {
     it('grants the permissions of a global token', async () => {
         const principal = await withScope('global')(request('Bearer good'));
+
         expect(principal).toMatchObject({
             id: 'u1',
             kind: 'authup',
@@ -43,6 +47,7 @@ describe('authup', () => {
 
     it.each([['openid email'], [undefined], ['globally']])('keeps the identity but grants nothing for scope %j', async (scope) => {
         const principal = await withScope(scope)(request('Bearer good'));
+
         expect(principal).toMatchObject({ id: 'u1', permissions: [] });
     });
 
@@ -59,10 +64,11 @@ describe('authup', () => {
 
     it.each([[undefined], ['']])('rejects a verified token with sub %j with 401', async (sub) => {
         const data = {
-            scope: 'global', 
-            permissions: PERMISSIONS, 
-            ...(sub === undefined ? {} : { sub }), 
+            scope: 'global',
+            permissions: PERMISSIONS,
+            ...(sub === undefined ? {} : { sub }),
         } as TokenVerificationData;
+
         await expect(authup({ verifier: verifierFor(data) })(request('Bearer good'))).rejects.toMatchObject({
             status: 401,
             message: 'The access token names no subject.',

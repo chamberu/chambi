@@ -38,6 +38,7 @@ describePostgres('DatabaseRunRepository legacy envelopes', () => {
 
     it('a row with trigger { source: \'github\', thread: \'x\' } and thread column \'x\' reads back channel \'github\', address \'x\'', async () => {
         const createdAt = new Date(1_000);
+
         await dataSource.getRepository(RunEntity)
             .createQueryBuilder()
             .insert()
@@ -62,9 +63,11 @@ describePostgres('DatabaseRunRepository legacy envelopes', () => {
             .execute();
 
         const columns = await dataSource.query('SELECT "thread" FROM "chamvi_runs" WHERE "id" = $1', ['legacy']);
+
         expect(columns).toEqual([{ thread: 'x' }]);
 
         const run = await store.findOne('legacy');
+
         expect(run!.address).toBe('x');
         expect(run!.trigger.channel).toBe('github');
         expect(run!.trigger.address).toBe('x');
@@ -73,6 +76,7 @@ describePostgres('DatabaseRunRepository legacy envelopes', () => {
         expect(run!.trigger).not.toHaveProperty('thread');
 
         const listed = await store.find({});
+
         expect(listed.data[0]!.trigger.channel).toBe('github');
         expect(listed.data[0]!.address).toBe('x');
     });

@@ -21,6 +21,7 @@ export function createWebhookSubscription(
     options: WebhookSubscriptionOptions = {},
 ): ChannelSubscription {
     assertConcurrencyMaxRuns(options.concurrencyMaxRuns, 'webhook.on() concurrencyMaxRuns');
+
     if (typeof path !== 'string' || !path.startsWith('/')) {
         throw new InvalidAgentDefinitionError(`Webhook path "${path}" must start with "/".`);
     }
@@ -31,8 +32,15 @@ export function createWebhookSubscription(
         ...(options.concurrencyMaxRuns !== undefined ? { concurrencyMaxRuns: options.concurrencyMaxRuns } : {}),
         options: { path, schema: options.schema },
     };
-    if (options.idempotencyKey) subscription.idempotencyKey = options.idempotencyKey;
-    if (options.concurrencyKey) subscription.concurrencyKey = options.concurrencyKey;
+
+    if (options.idempotencyKey) {
+        subscription.idempotencyKey = options.idempotencyKey;
+    }
+
+    if (options.concurrencyKey) {
+        subscription.concurrencyKey = options.concurrencyKey;
+    }
+
     return subscription;
 }
 

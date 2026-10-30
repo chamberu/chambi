@@ -18,12 +18,15 @@ import { CACHE_OPEN_TIMEOUT_MS } from './constants.ts';
 /** `CACHE_DIR` and every folder of `CACHE_ENV` with its parents under it, parents first. */
 function cacheFolders(): string[] {
     const folders = new Set<string>([CACHE_DIR]);
+
     for (const path of Object.values(CACHE_ENV)) {
         const segments = path.slice(CACHE_DIR.length + 1).split('/');
+
         for (let i = 1; i <= segments.length; i++) {
             folders.add(`${CACHE_DIR}/${segments.slice(0, i).join('/')}`);
         }
     }
+
     return [...folders];
 }
 
@@ -52,17 +55,30 @@ export const CACHE_OPEN_SCRIPT = `for d in ${[WORKSPACE_HOME, ...cacheFolders()]
  */
 export async function openCache(root: IWorkspace, user: string, signal?: AbortSignal): Promise<void> {
     let result: Awaited<ReturnType<IWorkspace['exec']>>;
+
     try {
         result = await root.exec(['sh', '-c', CACHE_OPEN_SCRIPT], { timeoutMs: CACHE_OPEN_TIMEOUT_MS, signal });
     } catch (error) {
-        if (signal?.aborted) throw abortedCreate(error);
-        if (error instanceof ChamviError) throw error;
-        throw new SandboxError(`cannot open the package cache ${CACHE_DIR} to user ${user}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+        if (signal?.aborted) {
+            throw abortedCreate(error);
+        }
+
+        if (error instanceof ChamviError) {
+            throw error;
+        }
+
+        throw new SandboxError(`cannot open the package cache ${CACHE_DIR} to user ${user}: ${Error.isError(error) ? error.message : String(error)}`, { cause: error });
     }
-    if (signal?.aborted) throw abortedCreate();
-    if (result.exitCode !== 0 || result.timedOut) {
-        const reason = result.timedOut ? `no answer within ${CACHE_OPEN_TIMEOUT_MS} ms` : `exit ${result.exitCode}`;
-        const detail = result.stderr.trim().slice(0, 500);
-        throw new SandboxError(`cannot open the package cache ${CACHE_DIR} to user ${user}: ${reason}${detail ? ` (${detail})` : ''}.`);
+
+    if (signal?.aborted) {
+        throw abortedCreate();
     }
+
+    if (result.exitCode === 0 && !result.timedOut) {
+        return;
+    }
+
+    const reason = result.timedOut ? `no answer within ${CACHE_OPEN_TIMEOUT_MS} ms` : `exit ${result.exitCode}`;
+    const detail = result.stderr.trim().slice(0, 500);
+    throw new SandboxError(`cannot open the package cache ${CACHE_DIR} to user ${user}: ${reason}${detail ? ` (${detail})` : ''}.`);
 }

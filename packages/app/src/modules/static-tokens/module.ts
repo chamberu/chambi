@@ -38,6 +38,7 @@ export class StaticTokensModule implements IModule {
     async setup(container: IContainer): Promise<void> {
         const config = container.resolve(AppToken.CONFIG);
         const tokens: StaticToken[] = this.options.tokens ?? config.tokens ?? [];
+
         if (tokens.length > 0) {
             this.contribute(container, tokens);
         }
@@ -45,11 +46,13 @@ export class StaticTokensModule implements IModule {
 
     async onReady(container: IContainer): Promise<void> {
         const config = container.resolve(AppToken.CONFIG);
+
         if (!config.dev || container.resolveAll(AppToken.AUTHENTICATORS).length > 0) {
             return;
         }
 
         const value = randomBytes(DEV_TOKEN_BYTES).toString('base64url');
+
         container.resolve(AppToken.LOGGER).warn(
             'CHAMVI_TOKENS unset: generated a dev token with every permission for this process; set CHAMVI_TOKENS to choose your own.',
             { token: value },

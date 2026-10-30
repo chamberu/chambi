@@ -31,15 +31,24 @@ import type { CodingSetup } from '../../utils/setup.ts';
 let fixture: GitFixture;
 let s: CodingSetup;
 
-beforeAll(async () => { fixture = await createFixture(); });
-afterAll(async () => { await fixture.cleanup(); });
-beforeEach(async () => { s = await setupCoding(fixture); });
-afterEach(async () => { await s.cleanup(); });
+beforeAll(async () => {
+    fixture = await createFixture();
+});
+afterAll(async () => {
+    await fixture.cleanup();
+});
+beforeEach(async () => {
+    s = await setupCoding(fixture);
+});
+afterEach(async () => {
+    await s.cleanup();
+});
 
 /** Whether the process `pid` still runs (signal 0). */
 function alive(pid: number): boolean {
     try {
         process.kill(pid, 0);
+
         return true;
     } catch {
         return false;
@@ -50,12 +59,14 @@ describe('background jobs', () => {
     it('starts a job and returns at once', async () => {
         const started = Date.now();
         const job = await s.call<BashJobResult>('bash', { command: 'echo up; sleep 30', background: true });
+
         expect(Date.now() - started).toBeLessThan(5_000);
         expect(job.job).toMatch(/^[0-9a-f]{12}$/);
         expect(job).toMatchObject({ status: 'running', outputLog: `~/.chamvi/jobs/${job.job}/output` });
 
         await vi.waitFor(async () => {
             const output = await s.call<BashOutputResult>('bash_output', { job: job.job });
+
             expect(output).toMatchObject({
                 job: job.job,
                 status: 'running',
@@ -73,8 +84,10 @@ describe('background jobs', () => {
             command: 'echo one; sleep 0.5; echo two >&2; exit 7',
             background: true,
         });
+
         await vi.waitFor(async () => {
             const done = await s.call<BashOutputResult>('bash_output', { job: job.job });
+
             expect(done.status).toBe('exited');
         }, { timeout: 5_000 });
         await expect(s.call('bash_output', { job: job.job, offset: 4 })).resolves.toEqual({
@@ -88,15 +101,19 @@ describe('background jobs', () => {
             truncated: false,
             outputCapped: false,
         });
+
         const log = await s.call<{ content: string }>('read_file', { path: job.outputLog });
+
         expect(log.content).toBe('one\ntwo');
     });
 
     it('kills a job whose output passes the log cap and keeps the output at the cap', async () => {
         const capped = await setupCoding(fixture, { outputLogMaxBytes: 1_048_576 });
+
         try {
             const job = await capped.call<BashJobResult>('bash', { command: 'echo $$ > job.pid; echo start; yes', background: true });
             const pid = await vi.waitFor(async () => Number((await readFile(join(capped.root, capped.workspace.id, 'repo', 'job.pid'), 'utf8')).trim()), { timeout: 5_000 });
+
             await vi.waitFor(async () => {
                 await expect(capped.call('bash_output', { job: job.job, offset: 1_048_576 })).resolves.toMatchObject({
                     status: 'killed',
@@ -109,6 +126,7 @@ describe('background jobs', () => {
             await expect(capped.call('bash_output', { job: job.job })).resolves.toMatchObject({ output: expect.stringMatching(/^start\ny\n/) });
 
             const quiet = await capped.call<BashJobResult>('bash', { command: 'echo done', background: true });
+
             await vi.waitFor(async () => {
                 await expect(capped.call('bash_output', { job: quiet.job })).resolves.toMatchObject({ status: 'exited', outputCapped: false });
             }, { timeout: 5_000 });
@@ -119,7 +137,9 @@ describe('background jobs', () => {
 
     it('starts in the kept working directory with the kept variables', async () => {
         await s.call<BashResult>('bash', { command: 'cd src && export WHO=job' });
+
         const job = await s.call<BashJobResult>('bash', { command: 'echo "$WHO"; ls', background: true });
+
         await vi.waitFor(async () => {
             await expect(s.call('bash_output', { job: job.job })).resolves.toMatchObject({ status: 'exited', output: 'job\na.ts\n' });
         }, { timeout: 5_000 });
@@ -132,9 +152,11 @@ describe('background jobs', () => {
         });
         const pidFile = join(s.root, s.workspace.id, 'repo', 'child.pid');
         const child = await vi.waitFor(async () => Number((await readFile(pidFile, 'utf8')).trim()), { timeout: 5_000 });
+
         expect(alive(child)).toBe(true);
 
         const killed = await s.call<BashKillResult>('bash_kill', { job: job.job });
+
         expect(killed).toMatchObject({ job: job.job, status: 'killed' });
         await vi.waitFor(() => expect(alive(child)).toBe(false), { timeout: 5_000 });
         await expect(s.call('bash_output', { job: job.job })).resolves.toMatchObject({ status: 'killed' });
@@ -142,6 +164,7 @@ describe('background jobs', () => {
 
     it('reports an exited job instead of killing it', async () => {
         const job = await s.call<BashJobResult>('bash', { command: 'exit 0', background: true });
+
         await vi.waitFor(async () => {
             await expect(s.call('bash_output', { job: job.job })).resolves.toMatchObject({ status: 'exited' });
         }, { timeout: 5_000 });
@@ -156,6 +179,7 @@ describe('background jobs', () => {
         const job = await s.call<BashJobResult>('bash', { command: 'echo $$ > job.pid; sleep 60', background: true });
         const pidFile = join(s.root, s.workspace.id, 'repo', 'job.pid');
         const pid = await vi.waitFor(async () => Number((await readFile(pidFile, 'utf8')).trim()), { timeout: 5_000 });
+
         expect(job.status).toBe('running');
         await s.workspace.dispose();
         await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 5_000 });

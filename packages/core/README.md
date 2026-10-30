@@ -71,7 +71,7 @@ Models, messages and tools stay AI SDK types: `defineAgent()` takes a `LanguageM
 npm install @chamvi/core ai --save
 ```
 
-ESM only, Node.js `>=22`. `ai@^7` (the Vercel AI SDK) is a peer dependency; add the provider package of your model as well, for example `@ai-sdk/anthropic`.
+ESM only, Node.js `>=24.3.0`. `ai@^7` (the Vercel AI SDK) is a peer dependency; add the provider package of your model as well, for example `@ai-sdk/anthropic`.
 
 ## Usage
 
@@ -106,6 +106,7 @@ export async function triageIssue(model: LanguageModel) {
                     labels.push(label);
                     // answers where the run came from, at most once per message
                     await context.channels.findOne()?.emit({ body: `Labelled as ${label}.` });
+
                     return { added: label };
                 },
             }),
@@ -121,6 +122,7 @@ export async function triageIssue(model: LanguageModel) {
             },
         })],
     });
+
     await engine.start();
 
     const { runId } = await engine.dispatch({

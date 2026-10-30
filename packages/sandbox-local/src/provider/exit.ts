@@ -19,13 +19,19 @@ let installed = false;
  * restart could never kill them. The folders stay for their runs.
  */
 export function killLingeringJobs(): void {
-    for (const holder of [...holders]) holder.killLingering();
+    for (const holder of [...holders]) {
+        holder.killLingering();
+    }
 }
 
 /** Tracks a workspace while it has background jobs; installs the one `exit` listener on first use. */
 export function trackLingering(holder: JobHolder): void {
     holders.add(holder);
-    if (installed) return;
+
+    if (installed) {
+        return;
+    }
+
     installed = true;
     process.on('exit', killLingeringJobs);
 }

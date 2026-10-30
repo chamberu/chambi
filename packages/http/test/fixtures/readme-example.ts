@@ -26,7 +26,10 @@ export async function createAgentServer(model: LanguageModel) {
     });
 
     const token = process.env.CHAMVI_TOKEN;
-    if (!token) throw new Error('Set CHAMVI_TOKEN (at least 16 characters).');
+
+    if (!token) {
+        throw new Error('Set CHAMVI_TOKEN (at least 16 characters).');
+    }
 
     const shutdown = createShutdown({ engine });
     const app = createHttpApp({

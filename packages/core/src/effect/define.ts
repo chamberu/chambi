@@ -38,6 +38,7 @@ export function defineEffectTool<I, O, S extends StateSchema = StateSchema>(def:
         ...rest
     } = def;
     const defined = defineTool<I, O, S>(rest as typeof def);
+
     return Object.assign(defined, {
         [EFFECT]: true as const,
         [EFFECT_HOOKS]: {

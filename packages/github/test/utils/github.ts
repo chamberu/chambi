@@ -20,11 +20,13 @@ export function createCommentFixture(app: Partial<GithubAppOptions> = {}) {
         slug: 'chamvi-test',
         clock,
     });
+
     fake.issues.set('octo/demo#7', {
         number: 7,
         title: 'Deploy please',
         state: 'open',
     });
+
     const gh = createGithubApp({
         appId: '123',
         privateKey: fake.privateKey,
@@ -34,6 +36,7 @@ export function createCommentFixture(app: Partial<GithubAppOptions> = {}) {
         fetch: fake.fetch,
         ...app,
     });
+
     return {
         clock,
         fake,

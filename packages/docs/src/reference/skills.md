@@ -1,6 +1,6 @@
 # @chamvi/skills
 
-Optional skill types, validation, catalogs, runtime loading and filesystem verification, including startup or setup/build preparation for explicitly selected Git skill sources. Requires Node >=22.20, with Git for source preparation; core/app retain their existing Node floor.
+Optional skill types, validation, catalogs, runtime loading and filesystem verification, including startup or setup/build preparation for explicitly selected Git skill sources. Requires Node >=24.3.0, like core/app, with Git for source preparation.
 
 ```bash
 npm install @chamvi/skills @chamvi/core

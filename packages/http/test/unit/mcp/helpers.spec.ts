@@ -24,6 +24,7 @@ function plainSchema(jsonSchema?: unknown): StandardSchemaV1 {
 describe('toJsonSchema', () => {
     it('converts a schema with a json schema converter, without $schema', () => {
         const schema = toJsonSchema(z.object({ n: z.number() }));
+
         expect(schema).toMatchObject({ type: 'object', properties: { n: { type: 'number' } } });
         expect(schema).not.toHaveProperty('$schema');
     });
@@ -42,6 +43,7 @@ describe('toJsonSchema', () => {
             }),
             output: () => ({}),
         }), '#/properties/payload');
+
         expect(schema).toEqual({
             type: 'object',
             properties: {
@@ -58,7 +60,9 @@ describe('toJsonSchema', () => {
         expect(toJsonSchema(undefined)).toEqual({});
         expect(toJsonSchema(plainSchema())).toEqual({});
         expect(toJsonSchema(plainSchema({
-            input: () => { throw new Error('unsupported'); },
+            input: () => {
+                throw new Error('unsupported');
+            },
             output: () => ({}),
         }))).toEqual({});
     });

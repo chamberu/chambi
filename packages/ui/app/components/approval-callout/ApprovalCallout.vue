@@ -40,7 +40,10 @@ const single = ref<string>();
 const options = computed(() => props.run.waiting?.options ?? []);
 const multiple = computed(() => props.run.waiting?.multiple === true);
 const chosen = computed<string[]>(() => {
-    if (multiple.value) return selected.value;
+    if (multiple.value) {
+        return selected.value;
+    }
+
     return single.value !== undefined ? [single.value] : [];
 });
 const approvable = computed(() => !props.run.waiting || canApprove(props.run.waiting, chosen.value));
@@ -61,7 +64,10 @@ const notified = computed(() => notifiedLine(props.run));
 
 const root = ref<globalThis.HTMLElement>();
 async function reveal(): Promise<void> {
-    if (!props.highlight) return;
+    if (!props.highlight) {
+        return;
+    }
+
     await nextTick();
     root.value?.scrollIntoView({ block: 'center' });
     root.value?.focus({ preventScroll: true });

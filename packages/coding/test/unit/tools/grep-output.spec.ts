@@ -27,6 +27,7 @@ const WARNING = './big.txt: WARNING: stopped searching binary file after match (
 describe('grep output', () => {
     it('skips a ripgrep warning line between records', () => {
         const output = `./big.txt\x001:needle a\n${WARNING}\n./b.txt\x002:needle b\n`;
+
         expect(parseMatches(output).matches).toEqual([
             {
                 path: 'big.txt',
@@ -43,6 +44,7 @@ describe('grep output', () => {
 
     it('skips a line that holds no record and goes on with the next one', () => {
         const output = 'a.txt\x00x:broken\nb.txt\x003\x00needle\n';
+
         expect(parseMatches(output).matches).toEqual([{
             path: 'b.txt',
             line: 3,

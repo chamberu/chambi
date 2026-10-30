@@ -76,6 +76,7 @@ function toolContext(runId: string): ToolContext {
 function caller(tools: () => ToolSet, runId: string) {
     return async <T>(name: string, input: unknown): Promise<T> => {
         const execute = tools()[name]?.execute as (i: unknown, o: unknown) => Promise<unknown>;
+
         return await execute(input, {
             toolCallId: 'call-1',
             messages: [],
@@ -90,6 +91,7 @@ function caller(tools: () => ToolSet, runId: string) {
  */
 async function tearEnv(call: ReturnType<typeof caller>): Promise<void> {
     const job = await call<BashJobResult>('bash', { command: 'printf \'export TORN="ab\' > "$HOME/.chamvi/shell/env"', background: true });
+
     await vi.waitFor(async () => {
         await expect(call('bash_output', { job: job.job })).resolves.toMatchObject({ status: 'exited', exitCode: 0 });
     }, { timeout: 5_000 });
@@ -108,9 +110,11 @@ async function expectLeaverCapped(call: ReturnType<typeof caller>): Promise<void
     const line = 'x'.repeat(64);
     const result = await call<BashResult>('bash', { command: `echo started; (while :; do echo ${line}; done) &` });
     const log = result.stdoutLog.replace('~', '"$HOME"');
+
     await vi.waitFor(async () => {
         const sizes = await call<BashResult>('bash', { command: `a=$(wc -c < ${log}); sleep 1.5; b=$(wc -c < ${log}); echo $a $b` });
         const [before, after] = sizes.stdout.trim().split(' ').map(Number);
+
         expect(after).toBe(before);
         expect(after).toBeLessThanOrEqual(1_048_576);
     }, { timeout: 15_000, interval: 500 });
@@ -122,7 +126,9 @@ async function expectTimeoutKills(call: ReturnType<typeof caller>): Promise<void
         timedOut: true,
         stdout: 'before\n',
     });
-    await new Promise((resolve) => { setTimeout(resolve, 1_000); });
+    await new Promise((resolve) => {
+        setTimeout(resolve, 1_000);
+    });
     await expect(call('bash', { command: `${countProcesses('[s]leep 17')}; test -e /tmp/after && echo after` })).resolves.toMatchObject({ stdout: '0\n' });
 }
 
@@ -158,6 +164,7 @@ describeDocker('coding tools in a container', () => {
     it('keeps the state with dash as the inner shell too', async () => {
         // a bash shim that is dash: command -v bash finds /usr/local/bin first
         await call('bash', { command: 'ln -sf /bin/sh /usr/local/bin/bash' });
+
         try {
             await call('bash', { command: 'cd sub/dir && export SHELL_KIND=dash; false' });
             await expect(call('bash', { command: 'echo "$SHELL_KIND"; readlink -f /proc/$$/exe' })).resolves.toMatchObject({
@@ -182,10 +189,15 @@ describeDocker('coding tools in a container', () => {
 
     it('returns promptly when the command leaves a job running, and keeps it', async () => {
         const started = Date.now();
+
         await expect(call('bash', { command: 'sleep 31 & echo started' })).resolves.toMatchObject({ stdout: 'started\n' });
         expect(Date.now() - started).toBeLessThan(2_000);
-        await new Promise((resolve) => { setTimeout(resolve, 1_500); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 1_500);
+        });
+
         const left = await call<BashResult>('bash', { command: countProcesses('[s]leep 31') });
+
         expect(Number(left.stdout)).toBeGreaterThan(0);
     });
 
@@ -195,26 +207,28 @@ describeDocker('coding tools in a container', () => {
 
     it('stops a process the command leaves writing once its log passes the cap', async () => {
         const capped = codingTools(manager, { outputLogMaxBytes: 1_048_576 });
+
         await expectLeaverCapped(caller(() => capped, runId));
     });
 
     it('spills long output to a log read_file and grep can read', async () => {
         const result = await call<BashResult>('bash', { command: 'seq 1 20000; echo done >&2' });
+
         expect(result).toMatchObject({ stdoutTruncated: true, stderr: 'done\n' });
         expect(result.stdout.endsWith('20000\n')).toBe(true);
         await expect(call('read_file', {
-            path: result.stdoutLog, 
-            offset: 10_000, 
-            limit: 1, 
+            path: result.stdoutLog,
+            offset: 10_000,
+            limit: 1,
         })).resolves.toMatchObject({
             content: '10000',
             totalLines: 20_000,
         });
         await expect(call('grep', { pattern: '^1999[0-9]$', path: result.stdoutLog })).resolves.toMatchObject({
             matches: expect.arrayContaining([{
-                path: result.stdoutLog, 
-                line: 19_995, 
-                text: '19995', 
+                path: result.stdoutLog,
+                line: 19_995,
+                text: '19995',
             }]),
             engine: 'ripgrep',
         });
@@ -225,12 +239,16 @@ describeDocker('coding tools in a container', () => {
             command: 'sh -c \'echo $$ > /tmp/child.pid; exec sleep 60\' & echo up; wait',
             background: true,
         });
+
         await vi.waitFor(async () => {
             await expect(call('bash_output', { job: job.job })).resolves.toMatchObject({ status: 'running', output: 'up\n' });
         }, { timeout: 5_000 });
+
         const pid = await vi.waitFor(async () => {
             const read = await call<BashResult>('bash', { command: 'cat /tmp/child.pid' });
+
             expect(read.stdout).toMatch(/^\d+\n$/);
+
             return read.stdout.trim();
         }, { timeout: 5_000 });
 
@@ -239,6 +257,7 @@ describeDocker('coding tools in a container', () => {
         await expect(call<BashOutputResult>('bash_output', { job: job.job })).resolves.toMatchObject({ status: 'killed' });
 
         const quick = await call<BashJobResult>('bash', { command: 'exit 4', background: true });
+
         await vi.waitFor(async () => {
             await expect(call('bash_output', { job: quick.job })).resolves.toMatchObject({ status: 'exited', exitCode: 4 });
         }, { timeout: 5_000 });
@@ -250,10 +269,14 @@ describeDocker('coding tools in a container', () => {
                 'echo "needle dep" > node_modules/x/i.js; echo "needle ci" > .github/ci.yml; echo "needle src" > src/a.ts; ' +
                 'printf "needle%05000d\\n" 0 > src/min.js',
         });
+
         const plain = await call<GrepResult>('grep', { pattern: 'needle [a-z]+' });
+
         expect(plain.engine).toBe('ripgrep');
         expect(plain.matches.map((match) => match.path).sort()).toEqual(['.github/ci.yml', 'src/a.ts']);
+
         const all = await call<GrepResult>('grep', { pattern: 'needle', includeIgnored: true });
+
         expect(all.matches.map((match) => match.path).sort()).toEqual(['.github/ci.yml', 'node_modules/x/i.js', 'src/a.ts', 'src/min.js']);
         expect(all.matches.find((match) => match.path === 'src/min.js')?.text).toHaveLength(500);
         await expect(call('glob', { pattern: '**/*.js', includeIgnored: true })).resolves.toEqual({
@@ -265,22 +288,23 @@ describeDocker('coding tools in a container', () => {
 
     it('reads images and binary files and writes bytes', async () => {
         await call('write_file', {
-            path: 'img/logo.png', 
-            content: PNG.toString('base64'), 
-            encoding: 'base64', 
+            path: 'img/logo.png',
+            content: PNG.toString('base64'),
+            encoding: 'base64',
         });
         await expect(call('read_file', { path: 'img/logo.png' })).resolves.toMatchObject({
-            type: 'image', 
-            mediaType: 'image/png', 
-            bytes: PNG.length, 
+            type: 'image',
+            mediaType: 'image/png',
+            bytes: PNG.length,
             artifactId: `artifact-${runId}`,
         });
 
         const bytes = new Uint8Array(512 * 1024).map((_, index) => (index * 7) % 256);
+
         await call('write_file', {
-            path: 'bin/data.bin', 
-            content: Buffer.from(bytes).toString('base64'), 
-            encoding: 'base64', 
+            path: 'bin/data.bin',
+            content: Buffer.from(bytes).toString('base64'),
+            encoding: 'base64',
         });
         await expect(call('read_file', { path: 'bin/data.bin', encoding: 'base64' })).resolves.toMatchObject({
             content: Buffer.from(bytes).toString('base64'),
@@ -296,7 +320,10 @@ describeDocker('coding tools in a BusyBox image', () => {
     const call = caller(() => tools, runId);
 
     beforeAll(async () => {
-        if (offline) return;
+        if (offline) {
+            return;
+        }
+
         await buildFixtureImage(new Docker(), 'alpine-git', ALPINE_IMAGE);
         manager = createWorkspaceManager({ provider: createDockerSandbox({ ...dockerOptions, image: ALPINE_IMAGE }), gcIntervalMs: 0 });
         await manager.acquire(runId, {});
@@ -323,7 +350,9 @@ describeDocker('coding tools in a BusyBox image', () => {
             command: 'git init -q . 2>/dev/null; mkdir -p src && printf "needle one\\nx\\nneedle two\\n" > src/a.txt && ' +
                 'printf "needle%05000d\\n" 0 > src/min.js',
         });
+
         const found = await call<GrepResult>('grep', { pattern: 'needle [a-z]+' });
+
         expect(found).toEqual({
             matches: [
                 {
@@ -343,10 +372,11 @@ describeDocker('coding tools in a BusyBox image', () => {
         await expect(call<GrepResult>('grep', { pattern: 'needle0' })).resolves.toMatchObject({ matches: [{ path: 'src/min.js', line: 1 }] });
 
         const run = await call<BashResult>('bash', { command: 'printf "a\\nneedle 1\\nb\\nneedle 2"' });
+
         await expect(call('grep', {
-            pattern: 'NEEDLE', 
-            path: run.stdoutLog, 
-            ignoreCase: true, 
+            pattern: 'NEEDLE',
+            path: run.stdoutLog,
+            ignoreCase: true,
         })).resolves.toEqual({
             matches: [
                 {
@@ -370,12 +400,16 @@ describeDocker('coding tools in a BusyBox image', () => {
         for (let i = 0; i < 10; i++) {
             await expect(call('bash', { command: 'echo hi' })).resolves.toMatchObject({ stdout: 'hi\n' });
         }
+
         const job = await call<BashJobResult>('bash', { command: 'exit 0', background: true });
+
         await vi.waitFor(async () => {
             await expect(call('bash_output', { job: job.job })).resolves.toMatchObject({ status: 'exited' });
         }, { timeout: 5_000 });
+
         // field 3 of /proc/<pid>/stat is the state; the names here hold no space
         const zombies = await call<BashResult>('bash', { command: 'cat /proc/[0-9]*/stat 2>/dev/null | awk \'$3 == "Z" { print $2 }\'' });
+
         expect(zombies).toMatchObject({ exitCode: 0, stdout: '' });
     });
 

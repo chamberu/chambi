@@ -50,6 +50,7 @@ afterEach(async () => {
 
 async function envFor() {
     const port = await freePort();
+
     return {
         port,
         url: (path: string) => `http://127.0.0.1:${port}${path}`,
@@ -64,13 +65,16 @@ async function envFor() {
 function quiet() {
     const clock = new ControllableClock(new Date('2026-10-21T00:00:00Z'));
     const logger = createRecordingLogger(clock);
+
     return { logger, module: configModule({ clock, logger }) };
 }
 
 function build(modules: IModule[]) {
     const { logger, module } = quiet();
     const app = createApp({ agents: [agent], modules: [module, ...modules] });
+
     apps.push(app);
+
     return { app, logger };
 }
 
@@ -86,6 +90,7 @@ function hookModule(hook: ILifecycleHook): IModule {
 async function isFree(port: number): Promise<boolean> {
     try {
         await closeServer(await listenOn(port));
+
         return true;
     } catch {
         return false;
@@ -109,8 +114,11 @@ describe('App.stop', () => {
         const { env, port } = await envFor();
 
         const started = rejectionOf(app.start({ env }));
+
         await entered.promise;
+
         const stopped = app.stop();
+
         gate.resolve();
 
         expect(await started).toMatchObject({ code: APP_ERROR_CODE.STOPPED });
@@ -128,19 +136,25 @@ describe('App.stop', () => {
             async setup() {
                 entered.resolve();
                 await gate.promise;
+
                 throw new Error('migration 1792540800000 failed');
             },
         }]);
         const { env } = await envFor();
 
         const started = rejectionOf(app.start({ env }));
+
         await entered.promise;
+
         const stopped = app.stop();
+
         gate.resolve();
 
         expect(await started).toMatchObject({ code: APP_ERROR_CODE.STOPPED });
         await stopped;
+
         const entry = logger.entries.find((e) => e.level === 'error');
+
         expect(JSON.stringify(entry)).toContain('migration 1792540800000 failed');
     });
 
@@ -154,6 +168,7 @@ describe('App.stop', () => {
             },
         }]);
         const { env } = await envFor();
+
         await app.start({ env });
 
         const first = app.stop();
@@ -166,6 +181,7 @@ describe('App.stop', () => {
 
     it('resolves before any lifecycle', async () => {
         const { app } = build([]);
+
         await expect(app.stop()).resolves.toBeUndefined();
     });
 
@@ -189,6 +205,7 @@ describe('App.stop', () => {
             },
         ]);
         const { env } = await envFor();
+
         await app.start({ env });
 
         const error = await rejectionOf(app.stop());
@@ -203,7 +220,9 @@ describe('App.stop', () => {
     it('follows the shutdown order', async () => {
         const events: string[] = [];
         const once = (event: string) => {
-            if (!events.includes(event)) events.push(event);
+            if (!events.includes(event)) {
+                events.push(event);
+            }
         };
         const { env, url } = await envFor();
 
@@ -231,8 +250,12 @@ describe('App.stop', () => {
                         stopping: async () => {
                             if (events.length === 0) {
                                 const response = await fetch(url('/readyz'));
-                                if (response.status === 503) events.push('readyz 503');
+
+                                if (response.status === 503) {
+                                    events.push('readyz 503');
+                                }
                             }
+
                             once('purge stop hook');
                         },
                     },
@@ -246,12 +269,17 @@ describe('App.stop', () => {
             name: 'recorder',
             engineCreated: (engine: Engine) => {
                 const drain = engine.drain.bind(engine);
+
                 engine.drain = async (input) => {
                     if (!events.includes('engine drained')) {
                         // server.close() runs before the drain: the port stops accepting at once
                         const refused = await fetch(url('/healthz')).then(() => false, () => true);
-                        if (refused) once('server closed');
+
+                        if (refused) {
+                            once('server closed');
+                        }
                     }
+
                     await drain(input);
                     once('engine drained');
                 };
@@ -259,6 +287,7 @@ describe('App.stop', () => {
             drained: () => once('drained hook'),
         });
         const { app } = build([store, scheduler, recorder]);
+
         await app.start({ env });
 
         await app.stop();

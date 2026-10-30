@@ -17,6 +17,7 @@ describe('README example', () => {
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = readme.matchAll(/```typescript\n([\s\S]*?)```/g).map((m) => m[1]).toArray();
+
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
@@ -26,6 +27,7 @@ describe('README example', () => {
             agents: [],
         });
         const manager = createWorkspaces(createFakeProvider(), engine);
+
         expect(Object.keys(manager.tools()).sort()).toEqual(['create_workspace', 'dispose_workspace', 'git_fetch', 'git_pull', 'git_push', 'read_repository_instructions']);
         await expect(manager.close()).resolves.toBeUndefined();
     });

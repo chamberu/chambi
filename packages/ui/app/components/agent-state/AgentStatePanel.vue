@@ -33,19 +33,26 @@ watch(() => props.state.collections.value, (list) => {
 }, { immediate: true });
 watch(collection, (name) => {
     docOpen.value = [];
-    if (name && !props.state.docs.value[name]) void props.state.loadCollection(name);
+
+    if (name && !props.state.docs.value[name]) {
+        void props.state.loadCollection(name);
+    }
 }, { immediate: true });
 
 const docs = computed<DocEntry[]>(() => (collection.value ? props.state.docs.value[collection.value] ?? [] : []));
 const docKeys = computed(() => docColumns(docs.value));
 
 function cell(doc: DocEntry, key: string): string {
-    if (key === 'id') return doc.id;
+    if (key === 'id') {
+        return doc.id;
+    }
+
     return doc[key] === undefined ? '' : inlineJson(doc[key]);
 }
 
 function toggle(which: 'kv' | 'doc', key: string): void {
     const list = which === 'kv' ? kvOpen : docOpen;
+
     list.value = list.value.includes(key) ? list.value.filter((k) => k !== key) : [...list.value, key];
 }
 </script>

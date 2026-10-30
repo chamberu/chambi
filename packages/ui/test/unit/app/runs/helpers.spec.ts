@@ -29,20 +29,25 @@ function state(steps = [wireStep(0), wireStep(1, 'tool')]): RunDetailState {
 describe('mergeRunEvent', () => {
     it('replaces the run', () => {
         const next = mergeRunEvent(state(), { type: 'run', run: wireRun({ status: 'completed' }) });
+
         expect(next.run.status).toBe('completed');
     });
 
     it('inserts a step by index and ignores a step it already has', () => {
         const base = state([wireStep(0), wireStep(2, 'tool')]);
         const inserted = mergeRunEvent(base, { type: 'step', step: wireStep(1, 'tool') });
+
         expect(inserted.steps.map((s) => s.index)).toEqual([0, 1, 2]);
+
         const again = mergeRunEvent(inserted, { type: 'step', step: wireStep(1, 'tool', { name: 'other' }) });
+
         expect(again).toBe(inserted);
     });
 
     it('appends deltas and drops them when their step lands', () => {
         // two llm steps landed (model steps 0 and 1), model step 2 is live
         let s = state([wireStep(0), wireStep(1, 'tool'), wireStep(2)]);
+
         s = mergeRunEvent(s, {
             type: 'delta',
             step: 2,
@@ -73,6 +78,7 @@ describe('mergeRunEvent', () => {
             kind: 'text',
             text: 'late',
         });
+
         expect(s.live).toEqual({});
     });
 
@@ -83,6 +89,7 @@ describe('mergeRunEvent', () => {
             kind: 'text',
             text: 'x',
         });
+
         s = mergeRunEvent(s, { type: 'run', run: wireRun({ status: 'failed' }) });
         expect(s.live).toEqual({});
     });
@@ -101,6 +108,7 @@ describe('canCancel', () => {
             expect(canCancel(wireRun({ status }), ['run:cancel']), status).toBe(true);
             expect(canCancel(wireRun({ status }), ['run:read']), status).toBe(false);
         }
+
         for (const status of ['completed', 'failed', 'cancelled'] as const) {
             expect(canCancel(wireRun({ status }), ['*']), status).toBe(false);
         }
@@ -152,6 +160,7 @@ describe('parentOf', () => {
                 },
             },
         });
+
         expect(parentOf(run)).toEqual({ runId: 'p1', label: 'handed off from' });
     });
 
@@ -162,6 +171,7 @@ describe('parentOf', () => {
     it('is undefined for a kind it does not know', () => {
         const base = wireRun();
         const run = wireRun({ trigger: { ...base.trigger, parent: { kind: 'other', runId: 'p1' } as never } });
+
         expect(parentOf(run)).toBeUndefined();
     });
 });

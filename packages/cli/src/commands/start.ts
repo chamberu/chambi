@@ -59,6 +59,7 @@ export function createStartCommand(context: CliContext): CommandDef<typeof START
         args: START_ARGS,
         async run({ args }) {
             assertKnownArgs(args, START_ARGS);
+
             const dev = args.dev === true;
             const check = args.check === true;
             const { env } = context;
@@ -67,18 +68,21 @@ export function createStartCommand(context: CliContext): CommandDef<typeof START
                 // before the entry import: module factories read env when called
                 await loadDotEnv(env, path.join(context.cwd, DOTENV_FILE));
             }
+
             const forceExitMs = envInteger(env, FORCE_EXIT_VARIABLE, {
                 default: dev ? DEV_FORCE_EXIT_MS : FORCE_EXIT_MS,
                 max: TIMER_MAX_MS,
             });
 
             (nodeModule as { setSourceMapsSupport?: (enabled: boolean) => void }).setSourceMapsSupport?.(true);
+
             const entry = await resolveEntry({
                 cwd: context.cwd,
                 entry: args.entry,
                 kind: dev ? 'source' : 'built',
             });
             const app = await loadEntryApp(entry, context);
+
             if (check && typeof app.check !== 'function') {
                 throw createUsageError('The app comes from another @chamvi/app copy without check(); install one @chamvi/app version.');
             }
@@ -92,10 +96,13 @@ export function createStartCommand(context: CliContext): CommandDef<typeof START
                 exit: context.exit,
                 stderr: context.stderr,
             });
+
             if (check) {
                 await runCheck(context, app.check({ dev, env }), handlers);
+
                 return;
             }
+
             if (dev && env[DEV_LINK_VARIABLE] === '1') {
                 context.linkToParent();
             }
@@ -107,7 +114,9 @@ export function createStartCommand(context: CliContext): CommandDef<typeof START
                     // stopped mid-setup: the handler sets the exit code
                     return;
                 }
+
                 handlers.dispose();
+
                 throw error;
             }
         },
@@ -122,17 +131,26 @@ async function runCheck(
 ): Promise<void> {
     try {
         const { issues } = await checked;
+
         if (issues.length === 0) {
             context.stdout(`${CHECK_PASSED_MESSAGE}\n`);
         } else {
-            for (const issue of issues) context.stderr(`${issue.message}\n`);
+            for (const issue of issues) {
+                context.stderr(`${issue.message}\n`);
+            }
+
             context.setExitCode(EXIT_CODE.USAGE);
         }
     } catch (error) {
         // stopped mid-check: the handler sets the exit code
-        if (handlers.signalled) return;
+        if (handlers.signalled) {
+            return;
+        }
+
         throw error;
     } finally {
-        if (!handlers.signalled) handlers.dispose();
+        if (!handlers.signalled) {
+            handlers.dispose();
+        }
     }
 }

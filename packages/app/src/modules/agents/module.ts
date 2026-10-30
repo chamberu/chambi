@@ -54,21 +54,26 @@ export class AgentsModule implements IModule {
 
     async setup(container: IContainer): Promise<void> {
         const context = container.resolve(AppToken.CONTEXT);
+
         if (context.mode === 'migrate') {
             return;
         }
 
         const { dir } = container.resolve(AppToken.CONFIG).agents;
+
         // a dir named explicitly must exist, checked in onReady
         this.root = await resolveAgentsRoot(dir, process.cwd());
+
         if (this.root === undefined) {
             if (context.agents.length === 0) {
                 container.resolve(AppToken.LOGGER).warn(NO_AGENTS_MESSAGE);
             }
+
             return;
         }
 
         container.register(AppToken.AGENT_ISSUES, { useValue: () => this.watcher?.issues() ?? [] });
+
         if (context.mode === 'start' && !context.check) {
             container.registerMany(AppToken.LIFECYCLE_HOOKS, {
                 useValue: {
@@ -84,6 +89,7 @@ export class AgentsModule implements IModule {
         const context = container.resolve(AppToken.CONTEXT);
         const config = container.resolve(AppToken.CONFIG);
         const { root } = this;
+
         if (context.mode === 'migrate') {
             return;
         }
@@ -91,7 +97,10 @@ export class AgentsModule implements IModule {
         if (context.check) {
             // a start runs these on code agents in engine.start() (the cron channel), which a check never calls
             const check = createAgentCheck(container);
-            for (const agent of context.agents) check(agent);
+
+            for (const agent of context.agents) {
+                check(agent);
+            }
         }
 
         if (root === undefined) {
@@ -104,6 +113,7 @@ export class AgentsModule implements IModule {
 
         const engine = container.resolve(AppToken.ENGINE);
         const logger = container.resolve(AppToken.LOGGER);
+
         if (!context.check) {
             // before the boot: a folder changed while the app was down is logged too
             this.unsubscribe = engine.on('agents.cancelled', (event) => {
@@ -116,8 +126,13 @@ export class AgentsModule implements IModule {
         }
 
         let role: AgentsWatcherRole = 'start';
-        if (context.check) role = 'check';
-        else if (context.mode === 'job') role = 'job';
+
+        if (context.check) {
+            role = 'check';
+        } else if (context.mode === 'job') {
+            role = 'job';
+        }
+
         const watcher = createAgentsWatcher({
             root,
             engine,
@@ -129,9 +144,12 @@ export class AgentsModule implements IModule {
             signal: context.signal,
             role,
         });
+
         this.watcher = watcher;
         await watcher.boot();
+
         const conflict = context.job ? watcher.conflict(context.job.agent) : undefined;
+
         if (conflict !== undefined) {
             throw new InvalidRunStateError(conflict);
         }
@@ -153,8 +171,11 @@ export class AgentsModule implements IModule {
 /** Every module's `AGENT_CHECKS` contribution (the model is checked by `putAgent`, which refuses before any store write). */
 function createAgentCheck(container: IContainer): AgentCheck {
     const checks = container.resolveAll(AppToken.AGENT_CHECKS);
+
     return (agent) => {
-        for (const check of checks) check(agent);
+        for (const check of checks) {
+            check(agent);
+        }
     };
 }
 

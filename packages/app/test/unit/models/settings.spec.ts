@@ -38,7 +38,9 @@ describe('readModelSettings', () => {
 
     async function writeConfig(content: unknown, name = 'chamvi.json'): Promise<string> {
         const path = join(cwd, name);
+
         await writeFile(path, typeof content === 'string' ? content : JSON.stringify(content));
+
         return path;
     }
 
@@ -58,25 +60,31 @@ describe('readModelSettings', () => {
     describe('default model', () => {
         it('takes the code default', async () => {
             const { settings, issues } = await read({ model: 'a/m1' });
+
             expect(issues).toEqual([]);
             expect(settings.model).toEqual({ ref: 'a/m1', source: 'code' });
         });
 
         it('lets the file override code', async () => {
             await writeConfig({ model: 'a/m2' });
+
             const { settings } = await read({ model: 'a/m1' });
+
             expect(settings.model).toEqual({ ref: 'a/m2', source: 'file' });
             expect(settings.configFile).toBe(join(cwd, 'chamvi.json'));
         });
 
         it('lets CHAMVI_MODEL override file and code', async () => {
             await writeConfig({ model: 'a/m2' });
+
             const { settings } = await read({ model: 'a/m1', env: { CHAMVI_MODEL: 'a/m3' } });
+
             expect(settings.model).toEqual({ ref: 'a/m3', source: 'env' });
         });
 
         it('has none without any source', async () => {
             const { settings } = await read();
+
             expect(settings.model).toBeUndefined();
             expect(settings.configFile).toBeUndefined();
         });
@@ -88,8 +96,11 @@ describe('readModelSettings', () => {
                 providers: { router: { type: 'openai-compatible', baseURL: 'http://router:20128/v1' } },
                 env: { CHAMVI_PROVIDER_ROUTER_API_KEY: 'sk-router' },
             });
+
             expect(issues).toEqual([]);
+
             const router = settings.providers.get('router');
+
             expect(router).toEqual({
                 name: 'router',
                 type: 'openai-compatible',
@@ -116,8 +127,11 @@ describe('readModelSettings', () => {
                 },
                 env: { CHAMVI_PROVIDER_P_TYPE: 'anthropic', CHAMVI_PROVIDER_P_API_KEY: 'sk-env' },
             });
+
             expect(issues).toEqual([]);
+
             const p = settings.providers.get('p');
+
             expect(p?.type).toBe('anthropic');
             expect(p?.apiKey).toBe('sk-env');
             expect(p?.baseURL).toBeUndefined();
@@ -133,15 +147,20 @@ describe('readModelSettings', () => {
                 providers: { p: { type: 'anthropic', apiKey: 'sk-code' } },
                 env: { CHAMVI_PROVIDER_P_TYPE: 'openai-compatible', CHAMVI_PROVIDER_P_BASE_URL: 'http://x:1/v1' },
             });
+
             expect(issues).toEqual([]);
             expect(settings.providers.get('p')?.apiKey).toBeUndefined();
         });
 
         it('keeps the lower fields when a higher source repeats the type', async () => {
             await writeConfig({ providers: { p: { type: 'anthropic', baseURL: 'https://proxy.example/v1' } } });
+
             const { settings, issues } = await read({ providers: { p: { type: 'anthropic', apiKey: 'sk-code' } } });
+
             expect(issues).toEqual([]);
+
             const p = settings.providers.get('p');
+
             expect(p?.apiKey).toBe('sk-code');
             expect(p?.baseURL).toBe('https://proxy.example/v1');
             expect(p?.sources).toEqual({
@@ -163,8 +182,11 @@ describe('readModelSettings', () => {
                 },
                 env: { CHAMVI_PROVIDER_R_HEADER_X_TEAM: 'b', OTHER: 'o' },
             });
+
             expect(issues).toEqual([]);
+
             const r = settings.providers.get('r');
+
             expect(r?.headers).toEqual({ 'x-team': 'b', 'x-other': 'o' });
             expect(r?.sources.headers).toEqual({ 'x-team': 'env', 'x-other': 'code' });
         });
@@ -178,6 +200,7 @@ describe('readModelSettings', () => {
                     CHAMVI_PROVIDER_TEAM_A_API_KEY: 'sk-a',
                 },
             });
+
             expect(issues).toEqual([]);
             expect(settings.providers.get('team-a')).toMatchObject({
                 name: 'team-a',
@@ -189,6 +212,7 @@ describe('readModelSettings', () => {
 
         it('refuses a variable of a provider no source declares', async () => {
             const { settings, issues } = await read({ env: { CHAMVI_PROVIDER_ROUTR_API_KEY: 'sk-secret-value' } });
+
             expect(issues).toEqual([{
                 provider: 'routr',
                 message: 'CHAMVI_PROVIDER_ROUTR_API_KEY names provider "routr", which no source declares; ' +
@@ -205,6 +229,7 @@ describe('readModelSettings', () => {
                 },
                 env: { CHAMVI_PROVIDER_A_HEADER_API_KEY: 'sk-ah' },
             });
+
             expect(issues).toEqual([]);
             expect(settings.providers.get('a-header')?.apiKey).toBe('sk-ah');
             expect(settings.providers.get('a')?.apiKey).toBeUndefined();
@@ -216,6 +241,7 @@ describe('readModelSettings', () => {
                 providers: { a: { type: 'openai-compatible', baseURL: 'http://a:1/v1' } },
                 env: { CHAMVI_PROVIDER_A_HEADER_X_TYPE: 'v' },
             });
+
             expect(issues).toEqual([]);
             expect(settings.providers.get('a')?.headers).toEqual({ 'x-type': 'v' });
             expect(settings.providers.has('a-header-x')).toBe(false);
@@ -229,6 +255,7 @@ describe('readModelSettings', () => {
                     CHAMVI_PROVIDER_ROUTER_HEADER_X_TEAM: 'a',
                 },
             });
+
             expect(issues).toEqual([]);
             expect(settings.providers.get('router')).toMatchObject({
                 baseURL: 'http://9router:20128/v1',
@@ -239,6 +266,7 @@ describe('readModelSettings', () => {
 
         it('refuses an unknown type without echoing it', async () => {
             const { issues } = await read({ env: { CHAMVI_PROVIDER_X_TYPE: 'nope-type' } });
+
             expect(issues).toHaveLength(1);
             expect(issues[0]?.provider).toBe('x');
             expect(issues[0]?.message).toContain('CHAMVI_PROVIDER_X_TYPE');
@@ -252,6 +280,7 @@ describe('readModelSettings', () => {
                     CHAMVI_PROVIDER_R_BASE_URL: 'http://user:pw@x/v1',
                 },
             });
+
             expect(issues).toHaveLength(1);
             expect(issues[0]?.message).toContain('CHAMVI_PROVIDER_R_BASE_URL');
             expect(JSON.stringify(issues)).not.toContain('pw@');
@@ -260,6 +289,7 @@ describe('readModelSettings', () => {
 
         it('treats an empty variable as unset', async () => {
             const { issues, settings } = await read({ env: { CHAMVI_PROVIDER_ROUTR_API_KEY: '' } });
+
             expect(issues).toEqual([]);
             expect(settings.providers.size).toBe(0);
         });
@@ -273,6 +303,7 @@ describe('readModelSettings', () => {
                     ANTHROPIC_BASE_URL: 'https://proxy.example/v1',
                 },
             });
+
             expect(issues).toEqual([]);
             expect(settings.providers.get('anthropic')).toEqual({
                 name: 'anthropic',
@@ -291,14 +322,18 @@ describe('readModelSettings', () => {
 
         it('creates nothing from AI_GATEWAY_API_KEY', async () => {
             const { settings } = await read({ env: { AI_GATEWAY_API_KEY: 'gw' } });
+
             expect(settings.providers.size).toBe(0);
         });
 
         it('creates nothing from a key only in process.env', async () => {
             const previous = process.env.ANTHROPIC_API_KEY;
+
             process.env.ANTHROPIC_API_KEY = 'sk-process';
+
             try {
                 const { settings } = await read({ env: {} });
+
                 expect(settings.providers.size).toBe(0);
             } finally {
                 if (previous === undefined) {
@@ -314,8 +349,11 @@ describe('readModelSettings', () => {
                 providers: { openai: { type: 'openai', apiKey: 'sk-code' } },
                 env: { OPENAI_API_KEY: 'sk-bare', OPENAI_BASE_URL: 'https://bare.example/v1' },
             });
+
             expect(issues).toEqual([]);
+
             const openai = settings.providers.get('openai');
+
             expect(openai?.apiKey).toBe('sk-code');
             expect(openai?.baseURL).toBeUndefined();
             expect(openai?.sources.type).toBe('code');
@@ -325,6 +363,7 @@ describe('readModelSettings', () => {
     describe('requirements', () => {
         it('needs an apiKey for a key-bearing type', async () => {
             const { settings, issues } = await read({ env: { CHAMVI_PROVIDER_TEAM_A_TYPE: 'anthropic' } });
+
             expect(issues).toEqual([{
                 provider: 'team-a',
                 message: 'Provider "team-a" (anthropic) needs CHAMVI_PROVIDER_TEAM_A_API_KEY.',
@@ -334,12 +373,14 @@ describe('readModelSettings', () => {
 
         it('allows a keyless openai-compatible provider', async () => {
             const { settings, issues } = await read({ providers: { local: { type: 'openai-compatible', baseURL: 'http://ollama:11434/v1' } } });
+
             expect(issues).toEqual([]);
             expect(settings.providers.get('local')?.apiKey).toBeUndefined();
         });
 
         it('needs a baseURL for openai-compatible', async () => {
             const { issues } = await read({ providers: { local: { type: 'openai-compatible' } } });
+
             expect(issues).toHaveLength(1);
             expect(issues[0]?.provider).toBe('local');
             expect(issues[0]?.message).toContain('CHAMVI_PROVIDER_LOCAL_BASE_URL');
@@ -352,6 +393,7 @@ describe('readModelSettings', () => {
                     ok: { type: 'anthropic', apiKey: 'sk-ok' },
                 },
             });
+
             expect(issues).toHaveLength(1);
             expect(issues[0]?.provider).toBe('team-a');
             expect(issues[0]?.message).toContain('TEAM_A_KEY');
@@ -364,6 +406,7 @@ describe('readModelSettings', () => {
                 providers: { a: { type: 'anthropic' }, b: { type: 'openai' } },
                 env: { CHAMVI_PROVIDER_ROUTR_API_KEY: 'x' },
             });
+
             expect(issues.map((issue) => issue.provider).sort()).toEqual(['a', 'b', 'routr']);
         });
 
@@ -374,6 +417,7 @@ describe('readModelSettings', () => {
                     x: { type: 'nope' as never, apiKey: 'k' },
                 },
             });
+
             expect(issues).toHaveLength(2);
             expect(settings.providers.size).toBe(0);
         });
@@ -383,7 +427,9 @@ describe('readModelSettings', () => {
         it('reads CHAMVI_CONFIG_FILE relative to cwd', async () => {
             await mkdir(join(cwd, 'conf'));
             await writeConfig({ providers: { r: { type: 'openai-compatible', baseURL: 'http://r:1/v1' } } }, 'conf/c.json');
+
             const { settings, issues } = await read({ env: { CHAMVI_CONFIG_FILE: 'conf/c.json' } });
+
             expect(issues).toEqual([]);
             expect(settings.configFile).toBe(join(cwd, 'conf/c.json'));
             expect(settings.providers.get('r')?.sources.type).toBe('file');
@@ -391,20 +437,25 @@ describe('readModelSettings', () => {
 
         it('reports a named missing file', async () => {
             const { issues } = await read({ env: { CHAMVI_CONFIG_FILE: join(cwd, 'missing.json') } });
+
             expect(issues).toHaveLength(1);
             expect(issues[0]?.message).toContain('CHAMVI_CONFIG_FILE');
         });
 
         it('reports bad JSON', async () => {
             await writeConfig('{ "model": ');
+
             const { issues } = await read();
+
             expect(issues).toHaveLength(1);
             expect(issues[0]?.message).toContain('chamvi.json');
         });
 
         it('reports a bad shape', async () => {
             await writeConfig({ model: 42 });
+
             const { issues } = await read();
+
             expect(issues).toHaveLength(1);
             expect(issues[0]?.message).toContain('model');
         });
@@ -412,14 +463,18 @@ describe('readModelSettings', () => {
         it('reads { file } secrets relative to cwd', async () => {
             await writeFile(join(cwd, 'key.txt'), 'sk-from-file\n');
             await writeConfig({ providers: { a: { type: 'anthropic', apiKey: { file: 'key.txt' } } } });
+
             const { settings, issues } = await read();
+
             expect(issues).toEqual([]);
             expect(settings.providers.get('a')?.apiKey).toBe('sk-from-file');
         });
 
         it('ignores remotes', async () => {
             await writeConfig({ remotes: { other: { url: 'https://x' } } });
+
             const { issues } = await read();
+
             expect(issues).toEqual([]);
         });
     });
@@ -434,6 +489,7 @@ describe('readModelSettings', () => {
                 },
             },
         });
+
         const { issues } = await read({
             providers: {
                 c: {
@@ -447,8 +503,11 @@ describe('readModelSettings', () => {
                 CHAMVI_PROVIDER_Q_TYPE: 'secret-type',
             },
         });
+
         expect(issues.length).toBeGreaterThan(0);
+
         const text = JSON.stringify(issues);
+
         for (const value of ['sk-literal-secret', 'pw-secret', 'sk-env-secret', 'secret-type']) {
             expect(text).not.toContain(value);
         }
@@ -468,7 +527,9 @@ describe('readConfigFile', () => {
 
     async function file(content: unknown): Promise<string> {
         const path = join(cwd, 'chamvi.json');
+
         await writeFile(path, JSON.stringify(content));
+
         return path;
     }
 
@@ -484,6 +545,7 @@ describe('readConfigFile', () => {
                 },
             },
         });
+
         await expect(readConfigFile(path)).resolves.toEqual({
             model: 'router/cc/m',
             providers: {
@@ -508,6 +570,7 @@ describe('readConfigFile', () => {
             },
         });
         const promise = readConfigFile(path);
+
         await expect(promise).rejects.toThrow(InvalidAgentDefinitionError);
         await expect(promise).rejects.toThrow(
             'chamvi.json: providers.router.apiKey must be { "env": "<VAR>" } or { "file": "<path>" }, not a literal.',
@@ -524,6 +587,7 @@ describe('readConfigFile', () => {
                 },
             },
         });
+
         await expect(readConfigFile(path)).rejects.toThrow(
             'chamvi.json: providers.r.headers.Authorization must be { "env": "<VAR>" } or { "file": "<path>" }, not a literal.',
         );
@@ -531,26 +595,31 @@ describe('readConfigFile', () => {
 
     it('refuses an unknown type', async () => {
         const path = await file({ providers: { r: { type: 'nope' } } });
+
         await expect(readConfigFile(path)).rejects.toThrow(/providers\.r\.type/);
     });
 
     it('refuses a bad provider name', async () => {
         const path = await file({ providers: { Router_1: { type: 'anthropic', apiKey: { env: 'K' } } } });
+
         await expect(readConfigFile(path)).rejects.toThrow(/providers\.Router_1/);
     });
 
     it('refuses an unknown provider field', async () => {
         const path = await file({ providers: { r: { type: 'openai-compatible', baseUrl: 'http://r:1/v1' } } });
+
         await expect(readConfigFile(path)).rejects.toThrow(/providers\.r\.baseUrl/);
     });
 
     it('refuses a bad base URL naming the field', async () => {
         const path = await file({ providers: { r: { type: 'openai-compatible', baseURL: 'ftp://r/v1' } } });
+
         await expect(readConfigFile(path)).rejects.toThrow(/providers\.r\.baseURL/);
     });
 
     it('returns empty providers for an empty object', async () => {
         const path = await file({});
+
         await expect(readConfigFile(path)).resolves.toEqual({ providers: {} });
     });
 });

@@ -23,6 +23,7 @@ import {
 
 vi.mock('skills', async (importOriginal) => {
     const sdk = await importOriginal<typeof SkillsSDK>();
+
     // Delegate to the real SDK while observing the boundary before it reads source files.
     return { ...sdk, discoverSkills: vi.fn(sdk.discoverSkills) };
 });
@@ -47,9 +48,13 @@ it.each(['nested alias', 'conventional container', 'unrelated link'] as const)(
             'README.md': 'DUMMY SOURCE README\n',
             'notes\n120000 fake-link': 'DUMMY REGULAR FILE\n',
         });
+
         fixtures.push(fixture);
+
         const root = await fs.mkdtemp(join(tmpdir(), 'chamvi-confinement-'));
+
         roots.push(root);
+
         const options = {
             source: fixture.path,
             revision: fixture.commit,
@@ -58,10 +63,13 @@ it.each(['nested alias', 'conventional container', 'unrelated link'] as const)(
         };
         const [previous] = await prepareSkills(options);
         const outside = join(root, 'outside');
+
         await fs.mkdir(outside);
         await fs.writeFile(join(outside, 'outside.txt'), 'DUMMY OUTSIDE FILE\n');
+
         if (route === 'nested alias') {
             const skill = join(fixture.path, 'skills/audit');
+
             await fs.mkdir(join(skill, 'real'));
             await fs.symlink(join(outside, 'outside.txt'), join(skill, 'real/external.txt'));
             await fs.symlink('real', join(skill, 'alias'));
@@ -73,9 +81,12 @@ it.each(['nested alias', 'conventional container', 'unrelated link'] as const)(
         } else {
             await fs.symlink('README.md', join(fixture.path, 'unselected-link'));
         }
+
         await fixture.git('add', '--all');
         await fixture.git('commit', '-m', 'source links');
+
         const revision = (await fixture.git('rev-parse', 'HEAD')).trim();
+
         vi.mocked(discoverSkills).mockClear();
 
         await expect(prepareSkills({ ...options, revision })).rejects.toThrow(InvalidAgentDefinitionError);

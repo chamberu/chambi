@@ -15,22 +15,36 @@ export type SseEvent = {
 export function parseSse(text: string): SseEvent[] {
     const events: SseEvent[] = [];
     const blocks = text.split('\n\n');
+
     blocks.pop();
+
     for (const block of blocks) {
         const message: SseEvent = { event: 'message', data: '' };
         const data: string[] = [];
+
         for (const line of block.split('\n')) {
             const index = line.indexOf(':');
-            if (index === 0) continue;
+
+            if (index === 0) {
+                continue;
+            }
+
             const field = index === -1 ? line : line.slice(0, index);
             const value = index === -1 ? '' : line.slice(index + 1).replace(/^ /, '');
-            if (field === 'event') message.event = value;
-            else if (field === 'id') message.id = value;
-            else if (field === 'data') data.push(value);
+
+            if (field === 'event') {
+                message.event = value;
+            } else if (field === 'id') {
+                message.id = value;
+            } else if (field === 'data') {
+                data.push(value);
+            }
         }
+
         message.data = data.join('\n');
         events.push(message);
     }
+
     return events;
 }
 
@@ -47,7 +61,10 @@ export class SseReader {
     protected readonly decoder = new TextDecoder();
 
     constructor(response: Response) {
-        if (!response.body) throw new Error('the response has no body');
+        if (!response.body) {
+            throw new Error('the response has no body');
+        }
+
         this.reader = response.body.getReader();
     }
 
@@ -59,11 +76,18 @@ export class SseReader {
     async next(count: number): Promise<SseEvent[]> {
         while (!this.done && this.pending().length < count) {
             const { done, value } = await this.reader.read();
-            if (done) this.done = true;
-            else this.text += this.decoder.decode(value, { stream: true });
+
+            if (done) {
+                this.done = true;
+            } else {
+                this.text += this.decoder.decode(value, { stream: true });
+            }
         }
+
         const events = this.pending().slice(0, count);
+
         this.consumed += events.length;
+
         return events;
     }
 

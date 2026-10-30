@@ -44,6 +44,7 @@ export function useAgents(client: IApiClient) {
             error.value = asApiError(e);
         }
     })();
+
     return {
         agents,
         error,
@@ -86,19 +87,23 @@ export function useAgentRollups(client: IApiClient) {
                     offset: 0,
                 }),
             ]);
+
             agents.value = list.data;
             issues.value = list.issues;
             schedules.value = crons;
             rollups.value = buildRollups(list.data, crons, recent, active, Date.now());
             error.value = undefined;
+
             return undefined;
         } catch (e) {
             error.value = asApiError(e);
+
             return retryDelayOf(error.value);
         } finally {
             loaded.value = true;
         }
     }, AGENTS_POLL_MS);
+
     poller.start();
     onScopeDispose(() => poller.stop());
 
@@ -134,14 +139,15 @@ export function useAgentDetail(client: IApiClient, name: Ref<string>) {
     const poller = createPoller(async () => {
         const current = generation;
         const agentName = name.value;
+
         try {
             const [list, crons, recent, runningTotal, waiting] = await Promise.all([
                 client.listAgents(),
                 client.listSchedules(),
                 client.listRuns({
-                    agent: agentName, 
-                    limit: ACTIVITY_LIMIT, 
-                    offset: 0, 
+                    agent: agentName,
+                    limit: ACTIVITY_LIMIT,
+                    offset: 0,
                 }),
                 totalOf(client, agentName, 'running'),
                 client.listRuns({
@@ -151,7 +157,11 @@ export function useAgentDetail(client: IApiClient, name: Ref<string>) {
                     offset: 0,
                 }),
             ]);
-            if (current !== generation) return undefined;
+
+            if (current !== generation) {
+                return undefined;
+            }
+
             agent.value = list.data.find((a) => a.name === agentName);
             schedules.value = crons.filter((s) => s.agent === agentName);
             runs.value = recent.data;
@@ -161,13 +171,20 @@ export function useAgentDetail(client: IApiClient, name: Ref<string>) {
             waitingTotal.value = waiting.meta.total;
             activity.value = summarizeActivity(recent.data, Date.now(), ACTIVITY_LIMIT);
             error.value = undefined;
+
             return undefined;
         } catch (e) {
-            if (current !== generation) return undefined;
+            if (current !== generation) {
+                return undefined;
+            }
+
             error.value = asApiError(e);
+
             return retryDelayOf(error.value);
         } finally {
-            if (current === generation) loaded.value = true;
+            if (current === generation) {
+                loaded.value = true;
+            }
         }
     }, AGENTS_POLL_MS);
 
@@ -204,7 +221,9 @@ export function useAgentDetail(client: IApiClient, name: Ref<string>) {
         refresh: () => poller.refresh(),
         async start(payload: unknown, idempotencyKey?: string): Promise<StartRunResult> {
             const result = await client.startRun(name.value, idempotencyKey === undefined ? { payload } : { payload, idempotencyKey });
+
             await poller.refresh();
+
             return result;
         },
     };

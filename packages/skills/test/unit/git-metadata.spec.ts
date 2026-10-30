@@ -36,23 +36,32 @@ vi.mock('node:child_process', async (importOriginal) => {
         value: (file: string, args: string[], options: ExecFileOptions) => {
             if (options.timeout === 30_000) {
                 deadlines.push(options.timeout);
+
                 const pending = run(file, args, { ...options, timeout: 1_000 });
-                pending.child.once('close', () => { events.push(`${args[2]}:close`); });
+
+                pending.child.once('close', () => {
+                    events.push(`${args[2]}:close`);
+                });
+
                 return pending;
             }
+
             return run(file, args, options);
         },
     });
+
     return { ...childProcess, execFile };
 });
 
 vi.mock('skills', async (importOriginal) => {
     const sdk = await importOriginal<typeof SkillsSDK>();
+
     return {
         ...sdk,
         discoverSkills: vi.fn(sdk.discoverSkills),
         cleanupTempDir: async (directory: string) => {
             events.push('cleanup');
+
             return sdk.cleanupTempDir(directory);
         },
     };
@@ -75,18 +84,25 @@ afterEach(async () => {
 
 async function setup(command: string, mode: string) {
     const fixture = await createGitFixture({ 'skills/audit/SKILL.md': '---\nname: audit\ndescription: Review\n---\nBODY\n' });
+
     fixtures.push(fixture);
+
     const root = await fs.mkdtemp(join(tmpdir(), 'chamvi-metadata-test-'));
+
     roots.push(root);
+
     const options = {
         source: fixture.path,
         revision: fixture.commit,
         names: ['audit'],
         directory: join(root, 'corpus'),
     };
+
     await prepareSkills(options);
+
     const binary = execFileSync('/bin/sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
     const bin = join(root, 'bin');
+
     await fs.mkdir(bin);
     await fs.writeFile(join(bin, 'git'), `#!${process.execPath}
 const { spawnSync } = require('node:child_process');
@@ -151,6 +167,7 @@ if (command === ${JSON.stringify(command)}) {
 `, { mode: 0o755 });
     vi.stubEnv('PATH', `${bin}:${process.env.PATH}`);
     vi.mocked(discoverSkills).mockClear();
+
     return { root, options };
 }
 
@@ -161,10 +178,13 @@ it.each([
     ['ls-tree', 'stderr'],
 ])('fails closed on oversized %s %s before discovery and preserves output and cleanup', async (command, stream) => {
     const { root, options } = await setup(command, stream);
+
     await expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
     expect(discoverSkills).not.toHaveBeenCalled();
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
+
     const started = JSON.parse(await fs.readFile(join(root, 'started'), 'utf8'));
+
     expect(started).toMatchObject({
         command,
         head: options.revision,
@@ -177,10 +197,13 @@ it.each([
 
 it.each(['rev-parse', 'ls-tree'])('enforces the absolute 30 second deadline for %s despite output', async (command) => {
     const { root, options } = await setup(command, 'slow');
+
     await expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
     expect(deadlines).toContain(30_000);
     expect(discoverSkills).not.toHaveBeenCalled();
+
     const started = JSON.parse(await fs.readFile(join(root, 'started'), 'utf8'));
+
     expect(started).toMatchObject({
         command,
         head: options.revision,
@@ -195,6 +218,7 @@ it.each(['rev-parse', 'ls-tree'])('enforces the absolute 30 second deadline for 
 
 it.each(['rev-parse', 'ls-tree'])('rejects silent nonzero %s before discovery and preserves the previous corpus', async (command) => {
     const { root, options } = await setup(command, 'silent');
+
     await expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
     expect(discoverSkills).not.toHaveBeenCalled();
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
@@ -204,6 +228,7 @@ it.each(['rev-parse', 'ls-tree'])('rejects silent nonzero %s before discovery an
 it.each(['rev-parse', 'ls-tree'])('rejects external SIGTERM of %s before discovery and preserves the previous corpus', async (command) => {
     const { root, options } = await setup(command, 'signal');
     const rejected = expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
+
     try {
         // Cloning and earlier metadata commands can precede this child's ready marker under load.
         await vi.waitFor(() => expect(fs.readFile(join(root, 'pid'), 'utf8')).resolves.toMatch(/^\d+$/u), { timeout: 5_000 });
@@ -211,6 +236,7 @@ it.each(['rev-parse', 'ls-tree'])('rejects external SIGTERM of %s before discove
     } finally {
         await rejected;
     }
+
     expect(discoverSkills).not.toHaveBeenCalled();
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
     expect((await fs.readdir(root)).sort()).toEqual(['bin', 'corpus', 'pid', 'started']);
@@ -218,6 +244,7 @@ it.each(['rev-parse', 'ls-tree'])('rejects external SIGTERM of %s before discove
 
 it.each(['stdout', 'stderr'])('terminates a SIGINT-resistant %s flood before discovery', async (stream) => {
     const { root, options } = await setup('ls-tree', `resistant-${stream}`);
+
     await expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
     expect(discoverSkills).not.toHaveBeenCalled();
     expect(await fs.readFile(join(root, 'terminated'), 'utf8')).toBe('SIGTERM');
@@ -231,13 +258,18 @@ it.each(['rev-parse', 'ls-tree'])('aborts native metadata %s and joins terminati
     const controller = new AbortController();
     const reason = new Error('cancel native metadata');
     const rejected = expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toBe(reason);
+
     await vi.waitFor(() => expect(fs.readFile(join(root, 'pid'), 'utf8')).resolves.toMatch(/^\d+$/u), { timeout: 5_000 });
+
     const pid = Number(await fs.readFile(join(root, 'pid'), 'utf8'));
+
     controller.abort(reason);
     await rejected;
     expect(() => process.kill(pid, 0)).toThrow();
     expect(discoverSkills).not.toHaveBeenCalled();
+
     const started = JSON.parse(await fs.readFile(join(root, 'started'), 'utf8'));
+
     await expect(fs.stat(started.directory)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
     expect((await fs.readdir(root)).sort()).toEqual(['bin', 'corpus', 'pid', 'started']);
@@ -246,21 +278,30 @@ it.each(['rev-parse', 'ls-tree'])('aborts native metadata %s and joins terminati
 
 it.each(['rev-parse', 'ls-tree'])('joins delayed SIGTERM %s close before checkout cleanup and preparation settlement', async (command) => {
     const { root, options } = await setup(command, 'delayed-signal');
+
     events.length = 0;
+
     const controller = new AbortController();
     const reason = new Error('cancel delayed metadata');
-    const pending = prepareSkills({ ...options, signal: controller.signal }).finally(() => { events.push('settled'); });
+    const pending = prepareSkills({ ...options, signal: controller.signal }).finally(() => {
+        events.push('settled');
+    });
     const rejected = expect(pending).rejects.toBe(reason);
+
     await vi.waitFor(() => expect(fs.readFile(join(root, 'pid'), 'utf8')).resolves.toMatch(/^\d+$/u), { timeout: 5_000 });
+
     const pid = Number(await fs.readFile(join(root, 'pid'), 'utf8'));
     const started = JSON.parse(await fs.readFile(join(root, 'started'), 'utf8'));
+
     controller.abort(reason);
     await vi.waitFor(() => expect(fs.readFile(join(root, 'terminated'), 'utf8')).resolves.toBe('SIGTERM'));
+
     const duringTermination = {
         settled: events.includes('settled'),
         cleaned: events.includes('cleanup'),
         checkoutExists: await fs.stat(started.directory).then(() => true, () => false),
     };
+
     // Always join the finite fake process before asserting, including the red run.
     await vi.waitFor(() => expect(events).toContain(`${command}:close`));
     await rejected;

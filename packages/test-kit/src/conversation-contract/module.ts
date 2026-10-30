@@ -40,6 +40,7 @@ export function describeConversationRepositoryContract(
         const store = await create(clock);
         const identity = makeIdentity();
         const scope = await store.resolve(identity);
+
         return {
             clock,
             store,
@@ -55,6 +56,7 @@ export function describeConversationRepositoryContract(
                 identity,
                 scope,
             } = await setup();
+
             await expect(store.findOneOrFail(makeIdentity('missing'))).rejects.toMatchObject({ code: 'repository_not_found' });
             expect(await store.findOne(makeIdentity('missing'))).toBeUndefined();
             expect(await store.findOneOrFail(identity)).toEqual(scope);
@@ -77,12 +79,17 @@ export function describeConversationRepositoryContract(
                 scope,
                 clock,
             } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
             await store.applyNote(scope, makeSet('run-a', 'name', 'Ada', { expiresAt: new Date(clock.now().getTime() + 1_000) }));
+
             const found = await store.findOneOrFail(identity);
+
             found.identity.chat = 'changed';
             expect(await store.findOneOrFail(identity)).toEqual(scope);
+
             const note = await store.findOneNoteOrFail(scope, 'name');
+
             expect(note.text).toBe('Ada');
             note.text = 'changed';
             expect((await store.findOneNoteOrFail(scope, 'name')).text).toBe('Ada');
@@ -91,7 +98,9 @@ export function describeConversationRepositoryContract(
             clock.advance(1_000);
             await expect(store.findOneNoteOrFail(scope, 'name')).rejects.toMatchObject({ code: 'repository_not_found' });
             await store.endTurn(scope, 'run-a', []);
+
             const next = await store.reset(identity, { keepNotes: false });
+
             await expect(store.findItemsOrFail(next, { limit: 10, offset: 0 })).rejects.toMatchObject({ code: 'repository_not_found' });
             await expect(store.findNotesOrFail(scope, { limit: 10, offset: 0 })).rejects.toMatchObject({ code: 'repository_not_found' });
         });
@@ -102,6 +111,7 @@ export function describeConversationRepositoryContract(
                 identity,
                 scope,
             } = await setup();
+
             expect(scope.generation).toBe(0);
             expect(scope.id).toMatch(/^[0-9a-f]{64}$/);
             expect(scope.identity).toEqual(identity);
@@ -118,6 +128,7 @@ export function describeConversationRepositoryContract(
                 scope,
                 identity,
             } = await setup();
+
             expect(await store.activeRun(scope)).toBeUndefined();
             await store.beginTurn(scope, 'run', 'hello', LIMITS);
             expect(await store.activeRun(scope)).toBe('run');
@@ -133,22 +144,32 @@ export function describeConversationRepositoryContract(
                 scope,
                 clock,
             } = await setup();
+
             await expect(store.beginTurn(scope, 'run\ud800', 'hello', LIMITS)).rejects.toMatchObject(INVALID);
             await store.beginTurn(scope, 'run', 'hello', LIMITS);
+
             const item = makeEmit(clock, 'run', 0, 'reply');
+
             for (const changed of [
                 { ...item, id: 'bad\ud800' },
                 { ...item, effectKey: 'bad\ud800' },
                 { ...item, target: { channel: 'bad\ud800', address: 'chat' } },
-                { ...item, target: { channel: 'chat', address: 'bad\u0000' } },
+                { ...item, target: { channel: 'chat', address: 'bad\0' } },
                 { ...item, target: { channel: 'chat', address: 'bad\ud800' } },
-            ]) await expect(store.prepareEmit(scope, changed)).rejects.toMatchObject(INVALID);
+            ]) {
+                await expect(store.prepareEmit(scope, changed)).rejects.toMatchObject(INVALID);
+            }
+
             const operation = makeSet('run', 'note', 'value');
+
             for (const changed of [
                 { ...operation, id: 'bad\ud800' },
                 { ...operation, inputHash: 'bad\ud800' },
                 { ...operation, source: { ...operation.source, toolCallId: 'bad\ud800' } },
-            ]) await expect(store.applyNote(scope, changed)).rejects.toMatchObject(INVALID);
+            ]) {
+                await expect(store.applyNote(scope, changed)).rejects.toMatchObject(INVALID);
+            }
+
             expect((await store.findItems(scope, { limit: 100, offset: 0 })).total).toBe(1);
             expect((await store.findNotes(scope, { limit: 100, offset: 0 })).total).toBe(0);
         });
@@ -159,13 +180,21 @@ export function describeConversationRepositoryContract(
                 Array.from({ length: 10 }, (_, i) => store.beginTurn(scope, `run-${i}`, `hello ${i}`, LIMITS)),
             );
             const ready = results.filter((r) => r.kind === 'ready');
+
             expect(ready).toHaveLength(1);
+
             const winner = ready[0]!.kind === 'ready' ? ready[0]!.snapshot.runId : '';
+
             expect(results.filter((r) => r.kind === 'busy')).toHaveLength(9);
+
             for (const result of results) {
-                if (result.kind === 'busy') expect(result.runId).toBe(winner);
+                if (result.kind === 'busy') {
+                    expect(result.runId).toBe(winner);
+                }
             }
+
             const items = await store.findItems(scope, { limit: 100, offset: 0 });
+
             expect(items.total).toBe(1);
             expect(items.data[0]).toMatchObject({
                 id: `user:${winner}`,
@@ -180,14 +209,21 @@ export function describeConversationRepositoryContract(
                 clock,
                 scope,
             } = await setup();
+
             await completeTurn(store, clock, scope, 'run-0', 'earlier', ['reply']);
+
             const first = await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
+
             clock.advance(5000);
             await store.prepareEmit(scope, makeEmit(clock, 'run-a', 0, 'not yet sent'));
+
             const second = await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
+
             expect(first.kind).toBe('ready');
             expect(second).toEqual(first);
+
             const items = await store.findItems(scope, { limit: 100, offset: 0 });
+
             expect(items.data.filter((item) => item.id === 'user:run-a')).toHaveLength(1);
             expect(items.total).toBe(4);
         });
@@ -198,16 +234,21 @@ export function describeConversationRepositoryContract(
                 clock,
                 scope,
             } = await setup();
+
             await completeTurn(store, clock, scope, 'run-0', 'earlier', ['reply']);
+
             const first = await store.beginTurn(scope, 'run-a', 'accepted text', LIMITS);
+
             expect(first.kind).toBe('ready');
             clock.advance(5000);
+
             const stricter = {
                 ...LIMITS,
                 maxItemBytes: 4,
                 maxHistoryBytes: 4,
                 retentionMs: 1,
             };
+
             await expect(store.beginTurn(scope, 'run-a', 'accepted text', stricter)).resolves.toEqual(first);
             await store.endTurn(scope, 'run-a', []);
             await expect(store.beginTurn(scope, 'run-b', 'new oversized input', stricter)).rejects.toMatchObject(INVALID);
@@ -215,6 +256,7 @@ export function describeConversationRepositoryContract(
 
         it('ended_turn_does_not_reclaim_its_retained_input', async () => {
             const { store, scope } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
             await store.endTurn(scope, 'run-a', []);
             await expect(store.beginTurn(scope, 'run-a', 'hello', LIMITS)).rejects.toMatchObject({ code: 'invalid_run_state' });
@@ -224,9 +266,12 @@ export function describeConversationRepositoryContract(
 
         it('busy_does_not_append_input', async () => {
             const { store, scope } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'first', LIMITS);
             expect(await store.beginTurn(scope, 'run-b', 'second', LIMITS)).toEqual({ kind: 'busy', runId: 'run-a' });
+
             let items = await store.findItems(scope, { limit: 100, offset: 0 });
+
             expect(items.data.map((item) => item.id)).toEqual(['user:run-a']);
 
             await store.endTurn(scope, 'run-a', []);
@@ -243,9 +288,12 @@ export function describeConversationRepositoryContract(
                 clock,
                 scope,
             } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'first', LIMITS);
+
             const confirmed = makeEmit(clock, 'run-a', 0, 'confirmed');
             const lost = makeEmit(clock, 'run-a', 1, 'uncertain');
+
             await store.prepareEmit(scope, confirmed);
             await store.prepareEmit(scope, lost);
 
@@ -254,7 +302,9 @@ export function describeConversationRepositoryContract(
             expect((await store.pendingEmits(scope, 'run-a')).map((item) => item.id)).toEqual([confirmed.id, lost.id]);
 
             await store.endTurn(scope, 'run-a', [confirmed.id]);
+
             const items = await store.findItems(scope, { limit: 100, offset: 0 });
+
             expect(items.data.map((item) => [item.id, item.status])).toEqual([
                 ['user:run-a', 'sent'],
                 [confirmed.id, 'sent'],
@@ -266,7 +316,9 @@ export function describeConversationRepositoryContract(
             await store.endTurn(scope, 'run-a', [lost.id]);
             expect((await store.beginTurn(scope, 'run-c', 'third', LIMITS)).kind).toBe('ready');
             await store.endTurn(scope, 'run-c', [lost.id]);
+
             const after = await store.findItems(scope, { limit: 100, offset: 0 });
+
             expect(after.data.find((item) => item.id === lost.id)?.status).toBe('unknown');
         });
 
@@ -277,6 +329,7 @@ export function describeConversationRepositoryContract(
                 scope,
             } = await setup();
             const other = await store.resolve(makeIdentity('chat-1', { audience: 'group' }));
+
             expect(other.id).not.toBe(scope.id);
 
             expect((await store.beginTurn(scope, 'run-a', 'mine', LIMITS)).kind).toBe('ready');
@@ -303,13 +356,17 @@ export function describeConversationRepositoryContract(
                 const reset = () => store.reset(identity, { keepNotes: false });
                 let beginResult: PromiseSettledResult<Awaited<ReturnType<typeof begin>>>;
                 let resetResult: PromiseSettledResult<unknown>;
+
                 if (order === 'begin-first') {
                     [beginResult, resetResult] = await Promise.allSettled([begin(), reset()]);
                 } else {
                     [resetResult, beginResult] = await Promise.allSettled([reset(), begin()]);
                 }
+
                 const ready = beginResult.status === 'fulfilled' && beginResult.value.kind === 'ready';
+
                 expect(ready !== (resetResult.status === 'fulfilled')).toBe(true);
+
                 if (!ready) {
                     expect(beginResult).toMatchObject({ status: 'fulfilled', value: { kind: 'stale' } });
                 }
@@ -323,13 +380,16 @@ export function describeConversationRepositoryContract(
                 identity,
                 scope,
             } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'remember me', LIMITS);
             await store.applyNote(scope, makeSet('run-a', 'name', 'Ada'));
             await store.prepareEmit(scope, makeEmit(clock, 'run-a', 0, 'ok'));
             await store.endTurn(scope, 'run-a', ['assistant:run-a:0']);
 
             await store.delete(identity);
+
             const current = await store.findOne(identity);
+
             expect(current?.generation).toBeGreaterThan(scope.generation);
             expect(await store.resolve(identity)).toEqual(current);
 
@@ -342,6 +402,7 @@ export function describeConversationRepositoryContract(
             expect(await store.findOneNote(current!, 'name')).toBeUndefined();
 
             const ready = await store.beginTurn(current!, 'run-c', 'fresh', LIMITS);
+
             expect(ready).toMatchObject({
                 kind: 'ready',
                 snapshot: {
@@ -362,6 +423,7 @@ export function describeConversationRepositoryContract(
                 identity,
                 scope,
             } = await setup();
+
             await expect(store.reset(identity, Object.assign([], { keepNotes: true }))).rejects.toMatchObject(INVALID);
             expect(await store.findOne(identity)).toEqual(scope);
         });
@@ -372,6 +434,7 @@ export function describeConversationRepositoryContract(
                 identity,
                 scope,
             } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
             await store.applyNote(scope, makeSet('run-a', 'name', 'Ada'));
             await expect(store.reset(identity, { keepNotes: false })).rejects.toMatchObject(STATE);
@@ -380,20 +443,26 @@ export function describeConversationRepositoryContract(
             await store.endTurn(scope, 'run-a', []);
 
             const dropped = await store.reset(identity, { keepNotes: false });
+
             expect(dropped.generation).toBeGreaterThan(scope.generation);
             expect((await store.findNotes(dropped, { limit: 100, offset: 0 })).total).toBe(0);
             expect(await store.beginTurn(scope, 'run-b', 'old', LIMITS)).toEqual({ kind: 'stale' });
 
             const second = await setup();
+
             await second.store.beginTurn(second.scope, 'run-a', 'hello', LIMITS);
             await second.store.applyNote(second.scope, makeSet('run-a', 'name', 'Ada', { inputHash: 'h1' }));
             await second.store.endTurn(second.scope, 'run-a', []);
+
             const kept = await second.store.reset(second.identity, { keepNotes: true });
+
             expect((await second.store.findNotes(kept, { limit: 100, offset: 0 })).data.map((n) => [n.key, n.text]))
                 .toEqual([['name', 'Ada']]);
             // the old generation's operation record grants no replay in the new one
             expect((await second.store.beginTurn(kept, 'run-a', 'again', LIMITS)).kind).toBe('ready');
+
             const result = await second.store.applyNote(kept, makeSet('run-a', 'name', 'Grace', { inputHash: 'h2' }));
+
             expect(result).toMatchObject({ kind: 'set', key: 'name' });
             expect((await second.store.findOneNote(kept, 'name'))?.text).toBe('Grace');
             // old transcript items are not part of the new generation
@@ -407,20 +476,26 @@ export function describeConversationRepositoryContract(
                 clock,
                 scope,
             } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
+
             const set = makeSet('run-a', 'name', 'Ada');
             const created = await store.applyNote(scope, set);
+
             expect(created).toEqual({
                 kind: 'set',
                 key: 'name',
                 updatedAt: clock.now(),
             });
             expect(created).not.toHaveProperty('text');
+
             const createdAt = created.kind === 'set' ? created.updatedAt : undefined;
 
             clock.advance(1000);
             expect(await store.applyNote(scope, set)).toEqual(created);
+
             const note = await store.findOneNote(scope, 'name');
+
             expect(note).toMatchObject({
                 text: 'Ada',
                 updatedAt: createdAt,
@@ -436,6 +511,7 @@ export function describeConversationRepositoryContract(
 
             const update = makeSet('run-a', 'name', 'Grace', { toolCallId: 'call-2', stepIndex: 1 });
             const updated = await store.applyNote(scope, update);
+
             expect(updated).toEqual({
                 kind: 'set',
                 key: 'name',
@@ -448,6 +524,7 @@ export function describeConversationRepositoryContract(
             });
 
             const remove = makeRemove('run-a', 'name');
+
             expect(await store.applyNote(scope, remove)).toEqual({
                 kind: 'remove',
                 key: 'name',
@@ -479,10 +556,13 @@ export function describeConversationRepositoryContract(
                 clock,
                 scope,
             } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
+
             for (let i = 0; i < 100; i++) {
                 await store.applyNote(scope, makeSet('run-a', `k${i}`, 'v'));
             }
+
             await expect(store.applyNote(scope, makeSet('run-a', 'k100', 'v'))).rejects.toMatchObject(INVALID);
             expect((await store.findNotes(scope, { limit: 200, offset: 0 })).total).toBe(100);
             // updating an existing note at the cap is fine
@@ -497,7 +577,9 @@ export function describeConversationRepositoryContract(
             // a refused operation records nothing: the same id applies once valid
             expect(await store.applyNote(scope, makeSet('run-a', 'k0', 'w', { toolCallId: 'long' })))
                 .toMatchObject({ kind: 'set', key: 'k0' });
+
             const page = await store.findNotes(scope, { limit: 2, offset: 1 });
+
             expect(page.total).toBe(100);
             expect(page.data.map((n) => n.key)).toEqual(['k1', 'k10']);
         });
@@ -508,9 +590,12 @@ export function describeConversationRepositoryContract(
                 clock,
                 scope,
             } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'question', LIMITS);
+
             const sent = makeEmit(clock, 'run-a', 0, 'sent answer');
             const uncertain = makeEmit(clock, 'run-a', 1, 'uncertain answer');
+
             await store.prepareEmit(scope, sent);
             await store.prepareEmit(scope, sent);
             await store.prepareEmit(scope, uncertain);
@@ -524,19 +609,26 @@ export function describeConversationRepositoryContract(
             await expect(store.confirmEmit(scope, 'assistant:none')).rejects.toMatchObject(STATE);
 
             const before = await store.beginTurn(scope, 'run-x', 'busy', LIMITS);
+
             expect(before.kind).toBe('busy');
             expect((await store.pendingEmits(scope, 'run-a')).map((item) => item.id)).toEqual([uncertain.id]);
             await store.endTurn(scope, 'run-a', []);
             await expect(store.confirmEmit(scope, uncertain.id)).rejects.toMatchObject(STATE);
 
             const next = await store.beginTurn(scope, 'run-b', 'follow-up', LIMITS);
-            if (next.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (next.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(next.snapshot.itemIds).toEqual(['user:run-a', sent.id]);
             expect(next.snapshot.messages).toEqual([
                 { role: 'user', content: 'question' },
                 { role: 'assistant', content: 'sent answer' },
             ]);
+
             const items = await store.findItems(scope, { limit: 100, offset: 0 });
+
             expect(items.data.find((item) => item.id === uncertain.id)?.status).toBe('unknown');
             expect(items.data.filter((item) => item.id === sent.id)).toHaveLength(1);
         });
@@ -547,6 +639,7 @@ export function describeConversationRepositoryContract(
                 clock,
                 scope,
             } = await setup();
+
             await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
             await store.applyNote(scope, makeSet('run-a', 'temp', 'short-lived', { expiresAt: new Date(clock.now().getTime() + 1000) }));
             await store.applyNote(scope, makeSet('run-a', 'keep', 'forever'));
@@ -554,8 +647,13 @@ export function describeConversationRepositoryContract(
 
             clock.advance(999);
             expect((await store.findOneNote(scope, 'temp'))?.text).toBe('short-lived');
+
             const held = await store.beginTurn(scope, 'run-b', 'still there?', LIMITS);
-            if (held.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (held.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(held.snapshot.noteKeys).toEqual(['keep', 'temp']);
 
             clock.advance(1);
@@ -564,8 +662,13 @@ export function describeConversationRepositoryContract(
             // the snapshot taken earlier is immutable
             expect(await store.beginTurn(scope, 'run-b', 'still there?', LIMITS)).toEqual(held);
             await store.endTurn(scope, 'run-b', []);
+
             const next = await store.beginTurn(scope, 'run-c', 'gone?', LIMITS);
-            if (next.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (next.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(next.snapshot.noteKeys).toEqual(['keep']);
             expect(JSON.stringify(next.snapshot.messages)).not.toContain('short-lived');
         });
@@ -577,17 +680,28 @@ export function describeConversationRepositoryContract(
                 scope,
             } = await setup();
             const limits: ResolvedConversationLimits = { ...LIMITS, retentionMs: 10_000 };
+
             await completeTurn(store, clock, scope, 'run-a', 'old', ['old reply'], limits);
             clock.advance(9999);
             await completeTurn(store, clock, scope, 'run-b', 'recent', [], limits);
+
             const recalled = await store.beginTurn(scope, 'run-c', 'now', limits);
-            if (recalled.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (recalled.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(recalled.snapshot.itemIds).toEqual(['user:run-a', 'assistant:run-a:0', 'user:run-b']);
             await store.endTurn(scope, 'run-c', []);
 
             clock.advance(1);
+
             const trimmed = await store.beginTurn(scope, 'run-d', 'later', limits);
-            if (trimmed.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (trimmed.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(trimmed.snapshot.itemIds).toEqual(['user:run-b', 'user:run-c']);
             expect((await store.findItems(scope, { limit: 100, offset: 0 })).data.map((i) => i.id))
                 .toEqual(['user:run-b', 'user:run-c', 'user:run-d']);
@@ -601,10 +715,13 @@ export function describeConversationRepositoryContract(
                 scope,
             } = await setup();
             const limits: ResolvedConversationLimits = { ...LIMITS, retentionMs: 10_000 };
+
             await completeTurn(store, clock, scope, 'run-a', 'old', ['old reply'], limits);
             await store.beginTurn(scope, 'run-b', 'active', limits);
             await store.applyNote(scope, makeSet('run-b', 'temp', 't', { expiresAt: new Date(clock.now().getTime() + 5) }));
+
             const other = await store.resolve(makeIdentity('chat-2'));
+
             await completeTurn(store, clock, other, 'run-o', 'other', [], limits);
             await store.reset(makeIdentity('chat-2'), { keepNotes: true });
             // reset is no erasure: the old generation keeps its records until retention removes them
@@ -612,7 +729,9 @@ export function describeConversationRepositoryContract(
 
             clock.advance(10_000);
             await store.prune(limits);
+
             const items = await store.findItems(scope, { limit: 100, offset: 0 });
+
             // the active turn keeps its input
             expect(items.data.map((item) => item.id)).toEqual(['user:run-b']);
             expect((await store.findItems(other, { limit: 100, offset: 0 })).total).toBe(0);
@@ -623,10 +742,13 @@ export function describeConversationRepositoryContract(
 
             // maxStoredItems keeps the newest records of a generation
             await store.endTurn(scope, 'run-b', []);
+
             const capped: ResolvedConversationLimits = { ...limits, maxStoredItems: 3 };
+
             for (const run of ['run-c', 'run-d', 'run-e']) {
                 await completeTurn(store, clock, scope, run, run, [`${run} reply`], limits);
             }
+
             await store.prune(capped);
             expect((await store.findItems(scope, { limit: 100, offset: 0 })).data.map((i) => i.id))
                 .toEqual(['assistant:run-d:0', 'user:run-e', 'assistant:run-e:0']);
@@ -643,6 +765,7 @@ export function describeConversationRepositoryContract(
                 scope,
             } = await setup();
             const limits: ResolvedConversationLimits = { ...LIMITS, retentionMs: 10_000 };
+
             await store.beginTurn(scope, 'run-a', 'hello', limits);
             await store.applyNote(scope, makeSet('run-a', 'name', 'Ada'));
             await store.endTurn(scope, 'run-a', []);
@@ -650,21 +773,27 @@ export function describeConversationRepositoryContract(
             await store.applyNote(scope, makeSet('run-b', 'city', 'Rome'));
 
             const young = vi.fn<(runId: string) => Promise<boolean>>(async () => true);
+
             await store.prune(limits, { isSettled: young });
             expect(young).not.toHaveBeenCalled();
 
             clock.advance(10_000);
+
             const failing = vi.fn<(runId: string) => Promise<boolean>>(async () => {
                 throw new TypeError('lookup failed');
             });
+
             await expect(store.prune(limits, { isSettled: failing })).rejects.toThrow('lookup failed');
             // the active run is never asked
             expect(failing.mock.calls.map(([runId]) => runId)).toEqual(['run-a']);
 
             const settled = vi.fn<(runId: string) => Promise<boolean>>(async () => true);
+
             await store.prune(limits, { isSettled: settled });
             expect(settled.mock.calls.map(([runId]) => runId)).toEqual(['run-a']);
+
             const again = vi.fn<(runId: string) => Promise<boolean>>(async () => true);
+
             await store.prune(limits, { isSettled: again });
             expect(again).not.toHaveBeenCalled();
             // live notes are not operation records and stay
@@ -682,31 +811,47 @@ export function describeConversationRepositoryContract(
             } = await setup();
             const identity = makeIdentity('copy');
             const resolved = await store.resolve(identity);
+
             identity.chat = 'mutated';
             resolved.identity.chat = 'mutated';
             resolved.generation = 7;
             expect(await store.findOne(makeIdentity('copy'))).toMatchObject({ generation: 0, identity: { chat: 'copy' } });
 
             await completeTurn(store, clock, scope, 'run-a', 'hello', ['hi']);
+
             const begun = await store.beginTurn(scope, 'run-b', 'again', LIMITS);
-            if (begun.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (begun.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             begun.snapshot.messages.push({ role: 'user', content: 'injected' });
             begun.snapshot.itemIds.length = 0;
             begun.snapshot.createdAt.setTime(0);
+
             const admitted = await store.findItems(scope, { limit: 100, offset: 0 });
+
             expect(admitted.data.find((item) => item.id === 'user:run-b')?.createdAt).toEqual(clock.now());
+
             const replay = await store.beginTurn(scope, 'run-b', 'again', LIMITS);
-            if (replay.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (replay.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(replay.snapshot.messages).toHaveLength(2);
             expect(replay.snapshot.itemIds).toEqual(['user:run-a', 'assistant:run-a:0']);
             expect(replay.snapshot.createdAt).toEqual(clock.now());
 
             const item = makeEmit(clock, 'run-b', 0, 'original');
+
             await store.prepareEmit(scope, item);
             item.text = 'mutated';
             item.target!.address = 'mutated';
+
             const listed = await store.findItems(scope, { limit: 100, offset: 0 });
             const stored = listed.data.find((i) => i.id === 'assistant:run-b:0')!;
+
             expect(stored).toMatchObject({ text: 'original', target: { address: 'chat-1' } });
             expect(stored.createdAt).toBeInstanceOf(Date);
             stored.text = 'mutated';
@@ -715,9 +860,15 @@ export function describeConversationRepositoryContract(
 
             const op = makeSet('run-b', 'name', 'Ada');
             const result = await store.applyNote(scope, op);
+
             op.key = 'other';
-            if (result.kind === 'set') result.updatedAt.setTime(0);
+
+            if (result.kind === 'set') {
+                result.updatedAt.setTime(0);
+            }
+
             const note = (await store.findOneNote(scope, 'name'))!;
+
             expect(note.updatedAt).toEqual(clock.now());
             note.text = 'mutated';
             note.source.runId = 'mutated';
@@ -742,11 +893,17 @@ export function describeConversationRepositoryContract(
                 maxHistoryBytes: 12,
                 maxItemBytes: 64,
             };
+
             await completeTurn(store, clock, scope, 'run-a', 'ééé', [], limits);
             await completeTurn(store, clock, scope, 'run-b', '😀😀😀😀', [], limits);
             await completeTurn(store, clock, scope, 'run-c', '€€', [], limits);
+
             const begun = await store.beginTurn(scope, 'run-d', 'next', limits);
-            if (begun.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (begun.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(begun.snapshot.itemIds).toEqual(['user:run-a', 'user:run-c']);
             expect(begun.snapshot.omitted).toBe(1);
             expect(begun.snapshot.messages).toEqual([
@@ -757,7 +914,11 @@ export function describeConversationRepositoryContract(
 
             const one: ResolvedConversationLimits = { ...limits, maxItems: 1 };
             const counted = await store.beginTurn(scope, 'run-e', 'count', one);
-            if (counted.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (counted.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(counted.snapshot.itemIds).toEqual(['user:run-d']);
             expect(counted.snapshot.omitted).toBe(3);
             await store.endTurn(scope, 'run-e', []);
@@ -775,6 +936,7 @@ export function describeConversationRepositoryContract(
                 scope,
             } = await setup();
             const limits: ResolvedConversationLimits = { ...LIMITS, maxNotesBytes: 10 };
+
             await store.beginTurn(scope, 'run-a', 'hello', limits);
             await store.applyNote(scope, makeSet('run-a', 'b', 'bbbb'));
             clock.advance(1);
@@ -784,11 +946,19 @@ export function describeConversationRepositoryContract(
             await store.endTurn(scope, 'run-a', []);
 
             const begun = await store.beginTurn(scope, 'run-b', 'question', limits);
-            if (begun.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (begun.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(begun.snapshot.noteKeys).toEqual(['a', 'c']);
+
             const [notes, ...rest] = begun.snapshot.messages;
+
             expect(notes?.role).toBe('user');
+
             const content = String(notes?.content);
+
             expect(content).toContain('aaaa');
             expect(content).not.toContain('bbbb');
             expect(content.indexOf('aaaa')).toBeLessThan(content.indexOf('cccc'));
@@ -802,9 +972,15 @@ export function describeConversationRepositoryContract(
                 clock,
                 scope,
             } = await setup();
+
             await completeTurn(store, clock, scope, 'run-a', 'first', ['r1']);
+
             const begun = await store.beginTurn(scope, 'run-b', 'second', LIMITS);
-            if (begun.kind !== 'ready') throw new TypeError('expected ready');
+
+            if (begun.kind !== 'ready') {
+                throw new TypeError('expected ready');
+            }
+
             expect(begun.snapshot).toMatchObject({
                 runId: 'run-b',
                 scope,
@@ -816,7 +992,9 @@ export function describeConversationRepositoryContract(
             ]);
             expect(begun.snapshot.itemIds).not.toContain('user:run-b');
             await store.beginTurn(scope, 'run-b', 'second', LIMITS);
+
             const items = await store.findItems(scope, { limit: 100, offset: 0 });
+
             expect(items.data.filter((item) => item.id === 'user:run-b')).toHaveLength(1);
             expect(items.data.find((item) => item.id === 'user:run-b')).toMatchObject({
                 role: 'user',
@@ -832,8 +1010,11 @@ export function describeConversationRepositoryContract(
                 clock,
                 scope,
             } = await setup();
+
             await completeTurn(store, clock, scope, 'run-a', 'a', ['a1', 'a2']);
+
             const page = await store.findItems(scope, { limit: 2, offset: 1 });
+
             expect(page.total).toBe(3);
             expect(page.data.map((item) => item.id)).toEqual(['assistant:run-a:0', 'assistant:run-a:1']);
             await expect(store.findItems(scope, { limit: -1, offset: 0 })).rejects.toMatchObject(INVALID);

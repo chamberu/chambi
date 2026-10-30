@@ -1,3 +1,4 @@
+/* eslint @tada5hi/type-declaration-location: "off" -- Keep the exported contract in the self-contained instructional snippet. */
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
@@ -41,7 +42,9 @@ export const ops = defineAgent({
     // in the factory: tryInject reads an optional value (inject would fail the run before any model call)
     tools: (ctx) => {
         const audit = tryInject(ctx, AUDIT);
+
         audit?.write(`run ${ctx.run.runId} started`);
+
         return { deploy };
     },
 });
@@ -55,7 +58,10 @@ const engine = new Engine({
 
 // by reference, once per key; a second value or undefined throws
 engine.provide(DEPLOY, client);
-if (auditLog) engine.provide(AUDIT, auditLog);
+
+if (auditLog) {
+    engine.provide(AUDIT, auditLog);
+}
 // #endregion provide
 
 export { engine };

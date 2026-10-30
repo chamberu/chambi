@@ -24,6 +24,7 @@ const inspectAll = (paths: string[], status: (path: string) => string): Answer =
 
 const readFrame = (bytes: Uint8Array): Answer => {
     const data = Buffer.from(bytes).toString('base64');
+
     return { stdout: `${V} read file\n${data}\n${V} end\n`, stderr: `${V} head 0\n` };
 };
 
@@ -33,12 +34,21 @@ function fakeTree(files: Record<string, string | Uint8Array>, override?: (mode: 
         path,
         typeof content === 'string' ? new TextEncoder().encode(content) : content,
     ]));
+
     return createScriptedWorkspace((argv: readonly string[]) => {
         const { mode, paths } = parse(argv);
         const answer = override?.(mode, paths);
-        if (answer) return answer;
-        if (mode === 'inspect') return inspectAll(paths, (path) => (encoded.has(path) ? 'file' : 'absent'));
+
+        if (answer) {
+            return answer;
+        }
+
+        if (mode === 'inspect') {
+            return inspectAll(paths, (path) => (encoded.has(path) ? 'file' : 'absent'));
+        }
+
         const bytes = encoded.get(paths[0] ?? '');
+
         return bytes ? readFrame(bytes) : { stdout: `${V} read absent\n${V} end\n` };
     });
 }
@@ -51,6 +61,7 @@ describe('readRepositoryInstructions protocol', () => {
         await readRepositoryInstructions(workspace, ['src/a.ts'], { signal: controller.signal });
 
         expect(workspace.calls.length).toBeGreaterThan(0);
+
         for (const call of workspace.calls) {
             expect(call.argv.slice(0, 2)).toEqual(['/bin/sh', '-c']);
             expect(call.argv[3]).toBe('sh');
@@ -58,6 +69,7 @@ describe('readRepositoryInstructions protocol', () => {
             expect(call.options.timeoutMs).toBeLessThanOrEqual(5_000);
             expect(call.options.signal).toBeDefined();
         }
+
         expect(new Set(workspace.calls.map((call) => call.argv[2])).size).toBe(1);
         expect(workspace.calls[0]?.argv[2]).not.toContain('src/a.ts');
     });
@@ -74,10 +86,12 @@ describe('readRepositoryInstructions protocol', () => {
         ['trailing output', { stdout: `${V} inspect 1\n0 absent\n${V} end\nextra\n` }],
     ])('rejects an inspection with %s', async (_name, answer: Answer) => {
         const workspace = fakeTree({}, (mode) => (mode === 'inspect' ? answer : undefined));
+
         await expect(readRepositoryInstructions(workspace, ['a.ts'])).rejects.toBeInstanceOf(SandboxError);
     });
 
     const big = Buffer.alloc(32_770).toString('base64');
+
     it.each([
         ['invalid base64', `${V} read file\n%%%%\n${V} end\n`, `${V} head 0\n`],
         ['non-canonical base64', `${V} read file\naGl=\n${V} end\n`, `${V} head 0\n`],
@@ -90,6 +104,7 @@ describe('readRepositoryInstructions protocol', () => {
         ['more bytes than the read bound', `${V} read file\n${big}\n${V} end\n`, `${V} head 0\n`],
     ])('rejects a read with %s', async (_name, stdout: string, stderr: string) => {
         const workspace = fakeTree({ 'AGENTS.md': 'x' }, (mode) => (mode === 'read' ? { stdout, stderr } : undefined));
+
         await expect(readRepositoryInstructions(workspace)).rejects.toBeInstanceOf(SandboxError);
     });
 
@@ -98,17 +113,20 @@ describe('readRepositoryInstructions protocol', () => {
             { stdout: `${V} read file\naGk=\n${V} end\n`, stderr: `${V} head 1\n` } :
             undefined));
         const result = await readRepositoryInstructions(workspace);
+
         expect(result.diagnostics.map(({ path, code }) => ({ path, code }))).toEqual([{ path: 'AGENTS.md', code: 'unreadable' }]);
         expect(result.sources).toEqual([]);
     });
 
     it('rejects a workspace missing a utility, naming it', async () => {
         const workspace = fakeTree({}, () => ({ exitCode: 3, stdout: `${V} missing base64\n` }));
+
         await expect(readRepositoryInstructions(workspace)).rejects.toThrow(/base64/);
     });
 
     it('propagates a rejecting exec', async () => {
         const workspace = fakeTree({});
+
         workspace.exec = () => Promise.reject(new SandboxError('workspace disposed'));
         await expect(readRepositoryInstructions(workspace)).rejects.toThrow('workspace disposed');
     });
@@ -117,6 +135,7 @@ describe('readRepositoryInstructions protocol', () => {
         const secret = 'ghs_abcdefSECRET';
         const content = `use ${secret}\n`;
         const workspace = fakeTree({ 'AGENTS.md': content });
+
         workspace.redact = (text) => text.split(secret).join('[redacted]');
 
         const result = await readRepositoryInstructions(workspace);
@@ -132,8 +151,12 @@ describe('readRepositoryInstructions protocol', () => {
             'a.md': 'a\n',
             'b.md': 'b\n',
         });
+
         workspace.redact = (text) => {
-            if (text === 'a\n') clock.advance(30_000);
+            if (text === 'a\n') {
+                clock.advance(30_000);
+            }
+
             return text;
         };
 
@@ -148,11 +171,18 @@ describe('readRepositoryInstructions protocol', () => {
     it('reports deadline exhaustion when the final exec succeeds after the deadline', async () => {
         const clock = new ControllableClock();
         const workspace = fakeTree({ 'AGENTS.md': '@a.md\n', 'a.md': 'a\n' }, (mode, paths) => {
-            if (mode === 'read' && paths[0] === 'a.md') clock.advance(3_001);
+            if (mode === 'read' && paths[0] === 'a.md') {
+                clock.advance(3_001);
+            }
+
             return undefined;
         });
+
         workspace.redact = (text) => {
-            if (text === '@a.md\n') clock.advance(27_000);
+            if (text === '@a.md\n') {
+                clock.advance(27_000);
+            }
+
             return text;
         };
 
@@ -166,8 +196,12 @@ describe('readRepositoryInstructions protocol', () => {
     it('checks the deadline after processing the final source', async () => {
         const clock = new ControllableClock();
         const workspace = fakeTree({ 'AGENTS.md': 'root\n' });
+
         workspace.redact = (text) => {
-            if (text === 'root\n') clock.advance(30_001);
+            if (text === 'root\n') {
+                clock.advance(30_001);
+            }
+
             return text;
         };
 
@@ -180,14 +214,25 @@ describe('readRepositoryInstructions protocol', () => {
     it('aborts an exec still running when the request time is used up', async () => {
         const clock = new ControllableClock();
         const workspace = fakeTree({ 'AGENTS.md': '@a.md\n', 'a.md': 'a\n' });
+
         workspace.redact = (text) => {
-            if (text === '@a.md\n') clock.advance(27_000);
+            if (text === '@a.md\n') {
+                clock.advance(27_000);
+            }
+
             return text;
         };
+
         const { exec } = workspace;
+
         workspace.exec = (argv, options) => {
-            if (parse(argv).mode !== 'read' || parse(argv).paths[0] !== 'a.md') return exec(argv, options);
-            return new Promise(() => { clock.advance(3_000); });
+            if (parse(argv).mode !== 'read' || parse(argv).paths[0] !== 'a.md') {
+                return exec(argv, options);
+            }
+
+            return new Promise(() => {
+                clock.advance(3_000);
+            });
         };
 
         const result = await readRepositoryInstructions(workspace, undefined, { clock });
@@ -200,6 +245,7 @@ describe('readRepositoryInstructions protocol', () => {
         const clock = new ControllableClock();
         const controller = new AbortController();
         const workspace = fakeTree({});
+
         workspace.exec = (_argv, options = {}) => new Promise((_resolve, reject) => {
             options.signal?.addEventListener('abort', () => reject(new SandboxError('exec aborted')), { once: true });
             controller.abort();
@@ -212,8 +258,12 @@ describe('readRepositoryInstructions protocol', () => {
     it('gives an exec no more than the time left of the request', async () => {
         const clock = new ControllableClock();
         const workspace = fakeTree({ 'AGENTS.md': '@a.md\n', 'a.md': 'a\n' });
+
         workspace.redact = (text) => {
-            if (text === '@a.md\n') clock.advance(27_000);
+            if (text === '@a.md\n') {
+                clock.advance(27_000);
+            }
+
             return text;
         };
 

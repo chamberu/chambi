@@ -37,7 +37,7 @@
 npm install @chamvi/sandbox-k8s @chamvi/sandbox @chamvi/core ai --save
 ```
 
-ESM only, Node.js `>=22`. `@chamvi/core` and `@chamvi/sandbox` are peer dependencies. The API server is reached through [`@kubernetes/client-node`](https://www.npmjs.com/package/@kubernetes/client-node) 2 (`CoreV1Api` and `Exec` over a WebSocket). It declares `@types/node` `^26` as a runtime dependency, so a project on older Node.js types gets a nested copy; that is harmless with `skipLibCheck`.
+ESM only, Node.js `>=24.3.0`. `@chamvi/core` and `@chamvi/sandbox` are peer dependencies. The API server is reached through [`@kubernetes/client-node`](https://www.npmjs.com/package/@kubernetes/client-node) 2 (`CoreV1Api` and `Exec` over a WebSocket). It declares `@types/node` `^26` as a runtime dependency, so a project on older Node.js types gets a nested copy; that is harmless with `skipLibCheck`.
 
 ## Usage
 

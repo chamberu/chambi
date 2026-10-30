@@ -9,11 +9,15 @@ import type { IPageVisibility } from './types.ts';
 
 /** The document's visibility, or `undefined` outside a browser (tests, SSR). */
 export function documentVisibility(): IPageVisibility | undefined {
-    if (typeof document === 'undefined') return undefined;
+    if (typeof document === 'undefined') {
+        return undefined;
+    }
+
     return {
         hidden: () => document.visibilityState === 'hidden',
         onChange(fn) {
             document.addEventListener('visibilitychange', fn);
+
             return () => document.removeEventListener('visibilitychange', fn);
         },
     };

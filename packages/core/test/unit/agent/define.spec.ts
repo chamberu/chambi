@@ -46,6 +46,7 @@ describe('defineAgent', () => {
 
     it('applies budget defaults', () => {
         const agent = defineAgent({ ...base, name: 'a' });
+
         expect(agent.definition.budget.maxSteps).toBe(20);
         expect(agent.definition.budget.timeoutMs).toBe(900_000);
         expect(agent.definition.budget.maxTokens).toBeUndefined();
@@ -57,6 +58,7 @@ describe('defineAgent', () => {
             name: 'a',
             budget: { maxSteps: 3, maxTokens: 10 },
         });
+
         expect(agent.definition.budget).toEqual({
             maxSteps: 3,
             maxTokens: 10,
@@ -70,6 +72,7 @@ describe('defineAgent', () => {
             id,
             options: {},
         });
+
         expect(() => defineAgent({
             ...base,
             name: 'a',
@@ -90,18 +93,22 @@ describe('defineAgent', () => {
             concurrencyKey: (payload) => payload.repo,
             idempotencyKey: (payload) => `${payload.repo}:1`,
         };
+
         expectTypeOf(github).toExtend<ChannelSubscription>();
+
         const agent = defineAgent({
             ...base,
             name: 'a',
             channels: [github],
         });
+
         expectTypeOf(agent.definition.channels).toEqualTypeOf<AgentDefinition['channels']>();
         expect(agent.definition.channels?.[0]?.concurrencyKey?.({ repo: 'o/r' })).toBe('o/r');
     });
 
     it('accepts a plain tool set', () => {
         const tools = { lookup: defineTool({ inputSchema: z.object({}), execute: async () => 'ok' }) };
+
         expect(defineAgent({
             ...base,
             name: 'a',
@@ -119,6 +126,7 @@ describe('defineAgent', () => {
             tools: { third },
             toolsContext: map,
         });
+
         expect(agent.definition.toolsContext).toBe(map);
         expect(agent.definition.toolsContext?.third).toBe(entry);
     });
@@ -149,7 +157,8 @@ describe('defineAgent', () => {
             name: 'a',
             conversation: { key: 'stable-helper' },
         }).definition.conversation).toEqual({ key: 'stable-helper' });
-        for (const value of ['true', 1, 0, null, {}, [], { key: '' }, { key: ' ' }, { key: 3 }, { key: 'x'.repeat(256) }, { key: 'bad\u0000key' }, { key: '\ud800' }]) {
+
+        for (const value of ['true', 1, 0, null, {}, [], { key: '' }, { key: ' ' }, { key: 3 }, { key: 'x'.repeat(256) }, { key: 'bad\0key' }, { key: '\ud800' }]) {
             expect(() => defineAgent({
                 ...base,
                 name: 'a',
@@ -157,6 +166,7 @@ describe('defineAgent', () => {
             }), String(value))
                 .toThrow(InvalidAgentDefinitionError);
         }
+
         expectTypeOf<AgentDefinition['conversation']>().toEqualTypeOf<boolean | { key: string } | undefined>();
     });
 });

@@ -20,6 +20,7 @@ describe('verifySignature', () => {
 
     it('refuses a missing, sha1, wrong, short or upper-case-prefixed signature', () => {
         const right = sign(body, 's3cret');
+
         expect(verifySignature(['s3cret'], body, null)).toBe(false);
         expect(verifySignature(['s3cret'], body, `sha1=${right.slice(7)}`)).toBe(false);
         expect(verifySignature(['s3cret'], body, sign(body, 'other'))).toBe(false);
@@ -35,15 +36,19 @@ describe('verifySignature', () => {
     it('verifies the exact bytes, escapes and non-ASCII alike', () => {
         const escaped = encode('{"title":"caf\\u00e9",  "n":1}');
         const raw = encode('{"title":"café","n" : 1}\n');
+
         expect(verifySignature(['s3cret'], escaped, sign(escaped, 's3cret'))).toBe(true);
         expect(verifySignature(['s3cret'], raw, sign(raw, 's3cret'))).toBe(true);
+
         // re-serialized JSON is a different byte string
         const reserialized = encode(JSON.stringify(JSON.parse('{"title":"caf\\u00e9",  "n":1}')));
+
         expect(verifySignature(['s3cret'], reserialized, sign(escaped, 's3cret'))).toBe(false);
     });
 
     it('is reachable on the app under its webhook secrets', () => {
         const { gh } = createGithubFixture({ webhookSecret: ['old', 'new'] });
+
         expect(gh.verifySignature(body, sign(body, 'old'))).toBe(true);
         expect(gh.verifySignature(body, sign(body, 'nope'))).toBe(false);
     });

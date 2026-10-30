@@ -27,11 +27,15 @@ describe('POST /agents/:name/runs', () => {
     it('dispatches through the http channel', async () => {
         const { app, store } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { payload: { n: 1 } } });
+
         expect(response.status).toBe(202);
+
         const body = await response.json() as { runId: string; deduplicated: boolean };
+
         expect(body).toEqual({ runId: expect.any(String), deduplicated: false });
 
         const run = await store.runs.findOne(body.runId);
+
         expect(run?.trigger).toMatchObject({
             channel: 'http',
             trigger: 'http',
@@ -42,8 +46,11 @@ describe('POST /agents/:name/runs', () => {
     it('accepts an empty body', async () => {
         const { app, store } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN });
+
         expect(response.status).toBe(202);
+
         const { runId } = await response.json() as { runId: string };
+
         expect((await store.runs.findOne(runId))?.trigger.payload).toBeUndefined();
     });
 
@@ -51,6 +58,7 @@ describe('POST /agents/:name/runs', () => {
         const { app } = createRunTestApp();
         const first = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { idempotencyKey: 'k1' } })).json();
         const second = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { idempotencyKey: 'k1' } })).json();
+
         expect(second).toEqual({ runId: first.runId, deduplicated: true });
     });
 
@@ -76,6 +84,7 @@ describe('POST /agents/:name/runs', () => {
         const start = async (token: string) => (await call(app, 'POST', '/agents/echo/runs', { token, body: { idempotencyKey: 'issue-42' } })).json();
         const first = await start(low);
         const second = await start(high);
+
         expect(second.deduplicated).toBe(false);
         expect(second.runId).not.toBe(first.runId);
         expect((await store.runs.findOne(second.runId))?.trigger.invoker?.id).toBe('u-high');
@@ -87,21 +96,27 @@ describe('POST /agents/:name/runs', () => {
         const headers = { 'idempotency-key': 'h1' };
         const first = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, headers })).json();
         const second = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, headers })).json();
+
         expect(second).toEqual({ runId: first.runId, deduplicated: true });
     });
 
     it('rejects an Idempotency-Key header out of bounds', async () => {
         const { app } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, headers: { 'idempotency-key': 'x'.repeat(256) } });
+
         expect(response.status).toBe(400);
     });
 
     it('bounds address and idempotencyKey at 255 characters, the store column width', async () => {
         const { app } = createRunTestApp();
+
         for (const key of ['address', 'idempotencyKey']) {
             const fits = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { [key]: 'x'.repeat(255) } });
+
             expect(fits.status).toBe(202);
+
             const over = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { [key]: 'y'.repeat(256) } });
+
             expect(over.status).toBe(400);
         }
     });
@@ -109,6 +124,7 @@ describe('POST /agents/:name/runs', () => {
     it('answers 404 for an unknown agent', async () => {
         const { app } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/nope/runs', { token: ADMIN_TOKEN });
+
         expect(response.status).toBe(404);
         expect((await response.json()).message).toBe('Agent "nope" was not found.');
     });
@@ -116,12 +132,14 @@ describe('POST /agents/:name/runs', () => {
     it.each(['sweep', 'hooked'])('answers 404 for %s, which has no http subscription', async (name) => {
         const { app } = createRunTestApp();
         const response = await call(app, 'POST', `/agents/${name}/runs`, { token: ADMIN_TOKEN });
+
         expect(response.status).toBe(404);
         expect((await response.json()).message).toBe(`Agent "${name}" has no http subscription.`);
     });
 
     it('needs agent:<name>:run', async () => {
         const { app } = createRunTestApp();
+
         expect((await call(app, 'POST', '/agents/echo/runs', { token: READER_TOKEN })).status).toBe(403);
         expect((await call(app, 'POST', '/agents/echo/runs')).status).toBe(401);
     });
@@ -129,12 +147,14 @@ describe('POST /agents/:name/runs', () => {
     it('never reads the body of an unauthenticated request', async () => {
         const { app } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { body: { payload: 'x'.repeat(2 * 1024 * 1024) } });
+
         expect(response.status).toBe(401);
     });
 
     it.each([[[1]], ['str'], [null]])('rejects the body %j', async (body) => {
         const { app } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body });
+
         expect(response.status).toBe(400);
         expect((await response.json()).message).toBe('The request body must be a JSON object.');
     });
@@ -142,6 +162,7 @@ describe('POST /agents/:name/runs', () => {
     it('rejects an empty idempotencyKey', async () => {
         const { app } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { idempotencyKey: '' } });
+
         expect(response.status).toBe(400);
         expect((await response.json()).issues[0].path).toEqual(['idempotencyKey']);
     });
@@ -149,6 +170,7 @@ describe('POST /agents/:name/runs', () => {
     it('drops unknown body keys', async () => {
         const { app } = createRunTestApp();
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { extra: 1 } });
+
         expect(response.status).toBe(202);
     });
 
@@ -161,6 +183,7 @@ describe('POST /agents/:name/runs', () => {
         });
         const { app, store } = createRunTestApp({ agents: [...createRunAgents(), typed] });
         const response = await call(app, 'POST', '/agents/typed/runs', { token: ADMIN_TOKEN, body: { payload: { n: 'x' } } });
+
         expect(response.status).toBe(400);
         expect((await response.json()).issues[0].path).toEqual(['n']);
         expect((await store.runs.find({ agent: 'typed' })).total).toBe(0);
@@ -187,12 +210,17 @@ describe('POST /agents/:name/runs', () => {
                     ],
                 },
             });
+
             expect(response.status).toBe(202);
+
             const { runId } = await response.json() as { runId: string };
 
             const run = await store.runs.findOne(runId);
+
             expect(run?.trigger.attachments).toHaveLength(2);
+
             const [first, second] = run!.trigger.attachments!;
+
             expect(first).toMatchObject({
                 runId,
                 agent: 'echo',
@@ -209,8 +237,11 @@ describe('POST /agents/:name/runs', () => {
         it('takes an empty list as none', async () => {
             const { app, store } = createRunTestApp();
             const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { attachments: [] } });
+
             expect(response.status).toBe(202);
+
             const { runId } = await response.json() as { runId: string };
+
             expect((await store.runs.findOne(runId))?.trigger.attachments).toBeUndefined();
         });
 
@@ -218,8 +249,11 @@ describe('POST /agents/:name/runs', () => {
             const { app } = createRunTestApp();
             const one = { mediaType: 'text/plain', data: b64('x') };
             const fits = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { attachments: Array.from({ length: 16 }, () => one) } });
+
             expect(fits.status).toBe(202);
+
             const over = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { attachments: Array.from({ length: 17 }, () => one) } });
+
             expect(over.status).toBe(400);
             expect((await over.json()).issues[0].path).toEqual(['attachments']);
         });
@@ -238,8 +272,11 @@ describe('POST /agents/:name/runs', () => {
         ])('rejects %s with 400 and stores nothing', async (_, attachment, path) => {
             const { app, store } = createRunTestApp();
             const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { attachments: [attachment] } });
+
             expect(response.status).toBe(400);
+
             const body = await response.json();
+
             expect(body.code).toBe('validation_error');
             expect(body.issues.map((i: { path: unknown }) => i.path)).toContainEqual(path);
             expect((await store.runs.find({ agent: 'echo' })).total).toBe(0);
@@ -248,6 +285,7 @@ describe('POST /agents/:name/runs', () => {
         it.each([['str'], [{ 0: 1 }], [null], [[1]]])('rejects attachments %j', async (attachments) => {
             const { app } = createRunTestApp();
             const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { attachments } });
+
             expect(response.status).toBe(400);
         });
 
@@ -257,8 +295,11 @@ describe('POST /agents/:name/runs', () => {
         ])('answers %s with one issue before checking any item', async (_, attachments) => {
             const { app } = createRunTestApp({ bodyLimit: 1024 * 1024 });
             const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { attachments } });
+
             expect(response.status).toBe(400);
+
             const body = await response.json();
+
             expect(body.issues).toHaveLength(1);
             expect(body.issues[0].path).toEqual(['attachments']);
         });
@@ -271,8 +312,11 @@ describe('POST /agents/:name/runs', () => {
         ])('answers %s with a small 400 body', async (_, body, path) => {
             const { app } = createRunTestApp({ bodyLimit: 4 * 1024 * 1024 });
             const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body });
+
             expect(response.status).toBe(400);
+
             const text = await response.text();
+
             expect(text.length).toBeLessThan(2048);
             expect(JSON.parse(text).issues.map((i: { path: unknown }) => i.path)).toContainEqual(path);
         });
@@ -282,6 +326,7 @@ describe('POST /agents/:name/runs', () => {
             const body = { idempotencyKey: 'k', attachments: [{ mediaType: 'text/plain', data: b64('x') }] };
             const first = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body })).json();
             const second = await (await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body })).json();
+
             expect(second).toEqual({ runId: first.runId, deduplicated: true });
             expect(await store.artifacts.find(first.runId)).toHaveLength(1);
         });
@@ -292,19 +337,28 @@ describe('POST /agents/:name/runs', () => {
                 token: ADMIN_TOKEN,
                 body: { attachments: [{ mediaType: 'text/plain', data: b64('x'.repeat(2048)) }] },
             });
+
             expect(response.status).toBe(413);
         });
     });
 
     it('answers 404 when the agent is removed while the request was in flight', async () => {
         const errors: unknown[] = [];
-        const { app, engine } = createRunTestApp({ onError: (error) => { errors.push(error); } });
+        const { app, engine } = createRunTestApp({
+            onError: (error) => {
+                errors.push(error);
+            },
+        });
         const dispatch = engine.dispatch.bind(engine);
+
         vi.spyOn(engine, 'dispatch').mockImplementationOnce(async (envelope) => {
             await engine.removeAgent('echo');
+
             return dispatch(envelope);
         });
+
         const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN });
+
         expect(response.status).toBe(404);
         expect(await response.json()).toMatchObject({ code: 'agent_not_found' });
         expect(errors).toEqual([]);

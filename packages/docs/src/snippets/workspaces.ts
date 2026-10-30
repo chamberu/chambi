@@ -33,10 +33,17 @@ export async function serve(store: IStore, model: LanguageModel, provider: ISand
         hooks: {
             // the coding tools are not yours: gate bash here, every command waits for a human
             async beforeToolExecution({ toolName, input }, ctx) {
-                if (toolName !== 'bash') return input;
+                if (toolName !== 'bash') {
+                    return input;
+                }
+
                 const { command } = input as { command: string };
                 const decision = await approve(ctx, { title: 'Run a shell command?', body: command });
-                if (!decision.approved) throw new ToolDeniedError(`Command refused: ${decision.reason ?? 'denied'}`);
+
+                if (!decision.approved) {
+                    throw new ToolDeniedError(`Command refused: ${decision.reason ?? 'denied'}`);
+                }
+
                 return input;
             },
         },
@@ -47,6 +54,7 @@ export async function serve(store: IStore, model: LanguageModel, provider: ISand
         agents: [repro],
         channels: [httpChannel()],
     });
+
     // a run's workspaces go once it completed, failed or was cancelled
     workspaces.attach(engine);
     await engine.start();

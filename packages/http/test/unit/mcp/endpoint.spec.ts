@@ -5,11 +5,11 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { 
-    describe, 
-    expect, 
-    it, 
-    vi, 
+import {
+    describe,
+    expect,
+    it,
+    vi,
 } from 'vitest';
 import { App } from 'routup';
 import type { IShutdown } from '@chamvi/http';
@@ -37,12 +37,16 @@ function fakeShutdown() {
         shuttingDown: false,
         onShutdown: (fn) => {
             callbacks.push(fn);
+
             return () => {};
         },
         shutdown: async () => {
-            for (const fn of callbacks) await fn();
+            for (const fn of callbacks) {
+                await fn();
+            }
         },
     };
+
     return shutdown;
 }
 
@@ -57,6 +61,7 @@ describe('/mcp', () => {
             },
             headers: { accept: 'application/json, text/event-stream' },
         });
+
         expect(response.status).toBe(401);
         expect(response.headers.get('www-authenticate')).toBe('Bearer');
         expect(await response.json()).toMatchObject({ status: 401, code: 'unauthorized' });
@@ -67,6 +72,7 @@ describe('/mcp', () => {
     it('mounts nothing with mcp: false', async () => {
         const { app } = createRunTestApp({ mcp: false });
         const response = await call(app, 'POST', '/mcp', { token: ADMIN_TOKEN, body: {} });
+
         expect(response.status).toBe(404);
         expect(await response.json()).toMatchObject({ code: 'not_found' });
     });
@@ -75,6 +81,7 @@ describe('/mcp', () => {
         const { app, store } = createRunTestApp({ bodyLimit: 1_024 });
         const getRun = vi.spyOn(store.runs, 'findOne');
         const client = await connectMcp(app, ADMIN_TOKEN);
+
         await expect(callTool(client, 'get_run', { runId: 'x'.repeat(2_048) })).rejects.toThrow(/413|large/i);
         expect(getRun).not.toHaveBeenCalled();
         await client.close();
@@ -83,6 +90,7 @@ describe('/mcp', () => {
     it('reports its server info', async () => {
         const { app } = createRunTestApp({ mcp: { name: 'ops', version: '1.2.3' } });
         const client = await connectMcp(app, ADMIN_TOKEN);
+
         expect(client.getServerVersion()).toMatchObject({ name: 'ops', version: '1.2.3' });
         await client.close();
     });
@@ -96,24 +104,30 @@ describe('/mcp', () => {
             onError,
         });
         const app = new App();
+
         registerMcpRoutes(app, ctx);
         app.use(createErrorHandler(ctx));
         expect(ctx.closers.size).toBe(1);
 
         const open = await call(app, 'POST', '/mcp', {
-            token: ADMIN_TOKEN, 
-            body: LIST_TOOLS, 
-            headers: MCP_HEADERS, 
+            token: ADMIN_TOKEN,
+            body: LIST_TOOLS,
+            headers: MCP_HEADERS,
         });
+
         expect(open.status).toBe(200);
 
-        for (const close of ctx.closers) await close();
+        for (const close of ctx.closers) {
+            await close();
+        }
+
         // ungated on purpose: the closed handler itself refuses the request
         const closed = await call(app, 'POST', '/mcp', {
-            token: ADMIN_TOKEN, 
-            body: LIST_TOOLS, 
-            headers: MCP_HEADERS, 
+            token: ADMIN_TOKEN,
+            body: LIST_TOOLS,
+            headers: MCP_HEADERS,
         });
+
         expect(closed.status).toBe(500);
         expect(String(onError.mock.calls[0]?.[0])).toMatch(/closed/i);
     });
@@ -122,12 +136,15 @@ describe('/mcp', () => {
         const shutdown = fakeShutdown();
         const onError = vi.fn();
         const { app } = createRunTestApp({ shutdown, onError });
+
         await shutdown.shutdown();
+
         const response = await call(app, 'POST', '/mcp', {
-            token: ADMIN_TOKEN, 
-            body: LIST_TOOLS, 
-            headers: MCP_HEADERS, 
+            token: ADMIN_TOKEN,
+            body: LIST_TOOLS,
+            headers: MCP_HEADERS,
         });
+
         expect(response.status).toBe(503);
         expect(await response.json()).toMatchObject({ status: 503, code: 'service_unavailable' });
         expect(onError).not.toHaveBeenCalled();
@@ -138,19 +155,25 @@ describe('/mcp', () => {
         const { app, engine } = createRunTestApp({ shutdown });
         const unsubscribes: Array<ReturnType<typeof vi.fn>> = [];
         const on = engine.on.bind(engine);
+
         vi.spyOn(engine, 'on').mockImplementation(((event: never, listener: never) => {
             const unsubscribe = vi.fn(on(event, listener));
+
             unsubscribes.push(unsubscribe);
+
             return unsubscribe;
         }) as typeof engine.on);
 
         const client = await connectMcp(app, ADMIN_TOKEN);
         const pending = callTool(client, 'run_echo', { waitSeconds: 30 });
+
         await vi.waitFor(() => expect(unsubscribes).toHaveLength(1));
 
         await shutdown.shutdown();
         expect(unsubscribes[0]).toHaveBeenCalled();
+
         const result = await pending;
+
         expect(result.isError).toBeFalsy();
         expect(result.structuredContent).toMatchObject({ runId: expect.any(String), status: 'queued' });
         await client.close();

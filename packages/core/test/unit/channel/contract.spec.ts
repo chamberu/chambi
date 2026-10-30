@@ -64,7 +64,10 @@ class GatedEngine extends Engine {
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
     vi.restoreAllMocks();
 });
@@ -76,7 +79,9 @@ function make(opts: Partial<EngineOptions> = {}) {
         onError: () => {},
         ...opts,
     });
+
     engines.push(engine);
+
     return engine;
 }
 
@@ -93,6 +98,7 @@ function recording(name: string, log: string[], extra: Partial<IChannel> = {}) {
         },
         ...extra,
     };
+
     return channel;
 }
 
@@ -114,6 +120,7 @@ describe('channels on the engine', () => {
         const a = { name: 'a' };
         const b = { name: 'b' };
         const engine = make({ channels: [a, b] });
+
         expect(engine.listChannels()).toEqual([a, b]);
         expect(engine.listChannels()).not.toBe(engine.listChannels());
         expect(engine.getChannel('b')).toBe(b);
@@ -127,14 +134,17 @@ describe('channels on the engine', () => {
             instructions: 'x',
             channels: [subscription('cron')],
         });
+
         expect(() => make({ agents: [subscribed] })).toThrow(InvalidAgentDefinitionError);
         expect(() => make({ agents: [subscribed] })).toThrow(/unknown channel "cron"/);
 
         const engine = make({ channels: [{ name: 'http' }] });
+
         await expect(engine.putAgent(subscribed)).rejects.toThrow(/unknown channel "cron"/);
         expect(engine.getAgent('digest')).toBeUndefined();
 
         const ok = make({ channels: [{ name: 'cron' }], agents: [subscribed] });
+
         expect(ok.getAgent('digest')).toBe(subscribed);
     });
 
@@ -142,8 +152,10 @@ describe('channels on the engine', () => {
         const log: string[] = [];
         const engine = make({ channels: [recording('a', log), recording('b', log)] });
         const recover = engine.recover.bind(engine);
+
         vi.spyOn(engine, 'recover').mockImplementation(async () => {
             log.push('recover');
+
             return recover();
         });
         await engine.start();
@@ -151,6 +163,7 @@ describe('channels on the engine', () => {
 
         const quiet: string[] = [];
         const other = make({ channels: [recording('a', quiet)] });
+
         await other.start({ channels: false });
         expect(quiet).toEqual([]);
         await other.drain();
@@ -166,12 +179,14 @@ describe('channels on the engine', () => {
                 recording('b', log, {
                     async start() {
                         log.push('start:b');
+
                         throw failure;
                     },
                 }),
                 recording('c', log),
             ],
         });
+
         await expect(engine.start()).rejects.toBe(failure);
         expect(log).toEqual(['start:a', 'start:b', 'stop:a']);
     });
@@ -186,22 +201,27 @@ describe('channels on the engine', () => {
                 recording('a', log, {
                     async stop() {
                         log.push('stop:a');
+
                         throw failure;
                     },
                 }),
                 recording('b', log),
             ],
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch({
             agent: 'triage',
             trigger: 't',
             channel: 'a',
             payload: {},
         });
+
         await vi.waitFor(() => expect(engine.gates.has(runId)).toBe(true));
 
         const drained = engine.drain();
+
         await vi.waitFor(() => expect(log).toContain('stop:b'));
         expect(log).toContain('stop:a');
         // the run is still executing: channels stopped first
@@ -229,11 +249,14 @@ describe('channels on the engine', () => {
             }),
         };
         const engine = make({ channels: [recording('a', log), slow] });
+
         await engine.start();
+
         let resolved = false;
         const stopping = engine.stop().then(() => {
             resolved = true;
         });
+
         await vi.waitFor(() => expect(finish).toBeDefined());
         expect(log).toContain('stop:a');
         expect(resolved).toBe(false);
@@ -252,13 +275,16 @@ describe('channels on the engine', () => {
         const log: string[] = [];
         const a = recording('a', log);
         const engine = make({ channels: [a] });
+
         await engine.start({ channels: true });
+
         const { runId } = await a.ctx!.dispatch({
             agent: 'triage',
             trigger: 't',
             payload: {},
             ...{ channel: 'other' } as Record<string, unknown>,
         } as Parameters<ChannelContext['dispatch']>[0]);
+
         expect((await engine.getRun(runId))?.trigger.channel).toBe('a');
         expect(a.ctx!.engine).toBe(engine);
     });
@@ -274,6 +300,7 @@ describe('channels on the engine', () => {
         const first = await engine.dispatch({ ...base, channel: 'a' });
         const second = await engine.dispatch({ ...base, channel: 'b' });
         const again = await engine.dispatch({ ...base, channel: 'a' });
+
         expect(second.runId).not.toBe(first.runId);
         expect(again).toEqual({ runId: first.runId, deduplicated: true });
 
@@ -287,6 +314,7 @@ describe('channels on the engine', () => {
             channel: 'a',
             invoker,
         });
+
         expect(scoped.deduplicated).toBe(false);
     });
 
@@ -300,10 +328,11 @@ describe('channels on the engine', () => {
         };
         const { runId } = await engine.dispatch({ ...base, address: 'o/r#12' });
         const run = await engine.getRun(runId);
+
         expect(run?.address).toBe('o/r#12');
         expect(run?.trigger.address).toBe('o/r#12');
 
-        for (const address of ['k'.repeat(TRIGGER_KEY_MAX_LENGTH + 1), 'a\u0000b']) {
+        for (const address of ['k'.repeat(TRIGGER_KEY_MAX_LENGTH + 1), 'a\0b']) {
             await expect(engine.dispatch({ ...base, address })).rejects.toBeInstanceOf(ValidationError);
             await expect(engine.dispatch({ ...base, address })).rejects.toThrow(/address/);
         }

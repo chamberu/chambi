@@ -28,7 +28,10 @@ import { mockModel } from '../../utils/model.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -49,7 +52,9 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
             errors.push(error);
         },
     });
+
     engines.push(engine);
+
     return {
         engine,
         store,
@@ -65,7 +70,9 @@ async function run(engine: Engine, store: ReturnType<typeof createMemoryStore>) 
         channel: 'http',
         payload: {},
     });
+
     await engine.idle();
+
     return store.runs.findOne(runId);
 }
 
@@ -76,6 +83,7 @@ describe('github context', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 seen.push(injectGithubContext(context));
+
                 return 'ok';
             },
         });
@@ -94,6 +102,7 @@ describe('github context', () => {
             store,
             gh,
         } = setup(model, { use });
+
         provideGithubContext(engine, gh);
         await engine.start();
         expect((await run(engine, store))?.status).toBe('completed');
@@ -108,10 +117,13 @@ describe('github context', () => {
             store,
             gh,
         } = setup(model, (ctx) => injectGithubContext(ctx).readTools());
+
         provideGithubContext(engine, gh);
         await engine.start();
         expect((await run(engine, store))?.status).toBe('completed');
+
         const offered = (model.doStreamCalls[0]?.tools ?? []).map((t) => t.name);
+
         expect(offered).toContain('github_get_issue');
     });
 
@@ -122,8 +134,11 @@ describe('github context', () => {
             store,
             errors,
         } = setup(model, (ctx) => injectGithubContext(ctx).readTools());
+
         await engine.start();
+
         const result = await run(engine, store);
+
         expect(result?.status).toBe('failed');
         expect(result?.error?.code).toBe('context_not_provided');
         expect(result?.error?.message).toContain('"github"');
@@ -134,6 +149,7 @@ describe('github context', () => {
     it('a second provide throws', () => {
         const model = mockModel([]);
         const { engine, gh } = setup(model, {});
+
         provideGithubContext(engine, gh);
         expect(() => provideGithubContext(engine, gh)).toThrow(InvalidAgentDefinitionError);
     });

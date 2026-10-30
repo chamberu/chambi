@@ -68,14 +68,17 @@ describe('readRepositoryInstructions (local workspace)', () => {
         });
 
         const root = await readRepositoryInstructions(fixture.workspace);
+
         expect(root.paths).toEqual(['.']);
         expect(root.sources.map((source) => source.path)).toEqual(['AGENTS.md']);
 
         const directory = await readRepositoryInstructions(fixture.workspace, ['/workspace/packages/api/']);
+
         expect(directory.paths).toEqual(['packages/api']);
         expect(directory.sources.map((source) => source.path)).toEqual(['AGENTS.md', 'packages/api/AGENTS.md']);
 
         const missing = await readRepositoryInstructions(fixture.workspace, ['packages/api/new/file.ts']);
+
         expect(missing.sources.map((source) => source.path)).toEqual(['AGENTS.md', 'packages/api/AGENTS.md']);
         expect(missing.complete).toBe(true);
     });
@@ -100,7 +103,9 @@ describe('readRepositoryInstructions (local workspace)', () => {
             '.agents/testing.md',
             '.agents/conventions.md',
         ]);
+
         const byPath = Object.fromEntries(result.sources.map((source) => [source.path, source]));
+
         expect(byPath['AGENTS.md']?.includedBy).toEqual(['CLAUDE.md']);
         // depth first: architecture.md reaches testing.md before CLAUDE.md's own line does
         expect(byPath['.agents/testing.md']?.includedBy).toEqual(['.agents/architecture.md', 'CLAUDE.md']);
@@ -140,9 +145,11 @@ describe('readRepositoryInstructions (local workspace)', () => {
 
     it('refreshes_modified_sources', async () => {
         await fixture.write({ 'AGENTS.md': 'first\n' });
+
         const first = await readRepositoryInstructions(fixture.workspace);
 
         await fixture.write({ 'AGENTS.md': 'second\n' });
+
         const second = await readRepositoryInstructions(fixture.workspace);
 
         expect(first.sources[0]?.content).toBe('first\n');
@@ -153,7 +160,9 @@ describe('readRepositoryInstructions (local workspace)', () => {
 
     it('records the checkout commit when the workspace knows it', async () => {
         (fixture.workspace.info as { commit?: string }).commit = 'a'.repeat(40);
+
         const result = await readRepositoryInstructions(fixture.workspace);
+
         expect(result.commit).toBe('a'.repeat(40));
     });
 
@@ -168,6 +177,7 @@ describe('readRepositoryInstructions (local workspace)', () => {
         const result = await readRepositoryInstructions(fixture.workspace, ['packages/api/x.ts']);
 
         const byPath = Object.fromEntries(result.sources.map((source) => [source.path, source]));
+
         expect(byPath['docs/shared.md']?.scopes).toEqual(['.', 'packages/api']);
         expect(byPath['docs/leaf.md']?.scopes).toEqual(['.', 'packages/api']);
         expect(byPath['docs/shared.md']?.includedBy).toEqual(['AGENTS.md', 'packages/api/AGENTS.md']);
@@ -237,6 +247,7 @@ describe('readRepositoryInstructions (local workspace)', () => {
 
     it('does_not_execute_instruction_text', async () => {
         const sentinel = 'chamvi-sentinel';
+
         await fixture.write({
             'AGENTS.md': [
                 `$(touch ${sentinel}-1)`,
@@ -250,12 +261,15 @@ describe('readRepositoryInstructions (local workspace)', () => {
         const result = await readRepositoryInstructions(fixture.workspace, [`$(touch ${sentinel}-6)/x`, `;touch ${sentinel}-7`]);
 
         expect(result.sources[0]?.path).toBe('AGENTS.md');
+
         const listing = await fixture.workspace.exec(['ls', '-a']);
+
         expect(listing.stdout).not.toContain(sentinel);
     });
 
     it('distinguishes_absence_from_transport_failure', async () => {
         const empty = await readRepositoryInstructions(fixture.workspace);
+
         expect(empty).toEqual({
             commit: null,
             paths: ['.'],
@@ -270,7 +284,9 @@ describe('readRepositoryInstructions (local workspace)', () => {
 
     it('propagates cancellation', async () => {
         await fixture.write({ 'AGENTS.md': 'x\n' });
+
         const controller = new AbortController();
+
         controller.abort();
         await expect(readRepositoryInstructions(fixture.workspace, undefined, { signal: controller.signal }))
             .rejects.toMatchObject({ code: 'sandbox_error' });
@@ -279,14 +295,18 @@ describe('readRepositoryInstructions (local workspace)', () => {
     it('redacts decoded text and outward paths, hashing the original bytes', async () => {
         const secret = 'ghs_secretTOKEN1234';
         const content = `token ${secret}\n@${secret}.md\n`;
+
         await fixture.write({ 'AGENTS.md': content, [`dir-${secret}/AGENTS.md`]: 'inner\n' });
+
         const workspace = Object.assign(Object.create(fixture.workspace) as typeof fixture.workspace, { redact: (text: string) => text.split(secret).join('[redacted]') });
+
         // the prototype copy keeps exec bound to the real workspace
         workspace.exec = fixture.workspace.exec.bind(fixture.workspace);
 
         const result = await readRepositoryInstructions(workspace, [`dir-${secret}/x.ts`]);
 
         const serialized = JSON.stringify(result);
+
         expect(serialized).not.toContain(secret);
         expect(result.sources[0]?.content).toBe('token [redacted]\n@[redacted].md\n');
         expect(result.sources[0]?.sha256).toBe(sha256(content));

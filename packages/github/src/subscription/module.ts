@@ -36,18 +36,27 @@ export function createGithubSubscription(
     options: GithubSubscriptionOptions = {},
 ): ChannelSubscription<GithubEvent> {
     assertConcurrencyMaxRuns(options.concurrencyMaxRuns, 'github.on() concurrencyMaxRuns');
+
     let list: unknown[] = [];
-    if (typeof events === 'string') list = [events];
-    else if (Array.isArray(events)) list = [...events];
+
+    if (typeof events === 'string') {
+        list = [events];
+    } else if (Array.isArray(events)) {
+        list = [...events];
+    }
+
     if (list.length === 0) {
         throw new InvalidAgentDefinitionError('github.on() needs at least one event.');
     }
+
     for (const spec of list) {
         if (typeof spec !== 'string' || !GITHUB_EVENT_PATTERN.test(spec)) {
             throw new InvalidAgentDefinitionError(`GitHub event "${String(spec)}" must look like "issues" or "issues.opened".`);
         }
     }
+
     const id = options.id ?? `github:${list.join(',')}`;
+
     if (typeof id !== 'string' || id.length === 0) {
         throw new InvalidAgentDefinitionError('A github.on() id must not be empty.');
     }
@@ -65,7 +74,11 @@ export function createGithubSubscription(
         },
         concurrencyKey: options.concurrencyKey ?? defaultConcurrencyKey,
     };
-    if (options.idempotencyKey) subscription.idempotencyKey = options.idempotencyKey;
+
+    if (options.idempotencyKey) {
+        subscription.idempotencyKey = options.idempotencyKey;
+    }
+
     return subscription;
 }
 
@@ -77,8 +90,15 @@ export function createGithubSubscription(
 export function githubAddress(target: GithubTarget): string {
     const repo = isObject(target) ? target.repo : undefined;
     const number = isObject(target) ? target.number : undefined;
-    if (!isRepo(repo)) throw new ValidationError(`repo must look like "owner/name", got ${JSON.stringify(repo)}.`);
-    if (!isPositiveInteger(number)) throw new ValidationError('number must be a positive integer.');
+
+    if (!isRepo(repo)) {
+        throw new ValidationError(`repo must look like "owner/name", got ${JSON.stringify(repo)}.`);
+    }
+
+    if (!isPositiveInteger(number)) {
+        throw new ValidationError('number must be a positive integer.');
+    }
+
     return `${repo}#${number}`;
 }
 

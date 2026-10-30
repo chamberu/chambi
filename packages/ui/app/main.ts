@@ -41,12 +41,15 @@ const app = createApp(App);
 
 // the authup kit (and its pinia) must be installed before vuecs
 let adapter: IAuthupAdapter | undefined;
+
 if (config.auth.authup) {
     const { createAuthupAdapter } = await import('./auth/authup.ts');
+
     adapter = createAuthupAdapter(app, config.auth.authup, config.uiBase);
 }
 
 app.use(vuecs, { themes: [tailwind()], icons: [lucide()] });
+
 for (const plugin of [
     installIcon,
     installButton,
@@ -58,7 +61,9 @@ for (const plugin of [
     installPlaceholder,
     installTable,
     installTimeago,
-]) app.use(plugin);
+]) {
+    app.use(plugin);
+}
 
 let client: IApiClient;
 const session = createSession(config, {
@@ -74,7 +79,11 @@ client = createApiClient({
     refresh: () => session.refresh(),
     onUnauthorized: () => {
         const current = router.currentRoute.value;
-        if (current.meta.public === true) return;
+
+        if (current.meta.public === true) {
+            return;
+        }
+
         void session.signOut().then(() => router.replace({ name: RouteName.LOGIN, query: { redirect: current.fullPath } }));
     },
 });

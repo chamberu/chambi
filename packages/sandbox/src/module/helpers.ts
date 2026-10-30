@@ -20,8 +20,13 @@ import { assertImage } from '../image/module.ts';
  */
 export function readImageAllowList(env: Env): ((image: string) => boolean) | undefined {
     const entries = envList(env, 'CHAMVI_SANDBOX_IMAGES');
-    if (entries === undefined) return undefined;
+
+    if (entries === undefined) {
+        return undefined;
+    }
+
     const images = new Set<string>();
+
     for (const entry of entries.map((value) => value.trim()).filter(Boolean)) {
         try {
             images.add(assertImage(entry));
@@ -29,7 +34,11 @@ export function readImageAllowList(env: Env): ((image: string) => boolean) | und
             throw new InvalidAgentDefinitionError('CHAMVI_SANDBOX_IMAGES holds an entry that is no image reference.');
         }
     }
-    if (images.size === 0) return undefined;
+
+    if (images.size === 0) {
+        return undefined;
+    }
+
     return (image) => images.has(image);
 }
 

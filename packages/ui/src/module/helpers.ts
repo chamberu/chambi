@@ -12,11 +12,13 @@ import type { UiRoutesOptions } from '../routes/types.ts';
 /** The token login, plus the authup login with `CHAMVI_UI_AUTHUP_CLIENT_ID` (then `AUTHUP_URL` is required). */
 export function readAuth(env: Env): NonNullable<UiRoutesOptions['auth']> {
     const clientId = envString(env, 'CHAMVI_UI_AUTHUP_CLIENT_ID');
+
     if (typeof clientId === 'undefined') {
         return { tokens: true };
     }
 
     const realmId = envString(env, 'CHAMVI_UI_AUTHUP_REALM_ID');
+
     return {
         tokens: true,
         authup: {

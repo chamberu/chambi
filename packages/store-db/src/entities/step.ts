@@ -25,9 +25,9 @@ export class StepEntity {
     seq!: string;
 
     @Column({
-        name: 'run_id', 
-        type: 'varchar', 
-        length: 128, 
+        name: 'run_id',
+        type: 'varchar',
+        length: 128,
     })
     runId!: string;
 
@@ -35,9 +35,9 @@ export class StepEntity {
     index!: number;
 
     @Column({
-        name: 'kind', 
-        type: 'varchar', 
-        length: 8, 
+        name: 'kind',
+        type: 'varchar',
+        length: 8,
     })
     kind!: Step['kind'];
 
@@ -50,7 +50,7 @@ export class StepEntity {
     name!: string | null;
 
     @Column({
-        name: 'input', 
+        name: 'input',
         type: 'jsonb',
         nullable: true,
         transformer: OPTIONAL_JSON_TRANSFORMER,
@@ -58,7 +58,7 @@ export class StepEntity {
     input!: unknown;
 
     @Column({
-        name: 'output', 
+        name: 'output',
         type: 'jsonb',
         nullable: true,
         transformer: OPTIONAL_JSON_TRANSFORMER,
@@ -66,7 +66,7 @@ export class StepEntity {
     output!: unknown;
 
     @Column({
-        name: 'error', 
+        name: 'error',
         type: 'jsonb',
         nullable: true,
         transformer: OPTIONAL_JSON_TRANSFORMER,
@@ -78,6 +78,7 @@ export class StepEntity {
 
     @Column({ name: 'finished_at', type: 'timestamp with time zone' })
     finishedAt!: Date;
+
     @ManyToOne(() => RunEntity, {
         nullable: false,
         onDelete: 'NO ACTION',

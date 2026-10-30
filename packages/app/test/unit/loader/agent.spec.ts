@@ -33,13 +33,16 @@ describe('loadAgent', () => {
 
     async function expectRefused(files: Record<string, string>, message: RegExp, name = 'triage') {
         await writeTree(join(root.path, name), files);
+
         const promise = loadAgent(join(root.path, name));
+
         await expect(promise).rejects.toBeInstanceOf(InvalidAgentDefinitionError);
         await expect(promise).rejects.toThrow(message);
     }
 
     it('only agent.ts is required; other files are the agent\'s own', async () => {
         const dir = join(root.path, 'triage');
+
         await writeTree(dir, {
             'agent.ts': [
                 'import { readFileSync } from \'node:fs\';',
@@ -78,6 +81,7 @@ describe('loadAgent', () => {
 
     it('applies the budget defaults of defineAgent to a structural agent', async () => {
         const dir = join(root.path, 'triage');
+
         await writeTree(dir, { 'agent.ts': 'export default { name: \'triage\', definition: { model: \'test/model\', instructions: \'x\' } };\n' });
 
         const loaded = await loadAgent(dir);
@@ -125,6 +129,7 @@ describe('loadAgent', () => {
 
     it('a syntax error names the file relative to the agents dir, without an absolute path', async () => {
         await writeTree(join(root.path, 'triage'), { 'agent.ts': 'export default {\n' });
+
         const error = await loadAgent(join(root.path, 'triage')).catch((e: unknown) => e);
 
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
@@ -134,12 +139,15 @@ describe('loadAgent', () => {
 
     it('takes an injected module reader', async () => {
         const dir = join(root.path, 'triage');
+
         await writeTree(dir, { 'agent.ts': '' });
+
         const seen: string[] = [];
 
         const loaded = await loadAgent(dir, {
             load: async (path) => {
                 seen.push(path);
+
                 return { default: { name: 'triage', definition: { model: 'test/model', instructions: 'x' } } };
             },
         });
@@ -150,11 +158,13 @@ describe('loadAgent', () => {
 
     it('refuses a load that a change of the folder straddles', async () => {
         const dir = join(root.path, 'triage');
+
         await writeTree(dir, { 'agent.ts': '' });
 
         const promise = loadAgent(dir, {
             load: async (path) => {
                 await writeFile(path, 'export default { name: \'triage\', definition: { model: \'test:other\', instructions: \'x\' } };\n');
+
                 return { default: { name: 'triage', definition: { model: 'test/model', instructions: 'x' } } };
             },
         });

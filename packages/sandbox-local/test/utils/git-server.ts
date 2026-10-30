@@ -26,9 +26,9 @@ export type GitServer = {
     root: string;
     /** Every request's method, path and `user:password` (undefined without credentials). */
     requests: Array<{
-        method: string; 
-        path: string; 
-        credentials?: string 
+        method: string;
+        path: string;
+        credentials?: string
     }>;
     /** Runs git in a bare repository of the server (e.g. to read refs). */
     git(repo: string, ...args: string[]): Promise<string>;
@@ -39,8 +39,11 @@ export type GitServer = {
 export async function canServeGit(): Promise<boolean> {
     try {
         await run('openssl', ['version']);
+
         const { stdout } = await run('git', ['--exec-path']);
+
         await run('test', ['-x', join(stdout.trim(), 'git-http-backend')]);
+
         return true;
     } catch {
         return false;
@@ -66,29 +69,32 @@ export async function startGitServer(input: {
         GIT_CONFIG_GLOBAL: '/dev/null',
     };
     const git = async (repo: string, ...args: string[]) => (await run('git', args, { cwd: join(root, `${repo}.git`), env })).stdout;
+
     try {
         await run('openssl', [
-            'req', 
-            '-x509', 
-            '-newkey', 
-            'rsa:2048', 
-            '-nodes', 
-            '-days', 
+            'req',
+            '-x509',
+            '-newkey',
+            'rsa:2048',
+            '-nodes',
+            '-days',
             '1',
-            '-keyout', 
-            join(root, 'key.pem'), 
-            '-out', 
+            '-keyout',
+            join(root, 'key.pem'),
+            '-out',
             join(root, 'cert.pem'),
-            '-subj', 
-            '/CN=127.0.0.1', 
-            '-addext', 
+            '-subj',
+            '/CN=127.0.0.1',
+            '-addext',
             'subjectAltName=IP:127.0.0.1',
         ]);
+
         for (const [name, source] of Object.entries(input.repos)) {
             await run('git', ['clone', '-q', '--bare', source, join(root, `${name}.git`)], { env });
         }
     } catch (error) {
         await rm(root, { recursive: true, force: true });
+
         throw error;
     }
 
@@ -101,16 +107,20 @@ export async function startGitServer(input: {
         const url = new URL(request.url ?? '/', 'https://127.0.0.1');
         const header = request.headers.authorization;
         const credentials = header?.startsWith('Basic ') ? Buffer.from(header.slice(6), 'base64').toString() : undefined;
+
         requests.push({
             method: request.method ?? 'GET',
             path: url.pathname,
             ...(credentials !== undefined && { credentials }),
         });
+
         if (credentials !== expected) {
             response.writeHead(401, { 'www-authenticate': 'Basic realm="chamvi"' });
             response.end();
+
             return;
         }
+
         const backend = spawn('git', ['http-backend'], {
             env: {
                 ...env,
@@ -125,9 +135,14 @@ export async function startGitServer(input: {
                 REMOTE_ADDR: '127.0.0.1',
             },
         });
+
         request.pipe(backend.stdin);
+
         const chunks: Buffer[] = [];
-        backend.stdout.on('data', (chunk: Buffer) => { chunks.push(chunk); });
+
+        backend.stdout.on('data', (chunk: Buffer) => {
+            chunks.push(chunk);
+        });
         backend.on('close', () => {
             const output = Buffer.concat(chunks);
             const end = output.indexOf('\r\n\r\n');
@@ -135,19 +150,33 @@ export async function startGitServer(input: {
             const gap = end >= 0 ? 4 : 2;
             const headers: Record<string, string> = {};
             let status = 200;
+
             for (const line of output.subarray(0, split).toString().split(/\r?\n/)) {
                 const colon = line.indexOf(':');
-                if (colon < 0) continue;
+
+                if (colon < 0) {
+                    continue;
+                }
+
                 const name = line.slice(0, colon).trim().toLowerCase();
                 const value = line.slice(colon + 1).trim();
-                if (name === 'status') status = Number.parseInt(value, 10);
-                else headers[name] = value;
+
+                if (name === 'status') {
+                    status = Number.parseInt(value, 10);
+                } else {
+                    headers[name] = value;
+                }
             }
+
             response.writeHead(status, headers);
             response.end(output.subarray(split + gap));
         });
     });
-    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+
+    await new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', resolve);
+    });
+
     const { port } = server.address() as AddressInfo;
 
     return {
@@ -159,7 +188,9 @@ export async function startGitServer(input: {
         git,
         close: async () => {
             server.closeAllConnections();
-            await new Promise<void>((resolve) => { server.close(() => resolve()); });
+            await new Promise<void>((resolve) => {
+                server.close(() => resolve());
+            });
             await rm(root, { recursive: true, force: true });
         },
     };

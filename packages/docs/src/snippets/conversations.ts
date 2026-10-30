@@ -29,6 +29,7 @@ export function conversationApp(model: LanguageModel, chat: IChannel, authorize:
         }],
         tools: (ctx) => ({ reply, ...(hasConversation(ctx) ? memoryTools() : {}) }),
     });
+
     return createApp({
         agents: [helper],
         conversations: {
@@ -41,7 +42,9 @@ export function conversationApp(model: LanguageModel, chat: IChannel, authorize:
         },
         modules: [{
             name: 'example:chat',
-            async setup(container) { container.registerMany(AppToken.CHANNELS, { useValue: chat }); },
+            async setup(container) {
+                container.registerMany(AppToken.CHANNELS, { useValue: chat });
+            },
         }],
     });
     // #endregion app
@@ -51,6 +54,7 @@ export function conversationApp(model: LanguageModel, chat: IChannel, authorize:
 export async function firstMessage(engine: Engine, chat: IChannel) {
     // `chat` must be the exact registered adapter. Its authenticated event supplies these fields.
     const text = 'Please remember that I prefer short answers.';
+
     await engine.channelContext(chat).dispatchConversation({
         agent: 'helper',
         trigger: 'message',
@@ -69,6 +73,7 @@ export async function firstMessage(engine: Engine, chat: IChannel) {
 export async function nextMessage(engine: Engine, chat: IChannel) {
     // After a restart, use the new engine and its exact registered adapter, with the same database.
     const text = 'What answer style do I prefer?';
+
     await engine.channelContext(chat).dispatchConversation({
         agent: 'helper',
         trigger: 'message',
@@ -95,9 +100,11 @@ export async function manageConversation(engine: Engine, chat: IChannel) {
         audience: 'direct',
     };
     const inspection = await engine.inspectConversation(identity, { limit: 20, offset: 0 });
+
     await engine.resetConversation(identity, { keepNotes: true });
     await engine.deleteConversation(identity);
     await engine.pruneConversations();
+
     // #endregion management
     return inspection;
 }

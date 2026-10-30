@@ -32,8 +32,11 @@ describe('load_skill', () => {
     it('loads_body_and_reference_only_on_request', async () => {
         const approved = approvedSkill('audit', { files: { 'z.txt': 'last', 'references/README.md': 'PRIVATE-REFERENCE' } });
         const catalog = app.loadSkillBundles([approved]);
+
         fs.rmSync(approved.directory, { recursive: true });
+
         const reference = await load(catalog, { name: 'audit', reference: 'references/README.md' });
+
         expect(reference).toEqual({
             name: 'audit',
             version: '1.0.0',
@@ -42,7 +45,9 @@ describe('load_skill', () => {
             content: 'PRIVATE-REFERENCE',
             references: ['references/README.md', 'z.txt'],
         });
+
         const body = await load(catalog, { name: 'audit' });
+
         expect(body).toEqual({
             name: 'audit',
             version: '1.0.0',
@@ -71,6 +76,7 @@ describe('load_skill', () => {
     ])('rejects_traversal_and_unapproved_reference %j', async (reference) => {
         const approved = approvedSkill('audit', { files: { 'ref.txt': 'PRIVATE-REFERENCE' } });
         const catalog = app.loadSkillBundles([approved]);
+
         await expect(load(catalog, { name: 'audit', reference })).rejects.toBeInstanceOf(ValidationError);
     });
 
@@ -88,12 +94,14 @@ describe('load_skill', () => {
         { name: 'audit', directory: '/private/secret' },
     ].map((input) => [input]))('validates_direct_runtime_input %j', async (input) => {
         const catalog = app.loadSkillBundles([approvedSkill()]);
+
         await expect(load(catalog, input)).rejects.toBeInstanceOf(ValidationError);
     });
 
     it('errors_do_not_echo_secret_source_content_or_host_paths', async () => {
         const approved = approvedSkill('audit', { files: { 'ref.txt': 'PRIVATE-REFERENCE' } });
         const catalog = app.loadSkillBundles([approved]);
+
         for (const input of [
             { name: approved.directory },
             { name: 'PRIVATE-BODY' },
@@ -115,16 +123,23 @@ describe('load_skill', () => {
         const catalog = app.loadSkillBundles([approvedSkill('audit', { files: { 'empty.txt': '' } })]);
         const first = await load(catalog, { name: 'audit' });
         const expected = { ...first, references: ['empty.txt'] };
+
         first.references.push('unapproved.txt');
         first.content = 'changed';
+
         const results = await Promise.all(Array.from({ length: 5 }, () => load(catalog, { name: 'audit' })));
-        for (const result of results) expect(result).toEqual(expected);
+
+        for (const result of results) {
+            expect(result).toEqual(expected);
+        }
+
         expect(results[0]!.references).not.toBe(results[1]!.references);
         expect(await load(catalog, { name: 'audit', reference: 'empty.txt' })).toMatchObject({ content: '' });
     });
 
     it('frontmatter_does_not_create_tools_or_change_model', async () => {
         const catalog = app.loadSkillBundles([approvedSkill('audit', { frontmatter: 'allowed-tools: [shell]\nmodel: hostile/model\n' })]);
+
         expect(Object.keys(catalog.tools)).toEqual(['load_skill']);
         expect(catalog.skills[0]!.ignoredFields).toEqual(['allowed-tools', 'model']);
         expect(catalog).not.toHaveProperty('model');
@@ -136,6 +151,7 @@ describe('load_skill', () => {
     it('catalogs_are_agent_local', async () => {
         const one = app.loadSkillBundles([approvedSkill('audit', { body: 'first agent' })]);
         const two = app.loadSkillBundles([approvedSkill('audit', { body: 'second agent' }), approvedSkill('other')]);
+
         expect(await load(one, { name: 'audit' })).toMatchObject({ content: 'first agent' });
         expect(await load(two, { name: 'audit' })).toMatchObject({ content: 'second agent' });
         await expect(load(one, { name: 'other' })).rejects.toBeInstanceOf(ValidationError);

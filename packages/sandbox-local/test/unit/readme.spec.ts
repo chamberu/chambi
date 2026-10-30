@@ -34,6 +34,7 @@ describe('README example', () => {
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = readme.matchAll(/```typescript\n([\s\S]*?)```/g).map((m) => m[1]).toArray();
+
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
@@ -41,6 +42,7 @@ describe('README example', () => {
         const workspaces = createDevWorkspaces(root);
         const { workspace } = await workspaces.acquire('r1', {});
         const result = await workspace.exec(['echo', 'hi']);
+
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toBe('hi\n');
 
@@ -49,6 +51,7 @@ describe('README example', () => {
 
         // a restarted process finds the run's workspace and releases it
         const restarted = createDevWorkspaces(root);
+
         expect((await restarted.get('r1')).id).toBe(workspace.id);
         await restarted.release('r1');
         expect(await readdir(root)).toEqual([]);

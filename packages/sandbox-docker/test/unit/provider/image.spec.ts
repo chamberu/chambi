@@ -48,7 +48,9 @@ async function startContainer(docker: Docker, overrides: Partial<Parameters<type
         },
         ...overrides,
     }));
+
     await container.start();
+
     return container;
 }
 
@@ -81,6 +83,7 @@ describeDocker('sandbox-dev image as root (the default)', () => {
         ['mise', ['mise', '--version']],
     ])('ships %s', async (_name, argv) => {
         const result = await run(argv);
+
         expect(result.stderr).not.toMatch(/not found/);
         expect(result.exitCode).toBe(0);
     });
@@ -92,6 +95,7 @@ describeDocker('sandbox-dev image as root (the default)', () => {
     it('keeps mise\'s toolchains and shims out of the cache, behind the system tools on the PATH', async () => {
         const result = await run(['sh', '-c', 'echo "$PATH" && echo "$MISE_SHIMS_DIR" && echo "$MISE_DATA_DIR"']);
         const [path, shims, data] = result.stdout.split('\n');
+
         expect(path!.split(':').some((entry) => entry === '/cache' || entry.startsWith('/cache/'))).toBe(false);
         expect(path).toMatch(/:\/usr\/bin:.*:\/home\/sandbox\/\.local\/share\/mise\/shims$/);
         // in the workspace's disk-backed HOME, never the memory-backed /tmp
@@ -102,26 +106,32 @@ describeDocker('sandbox-dev image as root (the default)', () => {
 
     it('has a writable root filesystem', async () => {
         const result = await run(['sh', '-c', 'touch /etc/probe && mkdir -p /opt/tool && touch /usr/local/bin/probe']);
+
         expect(result.stderr).toBe('');
         expect(result.exitCode).toBe(0);
     });
 
     it('writes to /workspace, HOME, /cache and /tmp', async () => {
         const result = await run(['sh', '-c', 'touch /workspace/probe "$HOME/probe" && mkdir -p /cache/npm && touch /tmp/probe']);
+
         expect(result.stderr).toBe('');
         expect(result.exitCode).toBe(0);
     });
 
     it('sizes /tmp and runs programs from it', async () => {
         const mount = await run(['sh', '-c', 'grep " /tmp " /proc/self/mounts']);
+
         expect(mount.stdout).toMatch(/size=1048576k/);
         expect(mount.stdout).not.toMatch(/noexec/);
+
         const script = await run(['sh', '-c', 'printf "#!/bin/sh\\necho ran\\n" > /tmp/probe.sh && chmod +x /tmp/probe.sh && /tmp/probe.sh']);
+
         expect(script).toMatchObject({ exitCode: 0, stdout: 'ran\n' });
     });
 
     it('holds only the package-manager capabilities', async () => {
         const result = await run(['grep', 'CapEff', '/proc/self/status']);
+
         expect(result.stdout).toMatch(new RegExp(`CapEff:\\s+${ROOT_CAP_MASK}`));
     });
 
@@ -131,13 +141,16 @@ describeDocker('sandbox-dev image as root (the default)', () => {
 
     it('runs docker-init as pid 1 and skips the image\'s entrypoint', async () => {
         expect((await run(['cat', '/proc/1/comm'])).stdout.trim()).toBe('docker-init');
+
         const processes = (await run(['sh', '-c', 'cat /proc/[0-9]*/comm'])).stdout.split('\n');
+
         expect(processes).toContain('sleep');
         expect(processes).not.toContain('tini');
     });
 
     it('is no privileged container and mounts nothing of the host', async () => {
         const info = await container.inspect();
+
         expect(info.HostConfig.Privileged).toBe(false);
         expect(info.HostConfig.Binds ?? []).toEqual([]);
         expect(info.Mounts.every((mount) => mount.Type === 'volume' || mount.Type === 'tmpfs')).toBe(true);
@@ -167,12 +180,14 @@ describeDocker('sandbox-dev image in the hardened mode', () => {
 
     it('writes mise\'s shims to HOME on the read-only root', async () => {
         const result = await run(['sh', '-c', 'mise reshim && test -d "$MISE_SHIMS_DIR" && test -d "$HOME/.local/share/mise/shims"']);
+
         expect(result.stderr).toBe('');
         expect(result.exitCode).toBe(0);
     });
 
     it('still writes to its cache, HOME and /tmp', async () => {
         const result = await run(['sh', '-c', 'mkdir -p /cache/npm "$HOME/.cargo" && touch /cache/npm/probe "$HOME/.cargo/probe" /tmp/probe']);
+
         expect(result.stderr).toBe('');
         expect(result.exitCode).toBe(0);
     });
@@ -183,7 +198,10 @@ describeDocker('sandbox-dev image online', () => {
     let container: Docker.Container;
 
     beforeAll(async () => {
-        if (offline) return;
+        if (offline) {
+            return;
+        }
+
         container = await startContainer(docker, {
             network: 'bridge',
             limits: {
@@ -192,7 +210,7 @@ describeDocker('sandbox-dev image online', () => {
                 storage: '1Gi',
                 pids: 256,
                 maxLifetimeMs: 600_000,
-            }, 
+            },
         });
     });
 
@@ -202,6 +220,7 @@ describeDocker('sandbox-dev image online', () => {
 
     it.skipIf(offline)('installs a system package with apt as root', async () => {
         const result = await execInContainer(docker, container, ['sh', '-c', 'apt-get update -qq && apt-get install -y -qq --no-install-recommends file >/dev/null && file --version']);
+
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toMatch(/^file-/);
     }, 180_000);

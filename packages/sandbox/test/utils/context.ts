@@ -10,7 +10,9 @@ import { createAgentState, createMemoryStore } from '@chamvi/core';
 import type { IRunArtifacts, ToolContext } from '@chamvi/core';
 
 const NO_ARTIFACTS: IRunArtifacts = {
-    put: async () => { throw new TypeError('artifacts are not used by the workspace tools'); },
+    put: async () => {
+        throw new TypeError('artifacts are not used by the workspace tools');
+    },
     get: async () => undefined,
     list: async () => [],
 };
@@ -46,7 +48,11 @@ export async function callTool<T = unknown>(
     ctx: ToolContext,
 ): Promise<T> {
     const execute = tools[name]?.execute as ((i: unknown, o: unknown) => Promise<unknown>) | undefined;
-    if (!execute) throw new TypeError(`no tool ${name}`);
+
+    if (!execute) {
+        throw new TypeError(`no tool ${name}`);
+    }
+
     return await execute(input, {
         toolCallId: 'call-1',
         messages: [],

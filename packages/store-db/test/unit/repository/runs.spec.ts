@@ -21,6 +21,7 @@ import { createTestDataSource, describePostgres, truncateRepository } from '../.
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     const createdAt = new Date(1_000);
+
     return {
         id,
         agent: 'a',
@@ -73,9 +74,9 @@ describePostgres('DatabaseRunRepository runs', () => {
                 title: 'Approve tool',
                 body: 'details',
                 options: [{
-                    id: 'a', 
-                    label: 'A', 
-                    detail: '--- a\n+++ b', 
+                    id: 'a',
+                    label: 'A',
+                    detail: '--- a\n+++ b',
                 }],
                 multiple: true,
                 channel: 'github',
@@ -87,9 +88,11 @@ describePostgres('DatabaseRunRepository runs', () => {
             startedAt: new Date('2026-03-08T07:30:00.123Z'),
             finishedAt: new Date('2026-11-01T05:30:00.123Z'),
         });
+
         await expect(store.insert(run)).resolves.toBe(true);
 
         const got = await store.findOne('r1');
+
         expect(got).toEqual(run);
         expect(got!.trigger.receivedAt).toBeInstanceOf(Date);
         expect(got!.waiting!.expiresAt).toBeInstanceOf(Date);
@@ -104,15 +107,22 @@ describePostgres('DatabaseRunRepository runs', () => {
         expect(got!.finishedAt!.getTime()).toBe(run.finishedAt!.getTime());
 
         await expect(store.claim('r1', 'o1', 3_000)).resolves.toBe(true);
+
         const claimed = await store.findOne('r1');
+
         expect(claimed!.claim).toEqual({ owner: 'o1', expiresAt: new Date(13_000) });
         expect(claimed!.claim!.expiresAt).toBeInstanceOf(Date);
 
         const minimal = makeRun('r2');
+
         await store.insert(minimal);
+
         const gotMinimal = await store.findOne('r2');
+
         expect(gotMinimal).toEqual(minimal);
+
         const keys = Object.keys(gotMinimal!);
+
         for (const key of ['output', 'error', 'waiting', 'claim', 'cancelRequested', 'concurrencyKey', 'address', 'startedAt', 'finishedAt']) {
             expect(keys).not.toContain(key);
         }
@@ -135,9 +145,11 @@ describePostgres('DatabaseRunRepository runs', () => {
                 }],
             },
         });
+
         await store.insert(run);
 
         const got = await store.findOne('r1');
+
         expect(got).toEqual(run);
         expect(got!.trigger.attachments![0]!.createdAt).toBeInstanceOf(Date);
         expect(got!.trigger.attachments![0]!.createdAt.getTime()).toBe(createdAt.getTime());
@@ -173,6 +185,7 @@ describePostgres('DatabaseRunRepository runs', () => {
             status: 'queued',
         });
         const got = await store.findOne('r1');
+
         for (const run of [updated, got!]) {
             expect(Object.keys(run)).not.toContain('waiting');
             expect(Object.keys(run)).not.toContain('error');
@@ -185,14 +198,17 @@ describePostgres('DatabaseRunRepository runs', () => {
 
     it('runs.update guard has one winner under concurrency', async () => {
         await store.insert(makeRun('r1'));
+
         const results = await Promise.allSettled(Array.from(
             { length: 10 },
             () => store.update('r1', { status: 'running' }, { expectStatus: ['queued'] }),
         ));
         const fulfilled = results.filter((r) => r.status === 'fulfilled');
         const rejected = results.filter((r) => r.status === 'rejected');
+
         expect(fulfilled).toHaveLength(1);
         expect(rejected).toHaveLength(9);
+
         for (const r of rejected) {
             expect((r as PromiseRejectedResult).reason).toBeInstanceOf(InvalidRunStateError);
         }
@@ -210,9 +226,13 @@ describePostgres('DatabaseRunRepository runs', () => {
     it('runs.update sets updatedAt from the clock unless the patch has one', async () => {
         await store.insert(makeRun('r1'));
         clock.advance(500);
+
         const a = await store.update('r1', { address: 'x' });
+
         expect(a.updatedAt.getTime()).toBe(10_500);
+
         const b = await store.update('r1', { updatedAt: new Date(42) });
+
         expect(b.updatedAt.getTime()).toBe(42);
         expect((await store.findOne('r1'))!.updatedAt.getTime()).toBe(42);
     });
@@ -230,11 +250,13 @@ describePostgres('DatabaseRunRepository runs', () => {
 
     it('runs.update ignores patch keys that are Object.prototype members', async () => {
         await store.insert(makeRun('r1'));
+
         const patch = {
             constructor: 1,
             toString: 2,
             status: 'running',
         } as unknown as Partial<Run>;
+
         await expect(store.update('r1', patch)).resolves.toMatchObject({ id: 'r1', status: 'running' });
     });
 });

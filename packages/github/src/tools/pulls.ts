@@ -32,9 +32,9 @@ import type {
 } from './types.ts';
 
 type ListPullRequestsInput = {
-    repo: string; 
-    base?: string; 
-    limit?: number 
+    repo: string;
+    base?: string;
+    limit?: number
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -51,6 +51,7 @@ function headOf(data: Record<string, unknown>) {
     const base = record(data.base);
     const headRepo = isObject(head.repo) ? stringOr(head.repo.full_name, null) : null;
     const baseRepo = isObject(base.repo) ? stringOr(base.repo.full_name, null) : null;
+
     return {
         base: stringOr(base.ref, ''),
         head: stringOr(head.ref, ''),
@@ -71,6 +72,7 @@ function labelsOf(labels: unknown): string[] {
 /** A `GET /repos/{owner}/{repo}/pulls/{n}` body as the slim GithubPullRequest. */
 export function toPullRequest(data: Record<string, unknown>): GithubPullRequest {
     const facts = headOf(data);
+
     return {
         number: Number(data.number),
         title: String(data.title),
@@ -97,6 +99,7 @@ export function toPullRequest(data: Record<string, unknown>): GithubPullRequest 
 
 function toPullRequestSummary(data: Record<string, unknown>): GithubPullRequestSummary {
     const facts = headOf(data);
+
     return {
         number: Number(data.number),
         title: String(data.title),
@@ -142,6 +145,7 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const base = input.base === undefined ? undefined : requireRef(input.base, 'base');
                 const limit = input.limit === undefined ? PULL_REQUESTS_MAX : requireInteger(input.limit, 'limit', 1, PULL_REQUESTS_MAX);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const pullRequests: GithubPullRequestSummary[] = [];
                     let truncated = false;
@@ -152,16 +156,23 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
                         per_page: 100,
                         ...(base ? { base } : {}),
                     });
+
                     for await (const { data } of pages) {
                         for (const item of data) {
                             if (pullRequests.length === limit) {
                                 truncated = true;
+
                                 break;
                             }
+
                             pullRequests.push(toPullRequestSummary(item as unknown as Record<string, unknown>));
                         }
-                        if (truncated) break;
+
+                        if (truncated) {
+                            break;
+                        }
                     }
+
                     return { pullRequests, truncated };
                 });
             },
@@ -174,6 +185,7 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const pullNumber = requireInteger(input.number, 'number', 1);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
                         owner,
@@ -181,10 +193,11 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
                         pull_number: pullNumber,
                     });
                     const pull = toPullRequest(data as unknown as Record<string, unknown>);
+
                     return readChecks(octokit, { owner, repo }, {
-                        number: pull.number, 
-                        headSha: pull.headSha, 
-                        base: pull.base, 
+                        number: pull.number,
+                        headSha: pull.headSha,
+                        base: pull.base,
                     });
                 });
             },
@@ -197,6 +210,7 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const pullNumber = requireInteger(input.number, 'number', 1);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
                         owner,
@@ -217,14 +231,23 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
                         canPush: false,
                         reason: null,
                     };
-                    if (pull.headRepo === null) return { ...target, reason: 'head repository deleted' };
+
+                    if (pull.headRepo === null) {
+                        return { ...target, reason: 'head repository deleted' };
+                    }
+
                     const head = parseRepo(pull.headRepo);
                     const installation = await app.repositoryInstallation(head);
-                    if (installation === undefined) return { ...target, reason: `GitHub App not installed on ${pull.headRepo}` };
+
+                    if (installation === undefined) {
+                        return { ...target, reason: `GitHub App not installed on ${pull.headRepo}` };
+                    }
+
                     const installationId = installation.id;
                     const contents = permissionOf(installation.permissions.contents);
                     const workflows = permissionOf(installation.permissions.workflows);
                     const canPush = contents === 'write';
+
                     return {
                         ...target,
                         installationId,

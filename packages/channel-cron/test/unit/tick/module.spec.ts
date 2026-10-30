@@ -46,6 +46,7 @@ function setup(subscription: ChannelSubscription = cron.on('*/5 * * * *')) {
         subscription: s,
         scheduledAt,
     });
+
     return {
         clock,
         store,
@@ -56,9 +57,16 @@ function setup(subscription: ChannelSubscription = cron.on('*/5 * * * *')) {
 }
 
 async function runOf(store: ReturnType<typeof createMemoryStore>, result: Awaited<ReturnType<typeof fireCronSubscription>>) {
-    if (!result.dispatched) throw new Error('not dispatched');
+    if (!result.dispatched) {
+        throw new Error('not dispatched');
+    }
+
     const run = await store.runs.findOne(result.runId);
-    if (!run) throw new Error('run missing');
+
+    if (!run) {
+        throw new Error('run missing');
+    }
+
     return run;
 }
 
@@ -69,7 +77,9 @@ describe('fireCronSubscription', () => {
         const result = await fire();
 
         expect(result).toMatchObject({ dispatched: true, deduplicated: false });
+
         const run = await runOf(store, result);
+
         expect(run.trigger).toMatchObject({
             agent: 'sweep',
             trigger: 'cron:*/5 * * * *',
@@ -103,9 +113,11 @@ describe('fireCronSubscription', () => {
 
     it('allow sets no concurrency key', async () => {
         const allow = setup(cron.on('0 * * * *', { overlap: 'allow' }));
+
         expect((await runOf(allow.store, await allow.fire())).concurrencyKey).toBeUndefined();
 
         const queueOne = setup(cron.on('0 * * * *', { overlap: 'queue-one' }));
+
         expect((await runOf(queueOne.store, await queueOne.fire())).concurrencyKey).toBe('cron:0 * * * *');
     });
 
@@ -129,6 +141,7 @@ describe('fireCronSubscription', () => {
             scheduledAt: T,
             dispatch: async (envelope) => {
                 dispatched.push(envelope);
+
                 return { runId: 'r1', deduplicated: false };
             },
         });

@@ -84,18 +84,22 @@ const ENCODING: JSONSchema7 = {
 /** `utf8` (the default) or `base64`, else a ValidationError. */
 function encodingOf(value: unknown): Encoding {
     const encoding = optionalString(value, 'encoding') ?? 'utf8';
+
     if (encoding !== 'utf8' && encoding !== 'base64') {
         throw new ValidationError('encoding must be utf8 or base64.');
     }
+
     return encoding;
 }
 
 /** Strict base64 (whitespace allowed between the characters) as bytes, else a ValidationError. */
 function decodeBase64(content: string): Uint8Array {
     const compact = content.replace(/\s/g, '');
+
     if (compact.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) {
         throw new ValidationError('content is not valid base64.');
     }
+
     return new Uint8Array(Buffer.from(compact, 'base64'));
 }
 
@@ -104,12 +108,16 @@ function sliceResult(path: string, slice: string[], offset: number, totalLines: 
     let content = slice.join('\n');
     let endLine = offset - 1 + slice.length;
     let truncated = cut;
+
     if (content.length > READ_MAX_CHARS) {
         content = cutText(content, READ_MAX_CHARS);
         truncated = true;
+
         const newlines = content.split('\n').length - 1;
+
         endLine = offset + newlines - (content.endsWith('\n') ? 1 : 0);
     }
+
     return {
         path,
         content,
@@ -124,11 +132,11 @@ function sliceResult(path: string, slice: string[], offset: number, totalLines: 
 async function readLog(
     workspace: IWorkspace,
     input: {
-        path: string; 
-        below: string; 
-        offset: number; 
-        limit: number; 
-        signal: AbortSignal 
+        path: string;
+        below: string;
+        offset: number;
+        limit: number;
+        signal: AbortSignal
     },
 ): Promise<ReadFileResult> {
     const { offset, limit } = input;
@@ -136,19 +144,28 @@ async function readLog(
         ['sh', '-c', READ_LOG_SCRIPT, 'sh', input.below, String(offset), String(offset + limit - 1)],
         { signal: input.signal },
     );
+
     if (result.exitCode === 3) {
         throw new SandboxError(`file not found: ${input.path}`);
     }
+
     const totalLines = Number(result.stderr.trim().split('\n').at(-1));
+
     if (result.exitCode !== 0 || !Number.isSafeInteger(totalLines)) {
         throw new SandboxError(`cannot read ${input.path}: exit code ${result.exitCode}${result.stderr ? `: ${result.stderr.trim()}` : ''}`);
     }
+
     if (offset > Math.max(totalLines, 1)) {
         throw new ValidationError(`offset ${offset} is past the end of ${input.path}, which has ${totalLines} lines.`);
     }
+
     const lines = linesOf(result.stdout);
+
     // the exec's output cap may have cut the last line
-    if (result.stdoutTruncated && lines.length > 1) lines.pop();
+    if (result.stdoutTruncated && lines.length > 1) {
+        lines.pop();
+    }
+
     return sliceResult(input.path, lines, offset, totalLines, result.stdoutTruncated);
 }
 
@@ -171,11 +188,13 @@ async function readWorkspaceFile(
         limit,
     } = input;
     const bytes = await workspace.readBytes(path);
+
     if (input.encoding === 'base64') {
         if (bytes.length > BINARY_MAX_BYTES) {
             throw new ValidationError(`${path} has ${bytes.length} bytes, more than the ${BINARY_MAX_BYTES} a base64 read returns; ` +
                 'look at it with bash (e.g. xxd, file, head -c).');
         }
+
         return {
             path,
             encoding: 'base64',
@@ -185,15 +204,18 @@ async function readWorkspaceFile(
     }
 
     const mediaType = imageTypeOf(bytes);
+
     if (mediaType) {
         if (bytes.length > IMAGE_MAX_BYTES) {
             throw new SandboxError(`${path} is an image of ${bytes.length} bytes, more than the ${IMAGE_MAX_BYTES} read_file shows.`);
         }
+
         const artifact = await artifacts.put({
-            mediaType, 
-            filename: posix.basename(path), 
-            data: bytes, 
+            mediaType,
+            filename: posix.basename(path),
+            data: bytes,
         });
+
         return {
             path,
             type: 'image',
@@ -204,20 +226,26 @@ async function readWorkspaceFile(
     }
 
     let text: string;
+
     try {
         text = decodeUtf8File(bytes, absoluteWorkspacePath(path));
     } catch (error) {
         throw new SandboxError(`${absoluteWorkspacePath(path)} is not UTF-8 text; read it with encoding: 'base64'.`, { cause: error });
     }
+
     const lines = linesOf(text);
     const totalLines = lines.length;
+
     if (offset > Math.max(totalLines, 1)) {
         throw new ValidationError(`offset ${offset} is past the end of ${path}, which has ${totalLines} lines.`);
     }
+
     const result = sliceResult(path, lines.slice(offset - 1, offset - 1 + limit), offset, totalLines, false);
+
     if (input.repositoryInstructions) {
         result.instructions = await readRepositoryInstructions(workspace, [path], { signal: input.signal });
     }
+
     return result;
 }
 
@@ -254,6 +282,7 @@ export function readFileTool(workspaces: CodingWorkspaces, repositoryInstruction
                     ],
                 };
             }
+
             return { type: 'json', value: output };
         },
         execute: async (input, { context, abortSignal }) => {
@@ -264,6 +293,7 @@ export function readFileTool(workspaces: CodingWorkspaces, repositoryInstruction
             const limit = optionalInteger(body.limit, 'limit', 1, READ_MAX_LINES) ?? READ_MAX_LINES;
             const encoding = encodingOf(body.encoding);
             const workspace = await workspaceOf(workspaces, body, context);
+
             if (below !== undefined) {
                 return readLog(workspace, {
                     path,
@@ -304,6 +334,7 @@ export function writeFileTool(workspaces: CodingWorkspaces, queue: FileQueue): T
             const workspace = await workspaceOf(workspaces, body, context);
 
             await queue(fileKey(workspace.id, path), () => workspace.writeFile(path, content));
+
             return { path, bytes: typeof content === 'string' ? Buffer.byteLength(content, 'utf8') : content.length };
         },
     });

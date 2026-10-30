@@ -21,7 +21,10 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -33,9 +36,11 @@ function resolver(resolve: (ref: string) => ReturnType<IModelResolver['resolve']
         check: () => {},
         resolve: (ref) => {
             resolved.push(ref);
+
             return resolve(ref);
         },
     };
+
     return { models, resolved };
 }
 
@@ -60,15 +65,19 @@ async function runAgent(options: {
         models: options.models,
         onError: () => {},
     });
+
     engines.push(engine);
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: 'ops',
         trigger: 'http',
         channel: 'http',
         payload: {},
     });
+
     await engine.idle();
+
     return {
         run: await store.runs.findOne(runId),
         steps: await store.steps.find(runId),
@@ -79,6 +88,7 @@ describe('model resolution at execution start', () => {
     it('a string ref runs what the resolver returns', async () => {
         const { models, resolved } = resolver(() => mockModel([text('ok')]));
         const { run } = await runAgent({ model: 'router/cc/claude-opus-4-6', models });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('ok');
         expect(resolved).toEqual(['router/cc/claude-opus-4-6']);
@@ -87,6 +97,7 @@ describe('model resolution at execution start', () => {
     it('an agent without model runs the default', async () => {
         const { models, resolved } = resolver(() => mockModel([text('default')]));
         const { run } = await runAgent({ default: 'openai/gpt-5', models });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('default');
         expect(resolved).toEqual(['openai/gpt-5']);
@@ -94,6 +105,7 @@ describe('model resolution at execution start', () => {
 
     it('an agent without model runs a default model object', async () => {
         const { run } = await runAgent({ default: mockModel([text('object')]) });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('object');
     });
@@ -103,6 +115,7 @@ describe('model resolution at execution start', () => {
             throw new Error('No such model: router/missing');
         });
         const { run, steps } = await runAgent({ model: 'router/missing', models });
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('invalid_agent_definition');
         expect(run?.error?.message).toBe('Model "router/missing" could not be resolved: No such model: router/missing');
@@ -116,6 +129,7 @@ describe('model resolution at execution start', () => {
             default: 'openai/gpt-5',
             models,
         });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('own');
         expect(resolved).toEqual([]);
@@ -123,6 +137,7 @@ describe('model resolution at execution start', () => {
 
     it('without a resolver an object runs and a string never reaches a run', async () => {
         const { run } = await runAgent({ model: mockModel([text('plain')]) });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('plain');
         await expect(runAgent({ model: 'anthropic/m' })).rejects.toThrow(

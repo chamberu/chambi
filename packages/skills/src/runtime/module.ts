@@ -46,42 +46,60 @@ export class SkillRuntime implements ISkillRuntime {
         const extras = captured ?? copySkillInputs(inputs);
         const scope = [...this.globals, ...extras];
         const headers = composeSkillIdentities(skillHeaders(scope));
+
         assertSkillContents(scope.flatMap((input) => isSkillSource(input) ? [] : [input]));
         assertSkillToolCollision(headers, typeof agent.definition.tools === 'function' ? {} : agent.definition.tools ?? {});
-        if (!captured) this.agentSkills.set(agent, extras);
+
+        if (!captured) {
+            this.agentSkills.set(agent, extras);
+        }
     }
 
     protected resolveSource(source: RuntimeSkillSource, signal: AbortSignal): Promise<readonly Skill[]> {
         const key = source.sourceIdentity;
         let pending = this.sources.get(key);
+
         if (!pending) {
             pending = (async () => {
                 signal.throwIfAborted();
+
                 const result = await source.load({ signal });
+
                 signal.throwIfAborted();
+
                 if (!Array.isArray(result) || result.length !== source.skills.length) {
                     invalidSkill('source result does not match declared skills');
                 }
+
                 const skills = Object.freeze(result.map(copySkill));
+
                 assertSkillResultIdentities(source.skills, skills);
                 createSkillCatalog(skills);
+
                 return skills;
             })();
             this.sources.set(key, pending);
+
             const owned = pending;
+
             void pending.catch(() => {
-                if (this.sources.get(key) === owned) this.sources.delete(key);
+                if (this.sources.get(key) === owned) {
+                    this.sources.delete(key);
+                }
             });
         }
+
         return pending.then((skills) => {
             signal.throwIfAborted();
             assertSkillResultIdentities(source.skills, skills);
+
             return skills;
         });
     }
 
     async prepare(agents: readonly Agent[], { signal }: { signal: AbortSignal }): Promise<ISkillPreparation> {
         signal.throwIfAborted();
+
         const resolved: PreparedAgentSkills[] = [];
         const attested = new Map<string, string>();
         const attest = (skills: readonly Skill[]) => {
@@ -89,44 +107,73 @@ export class SkillRuntime implements ISkillRuntime {
                 const key = JSON.stringify([skill.name, skill.version, skill.hash]);
                 const fingerprint = createHash('sha256').update(JSON.stringify(skill)).digest('hex');
                 const previous = attested.get(key) ?? this.attestedSkills.get(key);
-                if (previous !== undefined && previous !== fingerprint) invalidSkill(`conflicting content for ${skill.name}`);
+
+                if (previous !== undefined && previous !== fingerprint) {
+                    invalidSkill(`conflicting content for ${skill.name}`);
+                }
+
                 attested.set(key, fingerprint);
             }
         };
         const globals: Skill[] = [];
+
         for (const input of this.globals) {
             globals.push(...(isSkillSource(input) ? await this.resolveSource(input, signal) : [input]));
         }
+
         attest(globals);
+
         for (const agent of agents) {
             const extras = this.agentSkills.get(agent);
-            if (!extras) invalidSkill('agent inputs must be checked before preparation');
+
+            if (!extras) {
+                invalidSkill('agent inputs must be checked before preparation');
+            }
+
             const skills = [...globals];
+
             for (const input of extras) {
                 skills.push(...(isSkillSource(input) ? await this.resolveSource(input, signal) : [input]));
             }
+
             attest(skills);
+
             const catalog = createSkillCatalog(skills);
             const contribution = Object.freeze({
                 instructions: Object.freeze(catalog.instructions ? [Object.freeze({ role: 'system', content: catalog.instructions })] : []) satisfies AgentInstructions,
                 tools: catalog.tools,
                 checkTools: (tools: typeof catalog.tools) => assertSkillToolCollision(catalog.skills, tools),
             });
+
             resolved.push(Object.freeze({ agent, contribution }));
         }
+
         signal.throwIfAborted();
+
         let committed = false;
+
         return Object.freeze({
             commit: () => {
-                if (committed) invalidSkill('preparation was already committed');
+                if (committed) {
+                    invalidSkill('preparation was already committed');
+                }
+
                 committed = true;
                 signal.throwIfAborted();
+
                 // Only staged keys are checked against the live ledger, without copying history.
                 for (const [key, fingerprint] of attested) {
                     const previous = this.attestedSkills.get(key);
-                    if (previous !== undefined && previous !== fingerprint) invalidSkill('conflicting content from concurrent preparation');
+
+                    if (previous !== undefined && previous !== fingerprint) {
+                        invalidSkill('conflicting content from concurrent preparation');
+                    }
                 }
-                for (const [key, fingerprint] of attested) this.attestedSkills.set(key, fingerprint);
+
+                for (const [key, fingerprint] of attested) {
+                    this.attestedSkills.set(key, fingerprint);
+                }
+
                 return Object.freeze(resolved);
             },
         });

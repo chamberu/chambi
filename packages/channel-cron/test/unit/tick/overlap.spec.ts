@@ -41,6 +41,7 @@ function setup(subscriptions: ChannelSubscription[]) {
         subscription,
         scheduledAt: at(tick),
     });
+
     return {
         clock,
         store,
@@ -51,7 +52,10 @@ function setup(subscriptions: ChannelSubscription[]) {
 }
 
 function idOf(result: CronTickResult): string {
-    if (!result.dispatched) throw new Error('not dispatched');
+    if (!result.dispatched) {
+        throw new Error('not dispatched');
+    }
+
     return result.runId;
 }
 
@@ -61,6 +65,7 @@ describe('overlap', () => {
         async (status) => {
             const { store, fire } = setup([cron.on('*/5 * * * *')]);
             const id = idOf(await fire(0));
+
             await store.runs.update(id, { status });
 
             expect(await fire(1)).toEqual({ dispatched: false, reason: 'overlap' });
@@ -72,6 +77,7 @@ describe('overlap', () => {
         async (status) => {
             const { store, fire } = setup([cron.on('*/5 * * * *')]);
             const id = idOf(await fire(0));
+
             await store.runs.update(id, { status });
 
             expect(await fire(1)).toMatchObject({ dispatched: true, deduplicated: false });
@@ -83,6 +89,7 @@ describe('overlap', () => {
         const second = cron.on('0 * * * *');
         const { store, fire } = setup([first, second]);
         const id = idOf(await fire(0, second));
+
         await store.runs.update(id, { status: 'running' });
 
         expect(await fire(0, first)).toMatchObject({ dispatched: true });
@@ -92,9 +99,11 @@ describe('overlap', () => {
         const subscription = cron.on('*/5 * * * *', { overlap: 'queue-one' });
         const { store, fire } = setup([subscription]);
         const run1 = idOf(await fire(0));
+
         await store.runs.update(run1, { status: 'running' });
 
         const run2 = idOf(await fire(1));
+
         expect((await store.runs.findOne(run2))?.concurrencyKey).toBe(subscription.id);
         expect(await fire(2)).toEqual({ dispatched: false, reason: 'overlap' });
 
@@ -110,12 +119,14 @@ describe('overlap', () => {
             fire,
         } = setup([cron.on('*/5 * * * *', { overlap: 'queue-one' })]);
         const run1 = idOf(await fire(0));
+
         // running on another replica, which holds a live claim (recovery leaves it alone)
         await store.runs.claim(run1, 'elsewhere', 60_000);
         await store.runs.update(run1, { status: 'running' });
         await engine.start();
 
         const run2 = idOf(await fire(1));
+
         await engine.idle();
         expect((await store.runs.findOne(run2))?.status).toBe('queued');
 

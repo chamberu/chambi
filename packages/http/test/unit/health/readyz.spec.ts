@@ -14,7 +14,9 @@ import { call, createTestApp } from '../../utils/app.ts';
 
 function storeWith(getRun: IStore['runs']['findOne'], clock: ControllableClock): IStore {
     const store = createMemoryStore({ clock });
+
     store.runs.findOne = getRun;
+
     return store;
 }
 
@@ -28,14 +30,18 @@ describe('GET /readyz', () => {
     it('answers ok without a token', async () => {
         const { app } = createTestApp();
         const response = await call(app, 'GET', '/readyz');
+
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ status: 'ok' });
     });
 
     it('fails while the engine drains', async () => {
         const { app, engine } = createTestApp();
+
         await engine.drain();
+
         const response = await call(app, 'GET', '/readyz');
+
         expect(response.status).toBe(503);
         expect(await response.json()).toEqual({ status: 'unavailable', reason: 'draining' });
     });
@@ -43,6 +49,7 @@ describe('GET /readyz', () => {
     it('fails once the shutdown started', async () => {
         const { app } = createTestApp({ shutdown: fakeShutdown(true) });
         const response = await call(app, 'GET', '/readyz');
+
         expect(response.status).toBe(503);
         expect(await response.json()).toEqual({ status: 'unavailable', reason: 'shutting-down' });
     });
@@ -54,6 +61,7 @@ describe('GET /readyz', () => {
         }, clock);
         const { app } = createTestApp({ clock, store });
         const response = await call(app, 'GET', '/readyz');
+
         expect(response.status).toBe(503);
         expect(await response.json()).toEqual({ status: 'unavailable', reason: 'store-unreachable' });
     });
@@ -65,12 +73,18 @@ describe('GET /readyz', () => {
         let settled = false;
         const pending = call(app, 'GET', '/readyz').then((response) => {
             settled = true;
+
             return response;
         });
-        await new Promise((resolve) => { setImmediate(resolve); });
+
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
         expect(settled).toBe(false);
         clock.advance(2_000);
+
         const response = await pending;
+
         expect(response.status).toBe(503);
         expect(await response.json()).toEqual({ status: 'unavailable', reason: 'store-unreachable' });
     });

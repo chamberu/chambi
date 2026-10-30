@@ -20,19 +20,25 @@ import {
 
 function withCode(message: string, code?: string): Error {
     const error = new Error(message);
-    if (code) (error as Error & { code: string }).code = code;
+
+    if (code) {
+        (error as Error & { code: string }).code = code;
+    }
+
     return error;
 }
 
 describe('isPackageNotFound', () => {
     it('reads Node\'s missing package', () => {
         const error = withCode('Cannot find package \'@ai-sdk/openai\' imported from /app/x.mjs', 'ERR_MODULE_NOT_FOUND');
+
         expect(isPackageNotFound(error, '@ai-sdk/openai')).toBe(true);
         expect(isPackageNotFound(error, '@ai-sdk/anthropic')).toBe(false);
     });
 
     it('reads Vite\'s unresolved import', () => {
         const error = withCode('Could not resolve "@ai-sdk/openai" imported by "@chamvi/app".');
+
         expect(isPackageNotFound(error, '@ai-sdk/openai')).toBe(true);
     });
 
@@ -41,6 +47,7 @@ describe('isPackageNotFound', () => {
             'Cannot find module \'/app/node_modules/@ai-sdk/openai/dist/index.mjs\' imported from /app/x.mjs',
             'ERR_MODULE_NOT_FOUND',
         );
+
         expect(isPackageNotFound(error, '@ai-sdk/openai')).toBe(false);
     });
 
@@ -117,13 +124,17 @@ describe('base URLs', () => {
         'not a url',
     ])('refuses %s without echoing it', (value) => {
         let caught: unknown;
+
         try {
             assertBaseUrl(value, 'FIELD');
         } catch (error) {
             caught = error;
         }
+
         expect(caught).toBeInstanceOf(InvalidAgentDefinitionError);
+
         const text = (caught as Error).message;
+
         expect(text).toBe(message);
         expect(text).not.toContain('u:p');
         expect(text).not.toContain('k=s');

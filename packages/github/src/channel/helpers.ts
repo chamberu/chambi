@@ -39,16 +39,20 @@ function invalid(message: string): InvalidAgentDefinitionError {
 
 export function resolveOptions(options: GithubChannelOptions): ResolvedGithubChannelOptions {
     const { app } = options ?? {};
+
     if (!isObject(app) || typeof app.octokit !== 'function' || typeof app.botLogin !== 'function') {
         throw invalid('app must be the IGithubApp of createGithubApp().');
     }
+
     const name = options.name ?? GITHUB_CHANNEL_NAME;
+
     if (typeof name !== 'string' || !CHANNEL_NAME_PATTERN.test(name) || name.length > 64) {
         throw invalid(`name must match ${CHANNEL_NAME_PATTERN} and have at most 64 characters.`);
     }
 
     const mention = options.mention ?? [];
     const mentions = typeof mention === 'string' ? [mention] : [...mention];
+
     for (const login of mentions) {
         if (typeof login !== 'string' || !LOGIN.test(login)) {
             throw invalid(`mention must hold GitHub logins without "@", got ${JSON.stringify(login)}.`);
@@ -58,13 +62,22 @@ export function resolveOptions(options: GithubChannelOptions): ResolvedGithubCha
     if (options.approvalUrl !== undefined && typeof options.approvalUrl !== 'function') {
         throw invalid('approvalUrl must be a function.');
     }
+
     if (options.onError !== undefined && typeof options.onError !== 'function') {
         throw invalid('onError must be a function.');
     }
+
     const timeoutMs = options.timeoutMs ?? GITHUB_CHANNEL_TIMEOUT_MS;
-    if (!isPositiveInteger(timeoutMs)) throw invalid('timeoutMs must be a positive integer.');
+
+    if (!isPositiveInteger(timeoutMs)) {
+        throw invalid('timeoutMs must be a positive integer.');
+    }
+
     const bodyLimit = options.bodyLimit ?? DEFAULT_BODY_LIMIT;
-    if (!isPositiveInteger(bodyLimit)) throw invalid('bodyLimit must be a positive integer.');
+
+    if (!isPositiveInteger(bodyLimit)) {
+        throw invalid('bodyLimit must be a positive integer.');
+    }
 
     return {
         app,
@@ -82,9 +95,17 @@ export function resolveOptions(options: GithubChannelOptions): ResolvedGithubCha
 /** `owner/repo#number` as owner, repo and number; `undefined` for anything else. */
 export function parseAddress(address: unknown): CommentTarget | undefined {
     const match = typeof address === 'string' ? ADDRESS.exec(address) : null;
-    if (!match?.[1] || !match[2] || !match[3]) return undefined;
+
+    if (!match?.[1] || !match[2] || !match[3]) {
+        return undefined;
+    }
+
     const number = Number(match[3]);
-    if (!isPositiveInteger(number)) return undefined;
+
+    if (!isPositiveInteger(number)) {
+        return undefined;
+    }
+
     return {
         owner: match[1],
         repo: match[2],
@@ -97,7 +118,10 @@ export function parseAddress(address: unknown): CommentTarget | undefined {
  * HTML comment breaks on `--` (and `-->`), whitespace or a long key.
  */
 export function markerKey(key: string): string {
-    if (SAFE_KEY.test(key) && !key.includes('--')) return key;
+    if (SAFE_KEY.test(key) && !key.includes('--')) {
+        return key;
+    }
+
     return `sha256:${createHash('sha256').update(key).digest('hex')}`;
 }
 
@@ -107,17 +131,28 @@ export function markerKey(key: string): string {
  * of how many were cut.
  */
 export function cutText(text: string, max: number): string {
-    if (text.length <= max) return text;
+    if (text.length <= max) {
+        return text;
+    }
+
     let end = max;
     const last = text.charCodeAt(end - 1);
-    if (last >= 0xD800 && last <= 0xDBFF) end--;
+
+    if (last >= 0xD800 && last <= 0xDBFF) {
+        end--;
+    }
+
     return `${text.slice(0, end)}\n… (cut, ${text.length - end} more characters)`;
 }
 
 /** Backticks, one more than the longest run of backticks in `text`, at least three. */
 export function fenceFor(text: string): string {
     let longest = 0;
-    for (const run of text.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
+
+    for (const run of text.match(/`+/g) ?? []) {
+        longest = Math.max(longest, run.length);
+    }
+
     return '`'.repeat(Math.max(3, longest + 1));
 }
 
@@ -125,7 +160,8 @@ export function fenceFor(text: string): string {
 function breakBacktickRuns(text: string): string {
     const pattern = new RegExp(`\`{${BACKTICK_RUN_MAX_LENGTH + 1},}`, 'g');
     const chunk = new RegExp(`\`{1,${BACKTICK_RUN_MAX_LENGTH}}`, 'g');
-    return text.replace(pattern, (run) => (run.match(chunk) ?? []).join('​'));
+
+    return text.replace(pattern, (run) => (run.match(chunk) ?? []).join('\u{200B}'));
 }
 
 /**
@@ -151,6 +187,7 @@ export function neutralizeTitle(title: string): string {
 export function renderOptions(options: readonly ApprovalOption[], multiple: boolean): string {
     const list = breakBacktickRuns(options.map((option) => `- ${option.id}: ${option.label}`).join('\n'));
     const fence = fenceFor(list);
+
     return `${multiple ? 'Options (choose one or more):' : 'Options (choose one):'}\n${fence}\n${list}\n${fence}`;
 }
 
@@ -171,17 +208,31 @@ export function renderComment(
     },
 ): string {
     const sections: string[] = [];
-    if (input.mentions.length > 0) sections.push(input.mentions.map((login) => `@${login}`).join(' '));
-    if (message.title !== undefined) sections.push(`### ${neutralizeTitle(message.title)}`);
+
+    if (input.mentions.length > 0) {
+        sections.push(input.mentions.map((login) => `@${login}`).join(' '));
+    }
+
+    if (message.title !== undefined) {
+        sections.push(`### ${neutralizeTitle(message.title)}`);
+    }
+
     const choice = message.kind === 'approval' && message.options !== undefined && message.options.length > 0;
     const options = choice ? renderOptions(message.options!, message.multiple === true) : undefined;
+
     if (message.body.length > 0) {
         const body = breakBacktickRuns(cutText(message.body, COMMENT_BODY_MAX_LENGTH - (options?.length ?? 0)));
         const fence = fenceFor(body);
+
         sections.push(`${fence}\n${body}\n${fence}`);
     }
-    if (options !== undefined) sections.push(options);
+
+    if (options !== undefined) {
+        sections.push(options);
+    }
+
     const footer: string[] = [];
+
     if (message.kind === 'approval') {
         const until = message.expiresAt ? `Waiting for approval until ${message.expiresAt.toISOString()}.` : 'Waiting for approval.';
         const link = input.approvalUrl && message.approvalId ?
@@ -191,6 +242,7 @@ export function renderComment(
                 agent: message.agent,
             }) :
             undefined;
+
         if (choice) {
             footer.push(link ?
                 `${until} Choose and approve or deny: ${link}` :
@@ -201,7 +253,9 @@ export function renderComment(
                 `${until} Answer it in the chamvi UI or through POST /runs/:id/approve.`);
         }
     }
+
     footer.push(`Run \`${message.runId}\` of agent \`${message.agent}\`.`);
     sections.push(footer.join('\n'), input.marker);
+
     return sections.join('\n\n');
 }

@@ -23,6 +23,7 @@ export type Deferred<T = void> = {
 
 export function deferred<T = void>(): Deferred<T> {
     const { promise, resolve } = Promise.withResolvers<T>();
+
     return { promise, resolve };
 }
 
@@ -31,6 +32,7 @@ export function hangingModel() {
     const hang = (signal?: AbortSignal) => new Promise<never>((_resolve, reject) => {
         signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
     });
+
     return new MockLanguageModelV4({
         doGenerate: async (options) => hang(options.abortSignal),
         doStream: async (options) => hang(options.abortSignal),
@@ -49,7 +51,11 @@ export function recording(module: IModule, events: string[], label = module.name
             events.push(`${label} setup`);
             await module.setup(container);
         },
-        ...(module.onReady && { onReady: async (container: IContainer) => { await module.onReady?.(container); } }),
+        ...(module.onReady && {
+            onReady: async (container: IContainer) => {
+                await module.onReady?.(container);
+            },
+        }),
         async teardown(container: IContainer) {
             events.push(`${label} teardown`);
             await module.teardown?.(container);
@@ -63,5 +69,6 @@ export async function rejectionOf(promise: Promise<unknown>): Promise<Error & { 
     } catch (error) {
         return error as Error;
     }
+
     throw new Error('expected a rejection');
 }

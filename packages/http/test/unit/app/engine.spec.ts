@@ -62,6 +62,7 @@ function setup() {
         rateLimit: false,
         channels: [hooks],
     });
+
     return {
         app,
         engine,
@@ -75,8 +76,11 @@ describe('createHttpApp over the engine', () => {
     it('serves the engine\'s agents', async () => {
         const { app } = setup();
         const response = await call(app, 'GET', '/agents', { token: ADMIN_TOKEN });
+
         expect(response.status).toBe(200);
+
         const { data } = await response.json() as { data: { name: string }[] };
+
         expect(data.map((agent) => agent.name)).toEqual(['echo', 'other']);
         expect((await call(app, 'POST', '/agents/other/runs', { token: ADMIN_TOKEN })).status).toBe(202);
     });
@@ -90,6 +94,7 @@ describe('createHttpApp over the engine', () => {
             payload: {},
         });
         const response = await call(app, 'GET', `/runs/${runId}`, { token: ADMIN_TOKEN });
+
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({ id: runId, status: 'queued' });
     });
@@ -103,17 +108,21 @@ describe('createHttpApp over the engine', () => {
         const started = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN });
         const { runId } = await started.json() as { runId: string };
         const reader = new SseReader(await call(app, 'GET', `/runs/${runId}/stream`, { token: ADMIN_TOKEN }));
+
         await reader.next(1);
 
         // another replica runs it: only the store poll sees the change
         const other = new Engine({ ...options, owner: 'replica-b' });
+
         await other.start();
         await other.idle();
         clock.advance(2_000);
+
         const events = await reader.rest();
         const statuses = events
             .filter((event) => event.event === 'run.updated')
             .map((event) => (JSON.parse(event.data) as { status: string }).status);
+
         expect(statuses).toContain('completed');
         await other.drain();
     });
@@ -129,6 +138,7 @@ describe('createHttpApp over the engine', () => {
         });
         const response = await call(app, 'GET', '/agents', { token: ADMIN_TOKEN });
         const { data } = await response.json() as { data: { name: string }[] };
+
         expect(data.map((agent) => agent.name)).toEqual(['echo']);
         expect((await call(app, 'POST', '/agents/other/runs', { token: ADMIN_TOKEN })).status).toBe(404);
         expect((await call(app, 'GET', '/agents/other/state/kv/k', { token: ADMIN_TOKEN })).status).toBe(404);
@@ -144,19 +154,23 @@ describe('createHttpApp over the engine', () => {
             metrics: false,
             rateLimit: false,
         });
+
         expect(() => make(['missing'])).toThrow(InvalidAgentDefinitionError);
         expect(() => make(['echo', 'echo'])).toThrow(InvalidAgentDefinitionError);
     });
 
     it('serves an agent registered after the app was built', async () => {
         const { app, engine } = setup();
+
         await engine.putAgent(defineAgent({
             name: 'late',
             model: textModel(),
             instructions: 'Late.',
             channels: [http.on()],
         }));
+
         const { data } = await (await call(app, 'GET', '/agents', { token: ADMIN_TOKEN })).json() as { data: { name: string }[] };
+
         expect(data.map((agent) => agent.name)).toEqual(['echo', 'other', 'late']);
         expect((await call(app, 'POST', '/agents/late/runs', { token: ADMIN_TOKEN })).status).toBe(202);
         expect((await call(app, 'PATCH', '/agents/late/state/kv/k', { token: ADMIN_TOKEN, body: { value: 1 } })).status).toBe(200);
@@ -165,6 +179,7 @@ describe('createHttpApp over the engine', () => {
 
     it('answers 404 after the agent was removed', async () => {
         const { app, engine } = setup();
+
         await engine.putAgent(defineAgent({
             name: 'hooked',
             model: textModel(),
@@ -178,7 +193,9 @@ describe('createHttpApp over the engine', () => {
         expect((await call(app, 'POST', '/agents/other/runs', { token: ADMIN_TOKEN })).status).toBe(404);
         expect((await call(app, 'POST', '/channels/webhook/hooked/x', { token: ADMIN_TOKEN, body: {} })).status).toBe(404);
         expect((await call(app, 'GET', '/agents/other/state/kv/k', { token: ADMIN_TOKEN })).status).toBe(404);
+
         const { data } = await (await call(app, 'GET', '/agents', { token: ADMIN_TOKEN })).json() as { data: { name: string }[] };
+
         expect(data.map((agent) => agent.name)).toEqual(['echo']);
     });
 
@@ -186,8 +203,11 @@ describe('createHttpApp over the engine', () => {
         const { app, engine } = setup();
         const started = await call(app, 'POST', '/agents/other/runs', { token: ADMIN_TOKEN });
         const { runId } = await started.json() as { runId: string };
+
         await engine.removeAgent('other');
+
         const response = await call(app, 'GET', `/runs/${runId}`, { token: ADMIN_TOKEN });
+
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({
             id: runId,
@@ -205,6 +225,7 @@ describe('createHttpApp over the engine', () => {
             metrics: false,
             rateLimit: false,
         });
+
         await engine.putAgent(defineAgent({
             name: 'late',
             model: textModel(),
@@ -212,7 +233,9 @@ describe('createHttpApp over the engine', () => {
             channels: [http.on()],
         }));
         await engine.removeAgent('other');
+
         const { data } = await (await call(app, 'GET', '/agents', { token: ADMIN_TOKEN })).json() as { data: { name: string }[] };
+
         expect(data.map((agent) => agent.name)).toEqual(['echo']);
         expect((await call(app, 'POST', '/agents/late/runs', { token: ADMIN_TOKEN })).status).toBe(404);
         expect((await call(app, 'POST', '/agents/other/runs', { token: ADMIN_TOKEN })).status).toBe(404);

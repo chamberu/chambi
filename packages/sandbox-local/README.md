@@ -32,7 +32,7 @@
 npm install @chamvi/sandbox-local @chamvi/sandbox @chamvi/core ai --save
 ```
 
-ESM only, Node.js `>=22`, a POSIX host (Linux or macOS) with `git` on the `PATH`. `@chamvi/core` and `@chamvi/sandbox` are peer dependencies; there are no other runtime dependencies.
+ESM only, Node.js `>=24.3.0`, a POSIX host (Linux or macOS) with `git` on the `PATH`. `@chamvi/core` and `@chamvi/sandbox` are peer dependencies; there are no other runtime dependencies.
 
 ## Usage
 

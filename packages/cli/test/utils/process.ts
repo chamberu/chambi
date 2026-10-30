@@ -82,5 +82,6 @@ export function createFakeProcess(): FakeProcess {
             };
         },
     };
+
     return fake;
 }

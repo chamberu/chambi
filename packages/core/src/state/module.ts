@@ -28,10 +28,12 @@ export function createAgentState<S extends StateSchema = StateSchema>(
                     where: q?.where as Record<string, unknown> | undefined,
                     limit: q?.limit,
                 });
+
                 return rows.map(({ id, doc }) => ({ ...(doc as object), id }) as { id: string } & Infer<S[K]>);
             },
             upsert: async (id: string, doc: Infer<S[K]>) => {
                 const value = await validate(agent, name, schema, doc);
+
                 await store.upsertDocument(agent, name, id, value);
             },
             remove: (id: string) => store.deleteDocument(agent, name, id),

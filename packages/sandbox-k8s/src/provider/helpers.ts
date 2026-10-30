@@ -58,8 +58,13 @@ const LABEL_NAME = /^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$/;
 /** True for a Kubernetes label key: `[prefix/]name`. */
 function isLabelKey(key: string): boolean {
     const slash = key.lastIndexOf('/');
-    if (slash === -1) return LABEL_NAME.test(key);
+
+    if (slash === -1) {
+        return LABEL_NAME.test(key);
+    }
+
     const prefix = key.slice(0, slash);
+
     return prefix.length <= 253 &&
         DNS_SUBDOMAIN.test(prefix) &&
         LABEL_NAME.test(key.slice(slash + 1));
@@ -86,50 +91,68 @@ export function assertKubernetesOptions(options: KubernetesSandboxOptions): void
     if (!isObject(options)) {
         throw new InvalidAgentDefinitionError('createKubernetesSandbox() options must be an object.');
     }
+
     if (typeof options.namespace !== 'string' || !DNS_LABEL.test(options.namespace)) {
         throw new InvalidAgentDefinitionError(`namespace must be a DNS-1123 label, got ${JSON.stringify(options.namespace)}.`);
     }
+
     const {
         client,
         clock,
         podLabels,
     } = options;
-    if (client !== undefined && (!isObject(client) || CLIENT_METHODS.some((method) => typeof client[method as keyof typeof client] !== 'function'))) {
+
+    const hasInvalidClientMethods = isObject(client) &&
+        CLIENT_METHODS.some((method) => typeof client[method as keyof typeof client] !== 'function');
+
+    if (client !== undefined && (!isObject(client) || hasInvalidClientMethods)) {
         throw new InvalidAgentDefinitionError('client must be an IPodClient.');
     }
+
     if (options.kubeConfig !== undefined && !isObject(options.kubeConfig)) {
         throw new InvalidAgentDefinitionError('kubeConfig must be a KubeConfig.');
     }
+
     assertImageOption(options.image);
+
     if (options.imagePullPolicy !== undefined && !PULL_POLICIES.includes(options.imagePullPolicy)) {
         throw new InvalidAgentDefinitionError(`imagePullPolicy must be one of ${PULL_POLICIES.join(', ')}, got ${JSON.stringify(options.imagePullPolicy)}.`);
     }
+
     if (podLabels !== undefined) {
         if (!isObject(podLabels)) {
             throw new InvalidAgentDefinitionError('podLabels must be an object of strings.');
         }
+
         for (const [key, value] of Object.entries(podLabels)) {
             if (MANAGED_LABELS.includes(key)) {
                 throw new InvalidAgentDefinitionError(`podLabels may not set the managed label ${key}.`);
             }
+
             if (!isLabelKey(key)) {
                 throw new InvalidAgentDefinitionError(`podLabels key ${JSON.stringify(key)} is no valid label key.`);
             }
+
             if (!isLabelValue(value)) {
                 throw new InvalidAgentDefinitionError(`podLabels ${key} must be a label value (at most 63 characters, alphanumeric ends, - _ . inside).`);
             }
         }
     }
+
     const { user, cache } = options;
+
     if (user !== undefined && (!isObject(user) || !isId(user.uid) || !isId(user.gid))) {
         throw new InvalidAgentDefinitionError('user must be { uid, gid } with integers of at least 0.');
     }
+
     if (options.readOnlyRoot !== undefined && typeof options.readOnlyRoot !== 'boolean') {
         throw new InvalidAgentDefinitionError('readOnlyRoot must be a boolean.');
     }
+
     if (cache !== undefined && (!isObject(cache) || typeof cache.claimName !== 'string' || !DNS_SUBDOMAIN.test(cache.claimName) || cache.claimName.length > 253)) {
         throw new InvalidAgentDefinitionError('cache must be { claimName } naming a PersistentVolumeClaim (a DNS-1123 subdomain).');
     }
+
     assertTmpSizeOption(options.tmpSize);
     assertPositiveInteger('startTimeoutMs', options.startTimeoutMs);
     assertPositiveInteger('pollMs', options.pollMs);
@@ -158,9 +181,9 @@ export function assertKubernetesOptions(options: KubernetesSandboxOptions): void
 export function buildPod(input: PodInput): V1Pod {
     const lifetime = lifetimeSeconds(input.info);
     const env = {
-        ...SANDBOX_ENV, 
-        ...CACHE_ENV, 
-        ...input.env, 
+        ...SANDBOX_ENV,
+        ...CACHE_ENV,
+        ...input.env,
     };
     const { uid, gid } = input.user;
     const root = uid === 0;
@@ -249,19 +272,26 @@ export function buildPod(input: PodInput): V1Pod {
 /** `running`, `pending`, or the reason the pod will never run. */
 export function podState(pod: V1Pod): { state: 'running' | 'pending' } | { state: 'failed'; reason: string } {
     const status = pod.status ?? {};
+
     if (status.phase === 'Failed' || status.phase === 'Succeeded') {
         const detail = [status.reason, status.message].filter(Boolean).join(': ');
+
         return { state: 'failed', reason: `phase ${status.phase}${detail ? ` (${detail})` : ''}` };
     }
+
     const container = status.containerStatuses?.find((item) => item.name === CONTAINER_NAME);
     const waiting = container?.state?.waiting;
+
     if (waiting?.reason && FATAL_WAITING_REASONS.includes(waiting.reason)) {
         return { state: 'failed', reason: `${waiting.reason}${waiting.message ? `: ${waiting.message}` : ''}` };
     }
+
     if (container?.state?.terminated) {
         const { terminated } = container.state;
+
         return { state: 'failed', reason: `container terminated (${terminated.reason ?? `exit ${terminated.exitCode}`})` };
     }
+
     return { state: status.phase === 'Running' ? 'running' : 'pending' };
 }
 
@@ -275,7 +305,10 @@ export async function guard<T>(action: string, run: () => Promise<T>): Promise<T
     try {
         return await run();
     } catch (error) {
-        if (error instanceof ChamviError) throw error;
+        if (error instanceof ChamviError) {
+            throw error;
+        }
+
         throw new SandboxError(`cannot ${action}`, { cause: error });
     }
 }
@@ -283,6 +316,8 @@ export async function guard<T>(action: string, run: () => Promise<T>): Promise<T
 /** The in-cluster config, else `KUBECONFIG` or `~/.kube/config`. */
 export function loadDefaultKubeConfig(): KubeConfig {
     const kubeConfig = new KubeConfig();
+
     kubeConfig.loadFromDefault();
+
     return kubeConfig;
 }

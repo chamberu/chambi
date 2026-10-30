@@ -85,8 +85,8 @@ const GET_RUN_INPUT = fromJsonSchema<GetRunArgs>({
     type: 'object',
     properties: {
         runId: {
-            type: 'string', 
-            minLength: 1, 
+            type: 'string',
+            minLength: 1,
             pattern: NO_NUL,
         },
     },
@@ -98,8 +98,8 @@ const LIST_RUNS_INPUT = fromJsonSchema<ListRunsArgs>({
     type: 'object',
     properties: {
         agent: {
-            type: 'string', 
-            minLength: 1, 
+            type: 'string',
+            minLength: 1,
             pattern: NO_NUL,
         },
         status: { type: 'array', items: { type: 'string', enum: Object.values(RunStatus) } },
@@ -170,12 +170,14 @@ function registerReadTools(server: McpServer, ctx: HttpContext, principal: Princ
         annotations: { readOnlyHint: true },
     }, (args) => runTool(ctx, async () => {
         assertCanListRuns(principal, args.agent);
+
         const { data, total } = await ctx.store.runs.find({
             ...(args.agent !== undefined ? { agent: args.agent } : {}),
             ...(args.status !== undefined ? { status: args.status } : {}),
             limit: args.limit ?? DEFAULT_PAGE_LIMIT,
             offset: args.offset ?? 0,
         });
+
         return toolResult({ data: data.map(summarize), total });
     }));
 }
@@ -186,6 +188,7 @@ function describeAgent(agent: Agent): string {
         .filter((message) => message.role === 'system')
         .map((message) => message.content);
     const firstLine = texts.flatMap((text) => text.split('\n')).find((line) => line.trim()) ?? '';
+
     return firstLine.trim().slice(0, DESCRIPTION_MAX_LENGTH) || `Starts a run of agent "${agent.name}".`;
 }
 
@@ -197,14 +200,20 @@ function describeAgent(agent: Agent): string {
  */
 export function buildRunTool(agent: Agent, options: McpEndpointOptions): McpRunTool | undefined {
     const subscription = findHttpSubscription(agent);
-    if (!subscription) return undefined;
+
+    if (!subscription) {
+        return undefined;
+    }
+
     if (`run_${agent.name}`.length > MCP_TOOL_NAME_MAX_LENGTH) {
         throw new InvalidAgentDefinitionError(
             `The MCP tool "run_${agent.name}" exceeds ${MCP_TOOL_NAME_MAX_LENGTH} characters: shorten the agent name to ${MCP_TOOL_NAME_MAX_LENGTH - 4} or set mcp: false.`,
         );
     }
+
     const schema = subscription.options.schema as StandardSchemaV1 | undefined;
     let inputSchema: McpRunTool['inputSchema'];
+
     try {
         inputSchema = fromJsonSchema<RunAgentArgs>({
             type: 'object',
@@ -233,9 +242,10 @@ export function buildRunTool(agent: Agent, options: McpEndpointOptions): McpRunT
         });
     } catch (error) {
         throw new InvalidAgentDefinitionError(
-            `The payload schema of agent "${agent.name}" is no valid JSON Schema for MCP: ${error instanceof Error ? error.message : String(error)}`,
+            `The payload schema of agent "${agent.name}" is no valid JSON Schema for MCP: ${Error.isError(error) ? error.message : String(error)}`,
         );
     }
+
     return {
         agent,
         subscription,
@@ -272,21 +282,31 @@ export function createRunToolSource(ctx: HttpContext, options: McpEndpointOption
     const built = new WeakMap<Agent, McpRunTool | null>();
     const toolOf = (agent: Agent): McpRunTool | null => {
         const cached = built.get(agent);
-        if (cached !== undefined) return cached;
+
+        if (cached !== undefined) {
+            return cached;
+        }
+
         let tool: McpRunTool | null = null;
+
         try {
             tool = buildRunTool(agent, options) ?? null;
         } catch (error) {
             ctx.onError(error);
         }
+
         built.set(agent, tool);
+
         return tool;
     };
 
     // a folder agent (one with a revision) never fails the app: it was checked before it was registered
     for (const agent of ctx.agents.list()) {
-        if (ctx.engine.agentRevision(agent.name) === undefined) built.set(agent, buildRunTool(agent, options) ?? null);
-        else toolOf(agent);
+        if (ctx.engine.agentRevision(agent.name) === undefined) {
+            built.set(agent, buildRunTool(agent, options) ?? null);
+        } else {
+            toolOf(agent);
+        }
     }
 
     return () => ctx.agents.list()
@@ -302,11 +322,14 @@ function registerRunTool(
     options: McpEndpointOptions,
 ): void {
     const {
-        agent, 
-        subscription, 
-        schema, 
+        agent,
+        subscription,
+        schema,
     } = tool;
-    if (!hasPermission(extra.principal.permissions, agentPermission(agent.name, 'run'))) return;
+
+    if (!hasPermission(extra.principal.permissions, agentPermission(agent.name, 'run'))) {
+        return;
+    }
 
     server.registerTool(`run_${agent.name}`, {
         title: `Run ${agent.name}`,
@@ -327,8 +350,10 @@ function registerRunTool(
         const waitSeconds = Math.min(args.waitSeconds ?? 0, options.maxWaitSeconds);
         // a wait holds one stream.maxOpen slot; over the cap the dispatched run is answered at once
         const release = waitSeconds > 0 ? acquireStreamSlot(ctx) : undefined;
+
         if (!release) {
             const status = deduplicated ? (await ctx.store.runs.findOne(runId))?.status ?? RunStatus.QUEUED : RunStatus.QUEUED;
+
             return toolResult({
                 runId,
                 status,
@@ -338,12 +363,14 @@ function registerRunTool(
 
         // the HTTP request going away, or an MCP cancel notification
         const signal = AbortSignal.any([extra.signal, toolCtx.mcpReq.signal]);
+
         try {
             const run = await waitForRun(ctx, runId, {
                 timeoutMs: waitSeconds * 1_000,
                 pollMs: MCP_WAIT_POLL_MS,
                 signal,
             });
+
             return toolResult(toRunToolResult(run, deduplicated));
         } finally {
             release();
@@ -358,6 +385,7 @@ function registerApproveTool(server: McpServer, ctx: HttpContext, principal: Pri
         inputSchema: APPROVE_RUN_INPUT,
     }, (args) => runTool(ctx, async () => {
         const run = await loadApprovableRun(ctx, principal, args.runId);
+
         await ctx.engine.approve(run.id, {
             approvalId: args.approvalId,
             approved: args.approved,
@@ -365,6 +393,7 @@ function registerApproveTool(server: McpServer, ctx: HttpContext, principal: Pri
             ...(args.selected !== undefined ? { selected: args.selected } : {}),
             approver: toInvoker(principal),
         });
+
         return toolResult({ runId: run.id, status: RunStatus.QUEUED });
     }));
 }
@@ -377,7 +406,10 @@ export function registerTools(
     extra: McpRequestExtra,
     options: McpEndpointOptions,
 ): void {
-    for (const tool of runTools) registerRunTool(server, ctx, tool, extra, options);
+    for (const tool of runTools) {
+        registerRunTool(server, ctx, tool, extra, options);
+    }
+
     registerReadTools(server, ctx, extra.principal);
     registerApproveTool(server, ctx, extra.principal);
 }

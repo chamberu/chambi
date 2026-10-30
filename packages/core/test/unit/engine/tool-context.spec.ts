@@ -41,7 +41,10 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -68,6 +71,7 @@ const lookup = defineTool({
     inputSchema: z.object({}),
     execute: async (_input, { context }) => {
         seen.push(context);
+
         return 'found';
     },
 });
@@ -114,8 +118,11 @@ function setup(s: Setup) {
         owner: s.owner,
         onError: () => {},
     });
+
     engines.push(engine);
+
     const notifier = recordApprovals(engine);
+
     return {
         clock,
         store,
@@ -134,9 +141,13 @@ const env = (invoker: Invoker | undefined = alice) => ({
 
 async function runOnce(s: Setup) {
     const ctx = setup(s);
+
     await ctx.engine.start();
+
     const { runId } = await ctx.engine.dispatch(env());
+
     await ctx.engine.idle();
+
     return {
         ...ctx,
         runId,
@@ -150,16 +161,23 @@ function scripted(script: Array<MockResponse | 'hang'>) {
     const model = new MockLanguageModelV4({
         doStream: async (options) => {
             const turn = script[calls.length];
+
             calls.push(options);
-            if (!turn) throw new Error('mock script exhausted');
+
+            if (!turn) {
+                throw new Error('mock script exhausted');
+            }
+
             if (turn === 'hang') {
                 return new Promise((_resolve, reject) => {
                     options.abortSignal?.addEventListener('abort', () => reject(options.abortSignal?.reason));
                 });
             }
+
             return mockModel([turn]).doStream(options);
         },
     });
+
     return { model, calls };
 }
 
@@ -184,6 +202,7 @@ describe('tool context', () => {
                 });
                 await context.state.set('k', 'v');
                 await context.artifacts.put({ mediaType: 'text/plain', data: new Uint8Array([1]) });
+
                 return 'ok';
             },
         });
@@ -192,6 +211,7 @@ describe('tool context', () => {
             runId,
             run,
         } = await runOnce({ model: mockModel([callTool('release'), text('done')]), tools: { release } });
+
         expect(run?.status).toBe('completed');
         expect(recorded).toHaveLength(1);
         expect(recorded[0]!.runId).toBe(runId);
@@ -219,6 +239,7 @@ describe('tool context', () => {
             ],
         }, text('done')]);
         const { run } = await runOnce({ model, tools: { lookup } });
+
         expect(run?.status).toBe('completed');
         expect(seen).toHaveLength(2);
         expect(seen[0]).toBe(seen[1]);
@@ -232,10 +253,12 @@ describe('tool context', () => {
             contextSchema: z.object({ token: z.string() }).optional() as unknown as StandardSchemaV1<{ token: string }>,
             execute: async (_input, { context }) => {
                 contexts.push(context);
+
                 return 'ok';
             },
         });
         const { run } = await runOnce({ model: mockModel([callTool('own'), text('done')]), tools: { own } });
+
         expect(run?.status).toBe('completed');
         expect(contexts).toEqual([undefined]);
     });
@@ -246,10 +269,12 @@ describe('tool context', () => {
             inputSchema: z.object({}),
             execute: async (_input, options) => {
                 contexts.push(options.context);
+
                 return 'ok';
             },
         });
         const { run } = await runOnce({ model: mockModel([callTool('bare'), text('done')]), tools: { bare } });
+
         expect(run?.status).toBe('completed');
         expect(contexts).toEqual([undefined]);
     });
@@ -262,6 +287,7 @@ describe('tool context', () => {
             contextSchema: identity<{ token: string }>(),
             execute: async (_input, { context }) => {
                 executeSeen.push(context);
+
                 return 'ok';
             },
         });
@@ -271,6 +297,7 @@ describe('tool context', () => {
             contextSchema: z.object({ token: z.string() }),
             execute: async (_input, { context }) => {
                 zoddedSeen.push(context);
+
                 return 'ok';
             },
         });
@@ -279,6 +306,7 @@ describe('tool context', () => {
             tools: { raw, zodded },
             toolsContext: { raw: token, zodded: token },
         });
+
         expect(run?.status).toBe('completed');
         expect(executeSeen[0]).toBe(token);
         expect(zoddedSeen[0]).toEqual(token);
@@ -291,6 +319,7 @@ describe('tool context', () => {
             inputSchema: z.object({}),
             execute: async (_input, options) => {
                 contexts.push(options.context);
+
                 return 'ok';
             },
         });
@@ -299,6 +328,7 @@ describe('tool context', () => {
             tools: { bare },
             toolsContext: { bare: token },
         });
+
         expect(run?.status).toBe('completed');
         expect(contexts[0]).toBe(token);
     });
@@ -311,6 +341,7 @@ describe('tool context', () => {
             contextSchema: identity<{ token: string }>(),
             execute: async (_input, { context }) => {
                 contexts.push(context);
+
                 return 'ok';
             },
         });
@@ -319,6 +350,7 @@ describe('tool context', () => {
             tools: { raw },
             toolsContext: { raw: token },
         });
+
         await engine.start();
         await engine.dispatch(env());
         await engine.idle();
@@ -331,6 +363,7 @@ describe('tool context', () => {
 
     it('rejects a toolsContext entry naming a chamvi tool', async () => {
         const model = mockModel([text('never')]);
+
         expect(() => defineAgent({
             name: 'release',
             instructions: 'x',
@@ -355,6 +388,7 @@ describe('tool context', () => {
             tools: () => ({ lookup }),
             toolsContext: { lookup: {} },
         });
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({
             code: 'invalid_agent_definition',
@@ -366,6 +400,7 @@ describe('tool context', () => {
 
     it('rejects a toolsContext entry naming no tool', async () => {
         const model = mockModel([text('never')]);
+
         expect(() => defineAgent({
             name: 'release',
             instructions: 'x',
@@ -379,6 +414,7 @@ describe('tool context', () => {
             tools: () => ({ lookup }),
             toolsContext: { missing: {} },
         });
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({
             code: 'invalid_agent_definition',
@@ -394,12 +430,14 @@ describe('tool context', () => {
             contextSchema: z.object({ token: z.string() }),
             execute: async () => {
                 executed++;
+
                 return 'ok';
             },
         });
         const expected = 'Type validation failed for tool context (third): ' +
             'the agent has no toolsContext entry for it, and its contextSchema requires one.';
         const first = await runOnce({ model: mockModel([callTool('third'), text('done')]), tools: { third } });
+
         expect(first.run?.status).toBe('failed');
         expect(first.run?.error).toEqual({ code: 'validation_error', message: expected });
         expect(executed).toBe(0);
@@ -425,12 +463,14 @@ describe('tool context', () => {
             contextSchema: echoing,
             execute: async () => 'ok',
         });
+
         for (const [name, t] of [['search', search], ['echo', echo]] as const) {
             const { run } = await runOnce({
                 model: mockModel([callTool(name), text('done')]),
                 tools: { [name]: t },
                 toolsContext: { [name]: { apikey: 'sk-SECRET-123' } },
             });
+
             expect(run?.status).toBe('failed');
             expect(run?.error?.code).toBe('validation_error');
             expect(run?.error?.message).toBe(`Type validation failed for tool context (${name}): ` +
@@ -453,10 +493,12 @@ describe('tool context', () => {
             contextSchema: lookalike,
             execute: async () => {
                 executed++;
+
                 return 'ok';
             },
         });
         const { run } = await runOnce({ model: mockModel([callTool('copy'), text('done')]), tools: { copy } });
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({
             code: 'validation_error',
@@ -473,6 +515,7 @@ describe('tool context', () => {
             // eslint-disable-next-line prefer-object-spread
             tools: { lookup: Object.assign({}, lookup, { description: 'copy' }) },
         });
+
         expect(run?.status).toBe('completed');
         expect(seen).toHaveLength(1);
         expect(seen[0]!.run.runId).toBe(runId);
@@ -484,9 +527,11 @@ describe('tool context', () => {
             model: mockModel([callTool('lookup'), text('done')]),
             tools: (ctx) => {
                 factoryContexts.push(ctx);
+
                 return { lookup };
             },
         });
+
         expect(run?.status).toBe('completed');
         expect(factoryContexts).toHaveLength(1);
         expect(seen[0]).toBe(factoryContexts[0]);
@@ -497,10 +542,15 @@ describe('tool context', () => {
             model: mockModel([callTool('lookup'), text('done'), callTool('lookup'), text('done')]),
             tools: { lookup },
         });
+
         await engine.start();
+
         const first = await engine.dispatch(env());
+
         await engine.idle();
+
         const second = await engine.dispatch(env());
+
         await engine.idle();
         expect(seen.map((c) => c.run.runId)).toEqual([first.runId, second.runId]);
     });
@@ -517,6 +567,7 @@ describe('tool context', () => {
             ]),
             state: { notes: z.object({ title: z.string() }) },
         });
+
         expect(run?.status).toBe('completed');
         expect(await store.state.findDocuments('release', 'notes')).toEqual([{ id: 'n1', doc: { title: 'hello' } }]);
     });
@@ -529,6 +580,7 @@ describe('tool context', () => {
             state: { notes: z.object({ title: z.string() }) },
             toolsContext: { state_notes_list: {} },
         });
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.message).toMatch(/toolsContext entry "state_notes_list" names a chamvi tool/);
         expect(model.doStreamCalls).toHaveLength(0);
@@ -541,6 +593,7 @@ describe('tool context', () => {
             effectKey: (input, c) => `${c.run.trigger.invoker?.id}:post:${input.body}`,
             execute: async (_input, { context }) => {
                 applied++;
+
                 return context.run.runId;
             },
         });
@@ -552,6 +605,7 @@ describe('tool context', () => {
             model: mockModel([callTool('post', { body: 'hi' }), text('done')]),
             tools: { post },
         });
+
         expect(run?.status).toBe('completed');
         expect(applied).toBe(1);
         expect(await store.effects.findOne('u-alice:post:hi')).toEqual({ result: runId });
@@ -563,6 +617,7 @@ describe('tool context', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 seen.push(context);
+
                 return 'deployed';
             },
         });
@@ -570,6 +625,7 @@ describe('tool context', () => {
             inputSchema: z.object({}),
             execute: async () => {
                 rolledBack++;
+
                 return 'rolled back';
             },
         });
@@ -582,11 +638,14 @@ describe('tool context', () => {
             tools: { deploy, rollback },
             toolPolicy: requireToolPermission(),
         });
+
         expect(run?.status).toBe('completed');
         expect(seen).toHaveLength(1);
         expect(seen[0]!.run.runId).toBe(runId);
         expect(rolledBack).toBe(0);
+
         const refused = (await store.steps.find(runId)).find((s) => s.kind === 'tool' && s.name === 'rollback');
+
         expect((refused?.error as { code: string } | undefined)?.code).toBe('tool_not_allowed');
     });
 
@@ -604,6 +663,7 @@ describe('tool context', () => {
                     invoker: context.run.trigger.invoker,
                     aborted: context.run.signal.aborted,
                 });
+
                 return 'deployed';
             },
         });
@@ -616,8 +676,11 @@ describe('tool context', () => {
             tools: { deploy },
             hooks: gateTool('deploy'),
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env());
+
         await engine.idle();
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         expect(recorded).toHaveLength(0);
@@ -651,8 +714,11 @@ describe('tool context', () => {
             owner: 'B',
             claimTtlMs: 60_000,
         });
+
         await a.engine.start();
+
         const { runId } = await a.engine.dispatch(env());
+
         await vi.waitFor(() => expect(calls).toHaveLength(1));
         await a.engine.drain({ timeoutMs: 50 });
         expect((await store.runs.findOne(runId))?.status).toBe('interrupted');
@@ -673,9 +739,12 @@ describe('tool context', () => {
             model: mockModel([callTool('lookup'), text('done')]),
             tools: { lookup },
         });
+
         expect(run?.status).toBe('completed');
+
         const steps = JSON.stringify(await store.steps.find(runId));
         const checkpoint = JSON.stringify(await store.checkpoints.findOne(runId));
+
         for (const json of [steps, checkpoint]) {
             expect(json).not.toContain('toolsContext');
             expect(json).not.toContain('"artifacts"');

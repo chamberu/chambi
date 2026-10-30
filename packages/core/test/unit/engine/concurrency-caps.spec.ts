@@ -17,7 +17,9 @@ import { concurrencyHarness, subscription } from '../../utils/concurrency.ts';
 const harnesses: ReturnType<typeof concurrencyHarness>[] = [];
 function setup() {
     const h = concurrencyHarness();
+
     harnesses.push(h);
+
     return h;
 }
 afterEach(async () => {
@@ -29,18 +31,25 @@ describe('nested execution caps', () => {
     it('releases numerical capacity while waiting, preserves key exclusion, and admits approval resumes', async () => {
         const h = setup();
         const agent = h.agent('worker', 1);
+
         agent.definition.hooks = {
             beforeToolExecution: async (_call, ctx) => {
-                if (ctx.run.trigger.payload === 'approval') await approve(ctx, { title: 'Continue?' });
+                if (ctx.run.trigger.payload === 'approval') {
+                    await approve(ctx, { title: 'Continue?' });
+                }
             },
         };
+
         const engine = h.engine([agent]);
         const waiting = await h.dispatch(engine, 'a', { concurrencyKey: 'same', payload: 'approval' });
         const keyed = await h.dispatch(engine, 'a', { concurrencyKey: 'same' });
         const free = await h.dispatch(engine, 'a', { concurrencyKey: 'different' });
+
         await engine.start();
         await h.settle();
+
         const request = (await h.store.runs.findOne(waiting.runId))!;
+
         expect(request.status).toBe('waiting');
         expect((await h.store.runs.findOne(keyed.runId))?.status).toBe('queued');
         expect((await h.store.runs.findOne(free.runId))?.status).toBe('running');
@@ -56,8 +65,11 @@ describe('nested execution caps', () => {
     it('cancels queued cancellation requests even when numerical capacity is full', async () => {
         const h = setup();
         const engine = h.engine([h.agent('worker', 1)]);
+
         await h.dispatch(engine);
+
         const cancel = await h.dispatch(engine);
+
         await h.store.runs.update(cancel.runId, { cancelRequested: true });
         await engine.start();
         await h.settle();
@@ -69,12 +81,15 @@ describe('nested execution caps', () => {
         const h = setup();
         const agent = h.agent('worker', 2);
         const engine = h.engine([agent]);
+
         await h.dispatch(engine);
         await h.dispatch(engine);
         await engine.start();
         await h.settle();
         agent.definition.concurrencyMaxRuns = 1;
+
         const later = await h.dispatch(engine);
+
         await h.settle();
         expect((await h.store.runs.find({ status: ['running'] })).total).toBe(2);
         h.releases.get(h.entered[0]!)!();
@@ -91,14 +106,19 @@ describe('nested execution caps', () => {
         const a = h.engine([agent]);
         const first = await h.dispatch(a);
         const next = await h.dispatch(a);
+
         await a.start();
         await h.settle();
+
         const drained = a.drain({ timeoutMs: 1 });
+
         await h.settle();
         h.clock.advance(1);
         await drained;
         expect((await h.store.runs.findOne(first.runId))?.status).toBe('interrupted');
+
         const b = h.engine([agent]);
+
         await b.start();
         await h.settle();
         expect((await h.store.runs.find({ status: ['running'] })).total).toBe(1);
@@ -108,7 +128,11 @@ describe('nested execution caps', () => {
         const h = setup();
         const engine = h.engine([h.agent('worker', 2)]);
         const ids = [];
-        for (let i = 0; i < 3; i++) ids.push((await h.dispatch(engine, 'a', { concurrencyKey: `key-${i}` })).runId);
+
+        for (let i = 0; i < 3; i++) {
+            ids.push((await h.dispatch(engine, 'a', { concurrencyKey: `key-${i}` })).runId);
+        }
+
         await engine.start();
         await h.settle();
         expect((await h.store.runs.find({ status: ['running'] })).total).toBe(2);
@@ -125,11 +149,18 @@ describe('nested execution caps', () => {
             h.agent('other', 1),
         ]);
         const ids = [];
-        for (const trigger of ['a', 'a', 'a', 'b', 'b', 'c', 'unknown']) ids.push((await h.dispatch(engine, trigger)).runId);
+
+        for (const trigger of ['a', 'a', 'a', 'b', 'b', 'c', 'unknown']) {
+            ids.push((await h.dispatch(engine, trigger)).runId);
+        }
+
         const other = await h.dispatch(engine, 'a', { agent: 'other' });
+
         await engine.start();
         await h.settle();
+
         const running = (await h.store.runs.find({ status: ['running'], agent: 'worker' })).data;
+
         expect(running).toHaveLength(4);
         expect(running.filter((r) => r.trigger.trigger === 'a')).toHaveLength(2);
         expect(running.filter((r) => r.trigger.trigger === 'b')).toHaveLength(1);
@@ -147,16 +178,29 @@ describe('nested execution caps', () => {
         let admissions = 0;
         let counts = 0;
         const acquire = h.store.locks.acquire.bind(h.store.locks);
+
         h.store.locks.acquire = async (...args) => {
-            if (args[0].startsWith('admission:')) admissions++;
+            if (args[0].startsWith('admission:')) {
+                admissions++;
+            }
+
             return acquire(...args);
         };
+
         const list = h.store.runs.find.bind(h.store.runs);
+
         h.store.runs.find = async (query) => {
-            if (query?.agent === 'worker' && query.status?.includes('running')) counts++;
+            if (query?.agent === 'worker' && query.status?.includes('running')) {
+                counts++;
+            }
+
             return list(query);
         };
-        for (const trigger of ['a', 'b', 'unknown']) await h.dispatch(engine, trigger);
+
+        for (const trigger of ['a', 'b', 'unknown']) {
+            await h.dispatch(engine, trigger);
+        }
+
         await engine.start();
         await h.settle();
         expect(h.entered).toHaveLength(3);

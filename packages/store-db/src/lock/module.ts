@@ -47,6 +47,7 @@ export class DatabaseLockRepository implements ILockRepository {
             .returning(['key'])
             .updateEntity(false)
             .execute();
+
         return result.raw.length === 1;
     }
 
@@ -57,6 +58,7 @@ export class DatabaseLockRepository implements ILockRepository {
     /** Delete rows expired at the supplied time (default: the clock). */
     async purgeExpired(now: Date = this.now()): Promise<number> {
         const result = await this.locks.delete({ expiresAt: LessThanOrEqual(now) });
+
         return result.affected ?? 0;
     }
 }

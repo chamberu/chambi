@@ -32,6 +32,7 @@ import { callTool, connectMcp } from '../../utils/mcp.ts';
 import { mockModel } from '../../utils/model.ts';
 
 let engine: Engine | undefined;
+
 afterEach(async () => {
     await engine?.drain({ timeoutMs: 0 });
     engine = undefined;
@@ -49,15 +50,19 @@ describe('HTTP subscription execution cap', () => {
             instructions: 'Work once.',
             channels: [http.on({ concurrencyMaxRuns: 1 })],
             model: new MockLanguageModelV4({
-                doStream: (options) => mockModel([{
-                    parts: options.prompt.some((message) => message.role === 'tool') ?
-                        [{ type: 'text', text: 'done' }] :
-                        [{
-                            type: 'tool-call',
-                            toolName: 'hold',
-                            input: {},
-                        }],
-                }]).doStream(options),
+                doStream: (options) => {
+                    const hasToolMessage = options.prompt.some((message) => message.role === 'tool');
+
+                    return mockModel([{
+                        parts: hasToolMessage ?
+                            [{ type: 'text', text: 'done' }] :
+                            [{
+                                type: 'tool-call',
+                                toolName: 'hold',
+                                input: {},
+                            }],
+                    }]).doStream(options);
+                },
             }),
             tools: (ctx) => ({
                 hold: defineTool({
@@ -69,18 +74,23 @@ describe('HTTP subscription execution cap', () => {
                             releases.set(ctx.run.runId, resolve);
                             ctx.run.signal.addEventListener('abort', () => resolve(), { once: true });
                         });
+
                         return 'done';
                     },
                 }),
             }),
         });
+
         engine = new Engine({
             store,
             clock,
             agents: [agent],
             channels: [httpChannel(), mcpChannel()],
-            onError: (error) => { errors.push(error); },
+            onError: (error) => {
+                errors.push(error);
+            },
         });
+
         const app = createHttpApp({
             engine,
             auth: [testAuth],
@@ -88,15 +98,24 @@ describe('HTTP subscription execution cap', () => {
             metrics: false,
         });
         const client = await connectMcp(app, ADMIN_TOKEN);
+
         try {
             await engine.start();
+
             const response = await call(app, 'POST', '/agents/worker/runs', { token: ADMIN_TOKEN, body: {} });
+
             expect(response.status).toBe(202);
+
             const rest = await response.json() as { runId: string };
+
             await vi.waitFor(() => expect(entered).toEqual([rest.runId]));
+
             const result = await callTool(client, 'run_worker', { waitSeconds: 0 });
+
             expect(result.isError).toBeFalsy();
+
             const mcp = result.structuredContent as { runId: string };
+
             expect(await store.runs.findOne(rest.runId)).toMatchObject({ trigger: { trigger: 'http', channel: 'http' } });
             expect(await store.runs.findOne(mcp.runId)).toMatchObject({ status: 'queued', trigger: { trigger: 'http', channel: 'mcp' } });
             expect(entered).toEqual([rest.runId]);

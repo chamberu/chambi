@@ -38,6 +38,7 @@ describe('serializeRun', () => {
             updatedAt: now,
         };
         const view = serializeRun(run);
+
         expect(view).not.toHaveProperty('claim');
         expect(view).toEqual({ ...run, claim: undefined });
         expect(Object.keys(view)).toEqual(Object.keys(run).filter((key) => key !== 'claim'));
@@ -69,10 +70,11 @@ describe('serializeRun', () => {
             updatedAt: now,
         };
         const view = serializeRun(run);
+
         expect(view.trigger.invoker).toEqual({
-            id: 'u1', 
-            kind: 'authup', 
-            name: 'alice', 
+            id: 'u1',
+            kind: 'authup',
+            name: 'alice',
         });
         expect(run.trigger.invoker?.permissions).toEqual(['*']);
     });
@@ -102,6 +104,7 @@ describe('serializeStep', () => {
                 },
             },
         };
+
         expect(serializeStep(step).output).toEqual({
             approvalId: 'a1',
             approved: true,
@@ -112,12 +115,15 @@ describe('serializeStep', () => {
 
     it('leaves other steps and a wait step without approver as they are', () => {
         const wait: Step = { ...base, output: { approvalId: 'a1', approved: false } };
+
         expect(serializeStep(wait)).toBe(wait);
+
         const toolStep: Step = {
-            ...base, 
-            kind: 'tool', 
-            output: { approver: { permissions: ['x'] } }, 
+            ...base,
+            kind: 'tool',
+            output: { approver: { permissions: ['x'] } },
         };
+
         expect(serializeStep(toolStep)).toBe(toolStep);
     });
 });

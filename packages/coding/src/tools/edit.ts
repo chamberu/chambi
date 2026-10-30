@@ -60,13 +60,15 @@ function readEdit(value: unknown, label = ''): Required<Edit> {
     const oldString = requireString(body.oldString, `${label}oldString`);
     const newString = requireText(body.newString, `${label}newString`);
     const replaceAll = optionalBoolean(body.replaceAll, `${label}replaceAll`) ?? false;
+
     if (oldString === newString) {
         throw new ValidationError(`${label}oldString and newString are the same: nothing to change.`);
     }
+
     return {
-        oldString, 
-        newString, 
-        replaceAll, 
+        oldString,
+        newString,
+        replaceAll,
     };
 }
 
@@ -84,26 +86,34 @@ type EditDocument = {
 async function readDocument(workspace: IWorkspace, path: string): Promise<EditDocument> {
     const raw = await readRawText(workspace, path);
     const spans = workspace.redactedSpans?.(raw) ?? [];
-    if (spans.length === 0) return { text: raw, markers: [] };
+
+    if (spans.length === 0) {
+        return { text: raw, markers: [] };
+    }
+
     let text = '';
     let from = 0;
     const markers: EditDocument['markers'] = [];
+
     for (const span of spans) {
         text += raw.slice(from, span.start);
         markers.push({ at: text.length, raw: raw.slice(span.start, span.end) });
         text += REDACTED;
         from = span.end;
     }
+
     return { text: text + raw.slice(from), markers };
 }
 
 function rawText(document: EditDocument): string {
     let raw = '';
     let from = 0;
+
     for (const marker of document.markers) {
         raw += `${document.text.slice(from, marker.at)}${marker.raw}`;
         from = marker.at + REDACTED.length;
     }
+
     return raw + document.text.slice(from);
 }
 
@@ -120,17 +130,22 @@ function applyEdit(document: EditDocument, edit: Required<Edit>, path: string, l
     const { text, markers } = document;
     // the leftmost non-overlapping matches, as split() finds them
     const matches: number[] = [];
+
     for (let at = text.indexOf(oldString); at !== -1; at = text.indexOf(oldString, at + oldString.length)) {
         matches.push(at);
     }
+
     if (matches.length === 0) {
         throw new ValidationError(`${label}oldString not found in ${path}. Read the file and copy the text exactly.`);
     }
+
     if (matches.length > 1 && !replaceAll) {
         throw new ValidationError(`${label}oldString has ${matches.length} matches in ${path}: add surrounding text to make it unique, or pass replaceAll: true.`);
     }
+
     const targets = replaceAll ? matches : matches.slice(0, 1);
     const touches = targets.some((at) => markers.some((marker) => at < marker.at + REDACTED.length && marker.at < at + oldString.length));
+
     if (touches) {
         throw new ValidationError(`${label}oldString overlaps a redacted credential in ${path}: edit the text around [redacted] only.`);
     }
@@ -138,16 +153,20 @@ function applyEdit(document: EditDocument, edit: Required<Edit>, path: string, l
     // plain concatenation: replace() would expand `$&` and friends in newString
     let next = '';
     let from = 0;
+
     for (const at of targets) {
         next += `${text.slice(from, at)}${newString}`;
         from = at + oldString.length;
     }
+
     next += text.slice(from);
+
     const delta = newString.length - oldString.length;
     const moved = markers.map((marker) => ({
         at: marker.at + delta * targets.filter((at) => at < marker.at).length,
         raw: marker.raw,
     }));
+
     return {
         document: { text: next, markers: moved },
         replacements: targets.length,
@@ -169,7 +188,9 @@ export function editFileTool(workspaces: CodingWorkspaces, queue: FileQueue): To
             // read, change and write in one turn of the file's queue
             return queue(fileKey(workspace.id, path), async () => {
                 const result = applyEdit(await readDocument(workspace, path), edit, path);
+
                 await workspace.writeFile(path, rawText(result.document));
+
                 return { path, replacements: result.replacements };
             });
         },
@@ -198,25 +219,30 @@ export function multiEditTool(workspaces: CodingWorkspaces, queue: FileQueue): T
         execute: async (input, { context }) => {
             const body = inputObject(input);
             const path = requirePath(body.path);
+
             if (!Array.isArray(body.edits) || body.edits.length === 0 || body.edits.length > MULTI_EDIT_MAX_EDITS) {
                 throw new ValidationError(`edits must be a list of 1 to ${MULTI_EDIT_MAX_EDITS} edits.`);
             }
+
             const edits = body.edits.map((edit: unknown, index) => readEdit(edit, `edit ${index + 1}: `));
             const workspace = await workspaceOf(workspaces, body, context);
 
             return queue(fileKey(workspace.id, path), async () => {
                 let document = await readDocument(workspace, path);
                 let replacements = 0;
+
                 edits.forEach((edit, index) => {
                     const result = applyEdit(document, edit, path, `edit ${index + 1}: `);
+
                     document = result.document;
                     replacements += result.replacements;
                 });
                 await workspace.writeFile(path, rawText(document));
+
                 return {
-                    path, 
-                    edits: edits.length, 
-                    replacements, 
+                    path,
+                    edits: edits.length,
+                    replacements,
                 };
             });
         },

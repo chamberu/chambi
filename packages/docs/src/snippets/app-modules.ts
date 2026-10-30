@@ -29,6 +29,7 @@ const repro = defineAgent({
     // (github.app and sandbox.manager still exist at import time, for definition-time use)
     tools: (ctx) => {
         const manager = injectSandboxContext(ctx);
+
         return {
             ...injectGithubContext(ctx).readTools(),
             ...manager.tools(),
@@ -38,12 +39,19 @@ const repro = defineAgent({
     hooks: {
         // every shell command waits for the owner, asked in their OpenClaw chat
         async beforeToolExecution({ toolName, input }, ctx) {
-            if (toolName !== 'bash') return input;
+            if (toolName !== 'bash') {
+                return input;
+            }
+
             const { approved } = await ctx.channels.findOneOrFail('openclaw').approve({
                 title: 'Run a shell command?',
                 body: (input as { command: string }).command,
             });
-            if (!approved) throw new ToolDeniedError('The owner refused the command.');
+
+            if (!approved) {
+                throw new ToolDeniedError('The owner refused the command.');
+            }
+
             return input;
         },
     },

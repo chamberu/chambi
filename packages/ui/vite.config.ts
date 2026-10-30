@@ -25,17 +25,29 @@ function icons(): Plugin {
         name: 'chamvi-icons',
         resolveId: (id) => (id === ICONS_ID ? `\0${ICONS_ID}` : undefined),
         load(id) {
-            if (id !== `\0${ICONS_ID}`) return undefined;
+            if (id !== `\0${ICONS_ID}`) {
+                return undefined;
+            }
+
             const names = new Set<string>(['x', 'check']);
             const collect = (value: unknown): void => {
-                if (typeof value === 'string' && value.startsWith('lucide:')) names.add(value.slice('lucide:'.length));
-                else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+                if (typeof value === 'string' && value.startsWith('lucide:')) {
+                    names.add(value.slice('lucide:'.length));
+                } else if (value && typeof value === 'object') {
+                    Object.values(value).forEach(collect);
+                }
             };
+
             collect(lucide().defaults);
+
             const path = createRequire(import.meta.url).resolve('@iconify-json/lucide/icons.json');
             const collection = JSON.parse(readFileSync(path, 'utf8')) as IconifyJSON;
             const subset = getIcons(collection, [...names].sort(), true);
-            if (!subset) throw new Error('lucide icons missing');
+
+            if (!subset) {
+                throw new Error('lucide icons missing');
+            }
+
             return `export default ${JSON.stringify(subset)};`;
         },
     };

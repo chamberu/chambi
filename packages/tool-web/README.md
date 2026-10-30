@@ -33,7 +33,7 @@
 npm install @chamvi/tool-web @chamvi/core @chamvi/http ai --save
 ```
 
-ESM only, Node.js `>=22`. `@chamvi/core` and `ai` are peer dependencies. The tool runs in the chamvi process, not in a workspace; an agent with a workspace can also use `curl`, `npm view` or `pip index` through the coding tools' `bash`.
+ESM only, Node.js `>=24.3.0`. `@chamvi/core` and `ai` are peer dependencies. The tool runs in the chamvi process, not in a workspace; an agent with a workspace can also use `curl`, `npm view` or `pip index` through the coding tools' `bash`.
 
 ## Usage
 

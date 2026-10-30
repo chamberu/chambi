@@ -17,6 +17,7 @@ describe('streamEnded', () => {
     it.each(['ECONNRESET', 'EPIPE'])('reports a connection the daemon closed (%s) as closed: the exit code comes from inspect', async (code) => {
         const stream = new PassThrough();
         const ended = streamEnded(stream, new AbortController().signal);
+
         stream.emit('error', failWith(code));
         await expect(ended).resolves.toBe('closed');
     });
@@ -24,6 +25,7 @@ describe('streamEnded', () => {
     it('reports a stream that ended as ended', async () => {
         const stream = new PassThrough();
         const ended = streamEnded(stream, new AbortController().signal);
+
         stream.end();
         stream.resume();
         await expect(ended).resolves.toBe('ended');
@@ -32,6 +34,7 @@ describe('streamEnded', () => {
     it('rejects on any other stream error', async () => {
         const stream = new PassThrough();
         const ended = streamEnded(stream, new AbortController().signal);
+
         stream.emit('error', failWith('EPROTO'));
         await expect(ended).rejects.toThrow('read EPROTO');
     });

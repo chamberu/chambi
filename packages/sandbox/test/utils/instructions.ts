@@ -38,12 +38,14 @@ export async function createLocalFixture(): Promise<LocalFixture> {
     const provider: ISandboxProvider = createLocalSandbox({ root, cache: false });
     const workspace = await provider.create({ runId: `run-${randomUUID()}` });
     const dir = join(root, workspace.id, 'repo');
+
     return {
         workspace,
         dir,
         async write(files) {
             for (const [path, content] of Object.entries(files)) {
                 const file = join(dir, path);
+
                 await mkdir(dirname(file), { recursive: true });
                 await writeFile(file, content);
             }
@@ -65,8 +67,13 @@ export function run(command: string, args: string[], stdin?: Uint8Array): Promis
         const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
         let stdout = '';
         let stderr = '';
-        child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-        child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+        child.stdout.on('data', (chunk: Buffer) => {
+            stdout += chunk.toString();
+        });
+        child.stderr.on('data', (chunk: Buffer) => {
+            stderr += chunk.toString();
+        });
         child.on('error', reject);
         child.on('close', (code) => resolve({
             code: code ?? 1,
@@ -96,6 +103,7 @@ export function createDockerExecTransport(container: string): IExecTransport {
             return new Promise((resolve, reject) => {
                 const child = spawn('docker', ['exec', '-i', container, ...argv], { stdio: ['pipe', 'pipe', 'pipe'] });
                 const onAbort = () => child.kill('SIGKILL');
+
                 options.signal.addEventListener('abort', onAbort, { once: true });
                 child.stdout.on('data', (chunk: Buffer) => options.stdout.write(new Uint8Array(chunk)));
                 child.stderr.on('data', (chunk: Buffer) => options.stderr.write(new Uint8Array(chunk)));
@@ -138,9 +146,17 @@ export async function createDockerFixture(image: string, user?: string): Promise
         '-w',
         '/workspace',
     ];
-    if (user) args.push('--user', user);
+
+    if (user) {
+        args.push('--user', user);
+    }
+
     const started = await run('docker', [...args, image, '600']);
-    if (started.code !== 0) throw new Error(`docker run failed: ${started.stderr}`);
+
+    if (started.code !== 0) {
+        throw new Error(`docker run failed: ${started.stderr}`);
+    }
+
     const transport = createDockerExecTransport(name);
     const workspace = createRemoteWorkspace({
         id: randomUUID(),
@@ -154,8 +170,12 @@ export async function createDockerFixture(image: string, user?: string): Promise
     });
     const sh = async (script: string) => {
         const result = await run('docker', ['exec', '-i', '-w', '/workspace', name, 'sh', '-c', script]);
-        if (result.code !== 0) throw new Error(`fixture script failed: ${result.stderr}`);
+
+        if (result.code !== 0) {
+            throw new Error(`fixture script failed: ${result.stderr}`);
+        }
     };
+
     return {
         workspace,
         sh,
@@ -166,7 +186,10 @@ export async function createDockerFixture(image: string, user?: string): Promise
                     ['exec', '-i', '-w', '/workspace', name, 'sh', '-c', 'mkdir -p "$(dirname "$1")" && cat > "$1"', 'sh', path],
                     new TextEncoder().encode(content),
                 );
-                if (result.code !== 0) throw new Error(`fixture write failed: ${result.stderr}`);
+
+                if (result.code !== 0) {
+                    throw new Error(`fixture write failed: ${result.stderr}`);
+                }
             }
         },
         async dispose() {

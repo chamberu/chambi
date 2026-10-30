@@ -73,8 +73,10 @@ function viewInvoker(invoker: Invoker): InvokerView {
  */
 export function serializeRun(run: Run): RunView {
     const view = { ...run };
+
     delete view.claim;
     delete view.conversation;
+
     return {
         ...view,
         trigger: run.trigger.invoker ? { ...run.trigger, invoker: viewInvoker(run.trigger.invoker) } : run.trigger,
@@ -83,9 +85,16 @@ export function serializeRun(run: Run): RunView {
 
 /** A step as it leaves the package: a `wait` step's approver without its `permissions`. */
 export function serializeStep(step: Step): Step {
-    if (step.kind !== 'wait' || !isObject(step.output)) return step;
+    if (step.kind !== 'wait' || !isObject(step.output)) {
+        return step;
+    }
+
     const { approver } = step.output as { approver?: unknown };
-    if (!isObject(approver)) return step;
+
+    if (!isObject(approver)) {
+        return step;
+    }
+
     return { ...step, output: { ...step.output, approver: viewInvoker(approver as Invoker) } };
 }
 
@@ -98,9 +107,11 @@ export function canReadRun(principal: Principal, run: Run): boolean {
 /** The run, once the principal may read it: 404, then 403. */
 export async function loadReadableRun(ctx: HttpContext, principal: Principal, id: string): Promise<Run> {
     const run = await ctx.store.runs.findOneOrFail(id);
+
     if (!canReadRun(principal, run)) {
         throw new ForbiddenError({ message: `Missing permission "${Permission.RUN_READ}".` });
     }
+
     return run;
 }
 
@@ -109,15 +120,25 @@ export async function loadReadableRun(ctx: HttpContext, principal: Principal, id
  * agent it may run (one store query keeps `total` and paging exact).
  */
 export function assertCanListRuns(principal: Principal, agent: string | undefined): void {
-    if (hasPermission(principal.permissions, Permission.RUN_READ)) return;
-    if (agent !== undefined && hasPermission(principal.permissions, agentPermission(agent, 'run'))) return;
+    if (hasPermission(principal.permissions, Permission.RUN_READ)) {
+        return;
+    }
+
+    if (agent !== undefined && hasPermission(principal.permissions, agentPermission(agent, 'run'))) {
+        return;
+    }
+
     throw new ForbiddenError({ message: `Missing permission "${Permission.RUN_READ}".` });
 }
 
 /** The agent's `http.on()` subscription, else 404. */
 export function requireHttpSubscription(agent: Agent): ChannelSubscription {
     const subscription = findHttpSubscription(agent);
-    if (!subscription) throw new NotFoundError({ message: `Agent "${agent.name}" has no http subscription.` });
+
+    if (!subscription) {
+        throw new NotFoundError({ message: `Agent "${agent.name}" has no http subscription.` });
+    }
+
     return subscription;
 }
 
@@ -128,28 +149,40 @@ export function findHttpSubscription(agent: Agent): ChannelSubscription | undefi
 
 export function createStartRunContainer(): Container<StartRunBody> {
     const container = new Container<StartRunBody>();
+
     container.mount('payload', { optional: true }, isDefined());
     container.mount('idempotencyKey', { optional: true }, isString({ min: 1, max: KEY_MAX_LENGTH }));
     container.mount('address', { optional: true }, isString({ min: 1, max: KEY_MAX_LENGTH }));
     container.mount('attachments', { optional: true }, isArrayOf(createAttachmentContainer(), { max: MAX_ATTACHMENTS }));
+
     return container;
 }
 
 /** One attachment; unknown keys are dropped. */
 function createAttachmentContainer(): Container<ArtifactInput> {
     const container = new Container<ArtifactInput>();
+
     container.mount('mediaType', isMediaType());
     container.mount('filename', { optional: true }, isString({ min: 1, max: ATTACHMENT_FILENAME_MAX_LENGTH }));
     container.mount('data', isBase64());
+
     return container;
 }
 
 /** An artifact of `run` with its bytes; ArtifactNotFoundError (404) for an unknown id or another run's artifact. */
 export async function loadRunArtifact(ctx: HttpContext, run: Run, id: string): Promise<{ artifact: Artifact; data: Uint8Array }> {
     const artifact = await ctx.store.artifacts.findOne(id);
-    if (!artifact || artifact.runId !== run.id) throw new ArtifactNotFoundError(id);
+
+    if (!artifact || artifact.runId !== run.id) {
+        throw new ArtifactNotFoundError(id);
+    }
+
     const data = await ctx.store.artifacts.read(id);
-    if (!data) throw new ArtifactNotFoundError(id);
+
+    if (!data) {
+        throw new ArtifactNotFoundError(id);
+    }
+
     return { artifact, data };
 }
 
@@ -170,7 +203,10 @@ function encodeRfc5987(value: string): string {
 
 /** `attachment`, with `filename` and an RFC 5987 `filename*` when the artifact has a filename. */
 export function contentDisposition(filename: string | undefined): string {
-    if (filename === undefined) return 'attachment';
+    if (filename === undefined) {
+        return 'attachment';
+    }
+
     return `attachment; filename="${asciiFilename(filename)}"; filename*=UTF-8''${encodeRfc5987(filename)}`;
 }
 
@@ -189,25 +225,40 @@ const RUN_STATUSES = new Set<string>(Object.values(RunStatus));
  */
 function readAgentFilter(filter: IFilter, agentNames: Iterable<string>): string {
     const { value } = filter;
+
     if (filter.operator !== 'eq' || Array.isArray(value) || isObject(value)) {
         throw new BadRequestError({ message: 'filter[agent] takes one agent name.' });
     }
-    if (typeof value === 'string') return value;
+
+    if (typeof value === 'string') {
+        return value;
+    }
 
     const matches = [...agentNames].filter((name) => parseFilterScalar(name) === value);
+
     if (matches.length > 1) {
         throw new BadRequestError({ message: 'filter[agent] matches more than one agent; the query string cannot tell them apart.' });
     }
+
     return matches[0] ?? String(value);
 }
 
 function readStatusFilter(filter: IFilter): RunStatusLiteral[] {
     let values: unknown[] | undefined;
-    if (filter.operator === 'eq') values = [filter.value];
-    else if (filter.operator === 'in' && Array.isArray(filter.value)) values = filter.value;
-    if (!values || values.some((value) => !(typeof value === 'string' && RUN_STATUSES.has(value)))) {
+
+    if (filter.operator === 'eq') {
+        values = [filter.value];
+    } else if (filter.operator === 'in' && Array.isArray(filter.value)) {
+        values = filter.value;
+    }
+
+    const hasInvalidStatus = values !== undefined &&
+        values.some((value) => !(typeof value === 'string' && RUN_STATUSES.has(value)));
+
+    if (!values || hasInvalidStatus) {
         throw new BadRequestError({ message: 'filter[status] takes run statuses.' });
     }
+
     return values as RunStatusLiteral[];
 }
 
@@ -224,26 +275,37 @@ export function parseRunListQuery(searchParams: URLSearchParams, agentNames: Ite
         offset: decoded.offset ?? 0,
         order: 'asc',
     };
+
     for (const filter of decoded.filters) {
         if (seen.has(filter.field)) {
             throw new BadRequestError({ message: `filter[${filter.field}] may be given once.` });
         }
+
         seen.add(filter.field);
-        if (filter.field === 'agent') query.agent = readAgentFilter(filter, agentNames);
-        else query.status = readStatusFilter(filter);
+
+        if (filter.field === 'agent') {
+            query.agent = readAgentFilter(filter, agentNames);
+        } else {
+            query.status = readStatusFilter(filter);
+        }
     }
 
     const [sort, ...others] = decoded.sorts;
+
     if (others.length > 0 || (sort && sort.name !== 'createdAt')) {
         throw new BadRequestError({ message: 'Only sort=createdAt or sort=-createdAt is supported.' });
     }
-    if (sort?.operator === 'DESC') query.order = 'desc';
+
+    if (sort?.operator === 'DESC') {
+        query.order = 'desc';
+    }
 
     return query;
 }
 
 export function createApproveContainer(): Container<ApproveBody> {
     const container = new Container<ApproveBody>();
+
     container.mount('approvalId', isString({ min: 1, max: APPROVAL_ID_MAX_LENGTH }));
     container.mount('approved', isBoolean());
     container.mount('reason', { optional: true }, isString({ max: APPROVAL_REASON_MAX_LENGTH }));
@@ -252,6 +314,7 @@ export function createApproveContainer(): Container<ApproveBody> {
         { optional: true },
         isStringArray({ max: APPROVAL_OPTIONS_MAX, item: { min: 1, max: APPROVAL_OPTION_ID_MAX_LENGTH } }),
     );
+
     return container;
 }
 
@@ -261,12 +324,15 @@ export function createApproveContainer(): Container<ApproveBody> {
  */
 export async function loadApprovableRun(ctx: HttpContext, principal: Principal, id: string): Promise<Run> {
     const run = await ctx.store.runs.findOneOrFail(id);
+
     assertCanApprove(principal, run);
+
     return run;
 }
 
 function assertCanApprove(principal: Principal, run: Run): void {
     const permission = agentPermission(run.agent, 'approve');
+
     if (!hasPermission(principal.permissions, permission)) {
         throw new ForbiddenError({ message: `Missing permission "${permission}".` });
     }

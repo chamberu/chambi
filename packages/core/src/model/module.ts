@@ -30,10 +30,23 @@ function isModelRef(value: unknown): value is ModelRef {
  */
 export function checkDefaultModel(options: ModelCheckOptions): void {
     const { model, models } = options;
-    if (model === undefined) return;
-    if (!isModelRef(model)) throw new InvalidAgentDefinitionError(`The default model ${SHAPE}`);
-    if (typeof model !== 'string') return;
-    if (!models) throw new InvalidAgentDefinitionError(`The default model "${model}" is a model string, ${NO_RESOLVER}`);
+
+    if (model === undefined) {
+        return;
+    }
+
+    if (!isModelRef(model)) {
+        throw new InvalidAgentDefinitionError(`The default model ${SHAPE}`);
+    }
+
+    if (typeof model !== 'string') {
+        return;
+    }
+
+    if (!models) {
+        throw new InvalidAgentDefinitionError(`The default model "${model}" is a model string, ${NO_RESOLVER}`);
+    }
+
     models.check(model);
 }
 
@@ -45,14 +58,23 @@ export function checkDefaultModel(options: ModelCheckOptions): void {
  */
 export function checkAgentModel(agent: Agent, options: ModelCheckOptions): void {
     const ref: unknown = agent.definition.model ?? options.model;
+
     if (ref === undefined || ref === null) {
         throw new InvalidAgentDefinitionError(noModelMessage(agent.name));
     }
-    if (!isModelRef(ref)) throw new InvalidAgentDefinitionError(`Agent "${agent.name}": model ${SHAPE}`);
-    if (typeof ref !== 'string') return;
+
+    if (!isModelRef(ref)) {
+        throw new InvalidAgentDefinitionError(`Agent "${agent.name}": model ${SHAPE}`);
+    }
+
+    if (typeof ref !== 'string') {
+        return;
+    }
+
     if (!options.models) {
         throw new InvalidAgentDefinitionError(`Agent "${agent.name}" uses the model string "${ref}", ${NO_RESOLVER}`);
     }
+
     options.models.check(ref, agent.name);
 }
 
@@ -73,10 +95,12 @@ export function resolveModel<S extends StateSchema = StateSchema>(
         agentModel,
     } = inject(ctx, MODEL_CONTEXT);
     const wanted = ref ?? agentModel(ctx.run.agent) ?? model;
+
     if (typeof wanted === 'string' && !models) {
         throw new InvalidAgentDefinitionError(
             `resolveModel(): the model string "${wanted}" needs a model resolver (EngineOptions.models).`,
         );
     }
+
     return toLanguageModel(wanted, models, ctx.run.agent);
 }

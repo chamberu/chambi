@@ -19,10 +19,13 @@ const schema = z.object({});
 
 async function call(tools: ToolSet, name: string, toolCallId: string): Promise<unknown> {
     const result: unknown = await (tools[name]!.execute as (input: unknown, options: unknown) => unknown)({}, { toolCallId, messages: [] });
+
     if (result && typeof result === 'object' && Symbol.asyncIterator in result) {
         const seen: unknown[] = await Array.fromAsync(result as AsyncIterable<unknown>);
+
         return seen;
     }
+
     return result;
 }
 
@@ -36,11 +39,13 @@ describe('tool-call frame', () => {
             inputSchema: schema,
             execute: async () => {
                 await Promise.resolve();
+
                 return currentToolCall();
             },
         });
         const effect = defineEffectTool({ inputSchema: schema, execute: async () => currentToolCall() });
         const tools = wrapToolsForRun({ plain, effect }, ctx, createMemoryStore().effects);
+
         expect(await call(tools, 'plain', 'c1')).toMatchObject({
             runId: 'r1',
             toolCallId: 'c1',
@@ -66,6 +71,7 @@ describe('tool-call frame', () => {
             },
         });
         const tools = wrapToolsForRun({ stream }, ctx, createMemoryStore().effects);
+
         expect(await call(tools, 'stream', 'c3')).toEqual(['c3', 'c3']);
     });
 });

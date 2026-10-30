@@ -40,7 +40,7 @@
 npm install @chamvi/sandbox @chamvi/core ai --save
 ```
 
-ESM only, Node.js `>=22`. `@chamvi/core` and `ai` are peer dependencies. Install a provider next to it.
+ESM only, Node.js `>=24.3.0`. `@chamvi/core` and `ai` are peer dependencies. Install a provider next to it.
 
 ## Providers
 
@@ -76,6 +76,7 @@ export function createWorkspaces(
 
     // dispose a run's workspaces once it completed, failed or was cancelled
     workspaces.attach(engine);
+
     return workspaces;
 }
 ```
@@ -103,7 +104,7 @@ await workspaces.close();
 | `git_push` | `{ remote?, branch?, force?, setUpstream?, workspace? }` | the same plus `{ branch, commit, pushed, forced }` |
 
 - `create_workspace` with a `repo` checks it out with its full history at `ref` (default: the default branch), a branch tracking `origin/<ref>` and the default branch fetched next to it (`defaultBranch` in the result); without one the workspace is an empty `git init`-ed directory (for "install the published package and run a repro script"). Calling it again for the same repository returns the same workspace with `reused: true`; another `ref` or `image` of a held repository is an error telling the model to dispose it first.
-- `image` picks a container image (`python:3.13`, `rust:1`) and exists only when the manager has an allow-list (`allowImage(image)`; in `sandboxModule()` also `CHAMVI_SANDBOX_IMAGES`, a comma list of exact references, which wins) and never on the local provider, which runs no images; a requested image without one, a refused or a malformed reference is a `ValidationError`, before any create. The image needs `sh`, `git` and a GNU `timeout` that takes `-k`; the provider probes them before the checkout and names what is missing. Without it the workspace runs the manager's `image`, else the provider's (`sandbox-dev`, where `mise use -g node@22` installs any toolchain).
+- `image` picks a container image (`python:3.13`, `rust:1`) and exists only when the manager has an allow-list (`allowImage(image)`; in `sandboxModule()` also `CHAMVI_SANDBOX_IMAGES`, a comma list of exact references, which wins) and never on the local provider, which runs no images; a requested image without one, a refused or a malformed reference is a `ValidationError`, before any create. The image needs `sh`, `git` and a GNU `timeout` that takes `-k`; the provider probes them before the checkout and names what is missing. Without it the workspace runs the manager's `image`, else the provider's (`sandbox-dev`, where `mise use -g node@24` installs any toolchain).
 - A run holds at most `maxWorkspacesPerRun` (3) workspaces at once.
 - A workspace id of another run is "not found", never that workspace: ids land in stored steps that other readers may see.
 - No tool is an effect tool: a workspace can be removed, expire or be collected, while an effect record would survive in the store and skip the redone step on a fresh workspace.

@@ -55,6 +55,7 @@ describe('staticTokens', () => {
                 },
             ],
         });
+
         expect(await rotating(request(`Bearer ${TOKEN}`))).toMatchObject({ id: 'ci' });
         expect(await rotating(request(`Bearer ${ROTATED}`))).toMatchObject({ id: 'ci' });
     });

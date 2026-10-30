@@ -49,30 +49,52 @@ it('prepares real app defaults before engineCreated and combines factory extras 
             instructions: '',
             skills: [extra],
         })],
-        skills: [defineSkillSource({ skills: [common], async load() { entered.resolve(); await release.promise; loaded = true; return [common]; } })],
+        skills: [defineSkillSource({
+            skills: [common],
+            async load() {
+                entered.resolve(); await release.promise; loaded = true;
+
+                return [common];
+            },
+        })],
         modules: [storeModule({ store }), { name: ModuleName.HTTP, setup: () => Promise.resolve() }, {
             name: 'observe',
             async setup(container) {
-                container.registerMany(AppToken.LIFECYCLE_HOOKS, { useValue: { name: 'observe', engineCreated(value) { expect(loaded).toBe(true); engine = value; } } });
+                container.registerMany(AppToken.LIFECYCLE_HOOKS, {
+                    useValue: {
+                        name: 'observe',
+                        engineCreated(value) {
+                            expect(loaded).toBe(true); engine = value;
+                        },
+                    },
+                });
             },
         }],
     });
+
     try {
         const starting = app.start({ env: {} });
+
         await entered.promise;
         expect(engine).toBeUndefined(); expect(model.doStreamCalls).toHaveLength(0);
         release.resolve(); await starting;
+
         const run = await engine!.dispatch({
             agent: 'reviewer',
             channel: 'test',
             trigger: 'test',
             payload: {},
         });
+
         await engine!.idle();
         expect((await store.runs.findOne(run.runId))?.status).toBe('completed');
+
         const tools = (await store.steps.find(run.runId)).filter((step) => step.kind === 'tool');
+
         expect(tools.map((step) => step.output)).toMatchObject([{ content: 'DEFAULT BODY' }, { content: 'EXTRA BODY' }]);
+
         const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
+
         expect(prompt).toContain('common'); expect(prompt).toContain('extra'); expect(prompt).not.toContain('BODY');
     } finally {
         release.resolve(); await app.stop(); cleanupSkills();

@@ -15,10 +15,17 @@ const HOST_PATTERN = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/;
 const PERMISSION_PATTERN = /^[a-z][a-z_]*$/;
 
 function assertPermissions(permissions: unknown): GithubPermissions {
-    if (permissions === undefined) return {};
-    if (!isObject(permissions) || Object.entries(permissions).some(([name, level]) => !PERMISSION_PATTERN.test(name) || (level !== 'read' && level !== 'write'))) {
+    if (permissions === undefined) {
+        return {};
+    }
+
+    const hasInvalidPermission = isObject(permissions) &&
+        Object.entries(permissions).some(([name, level]) => !PERMISSION_PATTERN.test(name) || (level !== 'read' && level !== 'write'));
+
+    if (!isObject(permissions) || hasInvalidPermission) {
         throw new InvalidAgentDefinitionError('githubAppCredentials() permissions must map permission names to "read" or "write", e.g. { workflows: "write" }.');
     }
+
     return permissions as GithubPermissions;
 }
 
@@ -36,26 +43,42 @@ export function githubAppCredentials(app: IGithubApp, options: GithubAppCredenti
     if (!isObject(app) || typeof app.repositoryToken !== 'function') {
         throw new InvalidAgentDefinitionError('githubAppCredentials() needs a GitHub App (createGithubApp()).');
     }
+
     if (!isObject(options)) {
         throw new InvalidAgentDefinitionError('githubAppCredentials() options must be an object.');
     }
+
     const extra = assertPermissions(options.permissions);
     const host = (options.host ?? DEFAULT_GITHUB_GIT_HOST).toLowerCase();
+
     if (!HOST_PATTERN.test(host)) {
         throw new InvalidAgentDefinitionError('githubAppCredentials() host must be a host name like "github.com".');
     }
 
     return {
         async get(input) {
-            if (input.host !== host) return undefined;
+            if (input.host !== host) {
+                return undefined;
+            }
+
             const segments = input.path.split('/');
-            if (segments.length !== 2 || segments.some((segment) => segment.length === 0)) return undefined;
+
+            const hasEmptySegment = segments.length === 2 && segments.some((segment) => segment.length === 0);
+
+            if (segments.length !== 2 || hasEmptySegment) {
+                return undefined;
+            }
+
             const [owner, repo] = segments as [string, string];
             const permissions: GithubPermissions = input.access === 'write' ?
                 { ...extra, contents: 'write' } :
                 { contents: 'read' };
             const token = await app.repositoryToken({ owner, repo }, { permissions });
-            if (!token) return undefined;
+
+            if (!token) {
+                return undefined;
+            }
+
             return {
                 username: GITHUB_TOKEN_USERNAME,
                 password: token.token,

@@ -56,11 +56,13 @@ afterEach(async () => {
 
 function track(app: IApp): IApp {
     apps.push(app);
+
     return app;
 }
 
 async function envFor(extra: Record<string, string> = {}) {
     const port = await freePort();
+
     return {
         port,
         env: {
@@ -84,12 +86,14 @@ function httpless(): IModule {
 
 function quiet() {
     const clock = new ControllableClock(new Date('2026-10-21T00:00:00Z'));
+
     return configModule({ clock, logger: createRecordingLogger(clock) });
 }
 
 async function isFree(port: number): Promise<boolean> {
     try {
         await closeServer(await listenOn(port));
+
         return true;
     } catch {
         return false;
@@ -118,6 +122,7 @@ describe('App.start', () => {
     it('a second start rejects app_in_use', async () => {
         const app = track(createApp({ agents: [agent], modules: [quiet()] }));
         const { env } = await envFor();
+
         await app.start({ env });
 
         expect(await rejectionOf(app.start({ env }))).toMatchObject({ code: APP_ERROR_CODE.IN_USE });
@@ -127,6 +132,7 @@ describe('App.start', () => {
 
     it('a lifecycle after stop rejects app_in_use', async () => {
         const app = track(createApp({ agents: [agent], modules: [quiet()] }));
+
         await app.stop();
 
         expect(await rejectionOf(app.start({ env: {} }))).toMatchObject({ code: APP_ERROR_CODE.IN_USE });
@@ -212,10 +218,13 @@ describe('App.start', () => {
             let calls = 0;
             const counting = textModel();
             const doStream = counting.doStream.bind(counting);
+
             counting.doStream = async (options) => {
                 calls++;
+
                 return doStream(options);
             };
+
             const queued = defineAgent({
                 name: 'queued',
                 model: counting,
@@ -236,6 +245,7 @@ describe('App.start', () => {
                 channel: 'http',
                 payload: {},
             });
+
             return {
                 store,
                 queued,
@@ -287,8 +297,12 @@ describe('App.start', () => {
                             container.registerMany(AppToken.LIFECYCLE_HOOKS, {
                                 useValue: {
                                     name: 'probe',
-                                    started: () => { started.push('started'); },
-                                    stopping: () => { started.push('stopping'); },
+                                    started: () => {
+                                        started.push('started');
+                                    },
+                                    stopping: () => {
+                                        started.push('stopping');
+                                    },
                                 },
                             });
                         },
@@ -314,7 +328,14 @@ describe('App.start', () => {
                     // ordered after the http module, so its onReady runs last
                     dependencies: [ModuleName.HTTP],
                     setup: async (container) => {
-                        container.registerMany(AppToken.LIFECYCLE_HOOKS, { useValue: { name: 'probe', started: () => { started.push('started'); } } });
+                        container.registerMany(AppToken.LIFECYCLE_HOOKS, {
+                            useValue: {
+                                name: 'probe',
+                                started: () => {
+                                    started.push('started');
+                                },
+                            },
+                        });
                     },
                     onReady: async () => {
                         throw new InvalidAgentDefinitionError('late module misconfigured');

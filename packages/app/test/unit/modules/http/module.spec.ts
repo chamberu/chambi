@@ -82,6 +82,7 @@ function drainRecorder(events: string[]): IModule {
         name: 'drain-recorder',
         engineCreated: (engine: Engine) => {
             const drain = engine.drain.bind(engine);
+
             engine.drain = async (input) => {
                 await drain(input);
                 events.push('engine drained');
@@ -124,7 +125,9 @@ async function build(options: {
             ...(options.modules ?? []),
         ],
     });
+
     harnesses.push(harness);
+
     return {
         harness,
         port,
@@ -140,12 +143,14 @@ async function rejectionOf(promise: Promise<unknown>): Promise<Error> {
     } catch (error) {
         return error as Error;
     }
+
     throw new Error('expected a rejection');
 }
 
 async function isFree(port: number): Promise<boolean> {
     try {
         await closeServer(await listenOn(port));
+
         return true;
     } catch {
         return false;
@@ -155,6 +160,7 @@ async function isFree(port: number): Promise<boolean> {
 describe('httpModule', () => {
     it('is named and depends on the engine and, optionally, static tokens', () => {
         const module = httpModule();
+
         expect(module.name).toBe(ModuleName.HTTP);
         expect(module.dependencies).toEqual([
             ModuleName.ENGINE,
@@ -164,6 +170,7 @@ describe('httpModule', () => {
 
     it('contributes the http, mcp and webhook channels in start and job mode', async () => {
         const { harness } = await build();
+
         await harness.setup();
         expect(harness.container.resolveAll(AppToken.CHANNELS).map((channel) => channel.name))
             .toEqual(expect.arrayContaining(['http', 'mcp', 'webhook']));
@@ -175,6 +182,7 @@ describe('httpModule', () => {
             url,
             logger,
         } = await build();
+
         await harness.setup();
 
         expect((await fetch(url('/healthz'))).status).toBe(200);
@@ -186,6 +194,7 @@ describe('httpModule', () => {
 
     it('basePath prefixes health', async () => {
         const { harness, url } = await build({ env: { CHAMVI_BASE_PATH: '/api' } });
+
         await harness.setup();
 
         expect((await fetch(url('/api/healthz'))).status).toBe(200);
@@ -204,9 +213,11 @@ describe('httpModule', () => {
                 });
             })],
         });
+
         await harness.setup();
 
         const response = await fetch(url('/x'));
+
         expect(response.status).toBe(200);
         expect(await response.text()).toBe('ok');
     });
@@ -221,21 +232,25 @@ describe('httpModule', () => {
                         order: 10,
                         authenticator: async () => {
                             seen.push('later');
+
                             return undefined;
                         },
                     },
                 });
             })],
         });
+
         await harness.setup();
 
         const me = await fetch(url('/me'), { headers: { authorization: `Bearer ${TOKEN}` } });
+
         expect(me.status).toBe(200);
         expect(await me.json()).toMatchObject({ id: 'ops' });
         // static tokens (order 0) resolved the principal before the later one ran
         expect(seen).toEqual([]);
 
         const unknown = await fetch(url('/me'), { headers: { authorization: 'Bearer an-unknown-token-value' } });
+
         expect(unknown.status).toBe(401);
         expect(seen).toEqual(['later']);
     });
@@ -244,6 +259,7 @@ describe('httpModule', () => {
         const { harness, port } = await build({ env: { CHAMVI_TOKENS: '' } });
 
         const error = await rejectionOf(harness.setup());
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toBe('No authenticator: set CHAMVI_TOKENS, or add staticTokensModule(), authupModule() or oidcModule().');
         expect(await isFree(port)).toBe(true);
@@ -287,6 +303,7 @@ describe('httpModule', () => {
                 }),
             ],
         });
+
         readyz = async () => (await fetch(url('/readyz'))).status;
         await harness.setup();
 
@@ -314,6 +331,7 @@ describe('httpModule', () => {
                     inputSchema: z.object({}),
                     execute: async (_input, { context }) => {
                         await approve(context, { title: 'Deploy?' });
+
                         return 'deployed';
                     },
                 }),
@@ -324,6 +342,7 @@ describe('httpModule', () => {
             url,
             port,
         } = await build({ agents: [agent] });
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
@@ -333,22 +352,28 @@ describe('httpModule', () => {
             channel: 'http',
             payload: {},
         });
+
         await engine.idle();
         expect((await engine.getRun(runId))?.status).toBe('waiting');
 
         const response = await fetch(url(`/runs/${runId}/stream`), { headers: { authorization: `Bearer ${TOKEN}` } });
+
         expect(response.status).toBe(200);
+
         const reader = response.body!.getReader();
         const first = await reader.read();
+
         expect(new TextDecoder().decode(first.value)).toContain('run.updated');
 
         await harness.stop();
 
         // the stream ends
         let done = false;
+
         while (!done) {
             ({ done } = await reader.read());
         }
+
         expect(await isFree(port)).toBe(true);
     });
 
@@ -356,8 +381,10 @@ describe('httpModule', () => {
         const events: string[] = [];
         const { harness, port } = await build({ modules: [drainRecorder(events)] });
         const occupied = await listenOn(port);
+
         try {
             const error = await rejectionOf(harness.setup());
+
             expect((error as Error & { code?: string }).code).toBe('EADDRINUSE');
             // the harness tore down: the http module's shutdown drained the engine
             expect(events).toContain('engine drained');
@@ -376,9 +403,11 @@ describe('httpModule', () => {
                 },
             })],
         });
+
         ({ harness } = built);
 
         const error = await rejectionOf(harness.setup());
+
         expect((error as Error & { code?: string }).code).toBe(APP_ERROR_CODE.STOPPED);
         expect(harness.container.has(AppToken.SERVER)).toBe(false);
         expect(await isFree(built.port)).toBe(true);

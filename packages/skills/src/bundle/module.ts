@@ -17,7 +17,9 @@ import type { ApprovedSkill } from './types.ts';
 /** Explicitly verify a filesystem bundle and detach all content from its reader. */
 export function loadSkillBundle(approved: ApprovedSkill): Skill & SkillInput {
     validateApprovedSkill(approved);
+
     const bundle = readSkillBundle(approved);
+
     return defineSkill({
         ...bundle.metadata,
         body: bundle.body,
@@ -32,13 +34,16 @@ export function loadSkillBundles(approved: readonly ApprovedSkill[]): SkillCatal
     }
 
     const names = new Set<string>();
+
     for (const descriptor of approved) {
         validateApprovedSkill(descriptor);
+
         if (names.has(descriptor.name)) {
             invalidSkill('.', 'duplicate approved skill name');
         }
 
         names.add(descriptor.name);
     }
+
     return createSkillCatalog(approved.map(loadSkillBundle));
 }

@@ -12,10 +12,19 @@ export default [
         ],
     },
     {
+        // Node 24 does not implement the Uint8Array base64/hex encoding APIs.
+        rules: {
+            'unicorn/prefer-uint8array-base64': 'off',
+            'unicorn/prefer-uint8array-hex': 'off',
+        },
+    },
+    {
         // the dashboard ships to Vite's default browser target (Safari 16.4, Firefox 114),
         // which lacks the ES2025 iterator helpers and gets no polyfill
         files: ['packages/ui/app/**/*.{ts,vue}'],
         rules: {
+            // Error.isError is newer than the dashboard's browser target.
+            'unicorn/prefer-error-is-error': 'off',
             'no-restricted-syntax': [
                 'error',
                 {

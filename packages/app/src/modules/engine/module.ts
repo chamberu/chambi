@@ -51,6 +51,7 @@ export class EngineModule implements IModule {
 
     async setup(container: IContainer): Promise<void> {
         const context = container.resolve(AppToken.CONTEXT);
+
         if (context.mode === 'migrate') {
             return;
         }
@@ -64,6 +65,7 @@ export class EngineModule implements IModule {
             ...(context.model !== undefined && { model: context.model }),
             ...(context.providers !== undefined && { providers: context.providers }),
         });
+
         if (issues.length > 0) {
             const lines = issues.map((issue) => `- ${issue.message}`);
             throw new InvalidAgentDefinitionError(`The model settings have ${issues.length} issue(s):\n${lines.join('\n')}`);
@@ -75,6 +77,7 @@ export class EngineModule implements IModule {
 
     async onReady(container: IContainer): Promise<void> {
         const context = container.resolve(AppToken.CONTEXT);
+
         if (context.mode === 'migrate') {
             return;
         }
@@ -96,6 +99,7 @@ export class EngineModule implements IModule {
             ...(this.options.claimTtlMs !== undefined && { claimTtlMs: this.options.claimTtlMs }),
             onError: (error, run) => logger.error('engine error', error, { run: run?.id, agent: run?.agent }),
         });
+
         this.engine = engine;
 
         if (!context.check) {
@@ -115,13 +119,16 @@ export class EngineModule implements IModule {
 
     async teardown(container: IContainer): Promise<void> {
         const { engine } = this;
+
         this.engine = undefined;
 
-        if (engine) {
-            // a no-op once createShutdown or runJob drained it
-            await engine.drain({ timeoutMs: container.resolve(AppToken.CONFIG).http.drainTimeoutMs });
-            await runHooks(container, 'drained');
+        if (!engine) {
+            return;
         }
+
+        // a no-op once createShutdown or runJob drained it
+        await engine.drain({ timeoutMs: container.resolve(AppToken.CONFIG).http.drainTimeoutMs });
+        await runHooks(container, 'drained');
     }
 }
 

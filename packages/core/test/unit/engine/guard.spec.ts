@@ -30,6 +30,7 @@ class HookedEngine extends Engine {
 
     protected override async execute(run: Run, signal: AbortSignal): Promise<void> {
         await this.beforeExecute?.(this, run);
+
         return super.execute(run, signal);
     }
 }
@@ -37,7 +38,10 @@ class HookedEngine extends Engine {
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -50,18 +54,22 @@ function make(opts: Partial<EngineOptions> & { store: ReturnType<typeof createMe
         },
         ...opts,
     });
+
     engines.push(engine);
+
     return { engine, errors };
 }
 
 function setup() {
     const clock = new ControllableClock(new Date(1_000_000));
     const store = createMemoryStore({ clock });
+
     return { clock, store };
 }
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     const createdAt = new Date(1_000);
+
     return {
         id,
         agent: 'ghost',
@@ -110,6 +118,7 @@ describe('execution guard', () => {
             clock,
             agents: [triage],
         });
+
         await store.runs.insert(makeRun('r1'));
 
         await engine.start();
@@ -148,12 +157,15 @@ describe('execution guard', () => {
             agents: [],
             owner: 'A',
         });
+
         await b.putAgent(triageB, { revision: 'h1' });
         await a.putAgent(triageA, { revision: 'h2' });
         expect((await store.agentRevisions.findOne('triage'))?.hash).toBe('h2');
 
         await b.start();
+
         const { runId } = await b.dispatch(env());
+
         await b.idle();
         await poll(b, clock);
         expect(await statusOf(store, runId)).toBe('queued');
@@ -176,11 +188,13 @@ describe('execution guard', () => {
             model,
             instructions: 'x',
         });
+
         await store.agentRevisions.save({
             agent: 'triage',
             hash: 'h9',
             changedAt: clock.now(),
         });
+
         const { engine, errors } = make({
             store,
             clock,
@@ -188,7 +202,9 @@ describe('execution guard', () => {
         });
 
         await engine.start();
+
         const { runId } = await engine.dispatch(env());
+
         await engine.idle();
 
         expect(await statusOf(store, runId)).toBe('completed');
@@ -203,6 +219,7 @@ describe('execution guard', () => {
             clock,
             agents: [],
         });
+
         await store.runs.insert(makeRun('r1', { cancelRequested: true }));
 
         await engine.start();
@@ -225,17 +242,23 @@ describe('execution guard', () => {
             clock,
             agents: [triage],
         });
+
         engine.beforeExecute = (e) => e.forget('triage');
+
         const updates: Run['status'][] = [];
+
         engine.on('run.updated', (e) => {
             updates.push(e.run.status);
         });
 
         await engine.start();
+
         const { runId } = await engine.dispatch(env());
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('queued');
         expect(run?.claim).toBeUndefined();
         expect(run?.startedAt).toBeUndefined();
@@ -257,6 +280,7 @@ describe('execution guard', () => {
             clock,
             agents: [],
         });
+
         await engine.putAgent(triage, { revision: 'h1' });
         engine.beforeExecute = async () => {
             await store.agentRevisions.save({
@@ -267,7 +291,9 @@ describe('execution guard', () => {
         };
 
         await engine.start();
+
         const { runId } = await engine.dispatch(env());
+
         await engine.idle();
         await poll(engine, clock);
 

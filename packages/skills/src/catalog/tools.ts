@@ -38,17 +38,21 @@ export function createSkillTools(bundles: readonly Skill[]): ToolSet {
                 throw new ValidationError('Invalid approved skill request.');
             }
 
-            if (Object.keys(input).some((key) => key !== 'name' && key !== 'reference')) {
+            const hasUnexpectedKey = Object.keys(input).some((key) => key !== 'name' && key !== 'reference');
+
+            if (hasUnexpectedKey) {
                 throw new ValidationError('Invalid approved skill request.');
             }
 
             const bundle = approved.get(input.name);
+
             if (!bundle) {
                 throw new ValidationError('Unknown approved skill.');
             }
 
             let content = bundle.body;
             const reference = input.reference ?? null;
+
             if (input.reference !== undefined) {
                 if (typeof input.reference !== 'string') {
                     throw new ValidationError('Invalid approved skill reference.');
@@ -58,11 +62,14 @@ export function createSkillTools(bundles: readonly Skill[]): ToolSet {
                     throw new ValidationError('Invalid approved skill reference.');
                 }
 
-                if (input.reference.split('/').some((part) => !part || part === '.' || part === '..')) {
+                const hasInvalidReferenceSegment = input.reference.split('/').some((part) => !part || part === '.' || part === '..');
+
+                if (hasInvalidReferenceSegment) {
                     throw new ValidationError('Invalid approved skill reference.');
                 }
 
                 const text = bundle.references[input.reference];
+
                 if (text === undefined) {
                     throw new ValidationError('Unknown approved skill reference.');
                 }
@@ -80,5 +87,6 @@ export function createSkillTools(bundles: readonly Skill[]): ToolSet {
             };
         },
     });
+
     return Object.freeze({ load_skill: Object.freeze(load) });
 }

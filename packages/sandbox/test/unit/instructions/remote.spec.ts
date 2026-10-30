@@ -77,6 +77,7 @@ for (const [image, present] of available) {
 
         it('collects, refuses links and special files and tells denial from absence', async () => {
             const workspace = Object.assign(Object.create(fixture.workspace) as typeof fixture.workspace, { redact: (text: string) => text.split('ghs_remoteSECRET').join('[redacted]') });
+
             workspace.exec = fixture.workspace.exec.bind(fixture.workspace);
 
             const result = await readRepositoryInstructions(workspace, ['packages/api/src/a.ts', 'escape/x', 'closed/y.ts']);
@@ -87,7 +88,9 @@ for (const [image, present] of available) {
                 'CLAUDE.md',
                 'packages/api/AGENTS.md',
             ]);
+
             const guide = result.sources[1];
+
             expect(guide?.content).toBe('token [redacted]\n');
             expect(guide?.sha256).toBe(createHash('sha256').update('token ghs_remoteSECRET\n').digest('hex'));
             expect(result.sources[0]?.includedBy).toEqual(['CLAUDE.md']);
@@ -106,6 +109,7 @@ for (const [image, present] of available) {
             expect(JSON.stringify(result)).not.toContain('root:');
 
             const listing = await fixture.workspace.exec(['ls', '-a']);
+
             expect(listing.stdout).not.toContain('sentinel');
         }, 60_000);
     });

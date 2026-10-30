@@ -53,12 +53,17 @@ function recorder(name: string) {
                 address,
                 opts,
             });
-            if (state.failures > 0) {
-                state.failures -= 1;
-                throw new Error('channel down');
+
+            if (!(state.failures > 0)) {
+                return;
             }
+
+            state.failures -= 1;
+
+            throw new Error('channel down');
         },
     };
+
     return {
         channel,
         calls,
@@ -82,7 +87,10 @@ const call = (toolName: string, input: unknown = {}, toolCallId?: string): MockR
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -114,7 +122,9 @@ function setup(
             errors.push(error);
         },
     });
+
     engines.push(engine);
+
     return {
         engine,
         store,
@@ -129,6 +139,7 @@ async function run(
     envelope: { channel?: string; address?: string } = {},
 ) {
     await ctx.engine.start();
+
     const { runId } = await ctx.engine.dispatch({
         agent: 'ops',
         trigger: 'test',
@@ -136,7 +147,9 @@ async function run(
         address: envelope.address,
         payload: {},
     });
+
     await ctx.engine.idle();
+
     return {
         runId,
         run: await ctx.store.runs.findOne(runId),
@@ -148,6 +161,7 @@ const emitTool = (fn: (ctx: ToolContext, input: { body: string }) => Promise<unk
     inputSchema: z.object({ body: z.string() }),
     execute: async (input, { context }) => {
         await fn(context, input);
+
         return 'sent';
     },
 });
@@ -157,9 +171,12 @@ describe('channel outbound', () => {
         const tools: ToolSet = { notify: emitTool((ctx, { body }) => ctx.channels.findOneOrFail('slack').emit({ title: 't', body }, 'C1')) };
         const ctx = setup(mockModel([call('notify', { body: 'b' }), text('done')]), tools);
         const { runId, run: stored } = await run(ctx);
+
         expect(stored?.status).toBe('completed');
         expect(ctx.slack.calls).toHaveLength(1);
+
         const [sent] = ctx.slack.calls as [Sent];
+
         expect(sent.message).toEqual({
             kind: 'message',
             key: `${runId}:emit:slack:${stableHash({
@@ -201,6 +218,7 @@ describe('channel outbound', () => {
         ]);
         const ctx = setup(model, tools);
         const { run: stored } = await run(ctx);
+
         expect(stored?.status).toBe('completed');
         expect(ctx.slack.calls).toHaveLength(1);
     });
@@ -229,11 +247,14 @@ describe('channel outbound', () => {
         const tools = (hang: boolean): ToolSet => ({
             notify: emitTool(async (ctx, { body }) => {
                 await ctx.channels.findOneOrFail('slack').emit({ body }, 'C1');
-                if (hang) {
-                    hung += 1;
-                    // the replica dies here: the step's checkpoint never lands
-                    await new Promise(() => {});
+
+                if (!hang) {
+                    return;
                 }
+
+                hung += 1;
+                // the replica dies here: the step's checkpoint never lands
+                await new Promise(() => {});
             }),
         });
 
@@ -243,24 +264,29 @@ describe('channel outbound', () => {
             clock: new ControllableClock(new Date(1_000_000)),
             channels: [slack.channel, web],
         });
+
         await a.engine.start();
+
         const { runId } = await a.engine.dispatch({
             agent: 'ops',
             trigger: 'test',
             channel: 'web',
             payload: {},
         });
+
         await vi.waitFor(() => expect(hung).toBe(2));
         expect(slack.calls).toHaveLength(1);
         a.engine.stop();
 
         // replica B recovers the run once A's claim expired and redoes the step
         storeClock.advance(1000);
+
         const b = setup(mockModel([parallel, text('done')]), tools(false), {
             store,
             clock: storeClock,
             channels: [slack.channel, web],
         });
+
         await b.engine.start();
         await vi.waitFor(async () => expect((await store.runs.findOne(runId))?.status).toBe('completed'));
         expect(slack.calls).toHaveLength(1);
@@ -269,6 +295,7 @@ describe('channel outbound', () => {
     it('an explicit key overrides the content key', async () => {
         const tools: ToolSet = { notify: emitTool((ctx, { body }) => ctx.channels.findOneOrFail('slack').emit({ body, key: 'deploy-1' }, 'C1')) };
         const ctx = setup(mockModel([call('notify', { body: 'b' }), call('notify', { body: 'other' }), text('done')]), tools);
+
         await run(ctx);
         expect(ctx.slack.calls).toHaveLength(1);
         expect(ctx.slack.calls[0]?.message.key).toBe('deploy-1');
@@ -278,6 +305,7 @@ describe('channel outbound', () => {
         const tools: ToolSet = { notify: emitTool((ctx, { body }) => ctx.channels.findOneOrFail('slack').emit({ body })) };
         const ctx = setup(mockModel([call('notify', { body: 'b' }), text('done')]), tools);
         const { run: stored, steps } = await run(ctx);
+
         expect(stored?.status).toBe('completed');
         expect(ctx.slack.calls).toHaveLength(0);
         expect(steps.find((s) => s.kind === 'tool')?.error).toMatchObject({ code: 'validation_error' });
@@ -289,11 +317,13 @@ describe('channel outbound', () => {
         const tools: ToolSet = {
             notify: emitTool(async (ctx, { body }) => {
                 await ctx.channels.findOneOrFail('owner').emit({ body });
+
                 return ctx.channels.findOneOrFail('owner').approve({ title: 'ok?' });
             }),
         };
         const ctx = setup(mockModel([call('notify', { body: 'b' }), text('done')]), tools, { channels: [chat, web] });
         const { run: stored } = await run(ctx);
+
         await ctx.engine.idle();
         expect(stored?.status).toBe('waiting');
         expect(stored?.waiting?.address).toBe('me');
@@ -311,6 +341,7 @@ describe('channel outbound', () => {
             }), web],
         });
         const { run: stored, steps } = await run(ctx);
+
         expect(stored?.status).toBe('completed');
         expect(steps.find((s) => s.kind === 'tool')?.output).toBe('sent');
         expect(lines).toContain('hello');
@@ -319,6 +350,7 @@ describe('channel outbound', () => {
     it('emit without an address on the source channel uses trigger.address', async () => {
         const tools: ToolSet = { notify: emitTool((ctx, { body }) => ctx.channels.findOneOrFail('slack').emit({ body })) };
         const ctx = setup(mockModel([call('notify', { body: 'b' }), text('done')]), tools);
+
         await run(ctx, { channel: 'slack', address: 'C9' });
         expect(ctx.slack.calls).toHaveLength(1);
         expect(ctx.slack.calls[0]?.address).toBe('C9');
@@ -327,11 +359,16 @@ describe('channel outbound', () => {
     it('a throwing out records nothing and is a tool error; the next identical emit sends again', async () => {
         const tools: ToolSet = { notify: emitTool((ctx, { body }) => ctx.channels.findOneOrFail('slack').emit({ body }, 'C1')) };
         const ctx = setup(mockModel([call('notify', { body: 'b' }), call('notify', { body: 'b' }), text('done')]), tools);
+
         ctx.slack.state.failures = 1;
+
         const { run: stored, steps } = await run(ctx);
+
         expect(stored?.status).toBe('completed');
         expect(ctx.slack.calls).toHaveLength(2);
+
         const toolSteps = steps.filter((s) => s.kind === 'tool');
+
         expect(toolSteps[0]?.error).toMatchObject({ message: 'channel down' });
         expect(toolSteps[1]?.error).toBeUndefined();
     });
@@ -341,9 +378,11 @@ describe('channel outbound', () => {
         const ctx = setup(mockModel([text('done')]), (toolContext) => {
             pending = toolContext.channels.findOneOrFail('slack').emit({ body: 'b' }, 'C1');
             pending.catch(() => {});
+
             return {};
         });
         const { run: stored } = await run(ctx);
+
         expect(stored?.status).toBe('completed');
         await expect(pending).rejects.toBeInstanceOf(InvalidRunStateError);
         expect(ctx.slack.calls).toHaveLength(0);
@@ -353,8 +392,10 @@ describe('channel outbound', () => {
         const seen: Array<ChannelHandle | undefined> = [];
         const ctx = setup(mockModel([text('done')]), (toolContext) => {
             seen.push(toolContext.channels.findOne('nope'), toolContext.channels.findOne('web'));
+
             return {};
         });
+
         await run(ctx);
         expect(seen).toEqual([undefined, undefined]);
     });
@@ -370,16 +411,21 @@ describe('channel outbound', () => {
                     thrown.push(error);
                 }
             }
+
             found = toolContext.channels.findOneOrFail('slack');
+
             return {};
         });
+
         await run(ctx);
         expect(found?.name).toBe('slack');
         expect(thrown).toHaveLength(2);
+
         for (const error of thrown) {
             expect(error).toBeInstanceOf(ChannelNotFoundError);
             expect(error).toMatchObject({ code: 'channel_not_found' });
         }
+
         expect((thrown[0] as Error).message).toContain('"nope"');
     });
 
@@ -391,8 +437,10 @@ describe('channel outbound', () => {
             } catch (error) {
                 thrown.push(error);
             }
+
             return {};
         });
+
         await run(ctx, { channel: 'web', address: 'x' });
         expect(thrown[0]).toBeInstanceOf(ChannelNotFoundError);
         expect((thrown[0] as Error).message).toContain('"web"');
@@ -402,10 +450,14 @@ describe('channel outbound', () => {
         const seen: ChannelHandle[][] = [];
         const ctx = setup(mockModel([text('done')]), (toolContext) => {
             seen.push(toolContext.channels.find());
+
             return {};
         });
+
         await run(ctx, { channel: 'slack', address: 'C9' });
+
         const names = seen[0]!.map((handle) => handle.name);
+
         expect(names).not.toContain('web');
         expect(names).toContain('slack');
         expect(seen[0]!.find((handle) => handle.name === 'slack')?.address).toBe('C9');
@@ -415,8 +467,10 @@ describe('channel outbound', () => {
         const seen: Array<ChannelHandle | undefined> = [];
         const tools = (toolContext: ToolContext) => {
             seen.push(toolContext.channels.findOne());
+
             return {};
         };
+
         await run(setup(mockModel([text('done')]), tools), { channel: 'web', address: 'x' });
         await run(setup(mockModel([text('done')]), tools), { channel: 'slack' });
         await run(setup(mockModel([text('done')]), tools), { channel: 'slack', address: 'C9' });
@@ -430,6 +484,7 @@ describe('channel outbound', () => {
     it('channels.findOne() emits to the source address', async () => {
         const tools: ToolSet = { notify: emitTool((ctx, { body }) => ctx.channels.findOneOrFail().emit({ body })) };
         const ctx = setup(mockModel([call('notify', { body: 'Done.' }), text('done')]), tools);
+
         await run(ctx, { channel: 'slack', address: 'C9' });
         expect(ctx.slack.calls.map((c) => [c.address, c.message.body])).toEqual([['C9', 'Done.']]);
     });
@@ -438,6 +493,7 @@ describe('channel outbound', () => {
         const tools: ToolSet = { notify: emitTool((ctx) => ctx.channels.findOneOrFail('slack').emit({ body: 42 } as never, 'C1')) };
         const ctx = setup(mockModel([call('notify', { body: 'b' }), text('done')]), tools);
         const { steps } = await run(ctx);
+
         expect(ctx.slack.calls).toHaveLength(0);
         expect(steps.find((s) => s.kind === 'tool')?.error).toMatchObject({ code: 'validation_error' });
     });

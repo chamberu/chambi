@@ -19,6 +19,7 @@ describe('toolContextSchema', () => {
             artifacts: {},
         };
         const result = toolContextSchema['~standard'].validate(ctx);
+
         expect(result).toEqual({ value: ctx });
         expect((result as { value: unknown }).value).toBe(ctx);
         expect(toolContextSchema['~standard'].vendor).toBe('chamvi');
@@ -28,6 +29,7 @@ describe('toolContextSchema', () => {
     it('validate rejects a missing context with a message naming both causes', () => {
         for (const v of [undefined, null, 'x', []]) {
             const result = toolContextSchema['~standard'].validate(v) as { issues: Array<{ message: string }> };
+
             expect(result.issues[0]!.message).toMatch(/another copy of @chamvi\/core, or runs outside a chamvi agent/);
         }
     });
@@ -41,6 +43,7 @@ describe('defineTool', () => {
             inputSchema: z.object({}),
             execute,
         });
+
         expect(t.contextSchema).toBe(toolContextSchema);
         expect(t.description).toBe('d');
         expect(t.execute).toBe(execute);

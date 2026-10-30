@@ -60,13 +60,16 @@ export class HttpModule implements IModule {
 
 
     async setup(container: IContainer): Promise<void> {
-        if (container.resolve(AppToken.CONTEXT).mode === 'migrate') return;
+        if (container.resolve(AppToken.CONTEXT).mode === 'migrate') {
+            return;
+        }
 
         // in job mode too, so http.on() and webhook.on() subscriptions validate
         const webhook = webhookChannel({
             auth: this.webhookAuth.authenticator,
             ...(this.options.bodyLimit !== undefined && { bodyLimit: this.options.bodyLimit }),
         });
+
         for (const channel of [httpChannel(), mcpChannel(), webhook]) {
             container.registerMany(AppToken.CHANNELS, { useValue: channel });
         }
@@ -79,6 +82,7 @@ export class HttpModule implements IModule {
 
     async onReady(container: IContainer): Promise<void> {
         const context = container.resolve(AppToken.CONTEXT);
+
         if (context.mode !== 'start') {
             return;
         }
@@ -87,6 +91,7 @@ export class HttpModule implements IModule {
         const logger = container.resolve(AppToken.LOGGER);
         const engine = container.resolve(AppToken.ENGINE);
         const auth = resolveAuthenticators(container);
+
         this.webhookAuth.resolve(auth);
 
         let server: Server | undefined;
@@ -99,11 +104,13 @@ export class HttpModule implements IModule {
             closeTimeoutMs: config.http.closeTimeoutMs,
             onError: (error) => context.report(error, { phase: 'shutdown' }),
         });
+
         // the first callback, before the http app's own: the stopping hooks (the purge timer); the drain stops the channels.
         // A check never ran `started`, so it never runs `stopping` either
         if (!context.check) {
             shutdown.onShutdown(() => runHooks(container, 'stopping'));
         }
+
         this.shutdown = shutdown;
         container.register(AppToken.SHUTDOWN, { useValue: shutdown });
 

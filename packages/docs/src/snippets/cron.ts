@@ -10,6 +10,7 @@ export async function serve(store: IStore, agents: Agent[]) {
         // every replica registers the same channel; a store lock fires each tick once
         channels: [cronChannel({ onError: (error, { agent, subscription }) => console.error('[cron]', agent, subscription, error) })],
     });
+
     // recovers runs, then starts the channel
     await engine.start();
 
@@ -37,6 +38,7 @@ export async function job(store: IStore, agent: Agent) {
         agent,
         drainTimeoutMs: 120_000,
     });
+
     console.log('cron run', status);
     process.exitCode = exitCode;
     // #endregion job

@@ -22,6 +22,7 @@ export async function createEngine(model: LanguageModel) {
         entities: STORE_ENTITIES,
         migrations: STORE_MIGRATIONS,
     });
+
     await dataSource.initialize();
     await migrateStore(dataSource);
 
@@ -38,6 +39,7 @@ export async function createEngine(model: LanguageModel) {
         Promise.all([store.idempotency.purgeExpired(), store.locks.purgeExpired()])
             .catch((e: unknown) => console.error(e));
     }, 60 * 60 * 1000);
+
     purge.unref();
     // #endregion purge
 

@@ -1,3 +1,4 @@
+/* eslint @tada5hi/type-declaration-location: "off" -- Keep the exported contract in the self-contained instructional snippet. */
 import {
     AppToken,
     ModuleName,
@@ -44,6 +45,7 @@ export function auditModule(): IModule {
 
             const logger = container.resolve(AppToken.LOGGER);
             const log: IAuditLog = { write: (line) => logger.info(line) };
+
             container.registerMany(AppToken.LIFECYCLE_HOOKS, {
                 useValue: {
                     name: 'audit',
@@ -63,6 +65,7 @@ export function auditModule(): IModule {
             }
 
             const logger = container.resolve(AppToken.LOGGER);
+
             unsubscribe = container.resolve(AppToken.ENGINE).on('run.updated', ({ run }) => {
                 logger.info('run updated', { run: run.id, status: run.status });
             });

@@ -35,7 +35,7 @@
 npm install @chamvi/app @chamvi/cli ai @ai-sdk/anthropic typeorm pg
 ```
 
-ESM only, Node.js `>=22`. `ai`, `typeorm` and `pg` are peer dependencies; the provider packages (`@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, `@ai-sdk/google`, `@ai-sdk/mistral`, `@ai-sdk/xai`) are optional peers: install the ones you use. The optional modules ship with the package they configure (`npm install @chamvi/github` for `@chamvi/github/module`, ...), which peers on `@chamvi/app`.
+ESM only, Node.js `>=24.3.0`. `ai`, `typeorm` and `pg` are peer dependencies; the provider packages (`@ai-sdk/anthropic`, `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, `@ai-sdk/google`, `@ai-sdk/mistral`, `@ai-sdk/xai`) are optional peers: install the ones you use. The optional modules ship with the package they configure (`npm install @chamvi/github` for `@chamvi/github/module`, ...), which peers on `@chamvi/app`.
 
 The main entry re-exports `@chamvi/core` and the common part of `@chamvi/http` (`agentPermission`, `Permission`, the `Authenticator`, `Principal`, `HttpRoute*` and `StaticToken` types), so an agent repository imports one package.
 
@@ -118,7 +118,7 @@ Replace illustrative pins after independently reviewing all bundle text. `gitSki
 
 For already deployed files, `loadSkillBundle(descriptor)` returns a ready snapshot. `hashSkillBundle(directory)` is a separate review aid, never approval. The manual `loadSkillBundles(approved)` catalog remains supported: append its instructions and compose its tools explicitly, checking for a `load_skill` collision. The skill types, catalogs and adapters (`defineSkill`, `defineSkillSource`) also belong to `@chamvi/skills`, with no compatibility app exports. Factories already carry their runtime; no module registration is needed. Core/app accept the generic `SkillInput` contract and have no dependency on skills.
 
-Runtime Git sources require `@chamvi/skills`, Node >=22.20, Git (absent from the base Node 24 image), writable managed directories/tmp, source credentials/network and startup probe time for cloning and verification. Stop joins cleanup and may wait for a noncancelable clone. Prebuilt snapshots need readable runtime assets only.
+Runtime Git sources require `@chamvi/skills`, Node >=24.3.0, Git (absent from the base Node 24 image), writable managed directories/tmp, source credentials/network and startup probe time for cloning and verification. Stop joins cleanup and may wait for a noncancelable clone. Prebuilt snapshots need readable runtime assets only.
 
 Snapshots are immutable. Saved load results retain original checkpoint bytes; pending/future loads after a pin upgrade use the current verified snapshot. Global changes do not change folder hashes: finish or cancel unsettled runs before upgrades when mixed-version disclosure is unacceptable. Tracked agent extra-pin edits use existing revision cancellation. Skills grant no tools, script execution, subagents or permissions. See [Approved Skills](https://chamvi.dev/guide/skills) and the [skills API](https://chamvi.dev/reference/skills).
 

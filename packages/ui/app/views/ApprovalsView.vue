@@ -57,6 +57,7 @@ const linkedState = computed(() => (linked.link.value ?
     undefined));
 const linkedRun = computed(() => {
     const state = linkedState.value;
+
     return state?.kind === 'pending' || state?.kind === 'forbidden' ? state.run : undefined;
 });
 const notice = computed(() => (linkedState.value && linked.link.value ? linkNotice(linkedState.value, linked.link.value) : undefined));
@@ -72,8 +73,10 @@ const MESSAGES: Record<AnswerResult, (approved: boolean) => string> = {
 
 async function answer(run: RunWire, approved: boolean, reason: string, selected: string[] = []): Promise<void> {
     busy.value = run.id;
+
     try {
         const result = await inbox.answer(run, approved, reason, selected);
+
         decided.value = [{
             run,
             result,
@@ -83,7 +86,10 @@ async function answer(run: RunWire, approved: boolean, reason: string, selected:
             at: new Date().toISOString(),
         }, ...decided.value.filter((d) => d.run.id !== run.id)];
         toast.add({ title: `${MESSAGES[result](approved)} · run ${shortId(run.id)}`, color: result === 'answered' ? 'success' : 'warning' });
-        if (run.id === linked.link.value?.runId) void linked.refresh();
+
+        if (run.id === linked.link.value?.runId) {
+            void linked.refresh();
+        }
     } catch (e) {
         toast.add({
             title: 'The answer failed',

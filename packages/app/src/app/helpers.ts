@@ -45,14 +45,17 @@ export function buildModules(modules: AppOptions['modules'] = []): IModule[] {
     }
 
     const byName = new Map<string, IModule>();
+
     modules.forEach((module: unknown, index) => {
         // orkos would import() a string, and config or store are real npm packages
         if (!isModule(module)) {
             throw new InvalidAgentDefinitionError(`modules[${index}] must be an IModule instance.`);
         }
+
         if (byName.has(module.name)) {
             throw new InvalidAgentDefinitionError(`Two modules are named "${module.name}".`);
         }
+
         byName.set(module.name, module);
     });
 
@@ -89,6 +92,7 @@ export function toSetupError(error: unknown): unknown {
     if (error instanceof ApplicationError && GRAPH_ERROR_CODES.has(error.code)) {
         return new InvalidAgentDefinitionError(error.message);
     }
+
     return error;
 }
 
@@ -96,6 +100,7 @@ export function toSetupError(error: unknown): unknown {
 export function logReported(container: IContainer, error: unknown, context?: Record<string, unknown>): void {
     if (container.has(AppToken.LOGGER)) {
         container.resolve(AppToken.LOGGER).error('app error', error, context);
+
         return;
     }
 

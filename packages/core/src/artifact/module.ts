@@ -40,9 +40,17 @@ export async function storeArtifact(
         size: input.data.byteLength,
         createdAt,
     };
-    if (await store.insert(artifact, input.data)) return artifact;
+
+    if (await store.insert(artifact, input.data)) {
+        return artifact;
+    }
+
     const stored = await store.findOne(id);
-    if (stored?.runId !== run.id) throw new InvalidRunStateError(`The artifact id "${id}" belongs to another run.`);
+
+    if (stored?.runId !== run.id) {
+        throw new InvalidRunStateError(`The artifact id "${id}" belongs to another run.`);
+    }
+
     return stored;
 }
 
@@ -54,6 +62,7 @@ export async function storeArtifact(
  */
 export function attachmentIds(runId: string, count: number): string[] {
     const width = Math.max(4, String(Math.max(count - 1, 0)).length);
+
     return Array.from({ length: count }, (_, i) => `${runId}.${String(i).padStart(width, '0')}`);
 }
 
@@ -66,13 +75,22 @@ export function createRunArtifacts(
     return {
         async put(input) {
             assertArtifactInput(input);
+
             return storeArtifact(store, run, input, clock.now());
         },
         async get(id) {
             const artifact = await store.findOne(id);
-            if (artifact?.runId !== run.id) return undefined;
+
+            if (artifact?.runId !== run.id) {
+                return undefined;
+            }
+
             const data = await store.read(id);
-            if (!data) return undefined;
+
+            if (!data) {
+                return undefined;
+            }
+
             return { artifact, data };
         },
         list() {

@@ -46,7 +46,10 @@ const {
 const { agents } = useAgents(client);
 
 const now = ref(Date.now());
-const clock = setInterval(() => { now.value = Date.now(); }, 1000);
+const clock = setInterval(() => {
+    now.value = Date.now();
+}, 1000);
+
 onScopeDispose(() => clearInterval(clock));
 
 const run = computed(() => state.value?.run);
@@ -57,7 +60,11 @@ const cancellable = computed(() => !!run.value && canCancel(run.value, permissio
 
 const liveSteps = computed(() => {
     const { value } = state;
-    if (!value) return [];
+
+    if (!value) {
+        return [];
+    }
+
     return Object.entries(value.live)
         .map(([step, text]) => ({ step: Number(step), ...text }))
         .filter((entry) => entry.step >= landedModelSteps(value.steps))
@@ -65,6 +72,7 @@ const liveSteps = computed(() => {
 });
 const stepsCount = computed(() => {
     const done = `${state.value?.steps.length ?? 0} done`;
+
     return liveSteps.value.length > 0 ? `${done} · ${liveSteps.value.length} streaming` : done;
 });
 const nextIndex = computed(() => (state.value?.steps.at(-1)?.index ?? -1) + 1);
@@ -81,8 +89,12 @@ const envelope = computed(() => (run.value ? {
     payload: run.value.trigger.payload,
 } : undefined));
 const timeValue = computed(() => {
-    if (elapsed.value === undefined) return '—';
+    if (elapsed.value === undefined) {
+        return '—';
+    }
+
     const timeout = budget.value?.timeoutMs;
+
     return timeout ? `${formatDuration(elapsed.value)} / ${formatDuration(timeout)}` : formatDuration(elapsed.value);
 });
 
@@ -94,7 +106,11 @@ async function onCancel(): Promise<void> {
         cancelLabel: 'Keep running',
         tone: 'primary',
     });
-    if (!ok) return;
+
+    if (!ok) {
+        return;
+    }
+
     try {
         await cancel();
         toast.add({ title: `Cancel requested · run ${shortId(runId.value)}` });

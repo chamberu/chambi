@@ -26,6 +26,7 @@ describePostgres('postgres conversations', () => {
 
     describeConversationRepositoryContract(async (clock) => {
         await truncateRepository(dataSource);
+
         return new SeededConversationRepository({ dataSource, clock });
     });
 });

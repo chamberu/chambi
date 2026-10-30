@@ -20,6 +20,7 @@ const TOKENS = 'CHAMVI_TOKENS';
  */
 export function readTokens(env: Env): StaticToken[] | undefined {
     const input = envJson(env, TOKENS);
+
     if (typeof input === 'undefined') {
         return undefined;
     }
@@ -32,6 +33,7 @@ export function readTokens(env: Env): StaticToken[] | undefined {
 
     return input.map((item: unknown, index) => {
         const at = `${TOKENS}[${index}]`;
+
         if (!isObject(item)) {
             throw new InvalidAgentDefinitionError(`${at} must be an object.`);
         }
@@ -41,19 +43,25 @@ export function readTokens(env: Env): StaticToken[] | undefined {
             id,
             permissions,
         } = item;
+
         if (typeof value !== 'string' || value.length < TOKEN_VALUE_MIN_LENGTH) {
             throw new InvalidAgentDefinitionError(`${at}.value must be at least ${TOKEN_VALUE_MIN_LENGTH} characters.`);
         }
+
         if (seen.has(value)) {
             throw new InvalidAgentDefinitionError(`${at}.value is given more than once.`);
         }
+
         seen.add(value);
 
         if (typeof id !== 'string' || id.length === 0) {
             throw new InvalidAgentDefinitionError(`${at}.id must be a non-empty string.`);
         }
 
-        if (!Array.isArray(permissions) || permissions.some((permission) => !(typeof permission === 'string'))) {
+        const hasInvalidPermission = Array.isArray(permissions) &&
+            permissions.some((permission) => !(typeof permission === 'string'));
+
+        if (!Array.isArray(permissions) || hasInvalidPermission) {
             throw new InvalidAgentDefinitionError(`${at}.permissions must be an array of strings.`);
         }
 
@@ -71,6 +79,7 @@ export function readTokens(env: Env): StaticToken[] | undefined {
  */
 export function approvalUrlOf(config: AppConfig): ((ref: ApprovalRef) => string) | undefined {
     const { publicUrl, basePath } = config.http;
+
     if (typeof publicUrl === 'undefined') {
         return undefined;
     }

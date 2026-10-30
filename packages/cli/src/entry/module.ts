@@ -26,6 +26,7 @@ async function isFile(file: string): Promise<boolean> {
 /** `package.json` `chamvi.entry` of `cwd`, undefined without a package.json or the field. */
 async function readPackageEntry(cwd: string): Promise<string | undefined> {
     let text: string;
+
     try {
         text = await readFile(path.join(cwd, 'package.json'), 'utf8');
     } catch {
@@ -33,6 +34,7 @@ async function readPackageEntry(cwd: string): Promise<string | undefined> {
     }
 
     let manifest: unknown;
+
     try {
         manifest = JSON.parse(text);
     } catch {
@@ -40,6 +42,7 @@ async function readPackageEntry(cwd: string): Promise<string | undefined> {
     }
 
     const chamvi = isRecord(manifest) ? manifest.chamvi : undefined;
+
     if (!isRecord(chamvi) || typeof chamvi.entry === 'undefined') {
         return undefined;
     }
@@ -68,33 +71,42 @@ export async function resolveEntry(input: ResolveEntryInput): Promise<string | u
 
     if (typeof input.entry === 'string') {
         const file = path.resolve(input.cwd, input.entry);
+
         if (!(await isFile(file))) {
             throw createUsageError(`${input.entry} not found.`);
         }
+
         return file;
     }
 
     if (input.kind === 'built') {
         const file = path.resolve(input.cwd, BUILT_ENTRY);
+
         if (await isFile(file)) {
             return file;
         }
+
         if (await isFile(path.resolve(input.cwd, SOURCE_ENTRY))) {
             throw createUsageError(`${BUILT_ENTRY} not found: run \`chamvi build\` or pass --entry ${SOURCE_ENTRY}.`);
         }
+
         return undefined;
     }
 
     const configured = await readPackageEntry(input.cwd);
+
     if (configured) {
         const file = path.resolve(input.cwd, configured);
+
         if (!(await isFile(file))) {
             throw createUsageError(`${configured} (package.json chamvi.entry) not found.`);
         }
+
         return file;
     }
 
     const file = path.resolve(input.cwd, SOURCE_ENTRY);
+
     return await isFile(file) ? file : undefined;
 }
 
@@ -106,6 +118,7 @@ export async function resolveEntry(input: ResolveEntryInput): Promise<string | u
 export async function loadApp(file: string, importModule: CliContext['importModule']): Promise<IApp> {
     const exports = await importModule(pathToFileURL(file).href);
     const app = isRecord(exports) ? exports.default : undefined;
+
     if (!isApp(app)) {
         throw createUsageError(`${file} must \`export default createApp({...})\`.`);
     }
@@ -127,5 +140,6 @@ export async function loadEntryApp(
     }
 
     context.stderr(DEFAULT_APP_NOTICE);
+
     return createApp({});
 }

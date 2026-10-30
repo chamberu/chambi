@@ -98,24 +98,31 @@ export class SandboxModule implements IModule {
     protected credentialSources(env: Env, credentials: SandboxModuleOptions['credentials']): IGitCredentials[] {
         const sources = credentials === undefined ? [] : [credentials].flat();
         const tokens = envJson(env, 'CHAMVI_GIT_TOKENS');
+
         if (tokens !== undefined) {
             try {
                 sources.push(staticGitCredentials(tokens as StaticGitCredential[]));
             } catch (error) {
                 // the message names an entry and a rule, never a token
-                const message = error instanceof Error ? error.message.replace(/^staticGitCredentials\(\) ?/, '') : 'is invalid';
+                const message = Error.isError(error) ? error.message.replace(/^staticGitCredentials\(\) ?/, '') : 'is invalid';
                 throw new InvalidAgentDefinitionError(`CHAMVI_GIT_TOKENS ${message}`);
             }
         }
+
         sources.push({
             get: async (input) => {
                 for (const source of this.contributed()) {
                     const answer = await source.get(input);
-                    if (answer) return answer;
+
+                    if (answer) {
+                        return answer;
+                    }
                 }
+
                 return undefined;
             },
         });
+
         return sources;
     }
 
@@ -134,16 +141,20 @@ export class SandboxModule implements IModule {
 
         if (manager) {
             this.manager = manager;
+
             return;
         }
 
         const env = input ?? process.env;
         const deployment = envString(env, 'CHAMVI_DEPLOYMENT') ?? managerOptions.deployment;
+
         this.ownsDeployment = deployment !== undefined;
+
         const name = envOneOf(env, 'CHAMVI_SANDBOX_PROVIDER', SANDBOX_PROVIDER_NAMES) ??
             (typeof provider === 'string' ? provider : undefined);
 
         let target: ISandboxProvider;
+
         if (typeof name === 'undefined' && isObject(provider)) {
             target = provider;
         } else {
@@ -152,9 +163,11 @@ export class SandboxModule implements IModule {
                 image: envString(env, 'CHAMVI_SANDBOX_IMAGE') ?? image ?? DEFAULT_SANDBOX_IMAGE,
                 namespace: envString(env, 'CHAMVI_SANDBOX_NAMESPACE') ?? namespace,
             };
+
             if (selected === 'kubernetes' && !resolved.namespace) {
                 throw new InvalidAgentDefinitionError('CHAMVI_SANDBOX_NAMESPACE is required for CHAMVI_SANDBOX_PROVIDER=kubernetes.');
             }
+
             this.lazy = createLazyProvider(
                 SANDBOX_PROVIDER_IDS[selected],
                 () => this.loadProvider(selected, resolved),
@@ -164,6 +177,7 @@ export class SandboxModule implements IModule {
 
         const credentials = this.credentialSources(env, managerOptions.credentials);
         const allowImage = readImageAllowList(env) ?? managerOptions.allowImage;
+
         try {
             this.manager = createWorkspaceManager({
                 ...managerOptions,
@@ -180,12 +194,14 @@ export class SandboxModule implements IModule {
             if (envString(env, 'CHAMVI_DEPLOYMENT') !== undefined && error instanceof InvalidAgentDefinitionError && /deployment/.test(error.message)) {
                 throw new InvalidAgentDefinitionError(`CHAMVI_DEPLOYMENT ${error.message.replace(/^deployment /, '')}`);
             }
+
             throw error;
         }
     }
 
     async setup(container: IContainer): Promise<void> {
         const context = container.resolve(AppToken.CONTEXT);
+
         if (context.mode === 'migrate') {
             return;
         }
@@ -196,6 +212,7 @@ export class SandboxModule implements IModule {
         this.contributed = () => container.resolveAll(AppToken.GIT_CREDENTIALS);
 
         let detach: (() => void) | undefined;
+
         container.registerMany(AppToken.LIFECYCLE_HOOKS, {
             useValue: {
                 name: SANDBOX_MODULE_NAME,
@@ -203,8 +220,11 @@ export class SandboxModule implements IModule {
                     this.engine = engine;
                     detach = this.manager.attach(engine);
                     provideSandboxContext(engine, this.manager);
+
                     // a job is short: only a long-lived process collects on a timer
-                    if (context.mode === 'start') this.startCollector(engine.clock);
+                    if (context.mode === 'start') {
+                        this.startCollector(engine.clock);
+                    }
                 },
                 drained: async () => {
                     this.stopCollector();
@@ -228,20 +248,32 @@ export class SandboxModule implements IModule {
      * reported and the next one still runs. None for an interval of 0.
      */
     protected startCollector(clock: IClock): void {
-        if (this.gcIntervalMs === 0) return;
+        if (this.gcIntervalMs === 0) {
+            return;
+        }
+
         this.collectorStopped = false;
+
         const arm = (): void => {
             this.collector = clock.setTimeout(() => {
                 this.collector = undefined;
+
                 const collecting = this.manager.collectGarbage()
                     .then(() => undefined, (error: unknown) => this.reportError(error))
                     .finally(() => {
-                        if (this.collecting === collecting) this.collecting = undefined;
-                        if (!this.collectorStopped) arm();
+                        if (this.collecting === collecting) {
+                            this.collecting = undefined;
+                        }
+
+                        if (!this.collectorStopped) {
+                            arm();
+                        }
                     });
+
                 this.collecting = collecting;
             }, this.gcIntervalMs);
         };
+
         arm();
     }
 
@@ -258,17 +290,21 @@ export class SandboxModule implements IModule {
         options: { image: string; namespace?: string },
     ): Promise<ISandboxProvider> {
         const specifier = SANDBOX_PROVIDER_PACKAGES[name];
+
         switch (name) {
             case 'docker': {
                 const { createDockerSandbox } = await loadPackage<DockerProviderPackage>(specifier);
+
                 return createDockerSandbox({ image: options.image });
             }
             case 'kubernetes': {
                 const { createKubernetesSandbox } = await loadPackage<KubernetesProviderPackage>(specifier);
+
                 return createKubernetesSandbox({ namespace: options.namespace!, image: options.image });
             }
             default: {
                 const { createLocalSandbox } = await loadPackage<LocalProviderPackage>(specifier);
+
                 return createLocalSandbox();
             }
         }
@@ -285,6 +321,7 @@ export class SandboxModule implements IModule {
             if (isPackageNotFound(error, SANDBOX_PROVIDER_PACKAGES[name])) {
                 throw new InvalidAgentDefinitionError(`CHAMVI_SANDBOX_PROVIDER=${name} needs ${SANDBOX_PROVIDER_PACKAGES[name]} installed.`);
             }
+
             throw error;
         }
     }
@@ -296,17 +333,26 @@ export class SandboxModule implements IModule {
      * before the engine exists.
      */
     protected async isSettled(runId: string): Promise<boolean> {
-        if (!this.engine) return false;
+        if (!this.engine) {
+            return false;
+        }
+
         const run = await this.engine.getRun(runId);
-        if (!run) return this.ownsDeployment;
+
+        if (!run) {
+            return this.ownsDeployment;
+        }
+
         return isTerminal(run.status);
     }
 
     protected reportError(error: unknown): void {
         if (this.report) {
             this.report(error, { module: SANDBOX_MODULE_NAME });
+
             return;
         }
+
         // eslint-disable-next-line no-console
         console.error('[chamvi]', error);
     }

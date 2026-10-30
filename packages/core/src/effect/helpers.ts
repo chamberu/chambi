@@ -18,14 +18,21 @@ function canonical(value: unknown): unknown {
     if (isObject(value) && typeof value.toJSON === 'function') {
         return canonical(value.toJSON());
     }
-    if (Array.isArray(value)) return value.map((v) => canonical(v));
+
+    if (Array.isArray(value)) {
+        return value.map((v) => canonical(v));
+    }
+
     if (isObject(value)) {
         const out: Record<string, unknown> = {};
+
         for (const key of Object.keys(value).sort()) {
             out[key] = canonical(value[key]);
         }
+
         return out;
     }
+
     return value;
 }
 
@@ -50,9 +57,17 @@ export async function validateToolInput(
     what = 'the input beforeToolExecution returned',
 ): Promise<unknown> {
     const { validate } = asSchema(schema);
-    if (!validate) return input;
+
+    if (!validate) {
+        return input;
+    }
+
     const result = await validate(input);
-    if (result.success) return result.value;
+
+    if (result.success) {
+        return result.value;
+    }
+
     const cause = TypeValidationError.isInstance(result.error) ? result.error.cause : undefined;
     const issues = Array.isArray(cause) ?
         buildIssuesForStandardSchemaIssues(cause as StandardSchemaV1.Issue[]) :

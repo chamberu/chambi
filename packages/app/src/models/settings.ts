@@ -72,12 +72,13 @@ type Issues = {
 };
 
 function messageOf(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    return Error.isError(error) ? error.message : String(error);
 }
 
 function report(issues: Issues, message: string, provider?: string): void {
     if (typeof provider === 'undefined') {
         issues.list.push({ message });
+
         return;
     }
 
@@ -102,6 +103,7 @@ function configLayer(name: string, config: ProviderConfig, source: SettingSource
     const layer = emptyLayer();
     const field = `${prefix}providers.${name}`;
     const raw: unknown = config.type;
+
     if (isProviderType(raw)) {
         layer.type = { value: raw, source };
     } else {
@@ -118,6 +120,7 @@ function configLayer(name: string, config: ProviderConfig, source: SettingSource
 
     if (typeof config.baseURL !== 'undefined') {
         const label = `${field}.baseURL`;
+
         attempt(issues, name, () => {
             layer.baseURL = {
                 value: assertBaseUrl(String(config.baseURL), label),
@@ -129,6 +132,7 @@ function configLayer(name: string, config: ProviderConfig, source: SettingSource
 
     for (const [header, value] of Object.entries(config.headers ?? {})) {
         const label = `${field}.headers.${header}`;
+
         attempt(issues, name, () => {
             layer.headers[assertHeaderName(header, label)] = {
                 value,
@@ -164,10 +168,13 @@ function parseEnvField(suffix: string): EnvField | undefined {
 /** Binds `rest` (the variable without the prefix) to the longest name it fits. */
 function bindEnv(rest: string, names: readonly string[]): { name: string; field: EnvField } | undefined {
     const sorted = [...names].sort((a, b) => b.length - a.length);
+
     for (const name of sorted) {
         const envName = `${providerEnvName(name)}_`;
+
         if (rest.startsWith(envName)) {
             const field = parseEnvField(rest.slice(envName.length));
+
             if (field) {
                 return { name, field };
             }
@@ -186,6 +193,7 @@ function guessName(rest: string): string | undefined {
     }
 
     const index = rest.indexOf(`_${HEADER_PREFIX}`);
+
     return providerName(index === -1 ? rest : rest.slice(0, index));
 }
 
@@ -201,14 +209,17 @@ function bindEnvVariables(env: Env, declared: ReadonlySet<string>, issues: Issue
         rest: string
     }> = [];
     const bindings: EnvBinding[] = [];
+
     for (const variable of Object.keys(env).sort()) {
         const value = variable.startsWith(ENV_PREFIX) ? envString(env, variable) : undefined;
+
         if (typeof value === 'undefined') {
             continue;
         }
 
         const rest = variable.slice(ENV_PREFIX.length);
         const bound = bindEnv(rest, [...declared]);
+
         if (bound) {
             bindings.push({
                 variable,
@@ -225,8 +236,10 @@ function bindEnvVariables(env: Env, declared: ReadonlySet<string>, issues: Issue
     }
 
     const envDeclared = new Set<string>();
+
     for (const { rest } of unmatched) {
         const name = rest.endsWith('_TYPE') ? providerName(rest.slice(0, -'_TYPE'.length)) : undefined;
+
         if (name) {
             envDeclared.add(name);
         }
@@ -238,16 +251,19 @@ function bindEnvVariables(env: Env, declared: ReadonlySet<string>, issues: Issue
         rest,
     } of unmatched) {
         const bound = bindEnv(rest, [...envDeclared]);
+
         if (bound) {
             bindings.push({
                 variable,
                 value,
                 ...bound,
             });
+
             continue;
         }
 
         const name = guessName(rest);
+
         if (name) {
             report(
                 issues,
@@ -275,6 +291,7 @@ function applyEnvBinding(layer: Layer, binding: EnvBinding, issues: Issues): voi
         field,
     } = binding;
     const source: SettingSource = 'env';
+
     switch (field.kind) {
         case 'type':
             if (isProviderType(value)) {
@@ -282,6 +299,7 @@ function applyEnvBinding(layer: Layer, binding: EnvBinding, issues: Issues): voi
             } else {
                 report(issues, `${variable} must be one of ${Object.keys(PROVIDER_TYPES).join(', ')}.`, name);
             }
+
             break;
         case 'apiKey':
             layer.apiKey = {
@@ -289,6 +307,7 @@ function applyEnvBinding(layer: Layer, binding: EnvBinding, issues: Issues): voi
                 source,
                 label: variable,
             };
+
             break;
         case 'baseURL':
             attempt(issues, name, () => {
@@ -298,6 +317,7 @@ function applyEnvBinding(layer: Layer, binding: EnvBinding, issues: Issues): voi
                     label: variable,
                 };
             });
+
             break;
         default:
             attempt(issues, name, () => {
@@ -313,9 +333,11 @@ function applyEnvBinding(layer: Layer, binding: EnvBinding, issues: Issues): voi
 /** Layers merged low to high: per field, or wholesale when a higher layer sets another type. */
 function mergeLayers(layers: readonly Layer[]): Layer | undefined {
     let merged: Layer | undefined;
+
     for (const layer of layers) {
         if (!merged || (layer.type && merged.type && layer.type.value !== merged.type.value)) {
             merged = { ...layer, headers: { ...layer.headers } };
+
             continue;
         }
 
@@ -346,6 +368,7 @@ async function resolveProvider(
         headers: {},
         sources: { type: layer.type.source, headers: {} },
     };
+
     try {
         if (layer.apiKey) {
             settings.apiKey = await readSecret(layer.apiKey.value, { ...context, field: layer.apiKey.label });
@@ -358,6 +381,7 @@ async function resolveProvider(
         }
     } catch (error) {
         report(issues, messageOf(error), name);
+
         return undefined;
     }
 
@@ -372,6 +396,7 @@ async function resolveProvider(
     }
 
     const envName = `${ENV_PREFIX}${providerEnvName(name)}`;
+
     if (PROVIDER_TYPES[settings.type].keyRequired && typeof settings.apiKey === 'undefined') {
         report(issues, `Provider "${name}" (${settings.type}) needs ${envName}_API_KEY.`, name);
     }
@@ -385,8 +410,10 @@ async function resolveProvider(
 
 function implicitProviders(env: Env, declared: ReadonlySet<string>, issues: Issues): ProviderSettings[] {
     const providers: ProviderSettings[] = [];
+
     for (const builtin of BUILTIN_PROVIDERS) {
         const apiKey = declared.has(builtin.id) ? undefined : envString(env, builtin.apiKey);
+
         if (typeof apiKey === 'undefined' || !isProviderType(builtin.id)) {
             continue;
         }
@@ -403,12 +430,14 @@ function implicitProviders(env: Env, declared: ReadonlySet<string>, issues: Issu
             },
         };
         const baseURL = builtin.baseUrl ? envString(env, builtin.baseUrl) : undefined;
+
         if (builtin.baseUrl && typeof baseURL !== 'undefined') {
             try {
                 settings.baseURL = assertBaseUrl(baseURL, builtin.baseUrl);
                 settings.sources.baseURL = 'implicit';
             } catch (error) {
                 report(issues, messageOf(error), builtin.id);
+
                 continue;
             }
         }
@@ -422,6 +451,7 @@ function implicitProviders(env: Env, declared: ReadonlySet<string>, issues: Issu
 async function exists(path: string): Promise<boolean> {
     try {
         await stat(path);
+
         return true;
     } catch {
         return false;
@@ -439,6 +469,7 @@ async function readFileLayer(
 }> {
     const named = envString(env, CONFIG_FILE_VARIABLE);
     const path = resolve(cwd, named ?? DEFAULT_CONFIG_FILE);
+
     if (typeof named === 'undefined' && !(await exists(path))) {
         return { providers: {} };
     }
@@ -447,6 +478,7 @@ async function readFileLayer(
         return { path, ...(await readConfigFile(path)) };
     } catch (error) {
         report(issues, typeof named === 'undefined' ? messageOf(error) : `${CONFIG_FILE_VARIABLE}: ${messageOf(error)}`);
+
         return { providers: {} };
     }
 }
@@ -473,6 +505,7 @@ export async function readModelSettings(input: {
     for (const [name, config] of Object.entries(input.providers ?? {})) {
         if (!isProviderName(name)) {
             report(issues, `createApp: providers.${name} is no provider name (must match ^[a-z0-9]+(-[a-z0-9]+)*$, at most 64 characters).`);
+
             continue;
         }
 
@@ -480,13 +513,16 @@ export async function readModelSettings(input: {
     }
 
     const file = await readFileLayer(env, cwd, issues);
+
     for (const [name, config] of Object.entries(file.providers)) {
         add(name, configLayer(name, config, 'file', '', issues));
     }
 
     const envLayers = new Map<string, Layer>();
+
     for (const binding of bindEnvVariables(env, new Set(layers.keys()), issues)) {
         const layer = envLayers.get(binding.name) ?? emptyLayer();
+
         envLayers.set(binding.name, layer);
         applyEnvBinding(layer, binding, issues);
     }
@@ -496,9 +532,11 @@ export async function readModelSettings(input: {
     }
 
     const providers = new Map<string, ProviderSettings>();
+
     for (const [name, list] of layers) {
         const merged = mergeLayers(list);
         const settings = merged ? await resolveProvider(name, merged, { env, cwd }, issues) : undefined;
+
         if (settings && !issues.failed.has(name)) {
             providers.set(name, settings);
         }
@@ -512,6 +550,7 @@ export async function readModelSettings(input: {
 
     const settings: ModelSettings = { providers };
     const envModel = envString(env, MODEL_VARIABLE);
+
     if (typeof envModel !== 'undefined') {
         settings.model = { ref: envModel, source: 'env' };
     } else if (typeof file.model !== 'undefined') {

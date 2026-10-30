@@ -27,20 +27,28 @@ const busy = ref(false);
 const keys = createStartKeys();
 
 watch(open, (value) => {
-    if (!value) return;
+    if (!value) {
+        return;
+    }
+
     error.value = undefined;
 });
 
 async function submit(): Promise<void> {
     const parsed = parsePayload(payload.value);
+
     if (!parsed.ok) {
         error.value = parsed.message;
+
         return;
     }
+
     busy.value = true;
     error.value = undefined;
+
     try {
         const result = await props.start(parsed.value, keys.keyFor(payload.value));
+
         keys.succeeded();
         open.value = false;
         emit('started', result);

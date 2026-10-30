@@ -19,10 +19,13 @@ import type { HandoffSubscriber } from './types.ts';
 export const handoff: HandoffSubscriber = {
     on: (options = {}) => {
         assertConcurrencyMaxRuns(options.concurrencyMaxRuns, 'handoff.on() concurrencyMaxRuns');
+
         const maxPerRun = options.maxPerRun ?? DEFAULT_MAX_HANDOFFS_PER_RUN;
+
         if (!Number.isSafeInteger(maxPerRun) || maxPerRun <= 0) {
             throw new InvalidAgentDefinitionError('handoff.on({ maxPerRun }) must be a positive integer.');
         }
+
         return {
             channel: AGENT_CHANNEL_NAME,
             id: HANDOFF_SUBSCRIPTION_ID,

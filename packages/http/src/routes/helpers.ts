@@ -12,6 +12,10 @@
  */
 export function routeSubpath(pathname: string, basePath: string, path: string): string {
     const prefix = `${basePath}${path}`;
-    if (pathname.slice(0, prefix.length).toLowerCase() !== prefix.toLowerCase()) return '';
+
+    if (pathname.slice(0, prefix.length).toLowerCase() !== prefix.toLowerCase()) {
+        return '';
+    }
+
     return pathname.slice(prefix.length);
 }

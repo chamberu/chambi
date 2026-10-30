@@ -38,14 +38,17 @@ export function withAppTimeout(octokit: GithubOctokit, clock: IClock): GithubOct
         })), APP_REQUEST_TIMEOUT_MS);
         const own = options.request?.signal;
         const signal = own ? AbortSignal.any([own, controller.signal]) : controller.signal;
+
         // in place: before-after-hook hands every hook the same options object
         options.request = { ...options.request, signal };
+
         try {
             return await send(options);
         } finally {
             timer.clear();
         }
     });
+
     return octokit;
 }
 
@@ -84,13 +87,16 @@ export function createInstallationTokens(input: InstallationTokensInput): {
             userAgent: GITHUB_USER_AGENT,
             request,
         });
+
         return withAppTimeout(octokit, input.clock);
     }
 
     async function exchange(installationId: number): Promise<string> {
         const octokit = await app();
         const { data } = await octokit.request('POST /app/installations/{installation_id}/access_tokens', { installation_id: installationId });
+
         cache.set(installationId, { token: data.token, expiresAt: Date.parse(data.expires_at) });
+
         return data.token;
     }
 
@@ -102,7 +108,9 @@ export function createInstallationTokens(input: InstallationTokensInput): {
             permissions,
         });
         const token = { token: data.token, expiresAt: Date.parse(data.expires_at) };
+
         scoped.set(key, token);
+
         return token;
     }
 
@@ -112,24 +120,34 @@ export function createInstallationTokens(input: InstallationTokensInput): {
             const sorted = Object.fromEntries(Object.entries(permissions).sort(([a], [b]) => a.localeCompare(b)));
             const key = `${installationId}:${repo.toLowerCase()}:${JSON.stringify(sorted)}`;
             const cached = scoped.get(key);
-            if (isFresh(cached)) return Promise.resolve(cached);
+
+            if (isFresh(cached)) {
+                return Promise.resolve(cached);
+            }
+
             let inflight = scopedPending.get(key);
+
             if (!inflight) {
                 inflight = exchangeScoped(key, installationId, repo, sorted).finally(() => scopedPending.delete(key));
                 scopedPending.set(key, inflight);
             }
+
             return inflight;
         },
         get(installationId: number): Promise<string> {
             const cached = cache.get(installationId);
+
             if (cached && input.clock.now().getTime() < cached.expiresAt - TOKEN_REFRESH_MARGIN_MS) {
                 return Promise.resolve(cached.token);
             }
+
             let inflight = pending.get(installationId);
+
             if (!inflight) {
                 inflight = exchange(installationId).finally(() => pending.delete(installationId));
                 pending.set(installationId, inflight);
             }
+
             return inflight;
         },
     };

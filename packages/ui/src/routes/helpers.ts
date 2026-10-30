@@ -29,20 +29,38 @@ import type { BuildFile } from './types.ts';
  * `%` left after decoding (double encoding, `%252e%252e`) is refused.
  */
 export function resolveBuildPath(subpath: string): string | undefined {
-    if (subpath === '' || subpath === '/') return '';
-    if (!subpath.startsWith('/')) return undefined;
+    if (subpath === '' || subpath === '/') {
+        return '';
+    }
+
+    if (!subpath.startsWith('/')) {
+        return undefined;
+    }
 
     let decoded: string;
+
     try {
         decoded = decodeURIComponent(subpath);
     } catch {
         return undefined;
     }
-    if (/[\0\\%]/.test(decoded)) return undefined;
+
+    if (/[\0\\%]/.test(decoded)) {
+        return undefined;
+    }
 
     const segments = decoded.slice(1).split('/');
-    if (segments.length > 1 && segments.at(-1) === '') segments.pop();
-    if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) return undefined;
+
+    if (segments.length > 1 && segments.at(-1) === '') {
+        segments.pop();
+    }
+
+    const hasInvalidSegment = segments.some((segment) => segment === '' || segment === '.' || segment === '..');
+
+    if (hasInvalidSegment) {
+        return undefined;
+    }
+
     return segments.join('/');
 }
 
@@ -57,12 +75,18 @@ export async function loadBuild(root: string): Promise<Map<string, BuildFile>> {
     const visited = new Set<string>();
     const walk = async (dir: string, prefix: string): Promise<void> => {
         const real = await realpath(dir);
-        if (visited.has(real)) return;
+
+        if (visited.has(real)) {
+            return;
+        }
+
         visited.add(real);
+
         for (const entry of await readdir(dir, { withFileTypes: true })) {
             const path = join(dir, entry.name);
             const key = prefix ? `${prefix}/${entry.name}` : entry.name;
             let kind: { isFile(): boolean; isDirectory(): boolean } = entry;
+
             if (entry.isSymbolicLink()) {
                 try {
                     kind = await stat(path);
@@ -70,6 +94,7 @@ export async function loadBuild(root: string): Promise<Map<string, BuildFile>> {
                     continue;
                 }
             }
+
             if (kind.isDirectory()) {
                 await walk(path, key);
             } else if (kind.isFile()) {
@@ -81,7 +106,9 @@ export async function loadBuild(root: string): Promise<Map<string, BuildFile>> {
             }
         }
     };
+
     await walk(root, '');
+
     return files;
 }
 
@@ -101,12 +128,14 @@ const JSON_ESCAPES: Record<string, string> = {
 export function renderIndex(html: string, config: UiConfig): string {
     const json = JSON.stringify(config).replace(/[<>&\u2028\u2029]/g, (char) => JSON_ESCAPES[char] ?? char);
     const block = `<base href="${config.uiBase}/"><script type="application/json" id="${CONFIG_ELEMENT_ID}">${json}</script>`;
+
     return html.replace(CONFIG_MARKER, () => block);
 }
 
 /** The dashboard's Content-Security-Policy; the authup origin joins `connect-src` and `form-action`. */
 export function buildCsp(config: UiConfig): string {
     const authup = config.auth.authup ? ` ${new URL(config.auth.authup.url).origin}` : '';
+
     return [
         "default-src 'self'",
         "script-src 'self'",
@@ -131,6 +160,7 @@ export function defaultRoot(): string {
         fileURLToPath(new URL('./app/', import.meta.url)),
         fileURLToPath(new URL('../../dist/app/', import.meta.url)),
     ];
+
     return candidates.find((candidate) => existsSync(join(candidate, 'index.html'))) ?? candidates[0]!;
 }
 

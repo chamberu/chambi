@@ -21,10 +21,14 @@ export async function isOverlapping(
     subscriptionId: string,
     policy: OverlapPolicy,
 ): Promise<boolean> {
-    if (policy === 'allow') return false;
+    if (policy === 'allow') {
+        return false;
+    }
+
     const { data } = await store.find({
         agent,
         status: policy === 'skip' ? ACTIVE : ['queued'],
     });
+
     return data.some((run) => run.trigger.trigger === subscriptionId);
 }

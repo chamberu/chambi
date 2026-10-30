@@ -18,12 +18,19 @@ import type { ISession } from './types.ts';
  */
 export function createAuthGuard(session: ISession): NavigationGuard {
     let restored: Promise<boolean> | undefined;
+
     return async (to) => {
         restored ??= session.restore();
         await restored;
-        if (!session.principal.value) restored = undefined;
-        if (to.meta.public === true) return true;
-        if (session.principal.value) return true;
+
+        if (!session.principal.value) {
+            restored = undefined;
+        }
+
+        if ((to.meta.public === true) || session.principal.value) {
+            return true;
+        }
+
         return { name: RouteName.LOGIN, query: { redirect: to.fullPath } };
     };
 }

@@ -30,14 +30,16 @@ const kit = vi.hoisted(() => ({
 }));
 
 vi.mock('@authup/client-web-kit', () => ({
-    install: (_app: unknown, options: Record<string, unknown>) => { kit.installed.push(options); },
+    install: (_app: unknown, options: Record<string, unknown>) => {
+        kit.installed.push(options);
+    },
     injectStore: () => kit.store,
     buildAuthorizeURL: () => 'https://auth.example.com/authorize',
     clearAuthorizationRequest: () => {},
     createPKCE: async () => ({
-        code_verifier: 'v', 
-        code_challenge: 'c', 
-        code_challenge_method: 'S256', 
+        code_verifier: 'v',
+        code_challenge: 'c',
+        code_challenge_method: 'S256',
     }),
     createState: () => 'state',
     loadAuthorizationRequest: () => undefined,
@@ -53,6 +55,7 @@ describe('createSessionCookies', () => {
         const storage = new MemoryStorage();
         const cookies = createSessionCookies(storage);
         const expires = new Date('2026-10-21T12:00:00.000Z');
+
         cookies.cookieSet('access_token', 'at');
         cookies.cookieSet('access_token_expire_date', expires);
         cookies.cookieSet('realm_management', { id: 'r1', name: 'master' });
@@ -89,8 +92,11 @@ describe('createAuthupAdapter', () => {
     it('hands the kit storage-backed cookie functions, never document.cookie', async () => {
         const { createAuthupAdapter } = await import('../../../../app/auth/authup.ts');
         const storage = new MemoryStorage();
+
         createAuthupAdapter(createApp(ROOT), CONFIG, '/ui', storage);
+
         const options = kit.installed[0]!;
+
         expect(typeof options.cookieGet).toBe('function');
         expect(typeof options.cookieSet).toBe('function');
         expect(typeof options.cookieUnset).toBe('function');
@@ -101,6 +107,7 @@ describe('createAuthupAdapter', () => {
     it('refresh is true while a token is in place, also when another call already rotated it', async () => {
         const { createAuthupAdapter } = await import('../../../../app/auth/authup.ts');
         const adapter = createAuthupAdapter(createApp(ROOT), CONFIG, '/ui', new MemoryStorage());
+
         kit.store.accessToken = 'rotated-by-another-request';
         expect(await adapter.refresh()).toBe(true);
 
@@ -108,7 +115,9 @@ describe('createAuthupAdapter', () => {
         expect(await adapter.refresh()).toBe(false);
 
         kit.store.accessToken = 'x';
-        kit.store.resolve = async () => { throw new Error('refresh token revoked'); };
+        kit.store.resolve = async () => {
+            throw new Error('refresh token revoked');
+        };
         expect(await adapter.refresh()).toBe(false);
     });
 });

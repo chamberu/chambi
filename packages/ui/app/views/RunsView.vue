@@ -7,11 +7,11 @@
  */
 
 import type { RunStatusLiteral } from '@chamvi/core';
-import { 
-    computed, 
-    inject, 
-    shallowRef, 
-    watch, 
+import {
+    computed,
+    inject,
+    shallowRef,
+    watch,
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { failedSummary, oldestWaiting, tokenShares } from '../agents/helpers.ts';
@@ -36,7 +36,10 @@ const route = useRoute();
 const router = useRouter();
 
 const filter = shallowRef<RunListFilter>(filterFromQuery(route.query));
-watch(() => route.query, (query) => { filter.value = filterFromQuery(query); });
+
+watch(() => route.query, (query) => {
+    filter.value = filterFromQuery(query);
+});
 
 const {
     page,
@@ -75,6 +78,7 @@ const agent = computed({
 
 function toggleStatus(status: RunStatusLiteral): void {
     const current = filter.value.status ?? [];
+
     update({ status: current.includes(status) ? current.filter((s) => s !== status) : [...current, status] });
 }
 

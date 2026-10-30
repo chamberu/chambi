@@ -29,10 +29,13 @@ export class ConversationOperationEntity {
         collation: 'C',
     })
     scopeId!: string;
+
     @PrimaryColumn({ type: 'integer' })
     generation!: number;
+
     @PrimaryColumn({ type: 'text', collation: 'C' })
     id!: string;
+
     @Column({
         name: 'run_id',
         type: 'varchar',
@@ -40,17 +43,23 @@ export class ConversationOperationEntity {
         collation: 'C',
     })
     runId!: string;
+
     @Column({ name: 'input_hash', type: 'text' })
     inputHash!: string;
+
     @Column({ type: 'text' })
     kind!: ConversationNoteResult['kind'];
+
     @Column({ type: 'text', collation: 'C' })
     // Receipts survive note deletion, so this is result metadata rather than a note foreign key.
     key!: string;
+
     @Column({ type: 'boolean', nullable: true })
     removed!: boolean | null;
+
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
+
     @ManyToOne(() => ConversationEntity, {
         nullable: false,
         onDelete: 'NO ACTION',

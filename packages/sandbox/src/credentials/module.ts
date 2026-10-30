@@ -21,9 +21,9 @@ const HOST_PATTERN = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/;
 const SEGMENT_PATTERN = /^[^\s/\0]+$/;
 
 type Entry = {
-    host: string; 
-    segments: string[]; 
-    credential: GitCredential 
+    host: string;
+    segments: string[];
+    credential: GitCredential
 };
 
 function defaultUsername(host: string): string {
@@ -32,23 +32,42 @@ function defaultUsername(host: string): string {
 
 function toEntry(input: unknown, index: number): Entry {
     const fail = (rule: string) => new InvalidAgentDefinitionError(`staticGitCredentials() entry ${index}: ${rule}`);
-    if (typeof input !== 'object' || input === null || Array.isArray(input)) throw fail('must be an object { host, path?, username?, token }.');
+
+    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+        throw fail('must be an object { host, path?, username?, token }.');
+    }
+
     const entry = input as Partial<StaticGitCredential>;
     const host = typeof entry.host === 'string' ? entry.host.toLowerCase() : '';
-    if (!HOST_PATTERN.test(host)) throw fail('host must be a host name like "github.com", with an optional port.');
-    if (!isCredentialValue(entry.token)) throw fail('token must be a non-empty string without NUL, CR, LF or tab.');
+
+    if (!HOST_PATTERN.test(host)) {
+        throw fail('host must be a host name like "github.com", with an optional port.');
+    }
+
+    if (!isCredentialValue(entry.token)) {
+        throw fail('token must be a non-empty string without NUL, CR, LF or tab.');
+    }
+
     if (entry.username !== undefined && !isCredentialValue(entry.username)) {
         throw fail('username must be a non-empty string without NUL, CR, LF or tab.');
     }
+
     let segments: string[] = [];
+
     if (entry.path !== undefined) {
         const path = typeof entry.path === 'string' ? trimRepoPath(entry.path) : '';
+
         // GitHub and GitLab paths are case-insensitive (a payload's full_name keeps the owner's case)
         segments = path === '' ? [] : path.toLowerCase().split('/');
-        if (segments.length === 0 || segments.some((s) => !SEGMENT_PATTERN.test(s) || s === '.' || s === '..')) {
+
+        const hasInvalidSegment = segments.length !== 0 &&
+            segments.some((s) => !SEGMENT_PATTERN.test(s) || s === '.' || s === '..');
+
+        if (segments.length === 0 || hasInvalidSegment) {
             throw fail('path must be an owner, group or repository like "octo" or "octo/demo".');
         }
     }
+
     return {
         host,
         segments,
@@ -69,6 +88,7 @@ export function staticGitCredentials(entries: readonly StaticGitCredential[]): I
     if (!Array.isArray(entries)) {
         throw new InvalidAgentDefinitionError('staticGitCredentials() needs a list of { host, path?, username?, token }.');
     }
+
     const list = entries.map(toEntry).sort((a, b) => b.segments.length - a.segments.length);
 
     return {
@@ -77,6 +97,7 @@ export function staticGitCredentials(entries: readonly StaticGitCredential[]): I
             const match = list.find((entry) => entry.host === request.host &&
                 entry.segments.length <= path.length &&
                 entry.segments.every((segment, i) => segment === path[i]));
+
             return match ? { ...match.credential } : undefined;
         },
     };

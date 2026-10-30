@@ -20,18 +20,21 @@ class DriverError extends Error {
 describe('maskPassword', () => {
     it('keeps an error that holds no password', () => {
         const error = new Error('connect ECONNREFUSED 127.0.0.1:1');
+
         expect(maskPassword(error, URL_WITH_PASSWORD)).toBe(error);
         expect(error.message).toBe('connect ECONNREFUSED 127.0.0.1:1');
     });
 
     it('keeps the error for a URL without a password', () => {
         const error = new Error('postgres://u@db/x refused');
+
         expect(maskPassword(error, 'postgres://u@db/x')).toBe(error);
     });
 
     it('a password that is a substring of the stack or the message keeps the error', () => {
         const url = 'postgres://chamvi:postgres@db/chamvi';
         const error = new DriverError('relation "chamvi_checkpoints" already exists, postgres said');
+
         error.stack = `${error.message}\n    at PostgresQueryRunner.query (node_modules/typeorm/driver/postgres/PostgresQueryRunner.js:1:1)`;
         expect(maskPassword(error, url)).toBe(error);
         expect(error.message).toBe('relation "chamvi_checkpoints" already exists, postgres said');
@@ -40,6 +43,7 @@ describe('maskPassword', () => {
 
     it('leaves the app_stopped error untouched', () => {
         const error = createStoppedError();
+
         expect(maskPassword(error, 'postgres://u:app@db/x')).toBe(error);
         expect(error.message).toBe('The app was stopped.');
     });
@@ -47,6 +51,7 @@ describe('maskPassword', () => {
     it('masks the encoded password of a URL in the message in place', () => {
         const error = new DriverError('bad url postgres://u:p%40ss-w0rd@db:5432/x');
         const masked = maskPassword(error, URL_WITH_PASSWORD);
+
         expect(masked).toBe(error);
         expect(error.message).toBe('bad url postgres://u:***@db:5432/x');
         expect(error.code).toBe('28P01');
@@ -56,6 +61,7 @@ describe('maskPassword', () => {
     it('masks the decoded pair in the message, the stack and the cause chain', () => {
         const cause = new Error('u:p@ss-w0rd@db');
         const error = new Error('failed u:p@ss-w0rd@db', { cause });
+
         maskPassword(error, URL_WITH_PASSWORD);
         expect(error.message).toBe('failed u:***@db');
         expect(cause.message).toBe('u:***@db');
@@ -67,6 +73,7 @@ describe('maskPassword', () => {
             driverError: { message: `connect ${URL_WITH_PASSWORD}` },
             url: URL_WITH_PASSWORD,
         });
+
         expect(maskPassword(error, URL_WITH_PASSWORD)).toBe(error);
         expect(error.driverError.message).toBe('connect postgres://u:***@db:5432/x');
         expect(error.url).toBe('postgres://u:***@db:5432/x');
@@ -74,12 +81,14 @@ describe('maskPassword', () => {
 
     it('masks a ChamviError that carries the URL too', () => {
         const error = new ChamviError({ code: 'x', message: URL_WITH_PASSWORD });
+
         maskPassword(error, URL_WITH_PASSWORD);
         expect(error.message).toBe('postgres://u:***@db:5432/x');
     });
 
     it('a URL that does not parse keeps the error', () => {
         const error = new Error('x');
+
         expect(maskPassword(error, 'not a url')).toBe(error);
     });
 });

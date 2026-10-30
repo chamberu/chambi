@@ -51,10 +51,14 @@ describe('docker sandbox options', () => {
 
 function fakeDocker(createError: unknown) {
     return {
-        createContainer: vi.fn(async () => { throw createError; }),
+        createContainer: vi.fn(async () => {
+            throw createError;
+        }),
         getContainer: vi.fn(),
         listContainers: vi.fn(async () => []),
-        pull: vi.fn(async () => { throw new Error('pull must not run'); }),
+        pull: vi.fn(async () => {
+            throw new Error('pull must not run');
+        }),
         modem: {
             demuxStream: vi.fn(),
             followProgress: vi.fn(),
@@ -67,6 +71,7 @@ type CreateCall = [{ HostConfig: { Mounts: Array<{ Source: string; Target: strin
 /** The `/cache` volume of the fake's first `createContainer` call. */
 function cacheMountOf(docker: ReturnType<typeof fakeDocker>): string | undefined {
     const [options] = docker.createContainer.mock.calls[0] as unknown as CreateCall;
+
     return options.HostConfig.Mounts.find((mount) => mount.Target === '/cache')?.Source;
 }
 
@@ -98,9 +103,9 @@ describe('docker sandbox create without a daemon', () => {
     it('mounts the named volume only with cache.volume', async () => {
         const docker = fakeDocker(new Error('stop after the create options'));
         const provider = createDockerSandbox({
-            docker: docker as never, 
-            user: '1000:1000', 
-            cache: { volume: 'shared' }, 
+            docker: docker as never,
+            user: '1000:1000',
+            cache: { volume: 'shared' },
         });
 
         await expect(provider.create({ runId: 'run-1' })).rejects.toThrow(SandboxError);
@@ -133,7 +138,9 @@ describe('docker sandbox create aborted in flight', () => {
     it('stops an image pull', async () => {
         const stream = new PassThrough();
         const docker = {
-            createContainer: vi.fn(async () => { throw new Error('create must not run'); }),
+            createContainer: vi.fn(async () => {
+                throw new Error('create must not run');
+            }),
             getContainer: vi.fn(),
             listContainers: vi.fn(async () => []),
             pull: vi.fn<(image: string, options: { abortSignal?: AbortSignal }) => Promise<PassThrough>>(async () => stream),
@@ -149,6 +156,7 @@ describe('docker sandbox create aborted in flight', () => {
         const provider = createDockerSandbox({ docker: docker as never, pull: 'always' });
 
         const creating = provider.create({ runId: 'run-1', signal: controller.signal });
+
         await vi.waitFor(() => expect(docker.modem.followProgress).toHaveBeenCalled());
         controller.abort();
         await expect(creating).rejects.toThrow('workspace creation aborted');
@@ -175,6 +183,7 @@ describe('docker sandbox create aborted in flight', () => {
         const provider = createDockerSandbox({ docker: docker as never, pull: 'never' });
 
         const creating = provider.create({ runId: 'run-1', signal: controller.signal });
+
         await vi.waitFor(() => expect(container.start).toHaveBeenCalled());
         controller.abort();
         await expect(creating).rejects.toThrow('workspace creation aborted');
@@ -195,6 +204,7 @@ describe('docker sandbox create aborted in flight', () => {
         const provider = createDockerSandbox({ docker: docker as never, pull: 'never' });
 
         const creating = provider.create({ runId: 'run-1', signal: controller.signal });
+
         await vi.waitFor(() => expect(docker.createContainer).toHaveBeenCalled());
         controller.abort();
         await expect(creating).rejects.toThrow('workspace creation aborted');

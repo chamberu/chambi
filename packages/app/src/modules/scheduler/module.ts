@@ -34,7 +34,10 @@ export class SchedulerModule implements IModule {
 
     async setup(container: IContainer): Promise<void> {
         const context = container.resolve(AppToken.CONTEXT);
-        if (context.mode === 'migrate') return;
+
+        if (context.mode === 'migrate') {
+            return;
+        }
 
         // a folder agent with a cron subscription hubwire refuses is a load issue, in every mode, so the modes agree
         container.registerMany(AppToken.AGENT_CHECKS, { useValue: (agent) => assertSchedulable(agent) });
@@ -47,6 +50,7 @@ export class SchedulerModule implements IModule {
             }) :
             // subscriptions still validate; nothing is scheduled
             { name: CRON_CHANNEL_NAME };
+
         container.registerMany(AppToken.CHANNELS, { useValue: channel });
     }
 }

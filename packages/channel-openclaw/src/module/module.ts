@@ -43,12 +43,15 @@ export class OpenclawModule implements IModule {
             if (typeof given !== 'undefined') {
                 return given;
             }
+
             fromEnv.add(key);
+
             return reader();
         };
 
         const hooksPath = read('hooksPath', options.hooksPath, () => envString(env, VARIABLES.hooksPath));
         const agentId = read('agentId', options.agentId, () => envString(env, VARIABLES.agentId));
+
         if (typeof options.deliver === 'undefined') {
             fromEnv.add('deliver.channel').add('deliver.to').add('deliver.accountId');
         }
@@ -76,10 +79,12 @@ export class OpenclawModule implements IModule {
             if (error instanceof InvalidAgentDefinitionError && error.message.startsWith(ERROR_PREFIX)) {
                 const rule = error.message.slice(ERROR_PREFIX.length);
                 const key = [...fromEnv].find((option) => rule.startsWith(`${option} `));
+
                 if (key) {
                     throw new InvalidAgentDefinitionError(`${VARIABLES[key]}${rule.slice(key.length)}`);
                 }
             }
+
             throw error;
         }
     }
@@ -91,6 +96,7 @@ export class OpenclawModule implements IModule {
             ...(approvalUrl && { approvalUrl }),
             clock: this.options.clock ?? container.resolve(AppToken.CLOCK),
         });
+
         container.registerMany(AppToken.CHANNELS, { useValue: channel });
     }
 }

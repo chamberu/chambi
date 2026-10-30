@@ -27,13 +27,18 @@ let home: string;
 /** The groups of the calls a test started, killed after it. */
 const groups: number[] = [];
 
-beforeEach(async () => { home = await mkdtemp(join(tmpdir(), 'chamvi-bash-')); });
-afterEach(async () => { await rm(home, { recursive: true, force: true }); });
+beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'chamvi-bash-'));
+});
+afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+});
 
 /** Whether any process of the group `pgid` still runs (signal 0). */
 function groupAlive(pgid: number): boolean {
     try {
         process.kill(-pgid, 0);
+
         return true;
     } catch {
         return false;
@@ -62,6 +67,7 @@ function exited(child: ChildProcess): Promise<number | null> {
 async function runCall(command: string, cap?: number): Promise<{ pgid: number; status: number | null }> {
     const child = startCall(command, cap);
     const status = await exited(child);
+
     return { pgid: child.pid as number, status };
 }
 
@@ -78,14 +84,18 @@ describe('the bash script', () => {
     afterEach(() => {
         // never leave a call's processes behind a failed test
         for (const pgid of groups) {
-            try { process.kill(-pgid, 'SIGKILL'); } catch { /* gone */ }
+            try {
+                process.kill(-pgid, 'SIGKILL');
+            } catch { /* gone */ }
         }
+
         groups.length = 0;
     });
 
     it('leaves no process of the call behind once it exited (the watchdog reaps its sleep)', async () => {
         // long enough for the watchdog to sit in its sleep when the command ends
         const { pgid, status } = await runCall('sleep 0.5');
+
         expect(status).toBe(0);
         // an orphaned sleep would be reparented to PID 1, a zombie for good where PID 1 reaps nothing
         expect(groupAlive(pgid)).toBe(false);
@@ -94,31 +104,44 @@ describe('the bash script', () => {
     it('ends the whole call when only its shell gets TERM, as from BusyBox timeout', async () => {
         const child = startCall(`sleep 0.2; sleep 30; touch "${join(home, 'after')}"`);
         const pgid = child.pid as number;
+
         groups.push(pgid);
+
         const status = exited(child);
-        await new Promise((resolve) => { setTimeout(resolve, 600); });
+
+        await new Promise((resolve) => {
+            setTimeout(resolve, 600);
+        });
         // BusyBox timeout execs the command and signals that one process only
         process.kill(pgid, 'SIGTERM');
         await status;
-        await vi.waitFor(() => { expect(groupAlive(pgid)).toBe(false); }, { timeout: 2_000 });
+        await vi.waitFor(() => {
+            expect(groupAlive(pgid)).toBe(false);
+        }, { timeout: 2_000 });
         await expect(stat(join(home, 'after'))).rejects.toThrow();
     });
 
     it('keeps a quiet process the command leaves running, and its watchdog ends with it', async () => {
         const started = Date.now();
         const { pgid, status } = await runCall('sleep 1.5 & echo started');
+
         groups.push(pgid);
         expect(status).toBe(0);
         expect(Date.now() - started).toBeLessThan(1_000);
         expect(groupAlive(pgid)).toBe(true);
-        await vi.waitFor(() => { expect(groupAlive(pgid)).toBe(false); }, { timeout: 5_000, interval: 100 });
+        await vi.waitFor(() => {
+            expect(groupAlive(pgid)).toBe(false);
+        }, { timeout: 5_000, interval: 100 });
     });
 
     it('kills a process the command leaves writing to its log once the log passes the cap', async () => {
         const cap = 65_536;
         const { pgid } = await runCall('echo started; (while :; do echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; done) &', cap);
+
         groups.push(pgid);
-        await vi.waitFor(() => { expect(groupAlive(pgid)).toBe(false); }, { timeout: 5_000, interval: 100 });
+        await vi.waitFor(() => {
+            expect(groupAlive(pgid)).toBe(false);
+        }, { timeout: 5_000, interval: 100 });
         // a cap passed while the script still ran is cut by the report read afterwards, as the tool does
         await exited(spawn('sh', ['-c', REPORT_SCRIPT, 'sh', CALL_ID, String(cap), String(cap * 4)], {
             cwd: home,

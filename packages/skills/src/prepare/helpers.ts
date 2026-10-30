@@ -49,6 +49,7 @@ export function copyPreparationOptions(options: PrepareSkillsOptions) {
     } = options;
     const revision = options.revision.toLowerCase();
     const names = [...options.names];
+
     for (const name of names) {
         if (typeof name !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/u.test(name)) {
             invalid();
@@ -60,12 +61,14 @@ export function copyPreparationOptions(options: PrepareSkillsOptions) {
     }
 
     const requestedDirectory = resolve(options.directory);
+
     if (dirname(requestedDirectory) === requestedDirectory) {
         invalid();
     }
 
     try {
         const parsed = parseSource(source);
+
         if (!['local', 'git', 'github', 'gitlab'].includes(parsed.type)) {
             invalid();
         }

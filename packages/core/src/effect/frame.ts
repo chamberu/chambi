@@ -14,10 +14,12 @@ const storage = new AsyncLocalStorage<ToolCallFrame>();
 /** Runs `fn` as the tool call `frame`: currentToolCall() returns it there and in what `fn` awaits. */
 export function runToolCall<T>(frame: ToolCallFrame, fn: () => T): T {
     const result = storage.run(frame, fn);
+
     // a streaming tool's body runs when the AI SDK iterates it, outside the frame
     if (isObject(result) && Symbol.asyncIterator in result) {
         return bindIterable(frame, result as AsyncIterable<unknown>) as T;
     }
+
     return result;
 }
 
@@ -30,6 +32,7 @@ function bindIterable(frame: ToolCallFrame, iterable: AsyncIterable<unknown>): A
     return {
         [Symbol.asyncIterator]() {
             const iterator = storage.run(frame, () => iterable[Symbol.asyncIterator]());
+
             return {
                 next: (...args: [] | [unknown]) => storage.run(frame, () => iterator.next(...args)),
                 return: (value?: unknown) => storage.run(frame, () => (

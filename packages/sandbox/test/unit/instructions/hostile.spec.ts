@@ -114,7 +114,9 @@ describe('readRepositoryInstructions (hostile input, local workspace)', () => {
 
     it('reports a target escaping the workspace as a diagnostic', async () => {
         await fixture.write({ 'AGENTS.md': 'root\n' });
+
         const result = await readRepositoryInstructions(fixture.workspace, ['../x', '/etc']);
+
         expect(codes(result)).toEqual([
             { path: '../x', code: 'outside-workspace' },
             { path: '/etc', code: 'outside-workspace' },
@@ -130,8 +132,10 @@ describe('readRepositoryInstructions (hostile input, local workspace)', () => {
         });
         await chmod(join(fixture.dir, 'locked.md'), 0o000);
         await chmod(join(fixture.dir, 'closed'), 0o000);
+
         try {
             const result = await readRepositoryInstructions(fixture.workspace, ['closed/x.ts']);
+
             expect(codes(result)).toEqual([
                 { path: 'closed', code: 'unreadable' },
                 { path: 'locked.md', code: 'unreadable' },

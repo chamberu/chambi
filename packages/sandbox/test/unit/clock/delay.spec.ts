@@ -16,6 +16,7 @@ describe('delay', () => {
         const waiting = delay(clock, 100, undefined, () => new Error('aborted')).then(() => {
             done = true;
         });
+
         clock.advance(99);
         await Promise.resolve();
         expect(done).toBe(false);
@@ -28,12 +29,14 @@ describe('delay', () => {
         const clock = new ControllableClock();
         const controller = new AbortController();
         const waiting = delay(clock, 100, controller.signal, () => new Error('stopped'));
+
         controller.abort();
         await expect(waiting).rejects.toThrow('stopped');
     });
 
     it('rejects at once for an aborted signal', async () => {
         const clock = new ControllableClock();
+
         await expect(delay(clock, 100, AbortSignal.abort(), () => new Error('stopped'))).rejects.toThrow('stopped');
     });
 });

@@ -31,6 +31,7 @@ export type TempApp = {
  */
 export async function copyFixtureApp(): Promise<TempApp> {
     const cwd = await mkdtemp(path.join(tmpdir(), 'chamvi-cli-app-'));
+
     await cp(FIXTURE_APP, cwd, { recursive: true });
     await symlink(path.join(REPO_ROOT, 'node_modules'), path.join(cwd, 'node_modules'), 'dir');
 

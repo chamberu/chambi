@@ -14,7 +14,7 @@ import {
     defineTool,
 } from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
-import type { GitAccess, GitCredential } from '../credentials/types.ts';
+import type { GitAccess } from '../credentials/types.ts';
 import { credentialKey, urlRepoPath } from '../git/helpers.ts';
 import { runGit } from '../git/module.ts';
 import { isGitRef, parseDefaultBranch } from '../repo/helpers.ts';
@@ -31,21 +31,11 @@ import type {
     GitPullResult,
     GitPushResult,
     GitToolResult,
-    IWorkspaceManager,
-    PushPolicy,
+    GitToolsContext,
 } from './types.ts';
 
 /** A full refspec: `[+]refs/...[:refs/...]`, no option, no `..`, `@{` or whitespace. */
 const REFSPEC_PATTERN = /^\+?refs\/[\w./*+-]+(:refs\/[\w./*+-]+)?$/;
-
-export type GitToolsContext = {
-    manager: Pick<IWorkspaceManager, 'get'>;
-    /** The credential of an https repository, or undefined (anonymous). */
-    lookup: (url: string, access: GitAccess, runId: string, signal?: AbortSignal) => Promise<GitCredential | undefined>;
-    /** `normalizeRepo` with the manager's rules (`allowFileRepos`, `allowRepo`). */
-    normalize: (repo: string) => string;
-    push: PushPolicy;
-};
 
 type Target = {
     workspace: IWorkspace;
@@ -76,14 +66,17 @@ function remoteName(url: string): string {
         .filter((segment) => segment.length > 0)
         .join('/')
         .replaceAll('..', '-');
+
     return name.length > 0 ? name : 'remote';
 }
 
 function requireBranch(value: unknown, name = 'branch'): string | undefined {
     const branch = optionalString(value, name);
+
     if (branch !== undefined && !isGitRef(branch)) {
         throw new ValidationError(`${name} must be a branch name (letters, digits and . _ / + -, starting with a letter or digit).`);
     }
+
     return branch;
 }
 
@@ -118,19 +111,23 @@ export function createGitTools(context: GitToolsContext): ToolSet {
         const workspace = await manager.get(ctx.run.runId, optionalString(body.workspace, 'workspace'));
         const remote = optionalString(body.remote, 'remote');
         const own = workspace.info.repo;
+
         if (remote === undefined) {
             if (own === undefined) {
                 throw new ValidationError(`${tool} needs a remote: workspace ${workspace.id} has no repository.`);
             }
+
             return {
                 workspace,
                 url: own,
                 name: 'origin',
             };
         }
+
         const url = normalize(remote);
         // the same repository spelled with or without .git or a trailing slash is still origin
         const isOwn = own !== undefined && credentialKey(url) === credentialKey(own);
+
         return {
             workspace,
             url,
@@ -143,20 +140,24 @@ export function createGitTools(context: GitToolsContext): ToolSet {
     const revParse = async (workspace: IWorkspace, ref: string, signal?: AbortSignal): Promise<string | undefined> => {
         const result = await local(workspace, ['rev-parse', '-q', '--verify', ref], signal);
         const sha = result.stdout.trim();
+
         return result.exitCode === 0 && sha.length > 0 ? sha : undefined;
     };
 
     const currentBranch = async (workspace: IWorkspace, tool: string, signal?: AbortSignal): Promise<string> => {
         const result = await local(workspace, ['symbolic-ref', '-q', '--short', 'HEAD'], signal);
         const branch = result.stdout.trim();
+
         if (result.exitCode !== 0 || !isGitRef(branch)) {
             throw new ValidationError(`HEAD is detached (a tag or commit is checked out); pass branch to ${tool}, or switch to a branch first.`);
         }
+
         return branch;
     };
 
     const remoteGit = async (t: Target, access: GitAccess, args: string[], signal?: AbortSignal): Promise<ExecResult> => {
         const credential = await lookup(t.url, access, t.workspace.info.runId, signal);
+
         return runGit(t.workspace, {
             url: t.url,
             args,
@@ -174,23 +175,35 @@ export function createGitTools(context: GitToolsContext): ToolSet {
     const defaultBranchOf = async (t: Target, signal?: AbortSignal): Promise<string> => {
         const result = await remoteGit(t, 'read', ['ls-remote', '--symref', t.url, 'HEAD'], signal);
         const branch = result.exitCode === 0 && !result.timedOut ? parseDefaultBranch(result.stdout) : undefined;
+
         if (branch === undefined) {
             const detail = result.stderr.trim().slice(0, 500);
             throw new SandboxError(`git_push could not read the default branch of ${t.url}, so it does not push${detail ? `: ${detail}` : '.'} Try again later.`);
         }
+
         return branch;
     };
 
     const fetchRefspec = (t: Target, refspec: string | undefined): string => {
-        if (refspec === undefined) return `+refs/heads/*:refs/remotes/${t.name}/*`;
-        if (REFSPEC_PATTERN.test(refspec) && !refspec.includes('..') && !refspec.includes('@{')) return refspec;
-        if (isGitRef(refspec)) return `+refs/heads/${refspec}:refs/remotes/${t.name}/${refspec}`;
+        if (refspec === undefined) {
+            return `+refs/heads/*:refs/remotes/${t.name}/*`;
+        }
+
+        if (REFSPEC_PATTERN.test(refspec) && !refspec.includes('..') && !refspec.includes('@{')) {
+            return refspec;
+        }
+
+        if (isGitRef(refspec)) {
+            return `+refs/heads/${refspec}:refs/remotes/${t.name}/${refspec}`;
+        }
+
         throw new ValidationError('refspec must be a branch name or a refspec like "refs/tags/v1:refs/tags/v1".');
     };
 
     const askApproval = async (ctx: ToolContext, title: string, body: string): Promise<void> => {
         const handle = policy.channel === undefined ? ctx.channels.findOne() : ctx.channels.findOneOrFail(policy.channel);
         const decision = handle ? await handle.approve({ title, body }) : await approve(ctx, { title, body });
+
         if (!decision.approved) {
             throw new ToolDeniedError(`The push was denied${decision.reason ? `: ${decision.reason}` : '.'}`);
         }
@@ -220,6 +233,7 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 const t = await target(body, ctx, 'git_fetch');
                 const spec = fetchRefspec(t, refspec);
                 const result = await remoteGit(t, 'read', ['fetch', t.url, spec], ctx.run.signal);
+
                 return { ...toResult(t, result), refspec: spec };
             },
         }),
@@ -252,6 +266,7 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 const tracking = `refs/remotes/${t.name}/${branch}`;
 
                 const fetched = await remoteGit(t, 'read', ['fetch', t.url, `+refs/heads/${branch}:${tracking}`], signal);
+
                 if (fetched.exitCode !== 0 || fetched.timedOut) {
                     return {
                         ...toResult(t, fetched),
@@ -260,7 +275,9 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                         step: 'fetch',
                     };
                 }
+
                 const merged = await local(t.workspace, rebase ? ['rebase', tracking] : ['merge', '--no-edit', tracking], signal);
+
                 return {
                     ...toResult(t, merged),
                     branch,
@@ -306,18 +323,22 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 if (force && !policy.allowForce) {
                     throw new ToolDeniedError('Force pushes are not allowed here; merge the remote branch instead of rebasing (git_pull without rebase), then push.');
                 }
+
                 const allowed = policy.allowBranch ?
                     await policy.allowBranch(branch, ctx) :
                     branch !== await defaultBranchOf(t, signal);
+
                 if (!allowed) {
                     throw new ToolDeniedError(`Pushing to ${branch} is not allowed here; push to another branch (e.g. git_push({ branch: "fix/..." })).`);
                 }
 
                 const ownBranch = await revParse(t.workspace, `refs/heads/${branch}`, signal);
                 const commit = ownBranch ?? await revParse(t.workspace, 'HEAD', signal);
+
                 if (commit === undefined) {
                     throw new ValidationError('There is no commit to push yet; commit first.');
                 }
+
                 const tracking = `refs/remotes/${t.name}/${branch}`;
                 const lease = await revParse(t.workspace, tracking, signal);
 
@@ -326,22 +347,31 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                     const count = Number.parseInt((await local(t.workspace, ['rev-list', '--count', ...range], signal)).stdout.trim(), 10) || 0;
                     const log = (await local(t.workspace, ['log', '--format=%h %s', '-n', String(PUSH_LOG_MAX_COMMITS), ...range], signal)).stdout.trim();
                     const title = `Push ${count} commit${count === 1 ? '' : 's'} to ${branch}`;
+
                     await askApproval(ctx, title, `To ${t.url}:\n${log || '(no new commits)'}`);
                 }
 
                 const args = ['push', '--porcelain'];
-                if (force) args.push(`--force-with-lease=refs/heads/${branch}:${lease ?? ''}`);
+
+                if (force) {
+                    args.push(`--force-with-lease=refs/heads/${branch}:${lease ?? ''}`);
+                }
+
                 args.push(t.url, `${commit}:refs/heads/${branch}`);
+
                 const result = await remoteGit(t, 'write', args, signal);
                 const pushed = result.exitCode === 0 && !result.timedOut;
+
                 if (pushed) {
                     // what a push to a named remote does: the next push leases against it
                     await local(t.workspace, ['update-ref', tracking, commit], signal);
+
                     if (setUpstream && ownBranch !== undefined && t.name === 'origin') {
                         await local(t.workspace, ['config', `branch.${branch}.remote`, 'origin'], signal);
                         await local(t.workspace, ['config', `branch.${branch}.merge`, `refs/heads/${branch}`], signal);
                     }
                 }
+
                 return {
                     ...toResult(t, result),
                     branch,

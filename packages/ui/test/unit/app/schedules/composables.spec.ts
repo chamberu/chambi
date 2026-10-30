@@ -29,15 +29,21 @@ describe('useSchedules', () => {
         const client = fakeClient({ listSchedules: async () => list });
         const scope = effectScope();
         const schedules = scope.run(() => useSchedules(client))!;
+
         await flush();
         expect(schedules.schedules.value).toEqual(list);
         scope.stop();
     });
 
     it('a 403 sets error without throwing', async () => {
-        const client = fakeClient({ listSchedules: async () => { throw apiError(403, 'forbidden'); } });
+        const client = fakeClient({
+            listSchedules: async () => {
+                throw apiError(403, 'forbidden');
+            },
+        });
         const scope = effectScope();
         const schedules = scope.run(() => useSchedules(client))!;
+
         await flush();
         expect(schedules.error.value?.status).toBe(403);
         scope.stop();
@@ -51,6 +57,7 @@ describe('groupByAgent', () => {
             schedule('digest', 'cron:b', '2026-10-23T06:00:00.000Z'),
             schedule('digest', 'cron:a', '2026-10-22T06:00:00.000Z'),
         ]);
+
         expect(groups.map((g) => [g.agent, g.schedules.map((s) => s.trigger)])).toEqual([
             ['digest', ['cron:a', 'cron:b']],
             ['triage', ['cron:x']],
@@ -59,6 +66,7 @@ describe('groupByAgent', () => {
 
     it('needs no iterator helpers (Safari before 18.4)', () => {
         const groups = withoutIteratorHelpers(() => groupByAgent([schedule('triage', 'cron:x', '2026-10-22T09:00:00.000Z')]));
+
         expect(groups.map((g) => g.agent)).toEqual(['triage']);
     });
 });

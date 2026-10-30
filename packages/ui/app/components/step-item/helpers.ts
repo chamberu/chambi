@@ -40,17 +40,29 @@ export function errorText(error: unknown): string {
     if (isObject(error)) {
         const code = typeof error.code === 'string' ? error.code : undefined;
         const message = typeof error.message === 'string' ? error.message : JSON.stringify(error);
+
         return code ? `${code} · ${message}` : message;
     }
+
     return String(error);
 }
 
 export function stepTitle(step: StepWire): string {
-    if (step.kind === 'wait') return `approval · ${step.name ?? 'tool'}`;
-    if (step.kind === 'tool') return step.name ?? 'tool';
+    if (step.kind === 'wait') {
+        return `approval · ${step.name ?? 'tool'}`;
+    }
+
+    if (step.kind === 'tool') {
+        return step.name ?? 'tool';
+    }
+
     const output = llmOutput(step);
     const calls = output.toolCalls?.map((call) => call.toolName) ?? [];
-    if (calls.length > 0) return `calls ${calls.join(', ')}`;
+
+    if (calls.length > 0) {
+        return `calls ${calls.join(', ')}`;
+    }
+
     return output.text ? output.text.slice(0, 80) : (step.name ?? 'model step');
 }
 
@@ -58,8 +70,15 @@ export function stepMeta(step: StepWire): string {
     const ms = Date.parse(step.finishedAt) - Date.parse(step.startedAt);
     const parts = [ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.max(0, ms)} ms`];
     const usage = step.kind === 'llm' ? llmOutput(step).usage : undefined;
-    if (usage) parts.push(`${formatTokens((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0))} tok`);
-    if (step.error !== undefined) parts.push('error');
+
+    if (usage) {
+        parts.push(`${formatTokens((usage.inputTokens ?? 0) + (usage.outputTokens ?? 0))} tok`);
+    }
+
+    if (step.error !== undefined) {
+        parts.push('error');
+    }
+
     return parts.join(' · ');
 }
 
@@ -70,13 +89,19 @@ export function approverName(output: WaitOutput): string | undefined {
 /** The labels of a wait step's selected options (from the step input's options), the ids when unknown. */
 export function selectedLabels(step: StepWire): string[] {
     const { selected } = waitOutput(step);
-    if (!Array.isArray(selected)) return [];
+
+    if (!Array.isArray(selected)) {
+        return [];
+    }
+
     const options = isObject(step.input) && Array.isArray(step.input.options) ? step.input.options : [];
     const labels = new Map<string, string>();
+
     for (const option of options) {
         if (isObject(option) && typeof option.id === 'string' && typeof option.label === 'string') {
             labels.set(option.id, option.label);
         }
     }
+
     return selected.map((id) => labels.get(id) ?? id);
 }

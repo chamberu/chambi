@@ -22,14 +22,18 @@ async function waitingGate(agent = 'gate') {
     const setup = createRunTestApp();
     const response = await call(setup.app, 'POST', `/agents/${agent}/runs`, { token: ADMIN_TOKEN });
     const { runId } = await response.json() as { runId: string };
+
     await setup.engine.start();
     await setup.engine.idle();
+
     const run = await setup.store.runs.findOne(runId);
+
     expect(run?.status).toBe('waiting');
+
     return {
-        ...setup, 
-        runId, 
-        approvalId: run!.waiting!.approvalId, 
+        ...setup,
+        runId,
+        approvalId: run!.waiting!.approvalId,
     };
 }
 
@@ -38,11 +42,12 @@ describe('mcp approve_run', () => {
         const setup = await waitingGate();
         const client = await connectMcp(setup.app, tokenFor('agent:gate:approve'));
         const args = {
-            runId: setup.runId, 
-            approvalId: setup.approvalId, 
-            approved: true, 
+            runId: setup.runId,
+            approvalId: setup.approvalId,
+            approved: true,
         };
         const result = await callTool(client, 'approve_run', args);
+
         expect(result.isError).toBeFalsy();
         expect(result.structuredContent).toEqual({ runId: setup.runId, status: 'queued' });
 
@@ -50,6 +55,7 @@ describe('mcp approve_run', () => {
         expect((await setup.store.runs.findOne(setup.runId))?.status).toBe('completed');
 
         const again = await callTool(client, 'approve_run', args);
+
         expect(again.isError).toBe(true);
         await client.close();
         await setup.engine.drain();
@@ -63,6 +69,7 @@ describe('mcp approve_run', () => {
             approvalId: setup.approvalId,
             approved: true,
         });
+
         expect(result.isError).toBe(true);
         expect(textOf(result)).toBe('Missing permission "agent:gate:approve".');
         expect((await setup.store.runs.findOne(setup.runId))?.status).toBe('waiting');
@@ -74,10 +81,11 @@ describe('mcp approve_run', () => {
         const setup = await waitingGate();
         const client = await connectMcp(setup.app, ADMIN_TOKEN);
         const result = await callTool(client, 'approve_run', {
-            runId: setup.runId, 
-            approvalId: 'other', 
-            approved: false, 
+            runId: setup.runId,
+            approvalId: 'other',
+            approved: false,
         });
+
         expect(result.isError).toBe(true);
         expect((await setup.store.runs.findOne(setup.runId))?.status).toBe('waiting');
         await client.close();
@@ -87,10 +95,11 @@ describe('mcp approve_run', () => {
     it('validates its arguments', async () => {
         const setup = createRunTestApp();
         const client = await connectMcp(setup.app, ADMIN_TOKEN);
+
         expect((await callTool(client, 'approve_run', {
-            runId: 'r', 
-            approvalId: 'a', 
-            approved: 'yes', 
+            runId: 'r',
+            approvalId: 'a',
+            approved: 'yes',
         })).isError).toBe(true);
         expect((await callTool(client, 'approve_run', { runId: 'r', approved: true })).isError).toBe(true);
         expect((await callTool(client, 'approve_run', {
@@ -111,16 +120,21 @@ describe('mcp approve_run', () => {
             approved: true,
             selected: [1],
         });
+
         expect(refused.isError).toBe(true);
+
         const result = await callTool(client, 'approve_run', {
             runId: setup.runId,
             approvalId: setup.approvalId,
             approved: true,
             selected: ['a'],
         });
+
         expect(result.isError).toBeFalsy();
         await setup.engine.idle();
+
         const steps = await setup.store.steps.find(setup.runId);
+
         expect(steps.find((s) => s.kind === 'wait')?.output).toMatchObject({ selected: ['a'] });
         await client.close();
         await setup.engine.drain();

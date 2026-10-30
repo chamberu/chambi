@@ -70,30 +70,51 @@ export function createFakeTransport(handler: FakeTransportHandler = () => ({})):
                 cwd,
                 marker,
             };
+
             transport.calls.push({
                 argv,
                 raw: [...raw],
                 options: fake,
             });
+
             const answer = await handler(argv, fake);
+
             if (answer.cwdMissing) {
                 options.stderr.write(encode(`${marker}cwd\n`));
+
                 return { exitCode: 127 };
             }
+
             const exitCode = answer.exitCode ?? 0;
-            if (answer.stdout) options.stdout.write(answer.stdout);
-            if (answer.stderr) options.stderr.write(answer.stderr);
-            if (answer.marker !== false) options.stderr.write(encode(`${marker}${exitCode}\n`));
+
+            if (answer.stdout) {
+                options.stdout.write(answer.stdout);
+            }
+
+            if (answer.stderr) {
+                options.stderr.write(answer.stderr);
+            }
+
+            if (answer.marker !== false) {
+                options.stderr.write(encode(`${marker}${exitCode}\n`));
+            }
+
             return answer.closed ? { exitCode, closed: true } : { exitCode };
         },
         async remove() {
             transport.removed++;
-            if (nextRemoveError) {
-                const error = nextRemoveError;
-                nextRemoveError = undefined;
-                throw error;
+
+            if (!nextRemoveError) {
+                return;
             }
+
+            const error = nextRemoveError;
+
+            nextRemoveError = undefined;
+
+            throw error;
         },
     };
+
     return transport;
 }

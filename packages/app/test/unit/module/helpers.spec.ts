@@ -47,7 +47,12 @@ describe('runHooks', () => {
                         calls.push('a:drained');
                     },
                 },
-                { name: 'b', drained: () => { calls.push('b:drained'); } },
+                {
+                    name: 'b',
+                    drained: () => {
+                        calls.push('b:drained');
+                    },
+                },
                 {
                     name: 'c',
                     engineCreated: async () => {
@@ -73,9 +78,24 @@ describe('runHooks', () => {
         const boom = new Error('boom');
         const harness = await createHarness({
             modules: [hookModule([
-                { name: 'a', started: () => { throw boom; } },
-                { name: 'b', started: async () => { throw new Error('async boom'); } },
-                { name: 'c', started: () => { calls.push('c'); } },
+                {
+                    name: 'a',
+                    started: () => {
+                        throw boom;
+                    },
+                },
+                {
+                    name: 'b',
+                    started: async () => {
+                        throw new Error('async boom');
+                    },
+                },
+                {
+                    name: 'c',
+                    started: () => {
+                        calls.push('c');
+                    },
+                },
             ])],
         });
 
@@ -90,6 +110,7 @@ describe('runHooks', () => {
 
     it('runs nothing without hooks', async () => {
         const harness = await createHarness();
+
         await expect(runHooks(harness.container, 'stopping')).resolves.toBeUndefined();
         await harness.stop();
     });
@@ -98,16 +119,19 @@ describe('runHooks', () => {
 describe('throwIfStopped', () => {
     it('throws the abort reason with code app_stopped', async () => {
         const harness = await createHarness();
+
         expect(() => throwIfStopped(harness.context)).not.toThrow();
 
         await harness.stop();
 
         let thrown: unknown;
+
         try {
             throwIfStopped(harness.context);
         } catch (error) {
             thrown = error;
         }
+
         expect(thrown).toBeInstanceOf(ChamviError);
         expect((thrown as ChamviError).code).toBe(APP_ERROR_CODE.STOPPED);
         expect(thrown).toBe(harness.context.signal.reason);
@@ -129,6 +153,7 @@ describe('reportingModule', () => {
         });
 
         const harness = buildHarness();
+
         await expect(wrapped.teardown!(harness.container)).resolves.toBeUndefined();
         expect(reported).toEqual([{ error: boom, context: { module: 'test:broken' } }]);
     });
@@ -191,6 +216,7 @@ describe('reportingModule', () => {
 
     it('omits hooks the module does not have', () => {
         const wrapped = reportingModule({ name: 'test:bare', setup: noop }, () => {});
+
         expect(wrapped.teardown).toBeUndefined();
         expect(wrapped.onReady).toBeUndefined();
         expect(wrapped.onError).toBeUndefined();

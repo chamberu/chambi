@@ -22,6 +22,7 @@ import { createTestDataSource, describePostgres } from '../../utils/database.ts'
 
 async function withinPoolDeadline<T>(query: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
+
     try {
         return await Promise.race([query, new Promise<never>((_resolve, reject) => {
             timer = setTimeout(() => reject(new Error('prune callback could not acquire the single pool connection')), 500);
@@ -33,12 +34,16 @@ async function withinPoolDeadline<T>(query: Promise<T>): Promise<T> {
 
 describePostgres('conversation pruning on a shared single-connection pool', () => {
     let dataSource: DataSource;
+
     afterEach(async () => {
-        if (dataSource?.isInitialized) await dataSource.destroy();
+        if (dataSource?.isInitialized) {
+            await dataSource.destroy();
+        }
     });
 
     async function setup() {
         dataSource = await createTestDataSource({ max: 1 });
+
         const clock = new ControllableClock(new Date('2026-10-28T00:00:00.000Z'));
         const store = new SeededConversationRepository({ dataSource, clock });
         const runs = new DatabaseRunRepository({ dataSource, clock });
@@ -69,6 +74,7 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
                     updatedAt: clock.now(),
                 });
             }
+
             await store.beginTurn(scope, runId, 'input', limits);
             await store.applyNote(scope, {
                 id: runId,
@@ -83,6 +89,7 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
             });
             await store.endTurn(scope, runId, []);
         }
+
         return {
             clock,
             store,
@@ -96,12 +103,14 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
 
     it('classifies runs through the same pool without holding a transaction connection', async () => {
         const s = await setup();
+
         await s.seed('completed', 'completed');
         await s.seed('recoverable', 'waiting');
         s.clock.advance(10_000);
         await s.store.prune(s.limits, {
             isSettled: async (runId) => {
                 const run = await withinPoolDeadline(s.runs.findOne(runId));
+
                 return !run || ['completed', 'failed', 'cancelled'].includes(run.status);
             },
         });
@@ -110,7 +119,9 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
 
     it('trims a bulk backlog with selects bounded to 100 items', async () => {
         const s = await setup();
+
         await s.seed('writer', 'completed');
+
         const items = Array.from({ length: 250 }, (_value, index) => ({
             scopeId: s.scope.id,
             generation: s.scope.generation,
@@ -121,15 +132,20 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
             text: 'input',
             status: 'sent' as const,
         }));
+
         await dataSource.getRepository(ConversationItemEntity).insert(items.map((item) => asValues<ConversationItemEntity>(item)));
+
         const queries = vi.spyOn(dataSource.logger, 'logQuery');
+
         try {
             await s.store.prune({ ...s.limits, maxStoredItems: 10 });
             expect((await s.store.findItems(s.scope, { limit: 10, offset: 0 })).data.map((item) => item.id))
                 .toEqual(Array.from({ length: 10 }, (_value, index) => `item-${240 + index}`));
+
             const limits = queries.mock.calls.map(([query]) => query)
                 .filter((query) => query.startsWith('SELECT') && query.includes('chamvi_conversation_items'))
                 .flatMap((query) => Array.from(query.matchAll(/LIMIT (\d+)/g), (match) => Number(match[1])));
+
             expect(limits.length).toBeGreaterThan(0);
             expect(limits.every((limit) => limit <= 100)).toBe(true);
         } finally {
@@ -139,11 +155,13 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
 
     it.each(['active owner', 'changed candidate', 'young candidate'] as const)('rechecks %s after classification and before deletion', async (change) => {
         const s = await setup();
+
         await s.seed('completed', 'completed');
         s.clock.advance(10_000);
         await s.store.prune(s.limits, {
             isSettled: async (runId) => {
                 expect((await withinPoolDeadline(s.runs.findOne(runId)))?.status).toBe('completed');
+
                 if (change === 'active owner') {
                     await withinPoolDeadline(s.store.beginTurn(s.scope, runId, 'resumed input', s.limits));
                 } else if (change === 'changed candidate') {
@@ -152,6 +170,7 @@ describePostgres('conversation pruning on a shared single-connection pool', () =
                 } else {
                     await withinPoolDeadline(s.operations.update({ scopeId: s.scope.id, id: runId }, { createdAt: s.clock.now() }));
                 }
+
                 return true;
             },
         });

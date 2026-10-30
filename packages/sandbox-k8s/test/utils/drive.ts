@@ -8,7 +8,9 @@
 import type { ControllableClock } from '@chamvi/test-kit';
 
 /** Lets already-queued callbacks settle; not a sleep. */
-export const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+export const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 /**
  * Advances `clock` by `stepMs` between flushes until `promise` settles (at
@@ -21,11 +23,22 @@ export async function drive<T>(
     maxSteps = 500,
 ): Promise<T> {
     let done = false;
-    promise.then(() => { done = true; }, () => { done = true; });
+
+    promise.then(() => {
+        done = true;
+    }, () => {
+        done = true;
+    });
+
     for (let i = 0; i < maxSteps; i++) {
         await flush();
-        if (done) break;
+
+        if (done) {
+            break;
+        }
+
         clock.advance(stepMs);
     }
+
     return promise;
 }

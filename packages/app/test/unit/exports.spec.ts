@@ -84,6 +84,7 @@ describe('public api', () => {
 
     it.each(['cron', 'http', 'webhook'])('exports the %s subscription builder', (name) => {
         const builder = app[name as 'cron' | 'http' | 'webhook'];
+
         expect(builder.on).toBeTypeOf('function');
     });
 
@@ -231,6 +232,7 @@ describe('package.json', () => {
             ...Object.keys(pkg.devDependencies ?? {}),
             ...Object.keys(pkg.peerDependencies ?? {}),
         ];
+
         expect(names.filter((name) => feature.test(name))).toEqual([]);
     });
 
@@ -239,6 +241,7 @@ describe('package.json', () => {
             .filter(([, meta]) => meta.optional)
             .map(([name]) => name)
             .sort();
+
         expect(optional).toEqual([
             '@ai-sdk/anthropic',
             '@ai-sdk/google',

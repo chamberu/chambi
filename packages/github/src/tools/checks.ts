@@ -23,13 +23,22 @@ function stringOr<T>(value: unknown, fallback: T): string | T {
 }
 
 function checkRunOutcome(status: string, conclusion: string | null): GithubCheckOutcome {
-    if (status !== 'completed') return 'pending';
+    if (status !== 'completed') {
+        return 'pending';
+    }
+
     return conclusion !== null && SUCCESS_CONCLUSIONS.has(conclusion) ? 'success' : 'failure';
 }
 
 function statusOutcome(state: string): GithubCheckOutcome {
-    if (state === 'success') return 'success';
-    if (state === 'failure' || state === 'error') return 'failure';
+    if (state === 'success') {
+        return 'success';
+    }
+
+    if (state === 'failure' || state === 'error') {
+        return 'failure';
+    }
+
     return 'pending';
 }
 
@@ -47,14 +56,20 @@ export function summarizeChecks(
     const failing = checks.filter((check) => check.outcome === 'failure').length;
     const pending = checks.filter((check) => check.outcome === 'pending').length;
     let state: GithubPullRequestChecks['state'] = 'success';
-    if (failing > 0) state = 'failure';
-    else if (pending + missing.length > 0) state = 'pending';
-    else if (checks.length === 0) state = 'none';
+
+    if (failing > 0) {
+        state = 'failure';
+    } else if (pending + missing.length > 0) {
+        state = 'pending';
+    } else if (checks.length === 0) {
+        state = 'none';
+    }
+
     return {
-        state, 
-        pending, 
-        failing, 
-        missing, 
+        state,
+        pending,
+        failing,
+        missing,
     };
 }
 
@@ -64,7 +79,11 @@ async function readable<T>(read: () => Promise<T>): Promise<T | undefined> {
         return await read();
     } catch (error) {
         const status = statusOf(error);
-        if (status === 403 || status === 404) return undefined;
+
+        if (status === 403 || status === 404) {
+            return undefined;
+        }
+
         throw error;
     }
 }
@@ -76,19 +95,31 @@ function contextsOfBranch(data: unknown): string[] {
     const checks = Array.isArray(required.checks) ?
         required.checks.map((c: unknown) => (isObject(c) ? c.context : undefined)).filter((c): c is string => typeof c === 'string') :
         [];
+
     return [...contexts, ...checks];
 }
 
 function contextsOfRules(rules: unknown[]): string[] {
     const contexts: string[] = [];
+
     for (const rule of rules) {
-        if (!isObject(rule) || rule.type !== 'required_status_checks' || !isObject(rule.parameters)) continue;
+        if (!isObject(rule) || rule.type !== 'required_status_checks' || !isObject(rule.parameters)) {
+            continue;
+        }
+
         const list = rule.parameters.required_status_checks;
-        if (!Array.isArray(list)) continue;
+
+        if (!Array.isArray(list)) {
+            continue;
+        }
+
         for (const item of list) {
-            if (isObject(item) && typeof item.context === 'string') contexts.push(item.context);
+            if (isObject(item) && typeof item.context === 'string') {
+                contexts.push(item.context);
+            }
         }
     }
+
     return contexts;
 }
 
@@ -101,9 +132,9 @@ export async function readChecks(
     octokit: GithubOctokit,
     target: RepoTarget,
     pull: {
-        number: number; 
-        headSha: string; 
-        base: string 
+        number: number;
+        headSha: string;
+        base: string
     },
 ): Promise<GithubPullRequestChecks> {
     const { owner, repo } = target;
@@ -116,16 +147,23 @@ export async function readChecks(
         filter: 'latest',
         per_page: 100,
     });
+
     for await (const { data } of pages) {
         for (const item of data) {
             if (runs.length === CHECKS_MAX) {
                 truncated = true;
+
                 break;
             }
+
             runs.push(item);
         }
-        if (truncated) break;
+
+        if (truncated) {
+            break;
+        }
     }
+
     const { data: combined } = await octokit.request('GET /repos/{owner}/{repo}/commits/{ref}/status', {
         owner,
         repo,
@@ -150,11 +188,16 @@ export async function readChecks(
     const required = new Set(contexts);
 
     const checks: GithubCheck[] = [];
+
     for (const item of runs) {
-        if (!isObject(item)) continue;
+        if (!isObject(item)) {
+            continue;
+        }
+
         const name = String(item.name);
         const status = stringOr(item.status, 'queued');
         const conclusion = stringOr(item.conclusion, null);
+
         checks.push({
             name,
             kind: 'check_run',
@@ -165,11 +208,17 @@ export async function readChecks(
             url: stringOr(item.html_url, null) ?? stringOr(item.details_url, null),
         });
     }
+
     const statuses = isObject(combined) && Array.isArray(combined.statuses) ? combined.statuses : [];
+
     for (const item of statuses as unknown[]) {
-        if (!isObject(item)) continue;
+        if (!isObject(item)) {
+            continue;
+        }
+
         const name = String(item.context);
         const state = stringOr(item.state, 'pending');
+
         checks.push({
             name,
             kind: 'status',
@@ -180,7 +229,9 @@ export async function readChecks(
             url: stringOr(item.target_url, null),
         });
     }
+
     const summary = summarizeChecks(checks, contexts);
+
     return {
         number: pull.number,
         headSha: pull.headSha,
@@ -190,9 +241,9 @@ export async function readChecks(
         failing: summary.failing,
         checks,
         required: {
-            known: branch !== undefined && rules !== undefined, 
-            contexts, 
-            missing: summary.missing, 
+            known: branch !== undefined && rules !== undefined,
+            contexts,
+            missing: summary.missing,
         },
         truncated,
     };

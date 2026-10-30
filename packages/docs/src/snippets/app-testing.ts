@@ -27,6 +27,7 @@ export async function smokeTest(agents: Agent[], model: MockLanguageModelV4) {
 
     try {
         const response = await fetch('http://127.0.0.1:3101/agents', { headers: { authorization: 'Bearer test-token-0123456789' } });
+
         return await response.json();
     } finally {
         // drains the engine, closes the server and the store

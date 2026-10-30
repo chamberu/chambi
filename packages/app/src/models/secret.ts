@@ -44,19 +44,23 @@ export async function readSecret(
     // Config file values arrive unchecked, so the shape is checked here too.
     const raw: unknown = value;
     let secret: string;
+
     if (typeof raw === 'string') {
         secret = raw;
     } else if (isObject(raw) && typeof raw.env === 'string') {
         const name = raw.env;
+
         secret = envString(input.env, name) ?? fail(`${input.field}: the variable ${name} is not set.`);
     } else if (isObject(raw) && typeof raw.file === 'string') {
         const path = resolve(input.cwd, raw.file);
         let content: string;
+
         try {
             content = await readFile(path, 'utf8');
         } catch {
             fail(`${input.field}: the file ${path} cannot be read.`);
         }
+
         secret = trimNewline(content);
     } else {
         fail(`${input.field} must be a string, { env: string } or { file: string }.`);

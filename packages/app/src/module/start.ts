@@ -30,11 +30,13 @@ const START_STEPS = new TypedToken<StartStep>('chamvi.start-steps');
  */
 export function registerStartStep(container: IContainer, name: string, run: () => Promise<void>): void {
     let started: Promise<void> | undefined;
+
     container.registerMany(START_STEPS, {
         useValue: {
             name,
             run: () => {
                 started ??= run();
+
                 return started;
             },
         },
@@ -44,6 +46,7 @@ export function registerStartStep(container: IContainer, name: string, run: () =
 /** Runs every registered start step in registration order; throws app_stopped once stop() was called. */
 export async function runStartSteps(container: IContainer): Promise<void> {
     const context = container.resolve(AppToken.CONTEXT);
+
     for (const step of container.resolveAll(START_STEPS)) {
         throwIfStopped(context);
         await step.run();

@@ -11,8 +11,12 @@ export const systemClock: IClock = {
     now: () => new Date(),
     setTimeout: (fn, ms, opts) => {
         const handle = setTimeout(fn, ms);
+
         // never keep the process alive just for engine timers, unless asked to
-        if (!opts?.keepAlive) handle.unref?.();
+        if (!opts?.keepAlive) {
+            handle.unref?.();
+        }
+
         return { clear: () => clearTimeout(handle) };
     },
 };

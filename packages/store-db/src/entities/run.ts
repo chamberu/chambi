@@ -128,42 +128,49 @@ export class RunEntity {
         nullable: true,
     })
     conversationScopeId!: string | null;
+
     @Column({
         name: 'conversation_generation',
         type: 'integer',
         nullable: true,
     })
     conversationGeneration!: number | null;
+
     @Column({
         name: 'conversation_agent',
         type: 'text',
         nullable: true,
     })
     conversationAgent!: string | null;
+
     @Column({
         name: 'conversation_channel',
         type: 'text',
         nullable: true,
     })
     conversationChannel!: string | null;
+
     @Column({
         name: 'conversation_account',
         type: 'text',
         nullable: true,
     })
     conversationAccount!: string | null;
+
     @Column({
         name: 'conversation_chat',
         type: 'text',
         nullable: true,
     })
     conversationChat!: string | null;
+
     @Column({
         name: 'conversation_audience',
         type: 'text',
         nullable: true,
     })
     conversationAudience!: string | null;
+
     @Column({
         name: 'conversation_text',
         type: 'text',
@@ -190,6 +197,7 @@ export class RunEntity {
         nullable: true,
     })
     finishedAt!: Date | null;
+
     @ManyToOne(() => ConversationEntity, {
         nullable: true,
         onDelete: 'NO ACTION',

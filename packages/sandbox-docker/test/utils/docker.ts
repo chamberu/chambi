@@ -18,6 +18,8 @@ export type DockerContext = {
 };
 
 declare module 'vitest' {
+    // Vitest's augmentation name is fixed by its public API.
+    // eslint-disable-next-line @typescript-eslint/naming-convention
     export interface ProvidedContext {
         docker: DockerContext;
     }
@@ -50,9 +52,11 @@ export type ContainerExecResult = {
 
 function collect(stream: PassThrough): () => string {
     const chunks: Buffer[] = [];
+
     stream.on('data', (chunk: Buffer) => {
         chunks.push(chunk);
     });
+
     return () => Buffer.concat(chunks).toString('utf8');
 }
 
@@ -73,6 +77,7 @@ export async function execInContainer(
     const stderr = new PassThrough();
     const readStdout = collect(stdout);
     const readStderr = collect(stderr);
+
     docker.modem.demuxStream(stream, stdout, stderr);
     await new Promise<void>((resolve, reject) => {
         stream.on('end', () => resolve());
@@ -81,8 +86,11 @@ export async function execInContainer(
     });
 
     let info = await exec.inspect();
+
     for (let i = 0; info.Running && i < 100; i++) {
-        await new Promise((resolve) => { setTimeout(resolve, 50); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 50);
+        });
         info = await exec.inspect();
     }
 
@@ -102,10 +110,16 @@ export async function buildFixtureImage(docker: Docker, fixture: string, tag: st
         { context: fileURLToPath(new URL(`../fixtures/${fixture}`, import.meta.url)), src: ['Dockerfile'] },
         { t: tag, buildargs: { BASE: dockerImage as string } },
     );
+
     await new Promise<void>((resolve, reject) => {
         docker.modem.followProgress(stream, (error: Error | null, output: Array<{ error?: string }>) => {
             const failed = output.find((event) => typeof event.error === 'string');
-            if (error || failed) reject(error ?? new Error(failed!.error)); else resolve();
+
+            if (error || failed) {
+                reject(error ?? new Error(failed!.error));
+            } else {
+                resolve();
+            }
         });
     });
 }

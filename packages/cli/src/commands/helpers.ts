@@ -20,9 +20,11 @@ import { CLI_PACKAGE_NAME } from './constants.ts';
  */
 export function readVersion(from: string = fileURLToPath(import.meta.url)): string | undefined {
     let dir = path.dirname(from);
+
     for (;;) {
         try {
             const manifest: unknown = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
+
             if (isRecord(manifest) && manifest.name === CLI_PACKAGE_NAME && typeof manifest.version === 'string') {
                 return manifest.version;
             }
@@ -31,9 +33,11 @@ export function readVersion(from: string = fileURLToPath(import.meta.url)): stri
         }
 
         const parent = path.dirname(dir);
+
         if (parent === dir) {
             return undefined;
         }
+
         dir = parent;
     }
 }
@@ -45,6 +49,7 @@ export function readVersion(from: string = fileURLToPath(import.meta.url)): stri
  */
 export async function loadDotEnv(env: Env, file: string): Promise<void> {
     let text: string;
+
     try {
         text = await readFile(file, 'utf8');
     } catch {
@@ -53,6 +58,7 @@ export async function loadDotEnv(env: Env, file: string): Promise<void> {
 
     for (const [key, value] of Object.entries(parseEnv(text))) {
         const current = env[key];
+
         if (typeof current !== 'string' || current.length === 0) {
             env[key] = value;
         }

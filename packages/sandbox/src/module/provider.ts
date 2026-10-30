@@ -17,8 +17,10 @@ export function createLazyProvider(name: string, load: () => Promise<ISandboxPro
     const target = (): Promise<ISandboxProvider> => {
         loading ??= load().catch((error: unknown) => {
             loading = undefined;
+
             throw error;
         });
+
         return loading;
     };
 

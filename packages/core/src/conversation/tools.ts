@@ -24,13 +24,20 @@ export function hasConversation(ctx: ToolContext): boolean {
 
 async function boundConversation(ctx: ToolContext) {
     const bound = conversationFor(ctx.run);
-    if (!bound) throw new ValidationError('This run has no conversation scope.');
+
+    if (!bound) {
+        throw new ValidationError('This run has no conversation scope.');
+    }
+
     await checkConversation(ctx.run, ConversationOperation.NOTES);
+
     return bound;
 }
 
 function assertInput(input: unknown, keys: string[]): asserts input is Record<string, unknown> {
-    if (!isObject(input) || Object.keys(input).some((key) => !keys.includes(key))) {
+    const validInput = isObject(input) && Object.keys(input).every((key) => keys.includes(key));
+
+    if (!validInput) {
         throw new ValidationError('The memory tool input must be an object with only its declared fields.');
     }
 }
@@ -44,11 +51,18 @@ function assertKey(key: unknown): asserts key is string {
 
 async function writeNote(kind: 'set' | 'remove', input: unknown, ctx: ToolContext) {
     const bound = await boundConversation(ctx);
+
     assertInput(input, kind === 'set' ? ['key', 'text', 'expiresAt'] : ['key']);
     assertKey(input.key);
+
     const frame = currentToolCall();
-    if (!frame) throw new ValidationError('A memory write must run inside a tool call.');
+
+    if (!frame) {
+        throw new ValidationError('A memory write must run inside a tool call.');
+    }
+
     ctx.run.signal.throwIfAborted();
+
     // The wrapper frame's run id may come from mutable tool context; use the bound original.
     const source = {
         runId: bound.run.id,
@@ -56,8 +70,10 @@ async function writeNote(kind: 'set' | 'remove', input: unknown, ctx: ToolContex
         toolCallId: frame.toolCallId,
     };
     const id = stableHash({ ...source, ordinal: 0 });
+
     if (kind === 'remove') {
         const content = { kind, key: input.key };
+
         return bound.capability.repository.applyNote(bound.binding.scope, {
             id,
             source,
@@ -65,22 +81,31 @@ async function writeNote(kind: 'set' | 'remove', input: unknown, ctx: ToolContex
             ...content,
         });
     }
+
     assertConversationText(input.text, CONVERSATION_NOTE_TEXT_MAX_BYTES);
+
     let expiresAt: Date | undefined;
+
     if (input.expiresAt !== undefined) {
         if (typeof input.expiresAt !== 'string' ||
             !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(input.expiresAt)) {
             throw new ValidationError('The note expiry must be an ISO date-time with a timezone.');
         }
+
         expiresAt = new Date(input.expiresAt);
-        if (Number.isNaN(expiresAt.getTime())) throw new ValidationError('The note expiry must be a valid date.');
+
+        if (Number.isNaN(expiresAt.getTime())) {
+            throw new ValidationError('The note expiry must be a valid date.');
+        }
     }
+
     const content = {
         kind,
         key: input.key,
         text: input.text,
         ...(expiresAt ? { expiresAt } : {}),
     };
+
     return bound.capability.repository.applyNote(bound.binding.scope, {
         id,
         source,
@@ -108,11 +133,19 @@ export function memoryTools(): ToolSet {
             }),
             execute: async (input, { context }) => {
                 const bound = await boundConversation(context);
+
                 assertInput(input, ['limit', 'offset']);
+
                 const page = { limit: input.limit === undefined ? 50 : input.limit, offset: input.offset === undefined ? 0 : input.offset };
+
                 assertPage(page);
-                if (page.limit > 50) throw new ValidationError('The memory list limit must be at most 50.');
+
+                if (page.limit > 50) {
+                    throw new ValidationError('The memory list limit must be at most 50.');
+                }
+
                 const result = await bound.capability.repository.findNotes(bound.binding.scope, page);
+
                 return {
                     data: result.data.map(({
                         key,
@@ -145,8 +178,10 @@ export function memoryTools(): ToolSet {
             }),
             execute: async (input, { context }) => {
                 const bound = await boundConversation(context);
+
                 assertInput(input, ['key']);
                 assertKey(input.key);
+
                 return bound.capability.repository.findOneNote(bound.binding.scope, input.key);
             },
         }),

@@ -13,10 +13,17 @@ import { PERMISSION_ALL } from './constants.ts';
  * segment; case-sensitive).
  */
 export function matchesPermission(granted: string, wanted: string): boolean {
-    if (granted === PERMISSION_ALL) return true;
+    if (granted === PERMISSION_ALL) {
+        return true;
+    }
+
     const want = wanted.split(':');
     const have = granted.split(':');
-    if (want.length !== have.length) return false;
+
+    if (want.length !== have.length) {
+        return false;
+    }
+
     return have.every((segment, i) => segment === '*' || segment === want[i]);
 }
 

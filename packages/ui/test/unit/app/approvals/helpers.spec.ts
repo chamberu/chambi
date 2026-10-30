@@ -27,30 +27,33 @@ describe('pendingApprovals', () => {
     it('hides a run whose current approval was answered here', () => {
         const run = waitingOn('r1', 'a1');
         const other = waitingOn('r2', 'a1');
+
         expect(pendingApprovals([run, other], [{
-            run, 
-            result: 'answered', 
-            approved: true, 
+            run,
+            result: 'answered',
+            approved: true,
         }])).toEqual([other]);
     });
 
     it('shows the run again once it waits on its next approval', () => {
         const answered = waitingOn('r1', 'a1');
         const next = waitingOn('r1', 'a2');
+
         expect(pendingApprovals([next], [{
-            run: answered, 
-            result: 'answered', 
-            approved: true, 
+            run: answered,
+            result: 'answered',
+            approved: true,
         }])).toEqual([next]);
     });
 
     it('keeps a run whose answer did not land and drops the linked run', () => {
         const run = waitingOn('r1', 'a1');
         const linked = waitingOn('r3', 'a9');
+
         expect(pendingApprovals([run, linked], [{
-            run, 
-            result: 'forbidden', 
-            approved: true, 
+            run,
+            result: 'forbidden',
+            approved: true,
         }], 'r3')).toEqual([run]);
     });
 });

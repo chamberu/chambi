@@ -7,4 +7,4 @@
 
 import type { Run } from '../../run/types.ts';
 
-export const groupKey = (run: Pick<Run, 'agent' | 'concurrencyKey'>) => `${run.agent}\u0000${run.concurrencyKey}`;
+export const groupKey = (run: Pick<Run, 'agent' | 'concurrencyKey'>) => `${run.agent}\0${run.concurrencyKey}`;

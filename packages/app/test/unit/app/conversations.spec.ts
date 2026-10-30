@@ -56,11 +56,15 @@ function build(conversations?: AppOptions['conversations'], store?: IConversatio
             ...(store ? [storeModule({ store: { ...createMemoryStore({ clock }), conversations: store } })] : []),
             {
                 name: 'test:capture',
-                async setup(value) { container = value; },
+                async setup(value) {
+                    container = value;
+                },
             },
         ],
     });
+
     apps.push(app);
+
     return {
         app,
         clock,
@@ -74,6 +78,7 @@ const env = { CHAMVI_TOKENS: TOKENS };
 describe('app conversation capability', () => {
     it('disabled_default_keeps_memory_inactive', async () => {
         const built = build();
+
         await built.app.check({ env });
         expect(built.container().resolve(AppToken.STORE).conversations).toBeInstanceOf(MemoryConversationRepository);
         expect(built.container().has(AppToken.DATA_SOURCE)).toBe(false);
@@ -84,13 +89,16 @@ describe('app conversation capability', () => {
         const custom = new Proxy(new MemoryConversationRepository(), {
             get(target, key) {
                 const value = Reflect.get(target, key);
+
                 return typeof value === 'function' ? (...args: unknown[]) => {
                     calls.push(key);
+
                     return value.apply(target, args);
                 } : value;
             },
         }) as IConversationRepository;
         const built = build({ authorize: () => true }, custom);
+
         await built.app.check({ env });
         expect(built.container().resolve(AppToken.STORE).conversations!).toBe(custom);
         expect(calls).toEqual([]);
@@ -98,11 +106,17 @@ describe('app conversation capability', () => {
 
     it('memory_store_warns_no_restart_durability and uses app clock', async () => {
         const built = build({ authorize: () => true });
+
         await built.app.check({ env });
+
         const store = built.container().resolve(AppToken.STORE).conversations!;
+
         expect(store).toBeInstanceOf(MemoryConversationRepository);
+
         const engine = built.container().resolve(AppToken.ENGINE) as Engine;
+
         expect(await engine.inspectConversation(identity)).toBeUndefined();
+
         const scope = await store.resolve(identity);
         const begun = await store.beginTurn(scope, 'clock-run', 'hello', {
             maxItems: 20,
@@ -112,6 +126,7 @@ describe('app conversation capability', () => {
             retentionMs: 10000,
             maxStoredItems: 1000,
         });
+
         expect(begun.kind === 'ready' && begun.snapshot.createdAt).toEqual(built.clock.now());
         expect(built.logger.entries.some((entry) => entry.level === 'warn' && /conversation.*restart/i.test(entry.msg))).toBe(true);
     });
@@ -119,10 +134,13 @@ describe('app conversation capability', () => {
     it('two_apps_no_global_context', async () => {
         const first = build({ authorize: () => true });
         const second = build({ authorize: () => false });
+
         await first.app.check({ env });
         await second.app.check({ env });
+
         const firstRepository = first.container().resolve(AppToken.STORE).conversations!;
         const secondRepository = second.container().resolve(AppToken.STORE).conversations!;
+
         expect(firstRepository).not.toBe(secondRepository);
         await firstRepository.resolve(identity);
         expect(await secondRepository.findOne(identity)).toBeUndefined();
@@ -131,12 +149,14 @@ describe('app conversation capability', () => {
     it('copies limits before later caller mutation', async () => {
         const limits = { maxItems: 1 };
         const built = build({ authorize: () => true, limits });
+
         limits.maxItems = -1;
         await expect(built.app.check({ env })).resolves.toEqual({ issues: [] });
     });
 
     it.each([null, 42])('rejects malformed limits without replacing them with defaults: %s', async (limits) => {
         const built = build({ authorize: () => true, limits: limits as never });
+
         await expect(built.app.check({ env })).rejects.toMatchObject({ code: 'invalid_agent_definition' });
     });
 

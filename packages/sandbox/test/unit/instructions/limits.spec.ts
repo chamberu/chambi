@@ -72,6 +72,7 @@ describe('readRepositoryInstructions limits', () => {
         const entry = '@a.md\n@b.md\n@c.md\n@d.md\n';
         const fill = 32_768;
         const rest = 131_072 - entry.length - 3 * fill;
+
         await fixture.write({
             'AGENTS.md': entry,
             'a.md': 'a'.repeat(fill),
@@ -79,12 +80,16 @@ describe('readRepositoryInstructions limits', () => {
             'c.md': 'c'.repeat(fill),
             'd.md': 'd'.repeat(rest),
         });
+
         const fits = await readRepositoryInstructions(fixture.workspace);
+
         expect(fits.sources).toHaveLength(5);
         expect(fits.complete).toBe(true);
 
         await fixture.write({ 'd.md': 'd'.repeat(rest + 1) });
+
         const over = await readRepositoryInstructions(fixture.workspace);
+
         expect(over.sources.map((source) => source.path)).toEqual(['AGENTS.md', 'a.md', 'b.md', 'c.md']);
         expect(limits(over)).toHaveLength(1);
         expect(over.complete).toBe(false);
@@ -93,15 +98,22 @@ describe('readRepositoryInstructions limits', () => {
     it('bounds the distinct sources at 32', async () => {
         const includes = Array.from({ length: 31 }, (_, index) => `@s${index}.md`);
         const files: Record<string, string> = { 'AGENTS.md': `${includes.join('\n')}\n` };
-        for (let index = 0; index < 32; index++) files[`s${index}.md`] = `${index}\n`;
+
+        for (let index = 0; index < 32; index++) {
+            files[`s${index}.md`] = `${index}\n`;
+        }
+
         await fixture.write(files);
 
         const fits = await readRepositoryInstructions(fixture.workspace);
+
         expect(fits.sources).toHaveLength(32);
         expect(fits.complete).toBe(true);
 
         await fixture.write({ 'AGENTS.md': `${includes.join('\n')}\n@s31.md\n@s31.md\n` });
+
         const over = await readRepositoryInstructions(fixture.workspace);
+
         expect(over.sources).toHaveLength(32);
         expect(limits(over)).toHaveLength(1);
         expect(over.complete).toBe(false);
@@ -109,11 +121,16 @@ describe('readRepositoryInstructions limits', () => {
 
     it('bounds the include depth at 8 edges', async () => {
         const files: Record<string, string> = { 'AGENTS.md': '@d1.md\n' };
-        for (let depth = 1; depth <= 8; depth++) files[`d${depth}.md`] = `@d${depth + 1}.md\n`;
+
+        for (let depth = 1; depth <= 8; depth++) {
+            files[`d${depth}.md`] = `@d${depth + 1}.md\n`;
+        }
+
         files['d9.md'] = 'end\n';
         await fixture.write(files);
 
         const result = await readRepositoryInstructions(fixture.workspace);
+
         // AGENTS.md -> d1 ... d8 is eight edges; d8 -> d9 is the ninth
         expect(result.sources.map((source) => source.path)).toEqual(['AGENTS.md', ...Array.from({ length: 8 }, (_, index) => `d${index + 1}.md`)]);
         expect(result.diagnostics.map(({ path, code }) => ({ path, code }))).toEqual([{ path: 'd9.md', code: 'limit' }]);
@@ -121,13 +138,16 @@ describe('readRepositoryInstructions limits', () => {
 
     it('bounds the target paths at 32', async () => {
         await fixture.write({ 'AGENTS.md': 'root\n' });
+
         const paths = Array.from({ length: 32 }, (_, index) => `p${index}.ts`);
 
         const fits = await readRepositoryInstructions(fixture.workspace, paths);
+
         expect(fits.paths).toHaveLength(32);
         expect(fits.complete).toBe(true);
 
         const over = await readRepositoryInstructions(fixture.workspace, [...paths, 'p32.ts']);
+
         expect(over.paths).toHaveLength(32);
         expect(limits(over)).toHaveLength(1);
         expect(over.sources.map((source) => source.path)).toEqual(['AGENTS.md']);
@@ -153,24 +173,31 @@ describe('readRepositoryInstructions limits', () => {
 
     it('bounds the directory levels at 64', async () => {
         const deep = (levels: number) => Array.from({ length: levels }, (_, index) => `d${index}`).join('/');
+
         await fixture.write({ 'AGENTS.md': 'root\n', [`${deep(63)}/AGENTS.md`]: 'deepest\n' });
 
         // the root and 63 directories below it
         const fits = await readRepositoryInstructions(fixture.workspace, [`${deep(63)}/x.ts`]);
+
         expect(fits.sources.map((source) => source.path)).toEqual(['AGENTS.md', `${deep(63)}/AGENTS.md`]);
         expect(fits.complete).toBe(true);
 
         const over = await readRepositoryInstructions(fixture.workspace, [`${deep(64)}/x.ts`]);
+
         expect(limits(over)).toHaveLength(1);
         expect(over.complete).toBe(false);
     });
 
     it('bounds each path at 4096 bytes', async () => {
         const long = `${'a/'.repeat(2047)}b`;
+
         expect(Buffer.byteLength(long)).toBe(4095);
+
         const codesFor = async (include: string, paths: string[] = ['.']) => {
             await fixture.write({ 'AGENTS.md': `@${include}\n` });
+
             const result = await readRepositoryInstructions(fixture.workspace, paths);
+
             return { paths: result.paths, codes: result.diagnostics.map(({ code }) => code) };
         };
 
@@ -183,12 +210,15 @@ describe('readRepositoryInstructions limits', () => {
 
     it('bounds a missing-reference storm and the diagnostics', async () => {
         const storm = Array.from({ length: 600 }, (_, index) => `@missing-${index}.md`).join('\n');
+
         await fixture.write({ 'AGENTS.md': storm });
 
         const result = await readRepositoryInstructions(fixture.workspace);
 
         expect(result.diagnostics.length).toBeLessThanOrEqual(64);
+
         const bytes = result.diagnostics.reduce((sum, { path, message }) => sum + Buffer.byteLength(path) + Buffer.byteLength(message), 0);
+
         expect(bytes).toBeLessThanOrEqual(8192);
         expect(result.diagnostics.at(-1)?.code).toBe('limit');
         expect(result.complete).toBe(false);

@@ -11,8 +11,12 @@ import { BadRequestError } from '@ebec/http';
 
 /** The step index a `Last-Event-ID` header names; -1 for none or garbage. */
 export function parseLastEventId(header: string | null): number {
-    if (header === null || !/^\d+$/.test(header)) return -1;
+    if (header === null || !/^\d+$/.test(header)) {
+        return -1;
+    }
+
     const value = Number(header);
+
     return Number.isSafeInteger(value) ? value : -1;
 }
 
@@ -23,11 +27,17 @@ export function parseLastEventId(header: string | null): number {
  */
 export function parseAfter(searchParams: URLSearchParams): number | undefined {
     const values = searchParams.getAll('after');
-    if (values.length === 0) return undefined;
+
+    if (values.length === 0) {
+        return undefined;
+    }
+
     const [value = ''] = values;
+
     if (values.length > 1 || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
         throw new BadRequestError({ message: 'after must be one non-negative integer (a step index).' });
     }
+
     return Number(value);
 }
 
@@ -37,7 +47,11 @@ export function parseAfter(searchParams: URLSearchParams): number | undefined {
  */
 export function resolveLastStep(header: string | null, after: number | undefined): number {
     const lastEventId = parseLastEventId(header);
-    if (lastEventId >= 0) return lastEventId;
+
+    if (lastEventId >= 0) {
+        return lastEventId;
+    }
+
     return after ?? -1;
 }
 
@@ -49,7 +63,10 @@ export function isSettled(run: Run): boolean {
 
 /** True when `run` differs from the last one sent: a later `updatedAt` or another status. */
 export function isNewer(run: Run, last: Run | undefined): boolean {
-    if (!last) return true;
+    if (!last) {
+        return true;
+    }
+
     return run.updatedAt.getTime() > last.updatedAt.getTime() || run.status !== last.status;
 }
 
@@ -58,6 +75,9 @@ export function isNewer(run: Run, last: Run | undefined): boolean {
  * millisecond leave `updatedAt` equal, but an LLM step adds tokens.
  */
 export function usageChanged(run: Run, last: Run | undefined): boolean {
-    if (!last) return true;
+    if (!last) {
+        return true;
+    }
+
     return run.usage.inputTokens !== last.usage.inputTokens || run.usage.outputTokens !== last.usage.outputTokens;
 }

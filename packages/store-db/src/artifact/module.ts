@@ -30,18 +30,24 @@ export class DatabaseArtifactRepository implements IArtifactRepository {
             .returning(['id'])
             .updateEntity(false)
             .execute();
+
         return result.raw.length === 1;
     }
 
     async findOne(id: string): Promise<Artifact | undefined> {
         // the data column is select: false, so the bytes stay in the database
         const entity = await this.artifacts.findOneBy({ id });
+
         return entity ? toArtifact(entity) : undefined;
     }
 
     async findOneOrFail(id: string): Promise<Artifact> {
         const result = await this.findOne(id);
-        if (result === undefined) throw new ArtifactNotFoundError(id);
+
+        if (result === undefined) {
+            throw new ArtifactNotFoundError(id);
+        }
+
         return result;
     }
 
@@ -50,6 +56,7 @@ export class DatabaseArtifactRepository implements IArtifactRepository {
             select: { id: true, data: true },
             where: { id },
         });
+
         // a copy into a plain Uint8Array: a Buffer would leak its toJSON
         return entity ? new Uint8Array(entity.data) : undefined;
     }
@@ -59,12 +66,17 @@ export class DatabaseArtifactRepository implements IArtifactRepository {
             where: { runId },
             order: { createdAt: 'ASC', id: 'ASC' },
         });
+
         return entities.map((entity) => toArtifact(entity));
     }
 
     async findOrFail(runId: string): Promise<Artifact[]> {
         const result = await this.find(runId);
-        if (result.length === 0) throw new RepositoryNotFoundError('artifacts');
+
+        if (result.length === 0) {
+            throw new RepositoryNotFoundError('artifacts');
+        }
+
         return result;
     }
 }

@@ -93,6 +93,7 @@ export class App implements IApp {
         if (options.model !== undefined && !isModelRef(options.model)) {
             throw new InvalidAgentDefinitionError('createApp\'s model must be a "<provider>/<model>" string or a LanguageModel object.');
         }
+
         if (options.providers !== undefined && !isObject(options.providers)) {
             throw new InvalidAgentDefinitionError('createApp\'s providers must be an object of provider configs by name.');
         }
@@ -101,7 +102,9 @@ export class App implements IApp {
             if (!isObject(options.conversations) || typeof options.conversations.authorize !== 'function') {
                 throw new InvalidAgentDefinitionError('createApp conversations needs an authorize function.');
             }
+
             this.conversations = { ...options.conversations };
+
             if (isObject(options.conversations.limits)) {
                 this.conversations.limits = { ...options.conversations.limits };
             }
@@ -117,6 +120,7 @@ export class App implements IApp {
 
     async start(options: AppStartOptions = {}): Promise<void> {
         const lifecycle = this.begin('start', options, options.dev ?? false);
+
         lifecycle.done = this.setup(lifecycle);
         await lifecycle.done;
     }
@@ -124,25 +128,31 @@ export class App implements IApp {
     async check(options: AppCheckOptions = {}): Promise<AppCheckResult> {
         const lifecycle = this.begin('start', options, options.dev ?? false, { check: true });
         const checked = this.checkOnce(lifecycle);
+
         lifecycle.done = checked;
+
         return checked;
     }
 
     async runJob(options: AppRunJobOptions): Promise<AppRunJobResult> {
         const lifecycle = this.begin('job', options, false, { job: { agent: options.agent } });
         const job = this.job(lifecycle, options);
+
         lifecycle.done = job;
+
         return job;
     }
 
     async migrate(options: AppLifecycleOptions = {}): Promise<void> {
         const lifecycle = this.begin('migrate', options, false);
+
         lifecycle.done = this.migrateOnce(lifecycle);
         await lifecycle.done;
     }
 
     stop(): Promise<void> {
         this.stopping ??= this.shutdown();
+
         return this.stopping;
     }
 
@@ -155,6 +165,7 @@ export class App implements IApp {
         if (this.used || this.stopping) {
             throw createInUseError();
         }
+
         this.used = true;
 
         const env: Env = options.env ?? process.env;
@@ -180,6 +191,7 @@ export class App implements IApp {
             ...(this.skills !== undefined && { skills: this.skills }),
             ...extra,
         };
+
         container.register(AppToken.CONTEXT, { useValue: context });
 
         const application = new Application({
@@ -194,7 +206,9 @@ export class App implements IApp {
             errors,
             done: Promise.resolve(),
         };
+
         this.lifecycle = lifecycle;
+
         return lifecycle;
     }
 
@@ -208,13 +222,17 @@ export class App implements IApp {
             container,
             controller,
         } = lifecycle;
+
         try {
             await application.setup();
+
             const context = container.resolve(AppToken.CONTEXT);
+
             // a check stops before the start steps: nothing starts, nothing runs
             if (!context.check) {
                 // every onReady checked its configuration: the engine with its channels, then the http module's serve
                 await runStartSteps(container);
+
                 if (context.mode === 'start' && !container.has(AppToken.SERVER)) {
                     // the http module's serve step runs these hooks; without it the app does
                     lifecycle.hooksStarted = true;
@@ -226,7 +244,9 @@ export class App implements IApp {
                 // the stop's reason answers, but the real failure must not vanish
                 logReported(container, error, { phase: 'setup' });
             }
+
             await application.teardown();
+
             throw controller.signal.aborted ? controller.signal.reason : toSetupError(error);
         }
 
@@ -239,9 +259,12 @@ export class App implements IApp {
     /** Tears every ready module down; throws app_stop_failed when that reported errors. */
     protected async teardown(lifecycle: Lifecycle): Promise<void> {
         const from = lifecycle.errors.length;
+
         await this.runStoppingHooks(lifecycle);
         await lifecycle.application.teardown();
+
         const errors = lifecycle.errors.slice(from);
+
         if (errors.length > 0) {
             throw createStopFailedError(errors);
         }
@@ -251,10 +274,12 @@ export class App implements IApp {
         await this.setup(lifecycle);
 
         let result: AppRunJobResult;
+
         try {
             const { container } = lifecycle;
             const engine = container.resolve(AppToken.ENGINE);
             const agent = engine.getAgent(options.agent);
+
             if (!agent) {
                 const names = engine.listAgents().map((a) => a.name).join(', ');
                 throw new InvalidAgentDefinitionError(`No agent "${options.agent}"; the app has: ${names}.`);
@@ -271,6 +296,7 @@ export class App implements IApp {
                 drainTimeoutMs: container.resolve(AppToken.CONFIG).http.drainTimeoutMs,
                 signal: lifecycle.controller.signal,
             });
+
             result = {
                 ...(runId !== undefined && { runId }),
                 status,
@@ -279,19 +305,24 @@ export class App implements IApp {
         } catch (error) {
             // the teardown's own errors are logged; the job's error is the answer
             await lifecycle.application.teardown();
+
             throw error;
         }
 
         await this.teardown(lifecycle);
+
         return result;
     }
 
     /** setup() without the start steps, the agent folders' issues, then the teardown. */
     protected async checkOnce(lifecycle: Lifecycle): Promise<AppCheckResult> {
         await this.setup(lifecycle);
+
         const { container } = lifecycle;
         const issues = container.has(AppToken.AGENT_ISSUES) ? [...container.resolve(AppToken.AGENT_ISSUES)()] : [];
+
         await this.teardown(lifecycle);
+
         return { issues };
     }
 
@@ -305,17 +336,20 @@ export class App implements IApp {
         if (!lifecycle.hooksStarted) {
             return;
         }
+
         lifecycle.hooksStarted = false;
         await runHooks(lifecycle.container, 'stopping');
     }
 
     protected async shutdown(): Promise<void> {
         const { lifecycle } = this;
+
         if (!lifecycle) {
             return;
         }
 
         const from = lifecycle.errors.length;
+
         if (!lifecycle.controller.signal.aborted) {
             lifecycle.controller.abort(createStoppedError());
         }
@@ -327,6 +361,7 @@ export class App implements IApp {
         await lifecycle.application.teardown();
 
         const errors = lifecycle.errors.slice(from);
+
         if (errors.length > 0) {
             throw createStopFailedError(errors);
         }

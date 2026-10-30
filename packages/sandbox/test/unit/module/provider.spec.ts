@@ -16,23 +16,28 @@ function inner(): ISandboxProvider & { creates: number; calls: unknown[][] } {
         calls: [] as unknown[][],
         async create() {
             provider.creates += 1;
+
             return { id: `ws-${provider.creates}` } as unknown as IWorkspace;
         },
         async find(runId: string, options?: unknown) {
             provider.calls.push(['find', runId, options]);
+
             return [];
         },
         async collectGarbage(options?: unknown) {
             provider.calls.push(['collectGarbage', options]);
+
             return 3;
         },
     };
+
     return provider;
 }
 
 describe('createLazyProvider', () => {
     it('has the given name before loading', () => {
         const provider = createLazyProvider('k8s', async () => inner());
+
         expect(provider.name).toBe('k8s');
     });
 
@@ -41,7 +46,10 @@ describe('createLazyProvider', () => {
         const target = inner();
         const provider = createLazyProvider('local', async () => {
             loads += 1;
-            await new Promise<void>((resolve) => { setImmediate(resolve); });
+            await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+            });
+
             return target;
         });
 
@@ -49,6 +57,7 @@ describe('createLazyProvider', () => {
             provider.create({ runId: 'r1' }),
             provider.create({ runId: 'r2' }),
         ]);
+
         await provider.load();
         expect(loads).toBe(1);
         expect(target.creates).toBe(2);
@@ -61,6 +70,7 @@ describe('createLazyProvider', () => {
         const target = inner();
         const provider = createLazyProvider('docker', async () => target);
         const isSettled = async () => true;
+
         expect(await provider.find('r1', { deployment: 'prod' })).toEqual([]);
         expect(await provider.collectGarbage({ deployment: 'prod', isSettled })).toBe(3);
         expect(target.calls).toEqual([
@@ -73,9 +83,11 @@ describe('createLazyProvider', () => {
         let loads = 0;
         const provider = createLazyProvider('local', async () => {
             loads += 1;
+
             if (loads === 1) {
                 throw new Error('boom');
             }
+
             return inner();
         });
 

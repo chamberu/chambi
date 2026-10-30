@@ -45,7 +45,9 @@ export function assertDockerOptions(options: DockerSandboxOptions): void {
     if (!isObject(options)) {
         throw new InvalidAgentDefinitionError('createDockerSandbox() options must be an object.');
     }
+
     const { docker, clock } = options;
+
     if (
         docker !== undefined &&
         (!isObject(docker) ||
@@ -59,20 +61,27 @@ export function assertDockerOptions(options: DockerSandboxOptions): void {
     ) {
         throw new InvalidAgentDefinitionError('docker must be a dockerode client.');
     }
+
     assertImageOption(options.image);
+
     if (options.network !== undefined && !isName(options.network)) {
         throw new InvalidAgentDefinitionError('network must be a non-empty string.');
     }
+
     if (options.pull !== undefined && !PULL_POLICIES.includes(options.pull)) {
         throw new InvalidAgentDefinitionError(`pull must be one of ${PULL_POLICIES.join(', ')}, got ${JSON.stringify(options.pull)}.`);
     }
+
     if (options.user !== undefined && !isName(options.user)) {
         throw new InvalidAgentDefinitionError('user must be a non-empty string like "0:0" or "1000:1000".');
     }
+
     if (options.readOnlyRoot !== undefined && typeof options.readOnlyRoot !== 'boolean') {
         throw new InvalidAgentDefinitionError('readOnlyRoot must be a boolean.');
     }
+
     const { cache } = options;
+
     if (
         cache !== undefined &&
         (!isObject(cache) || typeof cache.volume !== 'string' || !VOLUME_NAME.test(cache.volume))
@@ -82,6 +91,7 @@ export function assertDockerOptions(options: DockerSandboxOptions): void {
             'without it every workspace gets an anonymous /cache.',
         );
     }
+
     assertTmpSizeOption(options.tmpSize);
     assertClockOption(clock);
     assertSandboxEnv(options.env);
@@ -102,9 +112,16 @@ export function isStatus(error: unknown, status: number): boolean {
 export function dockerMessage(error: unknown): string {
     if (isObject(error)) {
         const { json } = error;
-        if (isObject(json) && typeof json.message === 'string') return json.message;
-        if (typeof error.message === 'string') return error.message;
+
+        if (isObject(json) && typeof json.message === 'string') {
+            return json.message;
+        }
+
+        if (typeof error.message === 'string') {
+            return error.message;
+        }
     }
+
     return String(error);
 }
 
@@ -116,6 +133,7 @@ export async function removeContainer(container: Dockerode.Container): Promise<v
         if (isStatus(error, 404) || (isStatus(error, 409) && /already in progress/i.test(dockerMessage(error)))) {
             return;
         }
+
         throw error;
     }
 }
@@ -128,19 +146,25 @@ export async function removeContainer(container: Dockerode.Container): Promise<v
 export async function pullImage(docker: Dockerode, image: string, signal?: AbortSignal): Promise<void> {
     try {
         const stream = await docker.pull(image, signal ? { abortSignal: signal } : {}) as NodeJS.ReadableStream & { destroy?(): void };
+
         await new Promise<void>((resolve, reject) => {
             const onAbort = () => {
                 stream.destroy?.();
                 reject(abortedCreate());
             };
+
             if (signal?.aborted) {
                 onAbort();
+
                 return;
             }
+
             signal?.addEventListener('abort', onAbort, { once: true });
             docker.modem.followProgress(stream, (error: Error | null, output: Array<{ error?: unknown }>) => {
                 signal?.removeEventListener('abort', onAbort);
+
                 const failed = (output ?? []).find((event) => typeof event?.error === 'string');
+
                 if (error) {
                     reject(error);
                 } else if (failed) {
@@ -151,7 +175,10 @@ export async function pullImage(docker: Dockerode, image: string, signal?: Abort
             });
         });
     } catch (error) {
-        if (signal?.aborted) throw abortedCreate(error);
+        if (signal?.aborted) {
+            throw abortedCreate(error);
+        }
+
         throw new SandboxError(`cannot pull the image ${image}: ${dockerMessage(error)}`, { cause: error });
     }
 }
@@ -175,9 +202,9 @@ export function buildContainerOptions(input: ContainerOptionsInput): Dockerode.C
     // Docker takes whole bytes; a quantity like '1.1Gi' is fractional
     const memory = Math.round(parseMemory(input.limits.memory));
     const env = {
-        ...SANDBOX_ENV, 
-        ...CACHE_ENV, 
-        ...input.env, 
+        ...SANDBOX_ENV,
+        ...CACHE_ENV,
+        ...input.env,
     };
 
     return {

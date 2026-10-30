@@ -62,6 +62,7 @@ describe('channelChips', () => {
                 { channel: 'http', id: 'http' },
             ],
         }), [schedule({ trigger: 'nightly', expression: '0 2 * * *' })]);
+
         expect(chips).toEqual([
             {
                 channel: 'github',
@@ -96,6 +97,7 @@ describe('channelChips', () => {
                 expression: '0 3 * * *',
             }),
         ]);
+
         expect(chips).toEqual([{
             channel: 'cron-eu',
             id: 'nightly',
@@ -124,9 +126,9 @@ describe('summarizeActivity', () => {
     it('counts the runs of the last 24 h and places a mark per run', () => {
         const runs = [
             wireRun({
-                id: 'a', 
-                status: 'running', 
-                createdAt: ago(0), 
+                id: 'a',
+                status: 'running',
+                createdAt: ago(0),
             }),
             wireRun({
                 id: 'b',
@@ -136,12 +138,13 @@ describe('summarizeActivity', () => {
                 usage: { inputTokens: 1000, outputTokens: 200 },
             }),
             wireRun({
-                id: 'c', 
-                status: 'completed', 
-                createdAt: ago(30), 
+                id: 'c',
+                status: 'completed',
+                createdAt: ago(30),
             }),
         ];
         const activity = summarizeActivity(runs, NOW, 100);
+
         expect(activity.count).toBe(2);
         expect(activity.saturated).toBe(false);
         expect(activity.failed).toBe(1);
@@ -156,6 +159,7 @@ describe('summarizeActivity', () => {
 
     it('is saturated when the limit was reached inside the window', () => {
         const runs = [wireRun({ id: 'a', createdAt: ago(1) }), wireRun({ id: 'b', createdAt: ago(2) })];
+
         expect(summarizeActivity(runs, NOW, 2).saturated).toBe(true);
         expect(summarizeActivity(runs, NOW, 3).saturated).toBe(false);
         // the oldest run read is outside the window: the window is complete
@@ -165,10 +169,10 @@ describe('summarizeActivity', () => {
     it('uses a 24 h window', () => {
         expect(ACTIVITY_WINDOW_MS).toBe(24 * 3_600_000);
         expect(summarizeActivity([], NOW, 100)).toMatchObject({
-            count: 0, 
-            marks: [], 
-            tokens: 0, 
-            failed: 0, 
+            count: 0,
+            marks: [],
+            tokens: 0,
+            failed: 0,
         });
     });
 });
@@ -179,6 +183,7 @@ describe('tokenShares', () => {
             wireRun({ agent: 'triage', usage: { inputTokens: 700, outputTokens: 0 } }),
             wireRun({ agent: 'digest', usage: { inputTokens: 300, outputTokens: 0 } }),
         ];
+
         expect(tokenShares(runs)).toBe('triage 70% · digest 30%');
         expect(tokenShares([])).toBe('');
     });
@@ -188,6 +193,7 @@ describe('tokenShares', () => {
             wireRun({ agent: 'triage', usage: { inputTokens: 700, outputTokens: 0 } }),
             wireRun({ agent: 'digest', usage: { inputTokens: 300, outputTokens: 0 } }),
         ];
+
         expect(withoutIteratorHelpers(() => tokenShares(runs))).toBe('triage 70% · digest 30%');
     });
 });
@@ -199,6 +205,7 @@ describe('activityLabel', () => {
             wireRun({ status: 'failed', createdAt: ago(2) }),
             wireRun({ status: 'completed', createdAt: ago(3) }),
         ], NOW, 100);
+
         expect(withoutIteratorHelpers(() => activityLabel(activity))).toBe('3 runs in the last 24 h: 2 completed, 1 failed');
         expect(activityLabel(summarizeActivity([], NOW, 100))).toBe('No runs in the last 24 h');
     });
@@ -221,11 +228,12 @@ describe('agent helpers', () => {
             schedule({ trigger: 'a', nextAt: '2026-10-22T08:00:00.000Z' }),
             schedule({ trigger: 'b', nextAt: '2026-10-21T14:00:00.000Z' }),
             schedule({
-                agent: 'digest', 
-                trigger: 'c', 
-                nextAt: '2026-10-21T13:00:00.000Z', 
+                agent: 'digest',
+                trigger: 'c',
+                nextAt: '2026-10-21T13:00:00.000Z',
             }),
         ];
+
         expect(nextFireOf('triage', list)?.trigger).toBe('b');
         expect(nextFireOf('none', list)).toBeUndefined();
     });
@@ -235,12 +243,14 @@ describe('agent helpers', () => {
             wireRun({ id: 'new', trigger: { ...wireRun().trigger, trigger: 'http' } }),
             wireRun({ id: 'cron', trigger: { ...wireRun().trigger, trigger: 'nightly' } }),
         ];
+
         expect(lastRunOf(runs, 'nightly')?.id).toBe('cron');
         expect(lastRunOf(runs, 'other')).toBeNull();
     });
 
     it('oldestWaiting is the earliest updatedAt', () => {
         const runs = [wireRun({ id: 'a', updatedAt: ago(1) }), wireRun({ id: 'b', updatedAt: ago(5) })];
+
         expect(oldestWaiting(runs)?.id).toBe('b');
         expect(oldestWaiting([])).toBeUndefined();
     });
@@ -256,7 +266,9 @@ describe('agent helpers', () => {
     it('parsePayload reads JSON and explains a mistake', () => {
         expect(parsePayload('{ "a": 1 }')).toEqual({ ok: true, value: { a: 1 } });
         expect(parsePayload('  ')).toEqual({ ok: true, value: {} });
+
         const bad = parsePayload('{ a: 1 }');
+
         expect(bad.ok).toBe(false);
         expect(bad.ok ? '' : bad.message).toMatch(/not valid JSON/);
     });
@@ -266,6 +278,7 @@ describe('createStartKeys', () => {
     it('keeps the key for a retry of the same payload and mints one otherwise', () => {
         let n = 0;
         const keys = createStartKeys(() => `k${++n}`);
+
         expect(keys.keyFor('{"a":1}')).toBe('k1');
         expect(keys.keyFor('{"a":1}')).toBe('k1'); // the retry after a lost answer dedupes
         expect(keys.keyFor('{"a":2}')).toBe('k2'); // an edited payload is a new start

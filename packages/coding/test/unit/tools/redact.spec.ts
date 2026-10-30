@@ -29,21 +29,31 @@ const SECRET = 'ghs_s3cretTokenValue';
 let fixture: GitFixture;
 let s: CodingSetup;
 
-beforeAll(async () => { fixture = await createFixture(); });
-afterAll(async () => { await fixture.cleanup(); });
-beforeEach(async () => { s = await setupCoding(fixture); });
-afterEach(async () => { await s.cleanup(); });
+beforeAll(async () => {
+    fixture = await createFixture();
+});
+afterAll(async () => {
+    await fixture.cleanup();
+});
+beforeEach(async () => {
+    s = await setupCoding(fixture);
+});
+afterEach(async () => {
+    await s.cleanup();
+});
 
 /** The tools over the setup's workspace seen through a redaction of SECRET, as a manager with credentials hands it out. */
 function redactingTools() {
     const redacting: IWorkspace = Object.create(s.workspace, { redact: { value: (text: string) => text.replaceAll(SECRET, '[redacted]') } });
     const tools = codingTools({ get: async () => redacting });
+
     return (name: string, input: unknown) => callTool(tools, name, input, toolContext('r1'));
 }
 
 describe('redaction of decoded output', () => {
     it('redacts delivered instruction text and diagnostics while hashing disk bytes', async () => {
         const content = `Private ${SECRET}\n@missing-${SECRET}.md\n`;
+
         await s.workspace.writeFile('AGENTS.md', content);
 
         const result = await redactingTools()('read_file', { path: 'src/a.ts' }) as { instructions: RepositoryInstructions };
@@ -62,6 +72,7 @@ describe('redaction of decoded output', () => {
     it('passes the excerpts of bash through the workspace redaction', async () => {
         const call = redactingTools();
         const result = await call('bash', { command: `echo "token ${SECRET}"; echo "${SECRET}" >&2` }) as BashResult;
+
         expect(result.stdout).toBe('token [redacted]\n');
         expect(result.stderr).toBe('[redacted]\n');
     });
@@ -69,8 +80,10 @@ describe('redaction of decoded output', () => {
     it('passes the output of a background job through it', async () => {
         const call = redactingTools();
         const job = await call('bash', { command: `echo "${SECRET}"`, background: true }) as BashJobResult;
+
         await vi.waitFor(async () => {
             const output = await call('bash_output', { job: job.job }) as BashOutputResult;
+
             expect(output.status).toBe('exited');
             expect(output.output).toBe('[redacted]\n');
         }, { timeout: 10_000, interval: 100 });

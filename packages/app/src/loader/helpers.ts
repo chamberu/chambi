@@ -38,6 +38,7 @@ let moduleJiti: Jiti | undefined;
  */
 export function readFreshModule(path: string): Promise<unknown> {
     moduleJiti ??= createModuleJiti(import.meta.url);
+
     return readModule(moduleJiti, path);
 }
 
@@ -62,6 +63,7 @@ export function createModuleJiti(from: string): Jiti {
  */
 export async function readModule(jiti: Jiti, path: string): Promise<unknown> {
     const source = await readFile(path, 'utf8');
+
     return jiti.evalModule(source, {
         filename: path,
         async: true,
@@ -79,68 +81,107 @@ export function createPackageAliases(from: string): Record<string, string> {
     const fromPath = from.startsWith('file:') ? fileURLToPath(from) : from;
     const resolver = createJiti(fromPath, { moduleCache: false, fsCache: false });
     const packages = new Map<string, string>();
+
     for (const modules of nodeModulesPaths(dirname(fromPath))) {
         for (const name of listPinnedPackages(modules)) {
-            if (!packages.has(name)) packages.set(name, join(modules, name));
+            if (!packages.has(name)) {
+                packages.set(name, join(modules, name));
+            }
         }
     }
 
     const aliases: Record<string, string> = {};
+
     for (const [name, dir] of packages) {
         for (const subpath of exportedSubpaths(dir)) {
             const specifier = subpath === '.' ? name : `${name}${subpath.slice(1)}`;
+
             try {
                 const resolved = resolver.esmResolve(specifier, { parentURL: pathToFileURL(fromPath).href });
+
                 aliases[specifier] = realpathSync(resolved.startsWith('file:') ? fileURLToPath(resolved) : resolved);
             } catch {
                 // not resolvable with the import conditions (e.g. a require-only subpath): left to jiti
             }
         }
     }
+
     return aliases;
 }
 
 function nodeModulesPaths(start: string): string[] {
     const paths: string[] = [];
     let dir = start;
+
     for (;;) {
-        if (basename(dir) !== 'node_modules') paths.push(join(dir, 'node_modules'));
+        if (basename(dir) !== 'node_modules') {
+            paths.push(join(dir, 'node_modules'));
+        }
+
         const parent = dirname(dir);
-        if (parent === dir) return paths;
+
+        if (parent === dir) {
+            return paths;
+        }
+
         dir = parent;
     }
 }
 
 function listPinnedPackages(modules: string): string[] {
     const names: string[] = [];
-    if (isDirectorySync(join(modules, 'ai'))) names.push('ai');
+
+    if (isDirectorySync(join(modules, 'ai'))) {
+        names.push('ai');
+    }
+
     for (const scope of PINNED_PACKAGE_SCOPES) {
         let entries: string[];
+
         try {
             entries = readdirSync(join(modules, scope));
         } catch {
             continue;
         }
+
         for (const entry of entries) {
-            if (!entry.startsWith('.')) names.push(`${scope}/${entry}`);
+            if (!entry.startsWith('.')) {
+                names.push(`${scope}/${entry}`);
+            }
         }
     }
+
     return names;
 }
 
 /** The subpaths a package exports (`.` and `./x`), wildcards and `./package.json` left out. */
 function exportedSubpaths(dir: string): string[] {
     let manifest: unknown;
+
     try {
         manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
     } catch {
         return [];
     }
-    if (!isObject(manifest)) return [];
+
+    if (!isObject(manifest)) {
+        return [];
+    }
+
     const { exports } = manifest;
-    if (!isObject(exports)) return ['.'];
+
+    if (!isObject(exports)) {
+        return ['.'];
+    }
+
     const keys = Object.keys(exports);
-    if (keys.every((key) => !key.startsWith('.'))) return ['.'];
+
+    const hasNoSubpathExports = keys.every((key) => !key.startsWith('.'));
+
+    if (hasNoSubpathExports) {
+        return ['.'];
+    }
+
     return keys.filter((key) => key.startsWith('.') && !key.includes('*') && key !== './package.json');
 }
 
@@ -169,37 +210,47 @@ export async function isFile(path: string): Promise<boolean> {
 }
 
 export function compareCodePoints(a: string, b: string): number {
-    if (a === b) return 0;
+    if (a === b) {
+        return 0;
+    }
+
     return a < b ? -1 : 1;
 }
 
 /** The message of a thrown value, with its cause's message when that adds to it. */
 export function messageOf(error: unknown): string {
-    const message = error instanceof Error ? error.message : String(error);
-    const cause = error instanceof Error ? error.cause : undefined;
-    if (cause instanceof Error && cause.message && !message.includes(cause.message)) {
+    const message = Error.isError(error) ? error.message : String(error);
+    const cause = Error.isError(error) ? error.cause : undefined;
+
+    if (Error.isError(cause) && cause.message && !message.includes(cause.message)) {
         return `${message} (${cause.message})`;
     }
+
     return message;
 }
 
 /** `message` with every spelling of `base` (path, real path, file URL) cut, so it names paths relative to it. */
 export function relativize(message: string, base: string): string {
     const prefixes = new Set<string>([base]);
+
     try {
         prefixes.add(realpathSync(base));
     } catch {
         // a missing base has no real path
     }
+
     for (const prefix of [...prefixes]) {
         prefixes.add(pathToFileURL(prefix).href);
     }
+
     let out = message;
+
     // the longest first, so a URL is not cut down to its path part
     for (const prefix of [...prefixes].sort((a, b) => b.length - a.length)) {
         out = out.split(`${prefix}${prefix.startsWith('file:') ? '/' : sep}`).join('');
         out = out.split(prefix).join('.');
     }
+
     return out;
 }
 
@@ -208,6 +259,7 @@ export function defaultExportOf(mod: unknown, file: string): unknown {
     if ((isObject(mod) || typeof mod === 'function') && 'default' in mod) {
         return (mod as { default: unknown }).default;
     }
+
     throw new InvalidAgentDefinitionError(`${file}: has no default export.`);
 }
 
@@ -218,7 +270,11 @@ export function defaultExportOf(mod: unknown, file: string): unknown {
 export function isHashIgnored(file: string): boolean {
     const name = file.slice(file.lastIndexOf('/') + 1);
     const extension = extname(name).toLowerCase();
-    if ((HASH_IMPORTABLE_EXTENSIONS as readonly string[]).includes(extension)) return false;
+
+    if ((HASH_IMPORTABLE_EXTENSIONS as readonly string[]).includes(extension)) {
+        return false;
+    }
+
     return HASH_IGNORE_PATTERNS.some((pattern) => pattern.test(name));
 }
 
@@ -237,11 +293,13 @@ export async function hashFolder(dir: string, include: (key: string) => boolean)
         .filter((file) => include(file.key))
         .sort((a, b) => compareCodePoints(a.key, b.key));
     const hash = createHash('sha256');
+
     for (const file of files) {
         hash.update(`${file.key}\0`);
         hash.update(await readFile(file.path));
         hash.update('\0');
     }
+
     return hash.digest('hex');
 }
 
@@ -253,5 +311,6 @@ export async function hashFolder(dir: string, include: (key: string) => boolean)
  */
 export async function formerAgentFolderHash(dir: string, hash: string): Promise<string | undefined> {
     const former = await hashFolder(dir, () => true);
+
     return former === hash ? undefined : former;
 }

@@ -31,6 +31,7 @@ import type { FakeProcess } from '../../utils/process.ts';
 async function exists(file: string): Promise<boolean> {
     try {
         await stat(file);
+
         return true;
     } catch {
         return false;
@@ -55,6 +56,7 @@ describe('build', () => {
         expect(fake.exitCodes).toEqual([]);
 
         const bundle = await readFile(path.join(app.cwd, 'dist/index.mjs'), 'utf8');
+
         expect(await exists(path.join(app.cwd, 'dist/index.mjs.map'))).toBe(true);
         expect(bundle).toContain('from "@chamvi/app"');
         expect(bundle).toContain('from "ai/test"');
@@ -98,16 +100,21 @@ describe('build', () => {
     it('--entry', async () => {
         await runCli(['build', '--entry', 'src/agents.ts'], fake.context({ cwd: app.cwd }));
         expect(fake.exitCodes).toEqual([]);
+
         const bundle = await readFile(path.join(app.cwd, 'dist/index.mjs'), 'utf8');
+
         expect(bundle).not.toContain('createApp');
     });
 
     it('missing tsdown exits 2', async () => {
         const importModule = async (specifier: string) => {
             const error = new Error(`Cannot find package '${specifier}' imported from /app`);
+
             Object.assign(error, { code: 'ERR_MODULE_NOT_FOUND' });
+
             throw error;
         };
+
         await runCli(['build'], { ...fake.context({ cwd: app.cwd }), importModule });
         expect(fake.exitCodes).toEqual([2]);
         expect(fake.stderr.join('')).toContain('chamvi build needs tsdown: npm install --save-dev tsdown');
@@ -116,9 +123,12 @@ describe('build', () => {
     it('another missing module of tsdown exits 1', async () => {
         const importModule = async () => {
             const error = new Error('Cannot find package \'rolldown\' imported from /tsdown');
+
             Object.assign(error, { code: 'ERR_MODULE_NOT_FOUND' });
+
             throw error;
         };
+
         await runCli(['build'], { ...fake.context({ cwd: app.cwd }), importModule });
         expect(fake.exitCodes).toEqual([1]);
     });
@@ -132,6 +142,7 @@ describe('build', () => {
 
     it('without any entry file exits 2: nothing to build', async () => {
         const cwd = await mkdtemp(path.join(tmpdir(), 'chamvi-cli-build-'));
+
         try {
             await runCli(['build'], fake.context({ cwd }));
             expect(fake.exitCodes).toEqual([2]);

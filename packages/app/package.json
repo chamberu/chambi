@@ -36,7 +36,7 @@
         "NOTICE"
     ],
     "engines": {
-        "node": ">=22.0.0"
+        "node": ">=24.3.0"
     },
     "scripts": {
         "build:types": "tsc --noEmit -p tsconfig.build.json",

@@ -56,22 +56,35 @@ export class RunQueue {
      * elsewhere (other replicas) get picked up. idle() waits for a poll in progress.
      */
     startPolling(): void {
-        if (this.poll) return;
+        if (this.poll) {
+            return;
+        }
+
         const generation = ++this.pollGeneration;
         const tick = () => {
             this.poll = this.opts.clock.setTimeout(() => {
-                const work: Promise<void> = Promise.resolve()
-                    .then(() => { this.retryDeferred(); return this.opts.onPoll?.(); })
+                const work: Promise<void> = Promise.try(async () => {
+                    // Register the poll before invoking external callbacks.
+                    await Promise.resolve();
+                    this.retryDeferred();
+
+                    return this.opts.onPoll?.();
+                })
                     .catch((error: unknown) => this.opts.onError(error))
                     .then(() => this.pump())
                     .finally(() => {
                         this.inflight.delete(work);
+
                         // a stop() (and possibly a new start()) happened meanwhile: this chain is dead
-                        if (generation === this.pollGeneration) tick();
+                        if (generation === this.pollGeneration) {
+                            tick();
+                        }
                     });
+
                 this.inflight.add(work);
             }, Math.max(1, Math.floor(this.opts.claimTtlMs / 3)));
         };
+
         tick();
     }
 
@@ -100,8 +113,10 @@ export class RunQueue {
     pump(): Promise<void> {
         if (this.pumping) {
             this.again = true;
+
             return this.pumping;
         }
+
         this.pumping = (async () => {
             try {
                 do {
@@ -115,6 +130,7 @@ export class RunQueue {
                 this.pumping = undefined;
             }
         })();
+
         return this.pumping;
     }
 
@@ -126,16 +142,30 @@ export class RunQueue {
     }
 
     protected async pass(): Promise<void> {
-        if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
+        if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) {
+            return;
+        }
+
         const { store } = this.opts;
         const { data: queued } = await store.runs.find({ status: [RunStatus.QUEUED] });
-        if (queued.length === 0) return;
+
+        if (queued.length === 0) {
+            return;
+        }
+
         const mayStart = await this.opts.prepareStart?.();
+
         for (const run of queued) {
-            if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) return;
-            if (this.deferred.has(run.id) || (mayStart && !mayStart(run))) continue;
+            if (this.halted || this.running.size >= this.opts.concurrencyMaxRuns) {
+                return;
+            }
+
+            if (this.deferred.has(run.id) || (mayStart && !mayStart(run))) {
+                continue;
+            }
 
             const started = await admitRun(this.opts, run, (candidate) => this.tryStart(candidate), mayStart);
+
             if (!started) {
                 continue;
             }
@@ -149,6 +179,7 @@ export class RunQueue {
                         startedAt: undefined,
                         updatedAt: this.opts.clock.now(),
                     }, { expectStatus: [RunStatus.RUNNING], expectOwner: this.opts.owner });
+
                     this.opts.onRunUpdated(queued);
                 } finally {
                     this.running.delete(started.id);
@@ -167,12 +198,19 @@ export class RunQueue {
             owner,
             claimTtlMs,
         } = this.opts;
-        if (run.concurrencyKey === undefined) return this.transition(run, undefined);
+
+        if (run.concurrencyKey === undefined) {
+            return this.transition(run, undefined);
+        }
 
         // keyed runs: check + claim + mark running must be atomic across replicas.
         // The lock TTL is claimTtlMs: a transition slower than that lets a second replica in.
         const lockKey = `concurrency:${run.agent}:${run.concurrencyKey}`;
-        if (!await store.locks.acquire(lockKey, owner, claimTtlMs)) return undefined;
+
+        if (!await store.locks.acquire(lockKey, owner, claimTtlMs)) {
+            return undefined;
+        }
+
         try {
             return await this.transition(run, groupKey(run));
         } finally {
@@ -193,10 +231,17 @@ export class RunQueue {
             owner,
             claimTtlMs,
         } = this.opts;
+
         // still finishing its previous execution here: the pump after it ends starts it
-        if (this.running.has(run.id)) return undefined;
+        if (this.running.has(run.id)) {
+            return undefined;
+        }
+
         if (group !== undefined) {
-            if (this.running.values().toArray().includes(group)) return undefined;
+            if (this.running.values().toArray().includes(group)) {
+                return undefined;
+            }
+
             const { total } = await store.runs.find({
                 agent: run.agent,
                 // an interrupted run is unfinished and keeps its key until recovery requeues it
@@ -204,13 +249,22 @@ export class RunQueue {
                 concurrencyKey: run.concurrencyKey,
                 limit: 1,
             });
-            if (total > 0) return undefined;
+
+            if (total > 0) {
+                return undefined;
+            }
         }
-        if (!await store.runs.claim(run.id, owner, claimTtlMs)) return undefined;
+
+        if (!await store.runs.claim(run.id, owner, claimTtlMs)) {
+            return undefined;
+        }
+
         // reserve the slot before the next await so concurrent passes cannot overshoot
         this.running.set(run.id, group);
+
         try {
             const now = clock.now();
+
             return await store.runs.update(run.id, {
                 status: RunStatus.RUNNING,
                 startedAt: now,
@@ -219,12 +273,14 @@ export class RunQueue {
         } catch (error) {
             this.running.delete(run.id);
             this.opts.onError(error, run);
+
             return undefined;
         }
     }
 
     protected launch(run: Run): void {
         this.opts.onRunUpdated(run);
+
         const renewal = this.keepClaim(run.id);
         const task: Promise<void> = this.opts.execute(run)
             .catch((error: unknown) => this.opts.onError(error, run))
@@ -236,6 +292,7 @@ export class RunQueue {
             .finally(() => {
                 this.inflight.delete(task);
             });
+
         this.inflight.add(task);
     }
 
@@ -252,18 +309,28 @@ export class RunQueue {
             timer = clock.setTimeout(() => {
                 store.runs.renewClaim(runId, owner, claimTtlMs).then(
                     (ok) => {
-                        if (stopped) return;
-                        if (ok) schedule();
-                        else this.opts.onLeaseLost?.(runId);
+                        if (stopped) {
+                            return;
+                        }
+
+                        if (ok) {
+                            schedule();
+                        } else {
+                            this.opts.onLeaseLost?.(runId);
+                        }
                     },
                     // a failed call proves nothing: retry while the lease may still be ours
                     () => {
-                        if (!stopped) schedule();
+                        if (!stopped) {
+                            schedule();
+                        }
                     },
                 );
             }, Math.max(1, Math.floor(claimTtlMs / 3)));
         };
+
         schedule();
+
         return {
             stop: () => {
                 stopped = true;

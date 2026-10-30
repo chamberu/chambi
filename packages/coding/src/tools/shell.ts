@@ -48,9 +48,11 @@ type BashInput = {
 function reportError(result: ExecResult): SandboxError {
     const stderr = result.stderr.trim().slice(0, 500);
     let message = `bash left no report: exit code ${result.exitCode}${stderr ? `: ${stderr}` : ''}`;
+
     if (result.exitCode === REPORT_FAILED_EXIT_CODE) {
         message += '. $HOME/.chamvi has no space left or is not writable: free space (e.g. in /tmp or ~/.chamvi/out), then call again.';
     }
+
     return new SandboxError(message);
 }
 
@@ -58,9 +60,9 @@ function reportError(result: ExecResult): SandboxError {
 async function runCommand(
     workspace: IWorkspace,
     input: {
-        command: string; 
-        cwd?: string; 
-        timeoutMs: number; 
+        command: string;
+        cwd?: string;
+        timeoutMs: number;
         signal: AbortSignal;
         outputLogMaxBytes: number;
     },
@@ -72,23 +74,30 @@ async function runCommand(
         ['sh', '-c', BASH_SCRIPT, 'sh', INNER_SCRIPT, input.command, id, input.cwd ?? '', cap, budget],
         { timeoutMs: input.timeoutMs, signal: input.signal },
     );
+
     if (input.cwd !== undefined && result.stdout === `${CWD_MISSING}\n`) {
         throw new SandboxError(`cwd ${absoluteWorkspacePath(input.cwd)} is no directory in the workspace.`);
     }
 
     let report = parseReport(result.stdout, result.stderr);
+
     if (!report) {
         // the script was killed with the command (its timeout or log cap), or could not write its report: read what the command wrote
         const again = await workspace.exec(['sh', '-c', REPORT_SCRIPT, 'sh', id, cap, budget], {
             timeoutMs: REPORT_TIMEOUT_MS,
             signal: input.signal,
         });
+
         report = parseReport(again.stdout, again.stderr);
-        if (!report) throw reportError(again);
+
+        if (!report) {
+            throw reportError(again);
+        }
     }
 
     const stdout = excerptOf(report.stdout);
     const stderr = excerptOf(report.stderr);
+
     return {
         exitCode: report.status ?? result.exitCode,
         // decoded from base64 here, so the workspace's exec redaction never saw them
@@ -160,6 +169,7 @@ export function bashTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number
                     outputLogMaxBytes,
                 });
             }
+
             return runCommand(workspace, {
                 command,
                 cwd,

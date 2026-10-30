@@ -41,12 +41,19 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 const engines: Engine[] = [];
 
 /** Lets already-queued microtasks settle; not a sleep. */
-const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
-const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
+const sleep = (ms: number) => new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+});
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
     vi.restoreAllMocks();
 });
@@ -60,20 +67,29 @@ function scripted(script: Turn[]) {
     const model = new MockLanguageModelV4({
         doStream: async (options) => {
             const turn = script[calls.length];
+
             calls.push(options);
-            if (!turn) throw new Error('mock script exhausted');
+
+            if (!turn) {
+                throw new Error('mock script exhausted');
+            }
+
             if (turn === 'hang') {
                 return new Promise((_resolve, reject) => {
                     options.abortSignal?.addEventListener('abort', () => reject(options.abortSignal?.reason));
                 });
             }
+
             if ('before' in turn) {
                 await turn.before();
+
                 return mockModel([turn.response]).doStream(options);
             }
+
             return mockModel([turn]).doStream(options);
         },
     });
+
     return { model, calls };
 }
 
@@ -108,6 +124,7 @@ function make(
         },
         ...opts,
     });
+
     engine.on('run.updated', (e) => {
         events.push(e);
     });
@@ -115,6 +132,7 @@ function make(
         events.push(e);
     });
     engines.push(engine);
+
     return {
         store,
         engine,
@@ -150,10 +168,12 @@ class TakeoverRepository extends MemoryRunRepository {
 
     override async update(...args: Parameters<MemoryRunRepository['update']>) {
         const [id, patch] = args;
+
         if (this.takeoverOn !== undefined && patch.status === this.takeoverOn) {
             this.takeoverOn = undefined;
             await super.update(id, { claim: { owner: 'B', expiresAt: new Date(Date.now() + 60_000) } });
         }
+
         return super.update(...args);
     }
 }
@@ -162,6 +182,7 @@ const isLeaseLost = (error: unknown) => error instanceof LeaseLostError;
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     const createdAt = new Date(1_000);
+
     return {
         id,
         agent: 'triage',
@@ -220,8 +241,10 @@ describe('graceful drain', () => {
                 },
             }],
         });
+
         engines.push(engine);
         await engine.start();
+
         const { runId } = await engine.dispatch({
             agent: 'a',
             trigger: 'message',
@@ -229,10 +252,13 @@ describe('graceful drain', () => {
             address: 'source',
             payload: {},
         });
+
         await engine.tick();
         await entered.promise;
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');
+
         let activeRunId: string | undefined;
+
         if (active) {
             activeRunId = (await engine.dispatch({
                 agent: 'worker',
@@ -243,17 +269,26 @@ describe('graceful drain', () => {
             await engine.tick();
             await flush();
         }
+
         let completed = false;
-        const draining = engine.drain({ timeoutMs: 10 }).then(() => { completed = true; });
+        const draining = engine.drain({ timeoutMs: 10 }).then(() => {
+            completed = true;
+        });
+
         await flush();
         expect(completed).toBe(false);
         clock.advance(10);
         await flush();
+
         try {
             expect(completed).toBe(true);
             expect(signal?.aborted).toBe(true);
             expect((await store.runs.findOne(runId))?.status).toBe('waiting');
-            if (activeRunId) expect((await store.runs.findOne(activeRunId))?.status).toBe('interrupted');
+
+            if (activeRunId) {
+                expect((await store.runs.findOne(activeRunId))?.status).toBe('interrupted');
+            }
+
             delivered.resolve();
             await flush();
             expect((await store.runs.findOne(runId))?.waiting?.notifiedAt).toBeUndefined();
@@ -270,15 +305,22 @@ describe('graceful drain', () => {
             store,
             errors,
         } = make(model);
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(1));
 
         expect(engine.isDraining).toBe(false);
+
         const drained = engine.drain({ timeoutMs: 5_000 });
+
         expect(engine.isDraining).toBe(true);
+
         // a run dispatched meanwhile is stored, but its slot freeing up does not start it
         const { runId: later } = await engine.dispatch(env);
+
         await drained;
 
         expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
@@ -303,16 +345,22 @@ describe('graceful drain', () => {
                 }),
             }),
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(2));
+
         const timers = vi.spyOn(systemClock, 'setTimeout');
 
         await engine.drain({ timeoutMs: 50 });
 
         // the deadline keeps the process alive, so the run is marked before exit
         expect(timers).toHaveBeenCalledWith(expect.any(Function), 50, { keepAlive: true });
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('interrupted');
         expect(run?.claim).toBeUndefined();
         expect(run?.finishedAt).toBeUndefined();
@@ -326,13 +374,16 @@ describe('graceful drain', () => {
         const kept = systemClock.setTimeout(() => {}, 10_000, { keepAlive: true });
         const unref = systemClock.setTimeout(() => {}, 10_000);
         const [keptHandle, unrefHandle] = native.mock.results.map((r) => r.value as NodeJS.Timeout);
+
         expect(keptHandle?.hasRef()).toBe(true);
         expect(unrefHandle?.hasRef()).toBe(false);
         kept.clear();
         unref.clear();
+
         const manual = new ControllableClock();
         const asClock: IClock = manual;
         let fired = false;
+
         asClock.setTimeout(() => {
             fired = true;
         }, 10, { keepAlive: true });
@@ -357,15 +408,19 @@ describe('graceful drain', () => {
             clock: bClock,
             claimTtlMs: 900,
         });
+
         await b.engine.start();
         await a.engine.start();
+
         const { runId: first } = await a.engine.dispatch(keyed);
+
         await vi.waitFor(() => expect(calls).toHaveLength(2));
         await a.engine.drain({ timeoutMs: 50 });
         expect((await store.runs.findOne(first))?.status).toBe('interrupted');
 
         // a redelivery on the live replica waits behind the interrupted first pass
         const { runId: second } = await b.engine.dispatch(keyed);
+
         await b.engine.idle();
         expect((await store.runs.findOne(second))?.status).toBe('queued');
         expect(calls).toHaveLength(2);
@@ -377,12 +432,15 @@ describe('graceful drain', () => {
 
         const firstRun = await store.runs.findOne(first);
         const secondRun = await store.runs.findOne(second);
+
         expect(firstRun).toMatchObject({ status: 'completed', output: 'first done' });
         expect(secondRun).toMatchObject({ status: 'completed', output: 'second done' });
         expect(secondRun!.startedAt!.getTime()).toBeGreaterThanOrEqual(firstRun!.finishedAt!.getTime());
         expect(calls).toHaveLength(4);
+
         const hasLookupResult = (i: number) => calls[i]!.prompt.some((m) => m.role === 'tool' &&
             m.content.some((p) => p.type === 'tool-result' && p.toolName === 'lookup'));
+
         // the model sees the interrupted run's resumed prompt first
         expect(hasLookupResult(2)).toBe(true);
         expect(hasLookupResult(3)).toBe(false);
@@ -394,8 +452,12 @@ describe('graceful drain', () => {
         const calls: LanguageModelV4CallOptions[] = [];
         const model = new MockLanguageModelV4({
             doStream: async (options) => {
-                if (options.abortSignal?.aborted) throw options.abortSignal.reason;
+                if (options.abortSignal?.aborted) {
+                    throw options.abortSignal.reason;
+                }
+
                 calls.push(options);
+
                 return mockModel([calls.length === 1 ? toolTurn : text('done')]).doStream(options);
             },
         });
@@ -410,13 +472,16 @@ describe('graceful drain', () => {
         let holding = false;
         const store = createMemoryStore();
         const append = store.steps.insert.bind(store.steps);
+
         vi.spyOn(store.steps, 'insert').mockImplementation(async (step) => {
             if (step.kind === 'llm' && step.index === 0) {
                 holding = true;
                 await held;
             }
+
             return append(step);
         });
+
         const clock = new ManualTimers();
         const a = make(model, {
             store,
@@ -424,12 +489,16 @@ describe('graceful drain', () => {
             owner: 'A',
             clock,
         });
+
         await a.engine.start();
+
         const { runId } = await a.engine.dispatch(env);
+
         await vi.waitFor(() => expect(holding).toBe(true));
 
         // the deadline passes while step 0 (tool already executed) is being written
         const drained = a.engine.drain({ timeoutMs: 50 });
+
         await flush();
         clock.advance(50);
         await flush();
@@ -445,6 +514,7 @@ describe('graceful drain', () => {
             tools,
             owner: 'B',
         });
+
         await b.engine.start();
         await b.engine.idle();
         expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
@@ -459,20 +529,25 @@ describe('graceful drain', () => {
         const clock = new ControllableClock();
         const { model, calls } = scripted([text('done')]);
         const { engine, store } = make(model, { clock, claimTtlMs: 900 });
+
         await engine.start();
         await engine.drain();
+
         const tick = vi.spyOn(engine, 'tick');
 
         const {
             runId,
             deduplicated,
         } = await engine.dispatch(env);
+
         expect(deduplicated).toBe(false);
+
         // polling (and with it tick) stopped too
         for (let i = 0; i < 5; i++) {
             clock.advance(900);
             await flush();
         }
+
         await engine.idle();
 
         expect((await store.runs.findOne(runId))?.status).toBe('queued');
@@ -502,8 +577,11 @@ describe('recovery', () => {
             tools,
             owner: 'B',
         });
+
         await a.engine.start();
+
         const { runId } = await a.engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(2));
         await a.engine.drain({ timeoutMs: 50 });
         expect((await store.runs.findOne(runId))?.status).toBe('interrupted');
@@ -512,19 +590,24 @@ describe('recovery', () => {
         await b.engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run).toMatchObject({ status: 'completed', output: 'done' });
         expect(run?.claim).toBeUndefined();
         // step 0 (the tool call) was checkpointed: B continues after it instead of asking for it again
         expect(calls).toHaveLength(3);
         expect(lookup).toHaveBeenCalledTimes(1);
+
         const resumedPrompt = calls[2]!.prompt;
+
         expect(resumedPrompt.some((m) => m.role === 'tool' &&
             m.content.some((p) => p.type === 'tool-result' && p.toolName === 'lookup'))).toBe(true);
         // the restored history holds A's tool call, not a fresh start from the trigger
         expect(resumedPrompt.some((m) => m.role === 'assistant' && Array.isArray(m.content) &&
             m.content.some((p) => p.type === 'tool-call' && p.toolName === 'lookup'))).toBe(true);
         expect((await store.checkpoints.findOne(runId))?.stepIndex).toBe(1);
+
         const steps = await store.steps.find(runId);
+
         expect(steps.map((s) => s.kind)).toEqual(['llm', 'tool', 'llm']);
         expect(steps.map((s) => s.index)).toEqual([0, 1, 2]);
         expect(a.errors).toEqual([]);
@@ -534,6 +617,7 @@ describe('recovery', () => {
     it('recover ignores runs with a live claim from another owner', async () => {
         const clock = new ControllableClock(new Date(10_000));
         const store = createMemoryStore({ clock });
+
         await store.runs.insert(makeRun('live'));
         await store.runs.claim('live', 'other', 60_000);
         await store.runs.insert(makeRun('expired'));
@@ -543,6 +627,7 @@ describe('recovery', () => {
         clock.advance(1_000);
 
         const { engine } = make(scripted([]).model, { store, clock });
+
         expect(await engine.recover()).toBe(2);
 
         expect(await store.runs.findOne('live')).toMatchObject({ status: 'running', claim: { owner: 'other' } });
@@ -570,8 +655,11 @@ describe('recovery', () => {
             owner: 'B',
             claimTtlMs: 1_000,
         });
+
         await a.engine.start();
+
         const { runId } = await a.engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(1));
 
         shared.advance(1_001);
@@ -580,16 +668,22 @@ describe('recovery', () => {
         expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'B done' });
 
         const before = a.events.length;
+
         release();
         await a.engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run).toMatchObject({ status: 'completed', output: 'B done' });
         expect(run?.claim).toBeUndefined();
+
         const steps = await store.steps.find(runId);
+
         expect(steps).toHaveLength(1);
         expect(steps[0]?.output).toMatchObject({ text: 'B done' });
+
         const checkpoint = await store.checkpoints.findOne(runId);
+
         expect(JSON.stringify(checkpoint?.messages)).toContain('B done');
         expect(JSON.stringify(checkpoint?.messages)).not.toContain('A late');
         expect(a.events.slice(before)).toEqual([]);
@@ -604,7 +698,10 @@ describe('recovery', () => {
             renewFails = false;
 
             override async renewClaim(...args: Parameters<MemoryRunRepository['renewClaim']>) {
-                if (this.renewFails) return false;
+                if (this.renewFails) {
+                    return false;
+                }
+
                 return super.renewClaim(...args);
             }
         }
@@ -618,8 +715,11 @@ describe('recovery', () => {
             owner: 'A',
             claimTtlMs: 900,
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(1));
 
         store.runs.renewFails = true;
@@ -646,19 +746,25 @@ describe('recovery', () => {
 
     it('finish writes nothing when the claim is taken over after the last ownership check', async () => {
         const store = { ...createMemoryStore(), runs: new TakeoverRepository() };
+
         store.runs.takeoverOn = 'completed';
+
         const { model } = scripted([text('late')]);
         const {
             engine,
             errors,
             events,
         } = make(model, { store, owner: 'A' });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         // the atomic expectOwner check in the store rejected the settle
         const run = await store.runs.findOne(runId);
+
         expect(run).toMatchObject({ status: 'running', claim: { owner: 'B' } });
         expect(run?.output).toBeUndefined();
         expect(events.some((e) => e.type === 'run.updated' && e.run.status === 'completed')).toBe(false);
@@ -677,8 +783,11 @@ describe('recovery', () => {
             claimTtlMs: 900,
         });
         const b = make(model, { store, owner: 'B' });
+
         await a.engine.start();
+
         const { runId } = await a.engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(1));
 
         await b.engine.cancel(runId);
@@ -687,7 +796,9 @@ describe('recovery', () => {
         clock.advance(300);
         await flush();
         await a.engine.idle();
+
         const run = await store.runs.findOne(runId);
+
         expect(run).toMatchObject({ status: 'cancelled', claim: undefined });
         expect(run?.finishedAt).toBeInstanceOf(Date);
         expect(calls[0]?.abortSignal?.aborted).toBe(true);
@@ -702,6 +813,7 @@ describe('recovery', () => {
             store,
             errors,
         } = make(model);
+
         await store.runs.insert(makeRun('r1', { status: 'interrupted' }));
 
         await engine.cancel('r1');
@@ -718,8 +830,11 @@ describe('recovery', () => {
         const store = { ...createMemoryStore(), runs: new TakeoverRepository() };
         const { model, calls } = scripted(['hang']);
         const { engine, errors } = make(model, { store, owner: 'A' });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(1));
 
         store.runs.takeoverOn = 'cancelled';

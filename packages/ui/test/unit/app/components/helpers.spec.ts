@@ -26,6 +26,7 @@ describe('tokenizeJson', () => {
             z: null,
         }, null, 2);
         const tokens = tokenizeJson(json);
+
         expect(tokens.map((t) => t.text).join('')).toBe(json);
         expect(tokens.filter((t) => t.kind === 'k').map((t) => t.text)).toEqual(['"env"', '"ok"', '"n"', '"z"']);
         expect(tokens.filter((t) => t.kind === 's').map((t) => t.text)).toEqual(['"prod \\"x\\""']);
@@ -50,6 +51,7 @@ describe('step labels', () => {
 
     it('names the approver', () => {
         const output = waitOutput(wireStep(0, 'wait', { output: { approved: true, approver: { id: 'e2e', kind: 'token' } } }));
+
         expect(approverName(output)).toBe('e2e');
         expect(approverName(waitOutput(wireStep(0, 'wait')))).toBeUndefined();
     });
@@ -61,6 +63,7 @@ describe('wait step selection', () => {
             input: { options: [{ id: 'a', label: 'Alpha' }] },
             output: { approved: true, selected: ['a', 'z'] },
         });
+
         expect(selectedLabels(step)).toEqual(['Alpha', 'z']);
         expect(selectedLabels(wireStep(0, 'wait', { output: { approved: true } }))).toEqual([]);
     });

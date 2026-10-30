@@ -47,7 +47,7 @@ chamvi sits next to several good tools. The difference is mostly where the orche
 | **Inngest** | Event-driven durable functions with step memoization, run by the Inngest server (cloud or self-hosted) | No separate server: the engine is a library and the store is your database |
 | **Trigger.dev** | A platform for background jobs and AI tasks, with its own workers and dashboard (cloud or self-hosted) | Runs in your own Node process; the deploy kit is a plain Docker image and Helm chart |
 | **Mastra** | A TypeScript agent framework with its own agent, workflow and memory abstractions | Keeps AI SDK types as they are and focuses on channels, durable runs and operations |
-| **Cloudflare Agents** | Stateful agents on Durable Objects | Not tied to a vendor runtime: any Node 22+ host and any store that passes the contract |
+| **Cloudflare Agents** | Stateful agents on Durable Objects | Not tied to a vendor runtime: any Node >=24.3.0 host and any store that passes the contract |
 | **Workflow SDK** (`workflow`, `@ai-sdk/workflow`) | Durable functions through `'use workflow'` and `'use step'` directives with deterministic replay, wired in through a bundler integration | Uses step checkpoints instead of replay, so plain code runs as written, without a compiler step |
 
 Each of these is a better fit in some setups: if you already run Inngest or Trigger.dev, or deploy to Cloudflare or Vercel, use what fits that platform. chamvi targets one owner running their agents on their own cluster.

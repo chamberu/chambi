@@ -44,7 +44,9 @@ const call = (toolName: string, input: unknown, toolCallId: string): MockPart =>
 });
 const turn = (...parts: MockPart[]): MockResponse => ({ parts });
 const text = (t: string): MockResponse => ({ parts: [{ type: 'text', text: t }] });
-const flush = () => new Promise<void>((resolve) => { setTimeout(resolve, 5); });
+const flush = () => new Promise<void>((resolve) => {
+    setTimeout(resolve, 5);
+});
 
 function createEngine(
     store: ReturnType<typeof createMemoryStore>,
@@ -69,18 +71,22 @@ function createEngine(
             errors.push(error);
         },
     });
+
     engines.push(engine);
+
     return { engine, errors };
 }
 
 async function dispatch(engine: Engine): Promise<string> {
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: 'release',
         trigger: 'http',
         channel: 'http',
         payload: {},
     });
+
     return runId;
 }
 
@@ -93,8 +99,13 @@ describe('approval replay', () => {
             inputSchema: z.object({ env: z.string() }),
             execute: async ({ env }, { context }) => {
                 const decision = await approve(context, { title: `Deploy ${env}?` });
-                if (!decision.approved) return 'denied';
+
+                if (!decision.approved) {
+                    return 'denied';
+                }
+
                 deployed.push(env);
+
                 return `deployed ${env}`;
             },
         });
@@ -105,6 +116,7 @@ describe('approval replay', () => {
         ]);
         const { engine } = createEngine(store, clock, model, { deploy });
         const runId = await dispatch(engine);
+
         await engine.idle();
         expect((await store.runs.findOne(runId))?.waiting).toMatchObject({ approvalId: '0:0:0', title: 'Deploy staging?' });
 
@@ -131,12 +143,19 @@ describe('approval replay', () => {
             execute: async ({ env }, { context }) => {
                 if (env === 'eu' && hold) {
                     const gate = Promise.withResolvers<void>();
+
                     release = gate.resolve;
                     await gate.promise;
                 }
+
                 const decision = await approve(context, { title: env });
-                if (!decision.approved) return 'denied';
+
+                if (!decision.approved) {
+                    return 'denied';
+                }
+
                 deployed.push(env);
+
                 return `deployed ${env}`;
             },
         });
@@ -146,6 +165,7 @@ describe('approval replay', () => {
         ]);
         const first = createEngine(store, clock, model, { deploy });
         const runId = await dispatch(first.engine);
+
         await first.engine.idle();
         expect((await store.runs.findOne(runId))?.waiting?.approvalId).toBe('0:c1:0');
 
@@ -156,19 +176,26 @@ describe('approval replay', () => {
         expect(deployed).toEqual(['prod']);
 
         const drained = first.engine.drain({ timeoutMs: 10 });
+
         await flush();
         clock.advance(10);
         await drained;
         expect((await store.runs.findOne(runId))?.status).toBe('interrupted');
+
         const checkpoint = await store.checkpoints.findOne(runId);
+
         expect(JSON.stringify(checkpoint?.messages)).toContain('deployed prod');
+
         const toolSteps = (await store.steps.find(runId)).filter((step) => step.kind === 'tool');
+
         expect(toolSteps.map((step) => step.output)).toEqual(['deployed prod']);
 
         hold = false;
         release?.();
         clock.advance(100);
+
         const second = createEngine(store, clock, model, { deploy });
+
         await second.engine.start();
         await second.engine.idle();
         // only c2 replays: it asks for its own approval
@@ -185,8 +212,13 @@ describe('approval replay', () => {
             inputSchema: z.object({ msg: z.string() }),
             execute: async ({ msg }, { context }) => {
                 const decision = await approve(context, { title: `Post ${msg}?` });
-                if (!decision.approved) return 'denied';
+
+                if (!decision.approved) {
+                    return 'denied';
+                }
+
                 applied++;
+
                 return 'posted';
             },
         });
@@ -196,9 +228,11 @@ describe('approval replay', () => {
         ]);
         const { engine } = createEngine(store, clock, model, { post });
         const runId = await dispatch(engine);
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.waiting?.approvalId).toBe('0:c1:0');
         // neither call has a step or a result: both stay pending
         expect((await store.steps.find(runId)).map((step) => step.kind)).toEqual(['llm']);
@@ -207,9 +241,13 @@ describe('approval replay', () => {
         await engine.approve(runId, { approvalId: '0:c1:0', approved: true });
         await engine.idle();
         expect(applied).toBe(1);
+
         const tools = (await store.steps.find(runId)).filter((step) => step.kind === 'tool');
+
         expect(tools.map((step) => step.output)).toEqual(['posted', 'posted']);
+
         const prompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+
         expect(prompt).not.toContain('SuspendSignal');
         expect((await store.runs.findOne(runId))?.status).toBe('completed');
     });
@@ -238,6 +276,7 @@ describe('approval replay', () => {
         const model = mockModel([turn(call('deploy', {}, 'c1')), text('done')]);
         const { engine } = createEngine(store, clock, model, { deploy }, [slack]);
         const runId = await dispatch(engine);
+
         await vi.waitFor(async () => expect((await store.runs.findOne(runId))?.status).toBe('waiting'));
 
         await engine.approve(runId, { approvalId: '0:c1:0', approved: true });

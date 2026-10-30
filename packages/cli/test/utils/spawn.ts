@@ -42,6 +42,7 @@ function rejectAfter(timeoutMs: number, what: string, output: () => string): { p
     const promise = new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms waiting for ${what}:\n${output()}`)), timeoutMs);
     });
+
     return { promise, clear: () => clearTimeout(timer) };
 }
 
@@ -66,6 +67,7 @@ export function spawnCli(args: string[], input: SpawnCliInput = {}): CliProcess 
     let stderr = '';
     const waiters = new Set<() => void>();
     const notify = () => waiters.forEach((fn) => fn());
+
     child.stdout?.setEncoding('utf8').on('data', (chunk: string) => {
         stdout += chunk;
         notify();
@@ -79,6 +81,7 @@ export function spawnCli(args: string[], input: SpawnCliInput = {}): CliProcess 
         child.once('exit', (code, signal) => resolve({ code, signal }));
     });
     let ended = false;
+
     exit.then(() => {
         ended = true;
     });
@@ -96,6 +99,7 @@ export function spawnCli(args: string[], input: SpawnCliInput = {}): CliProcess 
 
             const timeout = rejectAfter(timeoutMs, 'output', output);
             let check: (() => void) | undefined;
+
             try {
                 await Promise.race([
                     timeout.promise,
@@ -111,6 +115,7 @@ export function spawnCli(args: string[], input: SpawnCliInput = {}): CliProcess 
                 ]);
             } finally {
                 timeout.clear();
+
                 if (check) {
                     waiters.delete(check);
                 }
@@ -118,6 +123,7 @@ export function spawnCli(args: string[], input: SpawnCliInput = {}): CliProcess 
         },
         async exited(timeoutMs = 20_000) {
             const timeout = rejectAfter(timeoutMs, 'the exit', output);
+
             try {
                 return await Promise.race([exit, timeout.promise]);
             } finally {
@@ -128,6 +134,7 @@ export function spawnCli(args: string[], input: SpawnCliInput = {}): CliProcess 
             if (ended || typeof child.pid !== 'number') {
                 return;
             }
+
             try {
                 if (input.detached) {
                     process.kill(-child.pid, 'SIGKILL');
@@ -144,9 +151,11 @@ export function spawnCli(args: string[], input: SpawnCliInput = {}): CliProcess 
 /** Polls `url` until it answers 200, rejects after `timeoutMs`. */
 export async function waitForOk(url: string, timeoutMs = 20_000): Promise<void> {
     const until = Date.now() + timeoutMs;
+
     for (;;) {
         try {
             const response = await fetch(url);
+
             if (response.status === 200) {
                 return;
             }
@@ -157,6 +166,7 @@ export async function waitForOk(url: string, timeoutMs = 20_000): Promise<void> 
         if (Date.now() > until) {
             throw new Error(`${url} did not answer 200 within ${timeoutMs}ms`);
         }
+
         await new Promise((resolve) => {
             setTimeout(resolve, 100);
         });

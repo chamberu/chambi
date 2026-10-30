@@ -19,6 +19,7 @@ import { serve } from 'routup';
 export function authenticators(verifier: ITokenVerifier): Authenticator[] {
     // #region auth
     const ciToken = process.env.CI_TOKEN;
+
     return [
         // CI and service accounts: tokens of at least 16 characters.
         // Static tokens go first: authup() in remote mode introspects every non-JWT bearer.
@@ -68,7 +69,11 @@ export async function start(store: IStore, agents: Agent[], verifier: ITokenVeri
     const shutdown = createShutdown({
         engine,
         // the server is created after the app; the helper only calls close() at shutdown
-        server: { close: async (force) => { await server?.close(force); } },
+        server: {
+            close: async (force) => {
+                await server?.close(force);
+            },
+        },
         readinessDelayMs: 5_000,
     });
 

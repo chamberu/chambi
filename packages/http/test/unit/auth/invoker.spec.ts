@@ -17,50 +17,52 @@ describe('toInvoker', () => {
             permissions,
             claims: { sub: 'u1', secret: 'x' },
         });
+
         expect(invoker).toEqual({
-            id: 'u1', 
-            kind: 'oidc', 
-            permissions: ['run:read'], 
+            id: 'u1',
+            kind: 'oidc',
+            permissions: ['run:read'],
         });
         expect(invoker.permissions).not.toBe(permissions);
     });
 
     it('takes the name from name, then preferred_username, never email', () => {
         const base = {
-            id: 'u1', 
-            kind: 'authup', 
-            permissions: [], 
+            id: 'u1',
+            kind: 'authup',
+            permissions: [],
         };
+
         expect(toInvoker({
             ...base,
             claims: {
-                name: 'Alice', 
-                preferred_username: 'alice', 
-                email: 'a@x', 
-            }, 
+                name: 'Alice',
+                preferred_username: 'alice',
+                email: 'a@x',
+            },
         }).name).toBe('Alice');
         expect(toInvoker({ ...base, claims: { preferred_username: 'alice', email: 'a@x' } }).name).toBe('alice');
         expect(toInvoker({ ...base, claims: { email: 'a@x' } })).not.toHaveProperty('name');
         expect(toInvoker({
             ...base,
             claims: {
-                name: '', 
-                preferred_username: 42, 
-                email: 'a@x', 
-            }, 
+                name: '',
+                preferred_username: 42,
+                email: 'a@x',
+            },
         })).not.toHaveProperty('name');
         expect(toInvoker({ ...base, claims: {} })).not.toHaveProperty('name');
     });
 
     it('has no name for a principal without claims (static tokens)', () => {
         expect(toInvoker({
-            id: 'ci', 
-            kind: 'token', 
-            permissions: ['*'], 
+            id: 'ci',
+            kind: 'token',
+            permissions: ['*'],
         })).toEqual({
-            id: 'ci', 
-            kind: 'token', 
-            permissions: ['*'], 
+            id: 'ci',
+            kind: 'token',
+            permissions: ['*'],
         });
     });
 });

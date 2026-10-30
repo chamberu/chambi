@@ -14,12 +14,17 @@ export class MemoryEffectRepository implements IEffectRepository {
 
     async findOneOrFail(key: string): Promise<{ result: unknown }> {
         const result = await this.findOne(key);
-        if (result === undefined) throw new RepositoryNotFoundError('effects');
+
+        if (result === undefined) {
+            throw new RepositoryNotFoundError('effects');
+        }
+
         return result;
     }
 
     async findOne(key: string): Promise<{ result: unknown } | undefined> {
         const effect = this.effects.get(key);
+
         return effect ? copy(effect) : undefined;
     }
 

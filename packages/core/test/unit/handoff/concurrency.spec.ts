@@ -17,12 +17,14 @@ describe('handoff subscription concurrency', () => {
 
     it.each([false, 1, 4] as const)('keeps cap %s on the subscription', (concurrencyMaxRuns) => {
         const subscription = handoff.on({ concurrencyMaxRuns });
+
         expect(subscription.concurrencyMaxRuns).toBe(concurrencyMaxRuns);
         expect(subscription.options).not.toHaveProperty('concurrencyMaxRuns');
     });
 
     it.each(invalid)('rejects invalid cap %s', (value) => {
         const create = () => handoff.on({ concurrencyMaxRuns: value as number });
+
         expect(create).toThrow(InvalidAgentDefinitionError);
         expect(create).toThrow(/concurrencyMaxRuns/);
     });

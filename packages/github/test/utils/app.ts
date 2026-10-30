@@ -61,6 +61,7 @@ export function createGithubFixture(github: Partial<GithubAppOptions> = {}) {
         fetch: fake.fetch,
         ...github,
     });
+
     return {
         clock,
         fake,
@@ -112,6 +113,7 @@ export function createGithubTestApp(input: GithubTestAppInput): GithubTestApp {
         channels: [channel],
         onError,
     });
+
     return {
         app,
         engine,
@@ -146,13 +148,21 @@ export type DeliverInput = {
 /** POSTs a signed delivery to the app. */
 export function deliver(app: App, input: DeliverInput): Promise<Response> {
     const headers = new Headers({ 'content-type': input.contentType ?? 'application/json' });
-    if (input.event !== undefined) headers.set('x-github-event', input.event);
-    if (input.delivery !== undefined) headers.set('x-github-delivery', input.delivery);
+
+    if (input.event !== undefined) {
+        headers.set('x-github-event', input.event);
+    }
+
+    if (input.delivery !== undefined) {
+        headers.set('x-github-delivery', input.delivery);
+    }
+
     if (input.signature !== undefined) {
         headers.set('x-hub-signature-256', input.signature);
     } else if (input.secret !== null) {
         headers.set('x-hub-signature-256', sign(input.body, input.secret ?? WEBHOOK_SECRET));
     }
+
     return app.fetch(new Request(`http://test${input.path ?? '/channels/github'}`, {
         method: 'POST',
         headers,

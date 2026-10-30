@@ -45,6 +45,7 @@ export function providerName(envName: string): string | undefined {
     }
 
     const name = envName.toLowerCase().replaceAll('_', '-');
+
     if (name.length > AGENT_NAME_MAX_LENGTH || !AGENT_NAME_PATTERN.test(name)) {
         return undefined;
     }
@@ -69,6 +70,7 @@ export function headerName(envName: string): string {
 /** The header name lower-cased; InvalidAgentDefinitionError naming `field` when it breaks HEADER_NAME_PATTERN. */
 export function assertHeaderName(name: string, field: string): string {
     const lower = name.toLowerCase();
+
     if (!HEADER_NAME_PATTERN.test(lower)) {
         throw new InvalidAgentDefinitionError(
             `${field} names a header that is not lower-kebab (must match ${HEADER_NAME_PATTERN}).`,
@@ -81,6 +83,7 @@ export function assertHeaderName(name: string, field: string): string {
 /** `<provider>/<model>` split at the first `/`; undefined when either part is empty. */
 export function splitModelRef(ref: string): { provider: string; model: string } | undefined {
     const index = ref.indexOf(MODEL_SEPARATOR);
+
     if (index <= 0 || index === ref.length - 1) {
         return undefined;
     }
@@ -97,6 +100,7 @@ export function splitModelRef(ref: string): { provider: string; model: string } 
  */
 export function assertBaseUrl(value: string, field: string): string {
     let url: URL | undefined;
+
     try {
         url = new URL(value);
     } catch {
@@ -124,5 +128,6 @@ export function assertBaseUrl(value: string, field: string): string {
 /** A base URL for display: origin plus pathname. */
 export function describeBaseUrl(url: string): string {
     const parsed = new URL(url);
+
     return `${parsed.origin}${parsed.pathname}`;
 }

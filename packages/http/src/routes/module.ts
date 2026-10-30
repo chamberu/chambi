@@ -27,6 +27,7 @@ import { routeSubpath } from './helpers.ts';
 function toRouteRequest(event: IAppEvent, ctx: HttpContext, route: HttpRoute): HttpRouteRequest {
     const { request } = event;
     let body: Promise<Uint8Array> | undefined;
+
     return {
         subpath: route.prefix ? routeSubpath(new URL(request.url).pathname, ctx.basePath, route.path) : '',
         request: new Request(request.url, {
@@ -37,8 +38,10 @@ function toRouteRequest(event: IAppEvent, ctx: HttpContext, route: HttpRoute): H
         readBody: () => {
             body ??= (async () => {
                 assertContentLength(event, ctx.bodyLimit);
+
                 return readBodyBytes(event, ctx.bodyLimit, isJsonMediaType(request.headers.get('content-type')));
             })();
+
             return body;
         },
     };
@@ -64,19 +67,24 @@ export function registerRoutes(app: App, ctx: HttpContext): void {
     for (const route of ctx.routes) {
         const handler = defineCoreHandler(async (event) => respond(event, await route.handler(toRouteRequest(event, ctx, route), routeCtx)));
         const paths = route.prefix ? [route.path, `${route.path}{/*rest}`] : [route.path];
+
         for (const path of paths) {
             switch (route.method) {
                 case 'GET':
                     app.get(path, handler);
+
                     break;
                 case 'PUT':
                     app.put(path, handler);
+
                     break;
                 case 'PATCH':
                     app.patch(path, handler);
+
                     break;
                 case 'DELETE':
                     app.delete(path, handler);
+
                     break;
                 default:
                     app.post(path, handler);
@@ -92,13 +100,22 @@ export function registerRoutes(app: App, ctx: HttpContext): void {
  */
 function respond(event: IAppEvent, result: HttpRouteResult): unknown {
     event.response.status = result.status;
+
     if (isObject(result.headers)) {
-        for (const [name, value] of Object.entries(result.headers)) event.response.headers.set(name, value);
+        for (const [name, value] of Object.entries(result.headers)) {
+            event.response.headers.set(name, value);
+        }
     }
+
     if (result.body instanceof Uint8Array) {
         const headers = new Headers(event.response.headers);
-        if (!headers.has('content-type')) headers.set('content-type', 'application/octet-stream');
+
+        if (!headers.has('content-type')) {
+            headers.set('content-type', 'application/octet-stream');
+        }
+
         return new Response(toBody(result.body), { status: result.status, headers });
     }
+
     return result.body === undefined ? null : result.body;
 }

@@ -26,6 +26,7 @@ export function buildComponentOptions(
     subscription: ChannelSubscription,
 ): ScheduledComponentOptions {
     const { expression, timezone } = readCronOptions(agent, subscription);
+
     return {
         name: `cron:${agent.name}:${subscription.id}`,
         schedule: expression,
@@ -65,6 +66,7 @@ export function buildAgentComponents(
     onInvalid?: (error: InvalidAgentDefinitionError, errorCtx: CronChannelErrorContext) => void,
 ): Array<{ subscription: string; component: IScheduledComponent }> {
     const components: Array<{ subscription: string; component: IScheduledComponent }> = [];
+
     for (const subscription of cronSubscriptionsOf(agent, channel)) {
         try {
             components.push({
@@ -73,18 +75,27 @@ export function buildAgentComponents(
             });
         } catch (e) {
             const error = toDefinitionError(agent, subscription, e);
-            if (!onInvalid) throw error;
+
+            if (!onInvalid) {
+                throw error;
+            }
+
             onInvalid(error, { agent: agent.name, subscription: subscription.id });
+
             return [];
         }
     }
+
     return components;
 }
 
 /** A hubwire definition error as InvalidAgentDefinitionError naming the agent and subscription. */
 export function toDefinitionError(agent: Agent, subscription: ChannelSubscription, e: unknown): InvalidAgentDefinitionError {
-    if (e instanceof InvalidAgentDefinitionError) return e;
+    if (e instanceof InvalidAgentDefinitionError) {
+        return e;
+    }
+
     return new InvalidAgentDefinitionError(
-        `Agent "${agent.name}" subscription "${subscription.id}": ${e instanceof Error ? e.message : String(e)}`,
+        `Agent "${agent.name}" subscription "${subscription.id}": ${Error.isError(e) ? e.message : String(e)}`,
     );
 }

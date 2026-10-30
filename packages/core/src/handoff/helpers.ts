@@ -27,34 +27,44 @@ export function findHandoffSubscription(agent: Agent): ChannelSubscription | und
 
 /** `payload` parsed by `schema` (the parsed value); without one unchanged. */
 export async function validatePayload(agent: string, schema: StandardSchemaV1 | undefined, payload: unknown): Promise<unknown> {
-    if (!schema) return payload;
+    if (!schema) {
+        return payload;
+    }
+
     const result = await schema['~standard'].validate(payload);
+
     if (result.issues) {
         const issues = buildIssuesForStandardSchemaIssues(result.issues);
         throw new ValidationError(`Invalid hand-off payload for agent "${agent}": ${describeIssues(issues)}`, issues);
     }
+
     return result.value;
 }
 
 /** The idempotency key a hand-off claims: `handoff:<key>`, or `sha256:<hex>` of it above 255 characters. */
 export function claimKey(key: string): string {
     const prefixed = `handoff:${key}`;
-    if (prefixed.length <= TRIGGER_KEY_MAX_LENGTH) return prefixed;
+
+    if (prefixed.length <= TRIGGER_KEY_MAX_LENGTH) {
+        return prefixed;
+    }
+
     return `sha256:${createHash('sha256').update(prefixed).digest('hex')}`;
 }
 
 /** A given key: a non-empty string without NUL (the idempotency key may be long, it is hashed). */
 export function assertHandoffKey(name: string, value: unknown, bounded: boolean): asserts value is string | undefined {
-    if (value === undefined) return;
-    if (
-        typeof value !== 'string' ||
-        value.length === 0 ||
-        value.includes('\u0000') ||
-        (bounded && value.length > TRIGGER_KEY_MAX_LENGTH)
-    ) {
-        const bound = bounded ? ` of at most ${TRIGGER_KEY_MAX_LENGTH} characters` : '';
-        throw new ValidationError(`The hand-off ${name} must be a non-empty string${bound} without NUL.`);
+    if (value === undefined) {
+        return;
     }
+
+    if (typeof value === 'string' && value.length > 0 && !value.includes('\0') &&
+        (!bounded || value.length <= TRIGGER_KEY_MAX_LENGTH)) {
+        return;
+    }
+
+    const bound = bounded ? ` of at most ${TRIGGER_KEY_MAX_LENGTH} characters` : '';
+    throw new ValidationError(`The hand-off ${name} must be a non-empty string${bound} without NUL.`);
 }
 
 /**
@@ -64,17 +74,25 @@ export function assertHandoffKey(name: string, value: unknown, bounded: boolean)
  */
 export function maxPerRunOf(agent: string, subscription: ChannelSubscription): number {
     const value = (subscription.options as Record<string, unknown> | undefined)?.maxPerRun;
-    if (value === undefined) return DEFAULT_MAX_HANDOFFS_PER_RUN;
+
+    if (value === undefined) {
+        return DEFAULT_MAX_HANDOFFS_PER_RUN;
+    }
+
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
         throw new InvalidAgentDefinitionError(`Agent "${agent}": the hand-off subscription's maxPerRun must be a positive integer.`);
     }
+
     return value;
 }
 
 /** Refuses an agent whose hand-off subscription has an invalid `maxPerRun` (the engine's registration check). */
 export function assertHandoffSubscription(agent: Agent): void {
     const subscription = findHandoffSubscription(agent);
-    if (subscription) maxPerRunOf(agent.name, subscription);
+
+    if (subscription) {
+        maxPerRunOf(agent.name, subscription);
+    }
 }
 
 // the engine's copy of each execution's run, taken before any tool runs
@@ -105,6 +123,7 @@ function cloneParent(parent: TriggerParent): TriggerParent {
  */
 export function bindRunSnapshot(run: RunContext): void {
     const { invoker, parent } = run.trigger;
+
     snapshots.set(run, Object.freeze({
         runId: run.runId,
         agent: run.agent,
@@ -120,8 +139,12 @@ export function runSnapshotOf(run: RunContext | undefined): HandoffRunSnapshot |
 
 /** The `handoff-count:<runId>` record: the slots spent and the calls (effect key hashes) they were spent on. */
 export function readCount(value: unknown): { count: number, calls: string[] } {
-    if (!isObject(value)) return { count: 0, calls: [] };
+    if (!isObject(value)) {
+        return { count: 0, calls: [] };
+    }
+
     const count = typeof value.count === 'number' ? value.count : 0;
     const calls = Array.isArray(value.calls) ? value.calls.filter((c): c is string => typeof c === 'string') : [];
+
     return { count, calls };
 }

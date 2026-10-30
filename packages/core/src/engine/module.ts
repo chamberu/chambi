@@ -202,10 +202,12 @@ export class Engine implements IContextProvider {
         this.skillProvider = selectSkillProvider(this.skills);
         this.skillRuntime = this.skillProvider?.create(this.skills);
         this.store = opts.store;
+
         if (opts.conversations !== undefined) {
             if (!opts.store.conversations) {
                 throw new InvalidAgentDefinitionError('Conversations need store.conversations.');
             }
+
             this.conversations = new Conversations(
                 opts.conversations,
                 opts.store.conversations,
@@ -213,25 +215,34 @@ export class Engine implements IContextProvider {
                 opts.store.effects,
             );
         }
+
         this.agents = new Map(opts.agents.map((a) => [a.name, a]));
+
         const channels = opts.channels ?? [];
+
         this.channels = new Map();
+
         for (const channel of channels) {
             assertChannelName(channel.name);
             assertDefaultAddress(channel);
+
             if (this.channels.has(channel.name)) {
                 throw new InvalidAgentDefinitionError(`The channel "${channel.name}" is registered more than once.`);
             }
+
             this.channels.set(channel.name, channel);
         }
+
         this.owner = opts.owner ?? `${hostname()}-${pid}`;
         this.clock = opts.clock ?? systemClock;
         this.claimTtlMs = opts.claimTtlMs ?? 60_000;
+
         if (this.agents.size !== opts.agents.length) {
             const seen = new Set<string>();
             const duplicate = opts.agents.find((a) => seen.size === seen.add(a.name).size);
             throw new InvalidAgentDefinitionError(`Agent name "${duplicate?.name}" is used more than once.`);
         }
+
         this.model = opts.model;
         this.models = opts.models;
         checkDefaultModel({ model: this.model, models: this.models });
@@ -273,10 +284,13 @@ export class Engine implements IContextProvider {
                 assertConversationText(copied?.text, capability.limits.maxItemBytes);
 
                 for (const field of ['id', 'idempotencyKey', 'concurrencyKey', 'address'] as const) {
-                    if (input[field] !== undefined) assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
+                    if (input[field] !== undefined) {
+                        assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
+                    }
                 }
 
                 const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
+
                 await capability.allow(ConversationOperation.DISPATCH, identity, input.agent, invoker);
 
                 // Validate caller keys before resolve can create any conversation rows.
@@ -338,8 +352,10 @@ export class Engine implements IContextProvider {
     async dispatch(envelope: DispatchEnvelope): Promise<{ runId: string; deduplicated: boolean }> {
         // a JS caller may pass a parent anyway: dropped, so nobody forges lineage
         const rest: DispatchEnvelope & { parent?: unknown; conversation?: unknown } = { ...envelope };
+
         delete rest.parent;
         delete rest.conversation;
+
         return this.createRun(rest);
     }
 
@@ -352,24 +368,32 @@ export class Engine implements IContextProvider {
         parent?: TriggerParent,
         conversation?: ConversationBinding,
     ): Promise<{ runId: string; deduplicated: boolean }> {
-        if (!this.agents.has(envelope.agent)) throw new AgentNotFoundError(envelope.agent);
+        if (!this.agents.has(envelope.agent)) {
+            throw new AgentNotFoundError(envelope.agent);
+        }
+
         // Also strip forged fields from handoff and internal envelope spreads.
         const safe: DispatchEnvelope & { conversation?: unknown; parent?: unknown } = { ...envelope };
+
         delete safe.conversation;
         delete safe.parent;
+
         const {
             attachments,
             invoker,
             ...rest
         } = safe as DispatchEnvelope;
+
         // before any store write: an invalid attachment stores nothing
         if (attachments !== undefined && !Array.isArray(attachments)) {
             throw new ValidationError('The attachments must be an array.');
         }
+
         attachments?.forEach((attachment, i) => assertArtifactInput(attachment, `attachment ${i}`));
         assertTriggerKey('idempotency key', envelope.idempotencyKey);
         assertTriggerKey('concurrency key', envelope.concurrencyKey);
         assertTriggerKey('address', envelope.address);
+
         const snapshot = invoker !== undefined ? toInvoker(invoker) : undefined;
         const now = this.nextCreatedAt();
         const trigger: TriggerEnvelope = {
@@ -392,16 +416,23 @@ export class Engine implements IContextProvider {
                 runId,
                 IDEMPOTENCY_TTL_MS,
             );
+
             if (!claimed.created) {
                 const original = await this.store.runs.findOne(claimed.runId);
+
                 if (original) {
-                    if (conversation && original.conversation?.scope.id !== conversation.scope.id) throw new ValidationError('The duplicate run belongs to another conversation.');
+                    if (conversation && original.conversation?.scope.id !== conversation.scope.id) {
+                        throw new ValidationError('The duplicate run belongs to another conversation.');
+                    }
+
                     return { runId: claimed.runId, deduplicated: true };
                 }
+
                 // shortcut: post-reset reservations cannot heal, persist generations when automatic recovery is required.
                 if (conversation && conversation.scope.generation > 0) {
                     throw new InvalidRunStateError('The reserved conversation run is missing and its original generation cannot be proven after reset.');
                 }
+
                 // the key's run was never created (createRun failed after the claim, or is
                 // still in flight): create it under the reserved id; createRun decides the race
                 runId = claimed.runId;
@@ -412,7 +443,9 @@ export class Engine implements IContextProvider {
             // stored before the run, so an executing run finds them; a crash in between leaves orphans.
             // Ids derive from the run id: a concurrent healer of the same run writes no-ops.
             const ids = attachmentIds(runId, attachments.length);
+
             trigger.attachments = [];
+
             for (const [i, attachment] of attachments.entries()) {
                 trigger.attachments.push(await storeArtifact(
                     this.store.artifacts,
@@ -435,15 +468,29 @@ export class Engine implements IContextProvider {
             createdAt: now,
             updatedAt: now,
         };
-        if (conversation) run.conversation = structuredClone(conversation);
-        if (!await this.store.runs.insert(run)) return { runId, deduplicated: true };
+
+        if (conversation) {
+            run.conversation = structuredClone(conversation);
+        }
+
+        if (!await this.store.runs.insert(run)) {
+            return { runId, deduplicated: true };
+        }
+
         this.emit({ type: 'run.updated', run });
-        if (this.started) void this.queue.pump();
+
+        if (this.started) {
+            void this.queue.pump();
+        }
+
         return { runId, deduplicated: false };
     }
 
     protected conversationCapability(): Conversations {
-        if (!this.conversations) throw new ValidationError('Conversation capability is disabled.');
+        if (!this.conversations) {
+            throw new ValidationError('Conversation capability is disabled.');
+        }
+
         return this.conversations;
     }
 
@@ -455,13 +502,16 @@ export class Engine implements IContextProvider {
     async resetConversation(identity: ConversationIdentity, options: { keepNotes?: boolean } = {}): Promise<ConversationScope> {
         const capability = this.conversationCapability();
         const copied = structuredClone(identity);
+
         await capability.repair(copied);
+
         return capability.repository.reset(copied, { keepNotes: options.keepNotes ?? false });
     }
 
     async deleteConversation(identity: ConversationIdentity): Promise<void> {
         const capability = this.conversationCapability();
         const copied = structuredClone(identity);
+
         await capability.repair(copied);
         await capability.repository.delete(copied);
     }
@@ -476,6 +526,7 @@ export class Engine implements IContextProvider {
      */
     protected createHandoffHost(): HandoffHost {
         const chains = new Map<string, Promise<unknown>>();
+
         return {
             getAgent: (name) => this.agents.get(name),
             effects: this.store.effects,
@@ -484,10 +535,14 @@ export class Engine implements IContextProvider {
                 const previous = chains.get(runId) ?? Promise.resolve();
                 const next = previous.then(fn, fn);
                 const tail = next.catch(() => {});
+
                 chains.set(runId, tail);
                 void tail.then(() => {
-                    if (chains.get(runId) === tail) chains.delete(runId);
+                    if (chains.get(runId) === tail) {
+                        chains.delete(runId);
+                    }
                 });
+
                 return next;
             },
             inflight: new Map(),
@@ -502,14 +557,22 @@ export class Engine implements IContextProvider {
      */
     provide<T>(key: ContextKey<T>, value: T): void {
         const name = contextKeyName(key);
+
         if (!isContextKey(key)) {
             throw new InvalidAgentDefinitionError(
                 `Context "${name}" has no key from defineContextKey() of the engine's @chamvi/core: ` +
                 'a key from another copy of @chamvi/core (a package that resolved its own) is refused.',
             );
         }
-        if (value === undefined) throw new InvalidAgentDefinitionError(`Context "${name}" needs a value.`);
-        if (this.provided.has(key)) throw new InvalidAgentDefinitionError(`Context "${name}" is already provided.`);
+
+        if (value === undefined) {
+            throw new InvalidAgentDefinitionError(`Context "${name}" needs a value.`);
+        }
+
+        if (this.provided.has(key)) {
+            throw new InvalidAgentDefinitionError(`Context "${name}" is already provided.`);
+        }
+
         this.provided.set(key, value);
     }
 
@@ -525,7 +588,10 @@ export class Engine implements IContextProvider {
 
     /** Gives a transport a context for the exact registered channel object. */
     channelContext(channel: IChannel): ChannelContext {
-        if (this.channels.get(channel.name) !== channel) throw new ValidationError('The channel object is not registered.');
+        if (this.channels.get(channel.name) !== channel) {
+            throw new ValidationError('The channel object is not registered.');
+        }
+
         return createChannelContext(this, channel);
     }
 
@@ -577,8 +643,11 @@ export class Engine implements IContextProvider {
     ): Promise<'added' | 'replaced' | 'unchanged'> {
         this.assertRegistrable(agent);
         await this.prepare({ agents: [agent], signal: options.signal });
+
         const preparationSignal = AbortSignal.any([this.preparationController.signal, ...(options.signal ? [options.signal] : [])]);
+
         preparationSignal.throwIfAborted();
+
         const { name } = agent;
         const {
             revision,
@@ -586,10 +655,16 @@ export class Engine implements IContextProvider {
             reload = true,
         } = options;
         const registered = this.agents.has(name);
-        if (registered && this.agents.get(name) === agent && this.revisions.get(name) === revision) return 'unchanged';
+
+        if (registered && this.agents.get(name) === agent && this.revisions.get(name) === revision) {
+            return 'unchanged';
+        }
+
         let cancelled: string[] | undefined;
+
         if (revision !== undefined) {
             this.syncing.add(name);
+
             try {
                 if (reload) {
                     cancelled = await syncRevision(this.registry(), name, revision, formerRevision);
@@ -602,6 +677,7 @@ export class Engine implements IContextProvider {
         } else if (registered && reload) {
             cancelled = await cancelAgentRuns(this.registry(), name, agentCancelReason(name, 'replaced'), this.clock.now());
         }
+
         if (cancelled) {
             this.emit({
                 type: 'agents.cancelled',
@@ -611,8 +687,10 @@ export class Engine implements IContextProvider {
                 runIds: cancelled,
             });
         }
+
         // Finish a registry operation already started, keeping its marker and local publication consistent.
         const kind = this.agents.has(name) ? 'replaced' : 'added';
+
         this.agents.set(name, agent);
         this.revisions.set(name, revision);
         this.emit({
@@ -620,6 +698,7 @@ export class Engine implements IContextProvider {
             name,
             kind,
         });
+
         return kind;
     }
 
@@ -634,6 +713,7 @@ export class Engine implements IContextProvider {
      */
     async removeAgent(name: string): Promise<boolean> {
         const registered = this.agents.has(name);
+
         if (registered) {
             this.removals.set(name, this.revisions.get(name));
             this.agents.delete(name);
@@ -644,12 +724,15 @@ export class Engine implements IContextProvider {
                 kind: 'removed',
             });
         }
+
         const pending = this.removals.has(name);
         const cancelled = await dropRevision(this.registry(), name, {
             registered: pending,
             ...(pending && { revision: this.removals.get(name) }),
         });
+
         this.removals.delete(name);
+
         if (cancelled) {
             this.emit({
                 type: 'agents.cancelled',
@@ -658,6 +741,7 @@ export class Engine implements IContextProvider {
                 runIds: cancelled,
             });
         }
+
         return registered;
     }
 
@@ -667,9 +751,13 @@ export class Engine implements IContextProvider {
 
     on<T extends EngineEvent['type']>(event: T, listener: (e: Extract<EngineEvent, { type: T }>) => void): () => void {
         const wrapped = (e: EngineEvent) => {
-            if (e.type === event) listener(e as Extract<EngineEvent, { type: T }>);
+            if (e.type === event) {
+                listener(e as Extract<EngineEvent, { type: T }>);
+            }
         };
+
         this.listeners.add(wrapped);
+
         return () => {
             this.listeners.delete(wrapped);
         };
@@ -694,6 +782,7 @@ export class Engine implements IContextProvider {
 
         const run = async () => {
             signal.throwIfAborted();
+
             const agents = [...new Set([...this.agents.values(), ...(options.agents ?? [])])];
             const runtimeBeforeChecks = this.skillRuntime;
 
@@ -703,28 +792,42 @@ export class Engine implements IContextProvider {
 
             // A first runtime selected late in the pass must also receive earlier empty captures.
             if (this.skillRuntime !== runtimeBeforeChecks) {
-                for (const agent of agents) this.checkAgentSkills(agent);
+                for (const agent of agents) {
+                    this.checkAgentSkills(agent);
+                }
             }
 
             const unprepared = agents.filter((agent) => !this.preparedSkills.has(agent));
 
             if (this.skillRuntime) {
                 const pending = await this.skillRuntime.prepare(unprepared, { signal });
+
                 signal.throwIfAborted();
+
                 const prepared = pending.commit();
+
                 for (const { agent, contribution } of prepared) {
                     this.preparedSkills.set(agent, contribution);
                 }
             } else {
                 signal.throwIfAborted();
-                for (const agent of unprepared) this.preparedSkills.set(agent, EMPTY_SKILL_CONTRIBUTION);
+
+                for (const agent of unprepared) {
+                    this.preparedSkills.set(agent, EMPTY_SKILL_CONTRIBUTION);
+                }
             }
         };
 
-        // Register ownership before run() can invoke external provider code.
-        const done = Promise.resolve().then(run);
+        const done = Promise.try(async () => {
+            // Keep external provider code deferred until ownership is registered.
+            await Promise.resolve();
+
+            return run();
+        });
+
         this.preparing.add(done);
         void done.then(() => this.preparing.delete(done), () => this.preparing.delete(done));
+
         return done;
     }
 
@@ -741,9 +844,11 @@ export class Engine implements IContextProvider {
 
         if (this.startup && !this.startup.controller.signal.aborted) {
             const attempt = this.startup;
+
             if (options.signal) {
                 const { signal } = options;
                 const abort = () => attempt.controller.abort(signal.reason);
+
                 if (signal.aborted) {
                     abort();
                 } else {
@@ -751,10 +856,13 @@ export class Engine implements IContextProvider {
                 }
 
                 const remove = () => signal.removeEventListener('abort', abort);
+
                 void attempt.done.then(remove, remove);
             }
+
             return attempt.done;
         }
+
         if (this.startup) {
             return this.startup.done.catch(() => {}).then(() => this.start(options));
         }
@@ -775,37 +883,41 @@ export class Engine implements IContextProvider {
             done: Promise.resolve(),
         };
 
-        attempt.done = Promise.resolve()
-            .then(async () => {
-                try {
-                    signal.throwIfAborted();
-                    await this.prepare({ signal });
-                    signal.throwIfAborted();
-                    this.draining = false;
-                    this.started = true;
-                    this.queue.resume();
-                    // Verification failures above propagate; ordinary recovery keeps its existing reporting behavior.
-                    await this.recover().catch((error: unknown) => this.onError(error));
-                    signal.throwIfAborted();
-                    if (options.channels ?? true) {
-                        await this.startChannels(signal);
-                    }
+        attempt.done = Promise.try(async () => {
+            // Publish the attempt before preparation can invoke external code.
+            await Promise.resolve();
 
-                    signal.throwIfAborted();
-                    this.queue.startPolling();
-                    await this.queue.pump();
-                    signal.throwIfAborted();
-                } catch (error) {
-                    this.started = false;
-                    await this.queue.halt();
-                    await this.stopChannels();
-                    throw error;
-                } finally {
-                    if (this.startup === attempt) {
-                        this.startup = undefined;
-                    }
+            try {
+                signal.throwIfAborted();
+                await this.prepare({ signal });
+                signal.throwIfAborted();
+                this.draining = false;
+                this.started = true;
+                this.queue.resume();
+                // Verification failures above propagate; ordinary recovery keeps its existing reporting behavior.
+                await this.recover().catch((error: unknown) => this.onError(error));
+                signal.throwIfAborted();
+
+                if (options.channels ?? true) {
+                    await this.startChannels(signal);
                 }
-            });
+
+                signal.throwIfAborted();
+                this.queue.startPolling();
+                await this.queue.pump();
+                signal.throwIfAborted();
+            } catch (error) {
+                this.started = false;
+                await this.queue.halt();
+                await this.stopChannels();
+
+                throw error;
+            } finally {
+                if (this.startup === attempt) {
+                    this.startup = undefined;
+                }
+            }
+        });
 
         this.startup = attempt;
 
@@ -819,7 +931,9 @@ export class Engine implements IContextProvider {
         }
 
         this.started = false;
+
         const admission = this.queue.halt();
+
         this.preparationController.abort();
         this.startup?.controller.abort();
 
@@ -852,6 +966,7 @@ export class Engine implements IContextProvider {
     protected async startChannels(signal: AbortSignal): Promise<void> {
         await this.stopChannels();
         signal.throwIfAborted();
+
         for (const channel of this.channels.values()) {
             if (!channel.start) {
                 continue;
@@ -868,15 +983,22 @@ export class Engine implements IContextProvider {
     protected stopChannels(): Promise<void> {
         if (this.startedChannels.length > 0) {
             const channels = this.startedChannels;
+
             this.startedChannels = [];
+
             const previous = this.stoppingChannels ?? Promise.resolve();
+
             this.stoppingChannels = previous.then(async () => {
                 const results = await Promise.allSettled(channels.map((channel) => channel.stop?.()));
+
                 for (const result of results) {
-                    if (result.status === 'rejected') this.onError(result.reason);
+                    if (result.status === 'rejected') {
+                        this.onError(result.reason);
+                    }
                 }
             });
         }
+
         return this.stoppingChannels ?? Promise.resolve();
     }
 
@@ -889,39 +1011,55 @@ export class Engine implements IContextProvider {
     async recover(): Promise<number> {
         const { data } = await this.store.runs.find({ status: [RunStatus.RUNNING, RunStatus.INTERRUPTED] });
         let requeued = 0;
+
         for (const run of data) {
             const execution = this.executions.get(run.id);
+
             if (execution) {
                 // cancel() was called on a replica that does not execute the run
                 if (run.cancelRequested) {
                     execution.stop ??= 'cancel';
                     execution.controller.abort();
                 }
+
                 continue;
             }
+
             try {
                 // atomic: fails while another owner's claim is live
-                if (!await this.store.runs.claim(run.id, this.owner, this.claimTtlMs)) continue;
+                if (!await this.store.runs.claim(run.id, this.owner, this.claimTtlMs)) {
+                    continue;
+                }
             } catch (error) {
                 this.onError(error, run);
+
                 continue;
             }
+
             try {
                 const queued = await this.store.runs.update(run.id, {
                     status: RunStatus.QUEUED,
                     claim: undefined,
                     updatedAt: this.clock.now(),
                 }, { expectStatus: [RunStatus.RUNNING, RunStatus.INTERRUPTED], expectOwner: this.owner });
+
                 requeued++;
                 this.emit({ type: 'run.updated', run: queued });
             } catch (error) {
                 // the run settled since it was listed: drop the claim just taken
                 await this.store.runs.update(run.id, { claim: undefined }, { expectOwner: this.owner })
                     .catch(() => {});
-                if (!(error instanceof InvalidRunStateError)) this.onError(error, run);
+
+                if (!(error instanceof InvalidRunStateError)) {
+                    this.onError(error, run);
+                }
             }
         }
-        if (requeued > 0 && this.started) void this.queue.pump();
+
+        if (requeued > 0 && this.started) {
+            void this.queue.pump();
+        }
+
         return requeued;
     }
 
@@ -942,19 +1080,29 @@ export class Engine implements IContextProvider {
             // keepAlive: the process must not exit before the leftovers are marked interrupted
             timer = this.clock.setTimeout(() => resolve(true), opts.timeoutMs ?? DEFAULT_DRAIN_TIMEOUT_MS, { keepAlive: true });
         });
+
         try {
             const settled = await Promise.race([this.idle().then(() => false as const), timedOut]);
-            if (!settled) return;
+
+            if (!settled) {
+                return;
+            }
 
             while (this.executions.size > 0) {
                 const pending = this.executions.values().toArray();
+
                 for (const execution of pending) {
                     execution.stop ??= 'drain';
                     execution.controller.abort();
                 }
+
                 await Promise.all(pending.map((execution) => execution.done));
             }
-            for (const controller of this.deliveryControllers) controller.abort();
+
+            for (const controller of this.deliveryControllers) {
+                controller.abort();
+            }
+
             await this.idle();
         } finally {
             timer?.clear();
@@ -965,6 +1113,7 @@ export class Engine implements IContextProvider {
     async idle(): Promise<void> {
         await this.queue.idle();
         await this.conversations?.idle();
+
         while (this.deliveries.size > 0) {
             await Promise.all(this.deliveries);
             await this.queue.idle();
@@ -992,28 +1141,40 @@ export class Engine implements IContextProvider {
      */
     protected async cancelRun(runId: string, reason?: CancelReason): Promise<void> {
         const execution = this.executions.get(runId);
+
         if (execution) {
             execution.stop ??= 'cancel';
-            if (reason) execution.cancelReason ??= reason;
+
+            if (reason) {
+                execution.cancelReason ??= reason;
+            }
+
             execution.controller.abort();
             await execution.done;
+
             if (execution.stop === 'lease-lost') {
                 throw new InvalidRunStateError(`Run "${runId}" lost its claim while being cancelled; it is no longer executing here.`);
             }
+
             // the abort cannot stop a pause that was already writing: cancel the run it left waiting
             const run = await this.store.runs.findOne(runId);
+
             if (run?.status === RunStatus.WAITING || run?.status === RunStatus.QUEUED) {
                 await this.cancelStored(runId, [run.status], execution.cancelReason);
             }
+
             return;
         }
+
         for (let attempt = 0; ; attempt++) {
             const run = await this.store.runs.findOneOrFail(runId);
 
             const { status } = run;
+
             if (status !== RunStatus.QUEUED && status !== RunStatus.WAITING && status !== RunStatus.RUNNING && status !== RunStatus.INTERRUPTED) {
                 throw new InvalidRunStateError(`Run "${runId}" is ${status}; it cannot be cancelled.`);
             }
+
             try {
                 if (status === RunStatus.QUEUED || status === RunStatus.WAITING) {
                     await this.cancelStored(runId, [status], reason);
@@ -1023,12 +1184,16 @@ export class Engine implements IContextProvider {
                         ...(reason && { error: reason }),
                         updatedAt: this.clock.now(),
                     }, { expectStatus: [status] });
+
                     this.emit({ type: 'run.updated', run: updated });
                 }
+
                 return;
             } catch (error) {
                 // the run moved on since it was read (started, paused, settled): decide again
-                if (!(error instanceof InvalidRunStateError) || attempt >= 2) throw error;
+                if (!(error instanceof InvalidRunStateError) || attempt >= 2) {
+                    throw error;
+                }
             }
         }
     }
@@ -1036,6 +1201,7 @@ export class Engine implements IContextProvider {
     /** Settles a run nobody executes (`expectStatus`) as cancelled, storing `reason` as its error. */
     protected async cancelStored(runId: string, expectStatus: Run['status'][], reason?: CancelReason): Promise<void> {
         await this.conversations?.idle(runId);
+
         const now = this.clock.now();
         const updated = await this.store.runs.update(
             runId,
@@ -1048,6 +1214,7 @@ export class Engine implements IContextProvider {
             },
             { expectStatus },
         );
+
         this.emit({ type: 'run.updated', run: updated });
         await this.reconcileConversation(updated);
     }
@@ -1065,18 +1232,25 @@ export class Engine implements IContextProvider {
             ...(answer.reason !== undefined ? { reason: answer.reason } : {}),
             ...(answer.approver !== undefined ? { approver: toInvoker(answer.approver, 'approver') } : {}),
         };
+
         assertSelectionShape(answer.selected);
+
         const run = await this.store.runs.findOneOrFail(runId);
+
         if (run.status !== RunStatus.WAITING || !run.waiting) {
             throw new InvalidRunStateError(`Run "${run.id}" is ${run.status} and not waiting for an approval.`);
         }
+
         if (run.waiting.approvalId !== answer.approvalId) {
             throw new InvalidRunStateError(`Run "${run.id}" does not wait on approval "${answer.approvalId}".`);
         }
+
         if (this.clock.now().getTime() >= run.waiting.expiresAt.getTime()) {
             throw new InvalidRunStateError(`Approval "${answer.approvalId}" of run "${run.id}" expired.`);
         }
+
         const selected = toSelection(run.waiting, answer.approved, answer.selected);
+
         await this.answer(
             run,
             run.waiting,
@@ -1095,16 +1269,28 @@ export class Engine implements IContextProvider {
         const now = this.clock.now().getTime();
         let resumed = false;
         const { data } = await this.store.runs.find({ status: [RunStatus.WAITING] });
+
         for (const listed of data) {
-            if (!listed.waiting) continue;
-            if (listed.waiting.expiresAt.getTime() > now) {
-                if (!listed.waiting.notifiedAt) await this.deliverApproval(listed, listed.waiting);
+            if (!listed.waiting) {
                 continue;
             }
+
+            if (listed.waiting.expiresAt.getTime() > now) {
+                if (!listed.waiting.notifiedAt) {
+                    await this.deliverApproval(listed, listed.waiting);
+                }
+
+                continue;
+            }
+
             try {
                 // the listing may be stale by now: the run could wait on a newer approval
                 const run = await this.store.runs.findOne(listed.id);
-                if (run?.status !== RunStatus.WAITING || !run.waiting || run.waiting.expiresAt.getTime() > now) continue;
+
+                if (run?.status !== RunStatus.WAITING || !run.waiting || run.waiting.expiresAt.getTime() > now) {
+                    continue;
+                }
+
                 await this.answer(
                     run,
                     run.waiting,
@@ -1152,17 +1338,20 @@ export class Engine implements IContextProvider {
         }, { expectStatus: [RunStatus.WAITING] });
 
         let queued: Run;
+
         try {
             // the run may have moved on to another approval since `waiting` was read
             if (transitioned.waiting?.approvalId !== waiting.approvalId) {
                 throw stale();
             }
+
             await this.store.effects.save(approvalDecisionKey(run.id, waiting.approvalId), {
                 approved: decision.approved,
                 ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
                 ...(decision.approver ? { approver: decision.approver } : {}),
                 ...(decision.selected !== undefined ? { selected: decision.selected } : {}),
             });
+
             const step: Step = {
                 runId: run.id,
                 index: (await this.store.steps.find(run.id)).length,
@@ -1185,6 +1374,7 @@ export class Engine implements IContextProvider {
                 startedAt: run.updatedAt,
                 finishedAt: now,
             };
+
             await this.store.steps.insert(step);
             this.emit({ type: 'step.appended', step });
             queued = await this.store.runs.update(run.id, {
@@ -1199,10 +1389,15 @@ export class Engine implements IContextProvider {
                 claim: undefined,
                 updatedAt: this.clock.now(),
             }, { expectStatus: [RunStatus.QUEUED] }).catch((undoError: unknown) => this.onError(undoError, run));
+
             throw error;
         }
+
         this.emit({ type: 'run.updated', run: queued });
-        if (this.started) void this.queue.pump();
+
+        if (this.started) {
+            void this.queue.pump();
+        }
     }
 
     /**
@@ -1212,6 +1407,7 @@ export class Engine implements IContextProvider {
      */
     protected async pause(run: Run, request: ApprovalRequest, usage: Usage): Promise<void> {
         await this.conversations?.idle(run.id);
+
         const now = this.clock.now();
         const { timeoutMs, ...asked } = request;
         const waiting: WaitPoint = run.waiting?.approvalId === request.approvalId ?
@@ -1228,24 +1424,37 @@ export class Engine implements IContextProvider {
             claim: undefined,
             updatedAt: now,
         });
-        if (!updated) return;
-        this.emit({ type: 'run.updated', run: updated });
-        // a cancel arrived while pausing (an abort cannot interrupt this write): settle, do not deliver
-        const execution = this.executions.get(run.id);
-        if (updated.cancelRequested || execution?.stop === 'cancel') {
-            await this.cancelStored(run.id, [RunStatus.WAITING], execution?.cancelReason).catch((error: unknown) => {
-                if (!(error instanceof InvalidRunStateError)) this.onError(error, run);
-            });
+
+        if (!updated) {
             return;
         }
-        if (!waiting.notifiedAt) {
-            // detached: the execution ends with the waiting write, so a resume
-            // during a slow send starts the next execution cleanly
-            const delivery: Promise<void> = this.deliverApproval(updated, waiting)
-                .catch((error: unknown) => this.onError(error, updated))
-                .finally(() => this.deliveries.delete(delivery));
-            this.deliveries.add(delivery);
+
+        this.emit({ type: 'run.updated', run: updated });
+
+        // a cancel arrived while pausing (an abort cannot interrupt this write): settle, do not deliver
+        const execution = this.executions.get(run.id);
+
+        if (updated.cancelRequested || execution?.stop === 'cancel') {
+            await this.cancelStored(run.id, [RunStatus.WAITING], execution?.cancelReason).catch((error: unknown) => {
+                if (!(error instanceof InvalidRunStateError)) {
+                    this.onError(error, run);
+                }
+            });
+
+            return;
         }
+
+        if (waiting.notifiedAt) {
+            return;
+        }
+
+        // detached: the execution ends with the waiting write, so a resume
+        // during a slow send starts the next execution cleanly
+        const delivery: Promise<void> = this.deliverApproval(updated, waiting)
+            .catch((error: unknown) => this.onError(error, updated))
+            .finally(() => this.deliveries.delete(delivery));
+
+        this.deliveries.add(delivery);
     }
 
     /**
@@ -1260,12 +1469,18 @@ export class Engine implements IContextProvider {
      * next poll; the run keeps waiting.
      */
     protected async deliverApproval(run: Run, waiting: WaitPoint): Promise<void> {
-        if (waiting.channel === undefined) return;
-        const channel = this.channels.get(waiting.channel);
-        if (!channel || typeof channel.out !== 'function') {
-            this.onError(new ChannelNotFoundError(waiting.channel), run);
+        if (waiting.channel === undefined) {
             return;
         }
+
+        const channel = this.channels.get(waiting.channel);
+
+        if (!channel || typeof channel.out !== 'function') {
+            this.onError(new ChannelNotFoundError(waiting.channel), run);
+
+            return;
+        }
+
         const key = `${run.id}:${waiting.approvalId}`;
         const lockKey = `notify:${key}`;
         const attempt = randomUUID();
@@ -1273,22 +1488,38 @@ export class Engine implements IContextProvider {
         const isCurrent = (current: Run | undefined) => current?.status === RunStatus.WAITING &&
             current.waiting?.approvalId === waiting.approvalId;
         const controller = new AbortController();
+
         this.deliveryControllers.add(controller);
+
         const timer = this.clock.setTimeout(() => controller.abort(new ChamviError({
             message: `Channel "${channel.name}" did not deliver approval "${waiting.approvalId}" within ${this.claimTtlMs}ms.`,
             code: ErrorCode.TIMEOUT,
         })), this.claimTtlMs);
+
         try {
             acquired = await this.store.locks.acquire(lockKey, attempt, this.claimTtlMs);
-            if (!acquired) return;
+
+            if (!acquired) {
+                return;
+            }
+
             // another attempt may have delivered it since `run` was read
             const current = await this.store.runs.findOne(run.id);
-            if (!isCurrent(current) || current?.waiting?.notifiedAt) return;
+
+            if (!isCurrent(current) || current?.waiting?.notifiedAt) {
+                return;
+            }
+
             controller.signal.throwIfAborted();
+
             const aborted = new Promise<never>((_, reject) => {
-                if (controller.signal.aborted) reject(controller.signal.reason);
+                if (controller.signal.aborted) {
+                    reject(controller.signal.reason);
+                }
+
                 controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
             });
+
             // a transport that ignores the signal must not hold the pause (or tick) forever
             await Promise.race([
                 channel.out({
@@ -1305,20 +1536,29 @@ export class Engine implements IContextProvider {
                 }, waiting.address ?? '', { signal: controller.signal, trigger: run.trigger }),
                 aborted,
             ]);
+
             // answered meanwhile: nothing left to record
-            if (!isCurrent(await this.store.runs.findOne(run.id))) return;
+            if (!isCurrent(await this.store.runs.findOne(run.id))) {
+                return;
+            }
+
             controller.signal.throwIfAborted();
+
             const notified = await this.store.runs.update(
                 run.id,
                 { waiting: { ...waiting, notifiedAt: this.clock.now() } },
                 { expectStatus: [RunStatus.WAITING] },
             );
+
             this.emit({ type: 'run.updated', run: notified });
         } catch (error) {
-            if (!(error instanceof InvalidRunStateError) && (!this.draining || !controller.signal.aborted)) this.onError(error, run);
+            if (!(error instanceof InvalidRunStateError) && (!this.draining || !controller.signal.aborted)) {
+                this.onError(error, run);
+            }
         } finally {
             this.deliveryControllers.delete(controller);
             timer.clear();
+
             if (acquired) {
                 await this.store.locks.release(lockKey, attempt).catch((releaseError: unknown) => this.onError(releaseError, run));
             }
@@ -1333,10 +1573,13 @@ export class Engine implements IContextProvider {
         // cancel() asked for it while it ran elsewhere (or was interrupted): also for an agent unknown here
         if (run.cancelRequested) {
             await this.finish(run.id, { status: RunStatus.CANCELLED });
+
             return;
         }
+
         const agent = this.agents.get(run.agent);
         const skills = agent ? this.preparedSkills.get(agent) : undefined;
+
         if (!agent || !skills || !await this.isCurrent(run.agent)) {
             // removed or replaced since the claim: left for a replica that runs the agent's current revision
             // guarded by status and owner (`expectStatus: [RUNNING]`, `expectOwner`): a taken-over run is left alone
@@ -1345,33 +1588,59 @@ export class Engine implements IContextProvider {
                 claim: undefined,
                 startedAt: undefined,
             });
-            if (released) this.emit({ type: 'run.updated', run: released });
+
+            if (released) {
+                this.emit({ type: 'run.updated', run: released });
+            }
+
             return;
         }
+
         let conversation;
+
         if (run.conversation) {
             const capability = this.conversationCapability();
             const key = conversationKey(agent.definition);
-            if (key === undefined) throw new InvalidRunStateError('The agent has disabled conversations.');
-            if (key !== run.conversation.scope.identity.agent) throw new InvalidRunStateError('The agent conversation key has changed.');
+
+            if (key === undefined) {
+                throw new InvalidRunStateError('The agent has disabled conversations.');
+            }
+
+            if (key !== run.conversation.scope.identity.agent) {
+                throw new InvalidRunStateError('The agent conversation key has changed.');
+            }
+
             const admitted = await capability.admit(structuredClone(run));
+
             if (admitted.kind === 'busy') {
                 this.queue.defer(run.id);
+
                 const released = await this.ownedUpdate(run.id, {
                     status: RunStatus.QUEUED,
                     claim: undefined,
                     startedAt: undefined,
                 });
-                if (released) this.emit({ type: 'run.updated', run: released });
+
+                if (released) {
+                    this.emit({ type: 'run.updated', run: released });
+                }
+
                 return;
             }
-            if (!await this.ownsRun(run.id)) return;
+
+            if (!await this.ownsRun(run.id)) {
+                return;
+            }
+
             if (signal.aborted) {
                 await this.finish(run.id, { status: RunStatus.CANCELLED });
+
                 return;
             }
+
             conversation = { capability, snapshot: admitted.snapshot };
         }
+
         await executeRun({
             engine: this,
             conversation,
@@ -1386,8 +1655,13 @@ export class Engine implements IContextProvider {
             finish: (patch) => this.finish(run.id, patch),
             update: async (patch) => {
                 const updated = await this.ownedUpdate(run.id, patch);
-                if (!updated) throw new InvalidRunStateError(`Run "${run.id}" was taken over by another owner.`);
+
+                if (!updated) {
+                    throw new InvalidRunStateError(`Run "${run.id}" was taken over by another owner.`);
+                }
+
                 this.emit({ type: 'run.updated', run: updated });
+
                 return updated;
             },
             onStepAppended: (step) => this.emit({ type: 'step.appended', step }),
@@ -1409,6 +1683,7 @@ export class Engine implements IContextProvider {
         const markers = folder ?
             new Map((await this.store.agentRevisions.find()).map((marker) => [marker.agent, marker.hash])) :
             new Map<string, string>();
+
         return (run) => {
             if (!this.started || this.startup?.signal.aborted) {
                 return false;
@@ -1419,24 +1694,29 @@ export class Engine implements IContextProvider {
             }
 
             const agent = this.agents.get(run.agent);
-            if (!agent || !this.preparedSkills.has(agent)) {
-                return false;
-            }
 
-            if (!this.agents.has(run.agent) || this.syncing.has(run.agent)) {
+            if (!agent || !this.preparedSkills.has(agent) || !this.agents.has(run.agent) || this.syncing.has(run.agent)) {
                 return false;
             }
 
             const revision = this.revisions.get(run.agent);
+
             return revision === undefined || revision === markers.get(run.agent);
         };
     }
 
     /** Whether the registered agent is a code agent or loaded at the stored marker's hash. */
     protected async isCurrent(name: string): Promise<boolean> {
-        if (this.syncing.has(name)) return false;
+        if (this.syncing.has(name)) {
+            return false;
+        }
+
         const revision = this.revisions.get(name);
-        if (revision === undefined) return true;
+
+        if (revision === undefined) {
+            return true;
+        }
+
         return (await this.store.agentRevisions.findOne(name))?.hash === revision;
     }
 
@@ -1445,18 +1725,26 @@ export class Engine implements IContextProvider {
         const controller = new AbortController();
         const { promise: done, resolve: release } = Promise.withResolvers<void>();
         const entry = { controller, done };
+
         this.executions.set(run.id, entry);
+
         return (async () => {
             try {
                 await this.execute(run, controller.signal);
             } catch (error) {
                 // the run belongs to another owner now: its failure is not ours to record
-                if (this.executions.get(run.id)?.stop === 'lease-lost') return;
+                if (this.executions.get(run.id)?.stop === 'lease-lost') {
+                    return;
+                }
+
                 await this.finish(run.id, { status: RunStatus.FAILED, error: toRunError(error) });
                 this.onError(error, run);
             } finally {
                 // a later execution of the same run may hold the entry by now
-                if (this.executions.get(run.id) === entry) this.executions.delete(run.id);
+                if (this.executions.get(run.id) === entry) {
+                    this.executions.delete(run.id);
+                }
+
                 release();
             }
         })();
@@ -1470,9 +1758,14 @@ export class Engine implements IContextProvider {
     protected async finish(id: string, patch: Partial<Run>): Promise<Run | undefined> {
         // Another replica may repair a terminal owner immediately after this write.
         await this.conversations?.idle(id);
+
         const execution = this.executions.get(id);
         const stop = execution?.stop;
-        if (stop === 'lease-lost') return undefined;
+
+        if (stop === 'lease-lost') {
+            return undefined;
+        }
+
         const now = this.clock.now();
         const settled: Partial<Run> = stop === 'drain' && patch.status === RunStatus.CANCELLED ?
             {
@@ -1493,21 +1786,33 @@ export class Engine implements IContextProvider {
                 ...(patch.status === RunStatus.COMPLETED && { error: undefined }),
                 ...patch,
             };
-        if (settled.usage === undefined) delete settled.usage;
+
+        if (settled.usage === undefined) {
+            delete settled.usage;
+        }
+
         const updated = await this.ownedUpdate(id, settled);
+
         if (updated) {
             this.emit({ type: 'run.updated', run: updated });
             await this.reconcileConversation(updated);
         }
+
         return updated;
     }
 
     protected async reconcileConversation(run: Run): Promise<void> {
-        if (!run.conversation || !['completed', 'failed', 'cancelled'].includes(run.status)) return;
+        if (!run.conversation || !['completed', 'failed', 'cancelled'].includes(run.status)) {
+            return;
+        }
+
         try {
             await this.conversationCapability().reconcile(run.conversation.scope, run.id);
             this.queue.retryDeferred();
-            if (this.started) void this.queue.pump();
+
+            if (this.started) {
+                void this.queue.pump();
+            }
         } catch (error) {
             this.onError(error, run);
         }
@@ -1521,7 +1826,10 @@ export class Engine implements IContextProvider {
         try {
             return await this.store.runs.update(id, patch, { expectStatus: [RunStatus.RUNNING], expectOwner: this.owner });
         } catch (error) {
-            if (error instanceof InvalidRunStateError && !await this.ownsRun(id)) return undefined;
+            if (error instanceof InvalidRunStateError && !await this.ownsRun(id)) {
+                return undefined;
+            }
+
             throw error;
         }
     }
@@ -1529,8 +1837,13 @@ export class Engine implements IContextProvider {
     /** Whether this engine still holds the run's claim; aborts its execution when not. */
     protected async ownsRun(id: string): Promise<boolean> {
         const run = await this.store.runs.findOne(id);
-        if (run?.claim?.owner === this.owner) return true;
+
+        if (run?.claim?.owner === this.owner) {
+            return true;
+        }
+
         this.loseLease(id);
+
         return false;
     }
 
@@ -1540,7 +1853,11 @@ export class Engine implements IContextProvider {
      */
     protected loseLease(id: string): void {
         const execution = this.executions.get(id);
-        if (!execution || execution.stop === 'lease-lost') return;
+
+        if (!execution || execution.stop === 'lease-lost') {
+            return;
+        }
+
         execution.stop = 'lease-lost';
         execution.controller.abort();
         this.onError(new LeaseLostError(id));
@@ -1560,14 +1877,21 @@ export class Engine implements IContextProvider {
         // first: putAgent refuses before syncing, the lock and any store write
         checkAgentModel(agent, { model: this.model, models: this.models });
         assertConcurrencyMaxRuns(agent.definition.concurrencyMaxRuns, `Agent "${agent.name}" concurrencyMaxRuns`);
+
         for (const subscription of agent.definition.channels ?? []) {
             assertConcurrencyMaxRuns(subscription.concurrencyMaxRuns, `Agent "${agent.name}" subscription "${subscription.id}" concurrencyMaxRuns`);
+
             if (!this.channels.has(subscription.channel)) {
                 throw new InvalidAgentDefinitionError(`Agent "${agent.name}" subscribes to unknown channel "${subscription.channel}".`);
             }
         }
+
         assertHandoffSubscription(agent);
-        if (conversationKey(agent.definition) !== undefined && !this.conversations) throw new InvalidAgentDefinitionError('The agent enables conversations but the engine has no conversation capability.');
+
+        if (conversationKey(agent.definition) !== undefined && !this.conversations) {
+            throw new InvalidAgentDefinitionError('The agent enables conversations but the engine has no conversation capability.');
+        }
+
         this.checkAgentSkills(agent);
     }
 
@@ -1578,9 +1902,14 @@ export class Engine implements IContextProvider {
         const tools = typeof agent.definition.tools === 'function' ? {} : agent.definition.tools ?? {};
         const inputs = captured ?? provider?.snapshot(supplied, tools) ?? Object.freeze([]);
         const runtime = this.skillRuntime ?? provider?.create(this.skills);
+
         runtime?.checkAgent(agent, inputs);
+
         // A rejected candidate must neither select the first runtime nor capture failed inputs.
-        if (!captured) this.agentSkillInputs.set(agent, inputs);
+        if (!captured) {
+            this.agentSkillInputs.set(agent, inputs);
+        }
+
         this.skillProvider = provider;
         this.skillRuntime = runtime;
     }
@@ -1608,7 +1937,9 @@ export class Engine implements IContextProvider {
     /** Strictly increasing per process, so FIFO order survives identical clock readings. */
     protected nextCreatedAt(): Date {
         const t = Math.max(this.clock.now().getTime(), this.lastCreatedAt + 1);
+
         this.lastCreatedAt = t;
+
         return new Date(t);
     }
 }

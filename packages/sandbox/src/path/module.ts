@@ -19,28 +19,34 @@ export function resolveWorkspacePath(path: string): string {
     if (typeof path !== 'string' || path.length === 0) {
         throw new ValidationError('path must be a non-empty string.');
     }
+
     if (path.includes('\0')) {
         throw new ValidationError('path must not contain a NUL byte.');
     }
 
     let relative = path;
+
     if (relative === WORKSPACE_ROOT) {
         relative = '.';
     } else if (relative.startsWith(`${WORKSPACE_ROOT}/`)) {
         // `/workspace//src` names `/workspace/src`, as on POSIX.
         relative = relative.slice(WORKSPACE_ROOT.length + 1).replace(/^\/+/, '') || '.';
     }
+
     if (relative.startsWith('/')) {
         throw new ValidationError(`path must be relative to the workspace or under ${WORKSPACE_ROOT}/, got ${JSON.stringify(path)}.`);
     }
 
     let normalized = posix.normalize(relative);
+
     if (normalized.length > 1 && normalized.endsWith('/')) {
         normalized = normalized.slice(0, -1);
     }
+
     if (normalized === '..' || normalized.startsWith('../')) {
         throw new ValidationError(`path must stay inside the workspace, got ${JSON.stringify(path)}.`);
     }
+
     return normalized;
 }
 

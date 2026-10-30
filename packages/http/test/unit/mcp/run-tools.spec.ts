@@ -33,7 +33,9 @@ type TreeNode = { name: string; children: TreeNode[] };
 
 const TreeNodeSchema: z.ZodType<TreeNode> = z.object({
     name: z.string(),
-    get children() { return z.array(TreeNodeSchema); },
+    get children() {
+        return z.array(TreeNodeSchema);
+    },
 });
 
 function recursiveAgent() {
@@ -47,20 +49,30 @@ function recursiveAgent() {
 
 /** Every local `$ref` in `schema`, resolved as a JSON pointer from `root`. */
 function resolveRefs(root: unknown, node: unknown = root): unknown[] {
-    if (Array.isArray(node)) return node.flatMap((item) => resolveRefs(root, item));
-    if (typeof node !== 'object' || node === null) return [];
+    if (Array.isArray(node)) {
+        return node.flatMap((item) => resolveRefs(root, item));
+    }
+
+    if (typeof node !== 'object' || node === null) {
+        return [];
+    }
+
     const resolved: unknown[] = [];
+
     for (const [key, value] of Object.entries(node)) {
         if (key === '$ref' && typeof value === 'string') {
             expect(value.startsWith('#')).toBe(true);
+
             const target = value.slice(1).split('/').filter(Boolean)
                 .map((segment) => segment.replaceAll('~1', '/').replaceAll('~0', '~'))
                 .reduce<unknown>((current, segment) => (current as Record<string, unknown> | undefined)?.[segment], root);
+
             resolved.push(target);
         } else {
             resolved.push(...resolveRefs(root, value));
         }
     }
+
     return resolved;
 }
 
@@ -104,6 +116,7 @@ describe('mcp run_<agent>', () => {
         const { app } = createRunTestApp({ agents });
         const client = await connectMcp(app, ADMIN_TOKEN);
         const { tools } = await client.listTools();
+
         expect(tools.find((entry) => entry.name === 'run_structured')?.description).toBe('Structured runs.');
         expect(tools.find((entry) => entry.name === 'run_examples')?.description).toBe('Starts a run of agent "examples".');
         await client.close();
@@ -113,6 +126,7 @@ describe('mcp run_<agent>', () => {
         const { app } = createRunTestApp();
         const client = await connectMcp(app, ADMIN_TOKEN);
         const names = (await client.listTools()).tools.map((t) => t.name);
+
         expect(names).toEqual(expect.arrayContaining(['run_echo', 'run_gate']));
         expect(names).not.toContain('run_sweep');
         expect(names).not.toContain('run_hooked');
@@ -123,6 +137,7 @@ describe('mcp run_<agent>', () => {
         const { app } = createRunTestApp();
         const client = await connectMcp(app, tokenFor('agent:echo:run'));
         const names = (await client.listTools()).tools.map((t) => t.name);
+
         expect(names).toContain('run_echo');
         expect(names).not.toContain('run_gate');
         await client.close();
@@ -133,9 +148,11 @@ describe('mcp run_<agent>', () => {
         const client = await connectMcp(app, ADMIN_TOKEN);
         const { tools } = await client.listTools();
         const echo = tools.find((t) => t.name === 'run_echo')!;
+
         expect(echo.inputSchema.properties).toHaveProperty('waitSeconds');
 
         const typed = tools.find((t) => t.name === 'run_typed')!;
+
         expect(typed.description).toContain('Typed runs.');
         expect(typed.description).not.toContain('Second line.');
         expect(typed.inputSchema.properties?.payload).toMatchObject({
@@ -149,8 +166,11 @@ describe('mcp run_<agent>', () => {
         const { app, store } = createRunTestApp();
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_echo', { payload: { n: 1 } });
+
         expect(result.isError).toBeFalsy();
+
         const content = result.structuredContent as { runId: string };
+
         expect(content).toEqual({
             runId: expect.any(String),
             status: 'queued',
@@ -170,6 +190,7 @@ describe('mcp run_<agent>', () => {
         const client = await connectMcp(app, ADMIN_TOKEN);
         const first = await callTool(client, 'run_echo', { idempotencyKey: 'k-1' });
         const second = await callTool(client, 'run_echo', { idempotencyKey: 'k-1' });
+
         expect(second.structuredContent).toMatchObject({
             runId: (first.structuredContent as { runId: string }).runId,
             status: 'queued',
@@ -185,6 +206,7 @@ describe('mcp run_<agent>', () => {
         const { app, store } = createRunTestApp({ agents: [...createRunAgents(), typedAgent()] });
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_typed', { payload: { n: 'x' } });
+
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain('payload');
         expect((await store.runs.find({ agent: 'typed' })).total).toBe(0);
@@ -195,6 +217,7 @@ describe('mcp run_<agent>', () => {
         const { app, store } = createRunTestApp();
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_echo', { extra: 1 });
+
         expect(result.isError).toBe(true);
         expect((await store.runs.find({})).total).toBe(0);
         await client.close();
@@ -206,19 +229,27 @@ describe('mcp run_<agent>', () => {
         const { tools } = await client.listTools();
         const tree = tools.find((t) => t.name === 'run_tree')!;
         const targets = resolveRefs(tree.inputSchema);
+
         expect(targets.length).toBeGreaterThan(0);
-        for (const target of targets) expect(target).toMatchObject({ type: 'object' });
+
+        for (const target of targets) {
+            expect(target).toMatchObject({ type: 'object' });
+        }
 
         const payload = {
             root: { name: 'a', children: [{ name: 'b', children: [] }] },
             alias: { name: 'c', children: [] },
         };
         const result = await callTool(client, 'run_tree', { payload });
+
         expect(result.isError, textOf(result)).toBeFalsy();
+
         const { runId } = result.structuredContent as { runId: string };
+
         expect((await store.runs.findOne(runId))?.trigger.payload).toEqual(payload);
 
         const invalid = await callTool(client, 'run_tree', { payload: { root: { name: 'a', children: [{ name: 1 }] }, alias: payload.alias } });
+
         expect(invalid.isError).toBe(true);
         await client.close();
     });
@@ -233,12 +264,15 @@ describe('mcp run_<agent>', () => {
             channels: [http.on({ schema })],
         });
         const { app } = createRunTestApp({ agents: [...createRunAgents(), agent] });
+
         for (let i = 0; i < 3; i++) {
             const client = await connectMcp(app, ADMIN_TOKEN);
+
             await client.listTools();
             await callTool(client, 'run_counted', { payload: { n: i } });
             await client.close();
         }
+
         expect(input).toHaveBeenCalledTimes(1);
     });
 
@@ -249,9 +283,12 @@ describe('mcp run_<agent>', () => {
             instructions: 'Long.',
             channels: [http.on()],
         });
+
         expect(() => createRunTestApp({ agents: [long] })).toThrow(InvalidAgentDefinitionError);
         expect(() => createRunTestApp({ agents: [long], mcp: false })).not.toThrow();
+
         const fits = defineAgent({ ...long.definition, name: 'a'.repeat(60) });
+
         expect(() => createRunTestApp({ agents: [fits] })).not.toThrow();
     });
 
@@ -264,16 +301,25 @@ describe('mcp run_<agent>', () => {
         });
         const engine = new Engine({
             store: createMemoryStore(),
-            agents: [], 
+            agents: [],
             channels: [httpChannel()],
         });
+
         await engine.putAgent(long, { revision: 'h1' });
+
         const errors: unknown[] = [];
 
-        const { app } = createRunTestApp({ engine, onError: (error) => { errors.push(error); } });
+        const { app } = createRunTestApp({
+            engine,
+            onError: (error) => {
+                errors.push(error);
+            },
+        });
 
         expect(errors).toEqual([expect.any(InvalidAgentDefinitionError)]);
+
         const client = await connectMcp(app, ADMIN_TOKEN);
+
         expect((await client.listTools()).tools.map((t) => t.name)).not.toContain(`run_${long.name}`);
         await client.close();
     });
@@ -285,26 +331,34 @@ describe('mcp run_<agent>', () => {
             instructions: 'x',
             channels: [http.on()],
         });
+
         expect(() => assertMcpRunTool(agent('a'.repeat(61)))).toThrow(InvalidAgentDefinitionError);
         expect(() => assertMcpRunTool(agent('a'.repeat(60)))).not.toThrow();
         expect(() => assertMcpRunTool(defineAgent({
-            name: 'a'.repeat(64), 
-            model: textModel(), 
-            instructions: 'x', 
+            name: 'a'.repeat(64),
+            model: textModel(),
+            instructions: 'x',
         }))).not.toThrow();
     });
 
     it('lists run_<agent> for an agent added later', async () => {
         const { app, engine } = createRunTestApp();
+
         await engine.putAgent(typedAgent());
+
         const client = await connectMcp(app, ADMIN_TOKEN);
+
         expect((await client.listTools()).tools.map((t) => t.name)).toContain('run_typed');
+
         const result = await callTool(client, 'run_typed', { payload: { n: 1 } });
+
         expect(result.isError, textOf(result)).toBeFalsy();
         await client.close();
 
         await engine.removeAgent('typed');
+
         const after = await connectMcp(app, ADMIN_TOKEN);
+
         expect((await after.listTools()).tools.map((t) => t.name)).not.toContain('run_typed');
         await after.close();
     });
@@ -312,31 +366,41 @@ describe('mcp run_<agent>', () => {
     it('replaces run_<agent> when its agent is replaced', async () => {
         const { app, engine } = createRunTestApp({ agents: [...createRunAgents(), typedAgent()] });
         const first = await connectMcp(app, ADMIN_TOKEN);
+
         expect((await first.listTools()).tools.find((t) => t.name === 'run_typed')?.description).toContain('Typed runs.');
         await first.close();
 
         const schema = z.object({ s: z.string() });
         const input = vi.spyOn(schema['~standard'].jsonSchema!, 'input');
+
         await engine.putAgent(defineAgent({
             name: 'typed',
             model: textModel(),
             instructions: 'Retyped runs.',
             channels: [http.on({ schema })],
         }));
+
         for (let i = 0; i < 3; i++) {
             const client = await connectMcp(app, ADMIN_TOKEN);
             const typed = (await client.listTools()).tools.find((t) => t.name === 'run_typed')!;
+
             expect(typed.description).toContain('Retyped runs.');
             expect(typed.inputSchema.properties?.payload).toMatchObject({ properties: { s: { type: 'string' } } });
             await client.close();
         }
+
         expect(input).toHaveBeenCalledTimes(1);
     });
 
     it('reports an uncompilable payload schema of a later agent and skips its tool', async () => {
         const errors: unknown[] = [];
-        const { app, engine } = createRunTestApp({ onError: (error) => { errors.push(error); } });
+        const { app, engine } = createRunTestApp({
+            onError: (error) => {
+                errors.push(error);
+            },
+        });
         const schema = z.object({ n: z.number() });
+
         vi.spyOn(schema['~standard'].jsonSchema!, 'input').mockReturnValue({ type: 'nonsense' });
         await engine.putAgent(defineAgent({
             name: 'broken',
@@ -350,14 +414,17 @@ describe('mcp run_<agent>', () => {
             instructions: 'Long.',
             channels: [http.on()],
         }));
+
         for (let i = 0; i < 2; i++) {
             const client = await connectMcp(app, ADMIN_TOKEN);
             const names = (await client.listTools()).tools.map((t) => t.name);
+
             expect(names).toContain('run_echo');
             expect(names).not.toContain('run_broken');
             expect(names).not.toContain(`run_${'a'.repeat(61)}`);
             await client.close();
         }
+
         expect(errors).toHaveLength(2);
         expect(errors[0]).toBeInstanceOf(InvalidAgentDefinitionError);
         expect((errors[0] as Error).message).toContain('"broken"');

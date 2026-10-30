@@ -34,17 +34,27 @@ export function createFakeWeb(): FakeWeb {
     const lookups: string[] = [];
     const fetch = async (input: string, init?: RequestInit): Promise<Response> => {
         const url = new URL(input);
+
         calls.push(url.href);
+
         const signal = init?.signal ?? new AbortController().signal;
+
         signal.throwIfAborted();
+
         const route = routes.get(url.href);
-        if (!route) return new Response('not found', { status: 404 });
+
+        if (!route) {
+            return new Response('not found', { status: 404 });
+        }
+
         return route(url, signal);
     };
+
     return {
         client: createClient({ transport: new FetchTransport({ fetch }), proxy: false }),
         lookup: async (hostname) => {
             lookups.push(hostname);
+
             return dns.get(hostname) ?? [PUBLIC];
         },
         calls,

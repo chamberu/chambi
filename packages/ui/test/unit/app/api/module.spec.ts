@@ -19,6 +19,7 @@ describe('createApiClient', () => {
             token: async () => 'tok',
             fetch,
         });
+
         await client.approve('r1', {
             approvalId: 'a1',
             approved: false,
@@ -41,6 +42,7 @@ describe('createApiClient', () => {
             token: async () => 'tok',
             fetch,
         });
+
         expect(await client.startRun('release notes', { payload: { tag: 'v1' } })).toEqual({ runId: 'r9', deduplicated: false });
         expect(requests[0]).toMatchObject({ url: '/api/agents/release%20notes/runs', method: 'POST' });
         expect(JSON.parse(requests[0]!.body!)).toEqual({ payload: { tag: 'v1' } });
@@ -53,15 +55,16 @@ describe('createApiClient', () => {
             token: async () => undefined,
             fetch,
         });
+
         expect(await client.listAgents()).toEqual({ data: [], issues: [] });
         expect(requests[0]!.headers.has('authorization')).toBe(false);
     });
 
     it('reads the agents and their load issues from GET /agents', async () => {
         const issue = {
-            agent: 'triage', 
-            message: 'agent.ts: Unexpected token', 
-            at: '2026-10-22T08:00:00.000Z', 
+            agent: 'triage',
+            message: 'agent.ts: Unexpected token',
+            at: '2026-10-22T08:00:00.000Z',
         };
         const { fetch } = createFakeFetch([json({ data: [], issues: [issue] })]);
         const client = createApiClient({
@@ -69,6 +72,7 @@ describe('createApiClient', () => {
             token: async () => 'tok',
             fetch,
         });
+
         expect(await client.listAgents()).toEqual({ data: [], issues: [issue] });
     });
 
@@ -87,6 +91,7 @@ describe('createApiClient', () => {
             fetch,
         });
         const error = await client.getRun('r1').catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(ApiError);
         expect(error).toMatchObject({
             status: 409,
@@ -115,13 +120,21 @@ describe('createApiClient', () => {
             token: async () => token,
             refresh: async () => {
                 refreshed++;
-                if (refreshed > 1) return false;
+
+                if (refreshed > 1) {
+                    return false;
+                }
+
                 token = 'new';
+
                 return true;
             },
-            onUnauthorized: () => { unauthorized++; },
+            onUnauthorized: () => {
+                unauthorized++;
+            },
             fetch,
         });
+
         expect(await client.me()).toEqual({
             id: 'u',
             kind: 'k',
@@ -146,10 +159,15 @@ describe('createApiClient', () => {
         const client = createApiClient({
             apiBase: '',
             token: async () => 'stored',
-            refresh: async () => { throw new Error('not called'); },
-            onUnauthorized: () => { unauthorized++; },
+            refresh: async () => {
+                throw new Error('not called');
+            },
+            onUnauthorized: () => {
+                unauthorized++;
+            },
             fetch,
         });
+
         await expect(client.me('pasted')).rejects.toMatchObject({ status: 401 });
         expect(requests[0]!.headers.get('authorization')).toBe('Bearer pasted');
         expect(unauthorized).toBe(0);
@@ -170,6 +188,7 @@ describe('createApiClient', () => {
             token: async () => 't',
             fetch,
         });
+
         expect(await client.listRuns({
             agent: 'triage',
             status: ['waiting', 'running'],
@@ -195,6 +214,7 @@ describe('createApiClient', () => {
             token: async () => 't',
             fetch,
         });
+
         await client.getRun('a/b');
         await client.listKv('a b', { limit: 10, offset: 20 });
         await client.listDocs('x', 'c/d', { limit: 5 });
@@ -215,6 +235,7 @@ describe('createApiClient', () => {
             token: async () => 't',
             fetch,
         });
+
         await client.streamRun('r1', { lastEventId: 3, signal: controller.signal });
         expect(requests[0]).toMatchObject({ url: '/api/runs/r1/stream' });
         expect(requests[0]!.headers.get('last-event-id')).toBe('3');

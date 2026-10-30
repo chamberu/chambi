@@ -44,7 +44,9 @@ export function buildModuleHarness(options: ModuleHarnessOptions = {}): ModuleHa
     };
 
     const container = new Container();
+
     container.register(AppToken.CONTEXT, { useValue: context });
+
     if (options.clock) {
         container.register(AppToken.CLOCK, { useValue: options.clock });
     }
@@ -63,12 +65,14 @@ export function buildModuleHarness(options: ModuleHarnessOptions = {}): ModuleHa
         async setup() {
             try {
                 await application.setup();
+
                 // a check stops before the start steps, like IApp.check()
                 if (!context.check) {
                     await runStartSteps(container);
                 }
             } catch (error) {
                 await application.teardown();
+
                 throw error;
             }
         },
@@ -76,6 +80,7 @@ export function buildModuleHarness(options: ModuleHarnessOptions = {}): ModuleHa
             if (!controller.signal.aborted) {
                 controller.abort(createStoppedError());
             }
+
             await application.teardown();
         },
     };
@@ -84,6 +89,8 @@ export function buildModuleHarness(options: ModuleHarnessOptions = {}): ModuleHa
 /** `buildModuleHarness()` and `setup()` in one step. */
 export async function createModuleHarness(options: ModuleHarnessOptions = {}): Promise<ModuleHarness> {
     const harness = buildModuleHarness(options);
+
     await harness.setup();
+
     return harness;
 }

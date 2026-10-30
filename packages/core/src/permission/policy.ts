@@ -16,9 +16,14 @@ import type { RequireToolPermissionOptions } from './types.ts';
  */
 export function requireToolPermission(options: RequireToolPermissionOptions = {}): ToolPolicy {
     const withoutInvoker = options.withoutInvoker ?? 'deny';
+
     return (toolName, { run }) => {
         const { invoker } = run.trigger;
-        if (!invoker) return withoutInvoker === 'allow';
+
+        if (!invoker) {
+            return withoutInvoker === 'allow';
+        }
+
         return hasPermission(invoker.permissions, toolPermission(run.agent, toolName));
     };
 }

@@ -18,7 +18,11 @@ export const REPO_KEY_LENGTH = 32;
 
 /** Epoch milliseconds from a label or annotation value; undefined when unreadable. */
 export function readEpoch(value: string | undefined): number | undefined {
-    if (typeof value !== 'string' || !/^\d+$/.test(value)) return undefined;
+    if (typeof value !== 'string' || !/^\d+$/.test(value)) {
+        return undefined;
+    }
+
     const time = Number(value);
+
     return Number.isSafeInteger(time) ? time : undefined;
 }

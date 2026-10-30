@@ -15,6 +15,7 @@ const CLIENT_KEY_CODES = new Set(['ERR_JWKS_NO_MATCHING_KEY', 'ERR_JWKS_MULTIPLE
 
 function isClientKeyError(error: VouchlyError): boolean {
     const { cause } = error;
+
     return isObject(cause) && typeof cause.code === 'string' && CLIENT_KEY_CODES.has(cause.code);
 }
 
@@ -28,7 +29,10 @@ function unreachable(cause: unknown): ServiceUnavailableError {
  * Non-vouchly errors are rethrown.
  */
 export function mapVerifyError(error: unknown): undefined {
-    if (!isVouchlyError(error)) throw error;
+    if (!isVouchlyError(error)) {
+        throw error;
+    }
+
     switch (error.code) {
         case VouchlyErrorCode.TOKEN_MALFORMED:
         case VouchlyErrorCode.ISSUER_UNTRUSTED:
@@ -36,11 +40,15 @@ export function mapVerifyError(error: unknown): undefined {
         case VouchlyErrorCode.INTROSPECTION_FAILED:
             throw unreachable(error);
         case VouchlyErrorCode.KEY_UNAVAILABLE:
-            if (!isClientKeyError(error)) throw unreachable(error);
+            if (!isClientKeyError(error)) {
+                throw unreachable(error);
+            }
+
             break;
         default:
             break;
     }
+
     throw new UnauthorizedError({
         message: 'The access token is invalid.',
         code: error.code,

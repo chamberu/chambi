@@ -11,7 +11,11 @@
  */
 export function tabForKey<T extends string>(tabs: readonly T[], current: T, key: string): T | undefined {
     const index = tabs.indexOf(current);
-    if (tabs.length === 0) return undefined;
+
+    if (tabs.length === 0) {
+        return undefined;
+    }
+
     switch (key) {
         case 'ArrowRight': return tabs[(index + 1) % tabs.length];
         case 'ArrowLeft': return tabs[(index - 1 + tabs.length) % tabs.length];
@@ -34,10 +38,18 @@ export function onTabKeydown<T extends string>(
     select: (tab: T) => Promise<void> | void,
 ): void {
     const next = tabForKey(tabs, current, event.key);
-    if (next === undefined) return;
+
+    if (next === undefined) {
+        return;
+    }
+
     event.preventDefault();
+
     const list = event.currentTarget;
+
     void Promise.resolve(select(next)).then(() => {
-        if (list instanceof HTMLElement) list.querySelector<HTMLElement>(`#${CSS.escape(tabId(prefix, next))}`)?.focus();
+        if (list instanceof HTMLElement) {
+            list.querySelector<HTMLElement>(`#${CSS.escape(tabId(prefix, next))}`)?.focus();
+        }
     });
 }

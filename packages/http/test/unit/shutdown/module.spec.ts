@@ -17,7 +17,9 @@ import { createShutdown } from '@chamvi/http';
 import type { ShutdownOptions } from '@chamvi/http';
 import { createTestApp } from '../../utils/app.ts';
 
-const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 function setup(overrides: Partial<ShutdownOptions> = {}) {
     const order: string[] = [];
@@ -40,6 +42,7 @@ function setup(overrides: Partial<ShutdownOptions> = {}) {
         },
         ...overrides,
     });
+
     return {
         order,
         clock,
@@ -54,6 +57,7 @@ describe('createShutdown', () => {
     it('fails readiness, runs callbacks in the order added, closes the server and drains', async () => {
         const ctx = setup();
         let readyFailedFirst = false;
+
         ctx.shutdown.onShutdown(async () => {
             readyFailedFirst = ctx.shutdown.shuttingDown;
             ctx.order.push('first');
@@ -74,8 +78,11 @@ describe('createShutdown', () => {
     it('waits readinessDelayMs before stopping anything', async () => {
         const ctx = setup({ readinessDelayMs: 5_000 });
         const callback = vi.fn();
+
         ctx.shutdown.onShutdown(callback);
+
         const done = ctx.shutdown.shutdown();
+
         await flush();
         expect(ctx.shutdown.shuttingDown).toBe(true);
         expect(callback).not.toHaveBeenCalled();
@@ -89,6 +96,7 @@ describe('createShutdown', () => {
         const ctx = setup();
         const first = ctx.shutdown.shutdown();
         const second = ctx.shutdown.shutdown();
+
         expect(second).toBe(first);
         await first;
         expect(ctx.drain).toHaveBeenCalledTimes(1);
@@ -97,6 +105,7 @@ describe('createShutdown', () => {
     it('reports a throwing callback and still drains', async () => {
         const ctx = setup();
         const error = new Error('callback failed');
+
         ctx.shutdown.onShutdown(() => {
             throw error;
         });
@@ -109,6 +118,7 @@ describe('createShutdown', () => {
         const ctx = setup();
         const callback = vi.fn();
         const off = ctx.shutdown.onShutdown(callback);
+
         off();
         await ctx.shutdown.shutdown();
         expect(callback).not.toHaveBeenCalled();
@@ -116,11 +126,14 @@ describe('createShutdown', () => {
 
     it('forces the server closed after closeTimeoutMs', async () => {
         const ctx = setup();
+
         ctx.server.close.mockImplementation((force?: boolean) => (force ? Promise.resolve() : new Promise(() => {})));
+
         let settled = false;
         const done = ctx.shutdown.shutdown().then(() => {
             settled = true;
         });
+
         await vi.waitFor(() => expect(ctx.drain).toHaveBeenCalled());
         await flush();
         expect(settled).toBe(false);
@@ -133,6 +146,7 @@ describe('createShutdown', () => {
 
     it('does not force a server that closed in time', async () => {
         const ctx = setup();
+
         await ctx.shutdown.shutdown();
         expect(ctx.server.close).not.toHaveBeenCalledWith(true);
     });
@@ -140,6 +154,7 @@ describe('createShutdown', () => {
     it('reports a rejecting close', async () => {
         const ctx = setup();
         const error = new Error('close failed');
+
         ctx.server.close.mockImplementation(async () => {
             throw error;
         });
@@ -151,11 +166,13 @@ describe('createShutdown', () => {
 describe('createHttpApp with a shutdown', () => {
     it('registers one callback that runs the app closers', async () => {
         const callbacks: (() => void | Promise<void>)[] = [];
+
         createTestApp({
             shutdown: {
                 shuttingDown: false,
                 onShutdown: (fn) => {
                     callbacks.push(fn);
+
                     return () => {};
                 },
                 shutdown: async () => {},

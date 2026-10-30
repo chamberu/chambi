@@ -16,7 +16,11 @@ import * as coding from '@chamvi/coding';
 import type { CodingResult, ICodingBackend } from '@chamvi/coding';
 import type { IWorkspaceManager } from '@chamvi/sandbox';
 
-const manager: Pick<IWorkspaceManager, 'get'> = { get: () => { throw new TypeError('not used'); } };
+const manager: Pick<IWorkspaceManager, 'get'> = {
+    get: () => {
+        throw new TypeError('not used');
+    },
+};
 
 describe('public api', () => {
     it('exports codingTools', () => {
@@ -57,6 +61,7 @@ describe('public api', () => {
         for (const outputLogMaxBytes of [0, -1, 1.5, '1' as never]) {
             expect(() => coding.codingTools(manager, { outputLogMaxBytes })).toThrow(InvalidAgentDefinitionError);
         }
+
         expect(Object.keys(coding.codingTools(manager, { outputLogMaxBytes: 1_024 }))).toContain('bash');
     });
 
@@ -82,9 +87,9 @@ describe('public api', () => {
     it('types the coding backend contract', () => {
         expectTypeOf<CodingResult['status']>().toEqualTypeOf<'done' | 'stuck'>();
         expectTypeOf<CodingResult>().toEqualTypeOf<{
-            status: 'done' | 'stuck'; 
-            summary: string; 
-            diff: string 
+            status: 'done' | 'stuck';
+            summary: string;
+            diff: string
         }>();
         expectTypeOf<ICodingBackend['code']>().returns.resolves.toEqualTypeOf<CodingResult>();
     });

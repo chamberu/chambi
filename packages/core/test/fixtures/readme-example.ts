@@ -26,6 +26,7 @@ export async function triageIssue(model: LanguageModel) {
                     labels.push(label);
                     // answers where the run came from, at most once per message
                     await context.channels.findOne()?.emit({ body: `Labelled as ${label}.` });
+
                     return { added: label };
                 },
             }),
@@ -41,6 +42,7 @@ export async function triageIssue(model: LanguageModel) {
             },
         })],
     });
+
     await engine.start();
 
     const { runId } = await engine.dispatch({

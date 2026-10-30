@@ -36,6 +36,7 @@ async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
     } catch (error) {
         return error;
     }
+
     throw new Error('expected a rejection');
 }
 
@@ -66,7 +67,9 @@ describe('resolveEntry', () => {
 
     it('keeps an absolute --entry', async () => {
         await touch('app/main.ts');
+
         const entry = path.join(cwd, 'app/main.ts');
+
         await expect(resolveEntry({
             cwd: tmpdir(),
             entry,
@@ -100,7 +103,9 @@ describe('resolveEntry', () => {
 
     it('refuses a missing built entry beside a source entry with the build hint', async () => {
         await touch('src/index.ts');
+
         const error = await rejectionOf(resolveEntry({ cwd, kind: 'built' }));
+
         expect(error).toBeInstanceOf(ChamviError);
         expect((error as ChamviError).code).toBe(CLI_USAGE_ERROR_CODE);
         expect((error as Error).message).toContain('dist/index.mjs not found');
@@ -114,6 +119,7 @@ describe('resolveEntry', () => {
             entry: 'nope.ts',
             kind: 'source',
         }));
+
         expect((error as ChamviError).code).toBe(CLI_USAGE_ERROR_CODE);
         expect((error as Error).message).toContain('nope.ts not found');
     });
@@ -125,14 +131,18 @@ describe('resolveEntry', () => {
 
     it('refuses a missing chamvi.entry file', async () => {
         await touch('package.json', JSON.stringify({ chamvi: { entry: 'lib/app.ts' } }));
+
         const error = await rejectionOf(resolveEntry({ cwd, kind: 'source' }));
+
         expect((error as ChamviError).code).toBe(CLI_USAGE_ERROR_CODE);
         expect((error as Error).message).toContain('lib/app.ts (package.json chamvi.entry) not found');
     });
 
     it('refuses a chamvi.entry that is no non-empty string', async () => {
         await touch('package.json', JSON.stringify({ chamvi: { entry: 42 } }));
+
         const error = await rejectionOf(resolveEntry({ cwd, kind: 'source' }));
+
         expect((error as ChamviError).code).toBe(CLI_USAGE_ERROR_CODE);
         expect((error as Error).message).toContain('chamvi.entry');
     });
@@ -141,6 +151,7 @@ describe('resolveEntry', () => {
 describe('loadApp', () => {
     it('loads the default export of the fixture app', async () => {
         const app = await loadApp(path.join(fixtures, 'app/src/index.ts'), importModule);
+
         expect(isApp(app)).toBe(true);
         expect(app.agents.map((agent) => agent.name)).toEqual(['echo']);
     });
@@ -148,6 +159,7 @@ describe('loadApp', () => {
     it('refuses an entry whose default export is no app', async () => {
         const entry = path.join(fixtures, 'broken/not-an-app.ts');
         const error = await rejectionOf(loadApp(entry, importModule));
+
         expect((error as ChamviError).code).toBe(CLI_USAGE_ERROR_CODE);
         expect((error as Error).message).toContain(`${entry} must \`export default createApp`);
         expect(exitCodeOf(error)).toBe(EXIT_CODE.USAGE);
@@ -155,14 +167,17 @@ describe('loadApp', () => {
 
     it('passes a configuration error of the entry import through', async () => {
         const error = await rejectionOf(loadApp(path.join(fixtures, 'broken/throws-config.ts'), importModule));
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(exitCodeOf(error)).toBe(EXIT_CODE.USAGE);
     });
 
     it('imports through a file URL', async () => {
         const specifiers: string[] = [];
+
         await loadApp(path.join(fixtures, 'app/src/index.ts'), (specifier) => {
             specifiers.push(specifier);
+
             return import(specifier);
         });
         expect(specifiers[0]).toMatch(/^file:\/\/.*\/fixtures\/app\/src\/index\.ts$/);
@@ -174,8 +189,11 @@ describe('loadEntryApp', () => {
         const written: string[] = [];
         const app = await loadEntryApp(path.join(fixtures, 'app/src/index.ts'), {
             importModule,
-            stderr: (text) => { written.push(text); },
+            stderr: (text) => {
+                written.push(text);
+            },
         });
+
         expect(app.agents.map((agent) => agent.name)).toEqual(['echo']);
         expect(written).toEqual([]);
     });
@@ -184,8 +202,11 @@ describe('loadEntryApp', () => {
         const written: string[] = [];
         const app = await loadEntryApp(undefined, {
             importModule: () => Promise.reject(new Error('no import expected')),
-            stderr: (text) => { written.push(text); },
+            stderr: (text) => {
+                written.push(text);
+            },
         });
+
         expect(isApp(app)).toBe(true);
         expect(app.agents).toEqual([]);
         expect(written).toEqual([DEFAULT_APP_NOTICE]);

@@ -7,7 +7,7 @@ npm install @chamvi/app @chamvi/cli ai
 npm install --save-dev tsdown   # only for chamvi build
 ```
 
-Node.js `>=22.18.0` (type stripping, so `dev` and a `.ts` entry run without a build step). `@chamvi/app` is a required peer dependency (one copy), `tsdown` an optional one, imported by `build` only.
+Node.js `>=24.3.0` (type stripping, so `dev` and a `.ts` entry run without a build step). `@chamvi/app` is a required peer dependency (one copy), `tsdown` an optional one, imported by `build` only.
 
 `package.json` scripts of an agent repository:
 
@@ -81,7 +81,7 @@ A terminal's Ctrl-C sends SIGINT to the whole foreground process group, and the 
     entry: { index: '<entry>' },
     format: 'esm',
     platform: 'node',
-    target: 'node22',
+    target: 'node24',
     outDir: '<out-dir>',
     fixedExtension: true,
     sourcemap: true,

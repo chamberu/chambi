@@ -53,22 +53,27 @@ describePostgres('DatabaseArtifactRepository artifacts', () => {
             'SELECT pg_typeof(data)::text AS type FROM chamvi_artifacts WHERE id = $1',
             ['a1'],
         );
+
         expect(type).toBe('bytea');
 
         const entity = await dataSource.getRepository(ArtifactEntity).findOneBy({ id: 'a1' });
+
         expect(entity).not.toBeNull();
         expect(entity!.data).toBeUndefined();
     });
 
     it('reads bytes as a plain Uint8Array that serializes like one', async () => {
         await store.insert(artifact('a1'), new Uint8Array([7, 8, 9]));
+
         const bytes = await store.read('a1');
+
         expect(bytes?.constructor).toBe(Uint8Array);
         expect(JSON.stringify(bytes)).toBe(JSON.stringify(new Uint8Array([7, 8, 9])));
     });
 
     it('store a Buffer view and a subarray by their own bytes only', async () => {
         const backing = new Uint8Array([1, 2, 3, 4, 5]);
+
         await store.insert(artifact('a1', { size: 2 }), backing.subarray(1, 3));
         expect(Array.from((await store.read('a1'))!)).toEqual([2, 3]);
 

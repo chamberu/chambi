@@ -54,7 +54,9 @@ describe('MemoryConversationRepository', () => {
         const scope = await store.resolve(identity());
         const before = Date.now();
         const begun = await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
+
         expect(begun.kind).toBe('ready');
+
         if (begun.kind === 'ready') {
             expect(begun.snapshot.createdAt.getTime()).toBeGreaterThanOrEqual(before);
         }
@@ -69,6 +71,7 @@ describe('MemoryConversationRepository', () => {
     it('releases its snapshot at terminal settlement and refuses a retained ended input', async () => {
         const store = new MemoryConversationRepository({ clock: new ControllableClock() });
         const scope = await store.resolve(identity());
+
         await store.beginTurn(scope, 'run-a', 'hello', LIMITS);
         await store.endTurn(scope, 'run-a', []);
         await expect(store.beginTurn(scope, 'run-a', 'hello', LIMITS)).rejects.toMatchObject({ code: 'invalid_run_state' });
@@ -79,6 +82,7 @@ describe('MemoryConversationRepository', () => {
     it('refuses a malformed scope or run id before any state change', async () => {
         const store = new MemoryConversationRepository({ clock: new ControllableClock() });
         const scope = await store.resolve(identity());
+
         await expect(store.beginTurn({ ...scope, id: 'nope' }, 'run-a', 'hi', LIMITS))
             .rejects.toMatchObject({ code: 'validation_error' });
         await expect(store.beginTurn({ ...scope, generation: -1 }, 'run-a', 'hi', LIMITS))
@@ -86,8 +90,10 @@ describe('MemoryConversationRepository', () => {
         await expect(store.beginTurn(scope, '', 'hi', LIMITS)).rejects.toMatchObject({ code: 'validation_error' });
         await expect(store.beginTurn(scope, 'run-a', '', LIMITS)).rejects.toMatchObject({ code: 'validation_error' });
         expect((await store.findItems(scope, { limit: 10, offset: 0 })).total).toBe(0);
+
         // a scope of an identity never resolved here is stale
         const other = { ...scope, id: 'f'.repeat(64) };
+
         expect(await store.beginTurn(other, 'run-a', 'hi', LIMITS)).toEqual({ kind: 'stale' });
         await expect(store.applyNote(scope, { ...setOp('run-a', 'k', 'v'), kind: 'other' } as never))
             .rejects.toMatchObject({ code: 'invalid_run_state' });
@@ -96,6 +102,7 @@ describe('MemoryConversationRepository', () => {
     it('validates a note operation of the active run', async () => {
         const store = new MemoryConversationRepository({ clock: new ControllableClock() });
         const scope = await store.resolve(identity());
+
         await store.beginTurn(scope, 'run-a', 'hi', LIMITS);
         await expect(store.applyNote(scope, { ...setOp('run-a', 'k', 'v'), kind: 'other' } as never))
             .rejects.toMatchObject({ code: 'validation_error' });
@@ -103,7 +110,7 @@ describe('MemoryConversationRepository', () => {
             .rejects.toMatchObject({ code: 'validation_error' });
         await expect(store.applyNote(scope, { ...setOp('run-a', 'k', 'v'), inputHash: '' }))
             .rejects.toMatchObject({ code: 'validation_error' });
-        await expect(store.applyNote(scope, setOp('run-a', 'k', 'a\u0000b')))
+        await expect(store.applyNote(scope, setOp('run-a', 'k', 'a\0b')))
             .rejects.toMatchObject({ code: 'validation_error' });
         await expect(store.applyNote(scope, { ...setOp('run-a', 'k', 'v'), expiresAt: new Date(NaN) }))
             .rejects.toMatchObject({ code: 'validation_error' });
@@ -115,15 +122,19 @@ describe('MemoryConversationRepository', () => {
         const store = new MemoryConversationRepository({ clock });
         const scope = await store.resolve(identity());
         const limits = { ...LIMITS, retentionMs: 1000 };
+
         await store.beginTurn(scope, 'run-a', 'hi', limits);
+
         const op = setOp('run-a', 'k', 'v');
         const first = await store.applyNote(scope, op);
+
         await store.endTurn(scope, 'run-a', []);
         clock.advance(1000);
         await store.prune(limits, {
             isSettled: async () => {
                 // the run takes the scope back (engine-invalid, but the prune must re-check after its await)
                 await store.beginTurn(scope, 'run-a', 'hi', limits);
+
                 return true;
             },
         });
@@ -134,6 +145,7 @@ describe('MemoryConversationRepository', () => {
     it('endTurn of a stale generation is a no-op', async () => {
         const store = new MemoryConversationRepository({ clock: new ControllableClock() });
         const scope = await store.resolve(identity());
+
         await store.beginTurn(scope, 'run-a', 'hi', LIMITS);
         await store.endTurn({ ...scope, generation: 3 }, 'run-a', []);
         expect(await store.beginTurn(scope, 'run-b', 'x', LIMITS)).toEqual({ kind: 'busy', runId: 'run-a' });

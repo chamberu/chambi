@@ -28,18 +28,24 @@ export function isWebhookChannel(channel: unknown): boolean {
  */
 export function validateChannels(engine: Engine, channels: readonly IChannel[] | undefined): IChannel[] {
     const seen = new Set<string>();
+
     return (channels ?? []).map((channel) => {
         const name = String(channel?.name);
+
         if (typeof channel?.in !== 'function') {
             throw new InvalidAgentDefinitionError(`The channel "${name}" has no in() for the http app to serve.`);
         }
+
         if (engine.getChannel(name) !== channel) {
             throw new InvalidAgentDefinitionError(`The engine holds no channel "${name}" as given to the http app.`);
         }
+
         if (seen.has(name)) {
             throw new InvalidAgentDefinitionError(`The channel "${name}" is listed more than once.`);
         }
+
         seen.add(name);
+
         return channel;
     });
 }
@@ -51,9 +57,14 @@ export function validateChannels(engine: Engine, channels: readonly IChannel[] |
  */
 export function parseWebhookSubpath(subpath: string): WebhookTarget | undefined {
     const [, agent = '', ...rest] = subpath.split('/');
+
     try {
         const decoded = [agent, ...rest].map((segment) => decodeURIComponent(segment));
-        if (!decoded[0]) return undefined;
+
+        if (!decoded[0]) {
+            return undefined;
+        }
+
         return { agent: decoded[0], path: `/${decoded.slice(1).join('/')}` };
     } catch {
         return undefined;
@@ -63,5 +74,6 @@ export function parseWebhookSubpath(subpath: string): WebhookTarget | undefined 
 /** Where a webhook subscription on `path` is served, each segment URL-encoded. */
 export function webhookUrl(basePath: string, channel: string, agent: string, path: string): string {
     const encoded = path.split('/').map((segment) => encodeURIComponent(segment)).join('/');
+
     return `${basePath}/channels/${channel}/${agent}${encoded === '/' ? '' : encoded}`;
 }

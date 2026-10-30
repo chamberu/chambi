@@ -26,10 +26,18 @@ describe('repository instructions on read_file', () => {
     let fixture: GitFixture;
     let setup: CodingSetup;
 
-    beforeAll(async () => { fixture = await createFixture(); });
-    afterAll(async () => { await fixture.cleanup(); });
-    beforeEach(async () => { setup = await setupCoding(fixture); });
-    afterEach(async () => { await setup.cleanup(); });
+    beforeAll(async () => {
+        fixture = await createFixture();
+    });
+    afterAll(async () => {
+        await fixture.cleanup();
+    });
+    beforeEach(async () => {
+        setup = await setupCoding(fixture);
+    });
+    afterEach(async () => {
+        await setup.cleanup();
+    });
 
     it('delivers root and ancestor guidance beside the unchanged file text', async () => {
         await setup.workspace.writeFile('AGENTS.md', 'root guidance\n');
@@ -61,7 +69,9 @@ describe('repository instructions on read_file', () => {
 
     it('refreshes guidance after the workspace instruction file changes', async () => {
         await setup.workspace.writeFile('AGENTS.md', 'first\n');
+
         const first = await setup.call<ReadFileResult>('read_file', { path: 'src/a.ts' });
+
         await setup.workspace.writeFile('AGENTS.md', 'second\n');
 
         const second = await setup.call<ReadFileResult>('read_file', { path: 'src/a.ts' });
@@ -73,8 +83,10 @@ describe('repository instructions on read_file', () => {
 
     it('keeps two workspaces of the same run isolated', async () => {
         const secondFixture = await createFixture();
+
         try {
             const { workspace: second } = await setup.manager.acquire('r1', { repo: secondFixture.url });
+
             await setup.workspace.writeFile('AGENTS.md', 'first workspace\n');
             await setup.workspace.writeFile('src/AGENTS.md', 'first subtree\n');
             await second.writeFile('AGENTS.md', 'second workspace\n');
@@ -116,6 +128,7 @@ describe('repository instructions on read_file', () => {
 
     it('propagates cancellation to repository instruction collection', async () => {
         const controller = new AbortController();
+
         controller.abort();
 
         await expect(setup.call('read_file', { path: 'src/a.ts' }, undefined, controller.signal)).rejects.toThrow(SandboxError);

@@ -39,7 +39,9 @@ export class ControllableClock implements IClock {
             seq: this.seq++,
             fn,
         };
+
         this.timers.push(timer);
+
         return {
             clear: () => {
                 this.timers = this.timers.filter((t) => t !== timer);
@@ -53,15 +55,21 @@ export class ControllableClock implements IClock {
      */
     advance(ms: number): void {
         const target = this.current + ms;
+
         for (;;) {
             const due = this.timers
                 .filter((t) => t.at <= target)
                 .sort((a, b) => a.at - b.at || a.seq - b.seq)[0];
-            if (!due) break;
+
+            if (!due) {
+                break;
+            }
+
             this.timers = this.timers.filter((t) => t !== due);
             this.current = Math.max(this.current, due.at);
             due.fn();
         }
+
         this.current = target;
     }
 }

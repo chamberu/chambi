@@ -30,19 +30,27 @@ import type {
 } from './types.ts';
 
 type ListIssuesInput = {
-    repo: string; 
-    labels?: string[]; 
-    limit?: number 
+    repo: string;
+    labels?: string[];
+    limit?: number
 };
 
 function requireLabels(value: unknown): string[] | undefined {
-    if (value === undefined) return undefined;
+    if (value === undefined) {
+        return undefined;
+    }
+
     if (!Array.isArray(value) || value.length > LABELS_MAX) {
         throw new ValidationError(`labels must be a list of at most ${LABELS_MAX} label names.`);
     }
+
     return value.map((label) => {
         const name = requireString(label, 'labels[]');
-        if (name.includes(',')) throw new ValidationError('A label name for github_list_issues cannot hold a comma.');
+
+        if (name.includes(',')) {
+            throw new ValidationError('A label name for github_list_issues cannot hold a comma.');
+        }
+
         return name;
     });
 }
@@ -88,35 +96,59 @@ export function createRepositoryTools(app: IGithubApp): ToolSet {
                 if (input.includeArchived !== undefined && typeof input.includeArchived !== 'boolean') {
                     throw new ValidationError('includeArchived must be a boolean.');
                 }
+
                 const { signal } = context.run;
+
                 try {
                     const installations = (await app.installations()).sort((a, b) => a.id - b.id);
                     const repositories: GithubRepository[] = [];
+
                     for (const installation of installations) {
                         signal.throwIfAborted();
+
                         // a suspended installation's token exchange answers 403
-                        if (installation.suspended) continue;
+                        if (installation.suspended) {
+                            continue;
+                        }
+
                         const octokit = bindSignal(await app.octokit(installation.id), signal);
                         const items = await octokit.paginate('GET /installation/repositories', { per_page: 100 });
+
                         for (const item of items) {
-                            if (!isObject(item)) continue;
+                            if (!isObject(item)) {
+                                continue;
+                            }
+
                             const repository = toRepository(item, installation.id, installation.account);
-                            if (repository.archived && input.includeArchived !== true) continue;
+
+                            if (repository.archived && input.includeArchived !== true) {
+                                continue;
+                            }
+
                             repositories.push(repository);
                         }
                     }
+
                     repositories.sort((a, b) => {
                         const left = a.repo.toLowerCase();
                         const right = b.repo.toLowerCase();
-                        if (left === right) return 0;
+
+                        if (left === right) {
+                            return 0;
+                        }
+
                         return left < right ? -1 : 1;
                     });
+
                     return {
                         repositories: repositories.slice(0, REPOSITORIES_MAX),
                         truncated: repositories.length > REPOSITORIES_MAX,
                     };
                 } catch (error) {
-                    if (signal.aborted) throw signal.reason;
+                    if (signal.aborted) {
+                        throw signal.reason;
+                    }
+
                     throw toolError(error);
                 }
             },
@@ -143,6 +175,7 @@ export function createRepositoryTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const labels = requireLabels(input.labels);
                 const limit = input.limit === undefined ? ISSUES_MAX : requireInteger(input.limit, 'limit', 1, ISSUES_MAX);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const issues: GithubIssueSummary[] = [];
                     let truncated = false;
@@ -153,17 +186,27 @@ export function createRepositoryTools(app: IGithubApp): ToolSet {
                         per_page: 100,
                         ...(labels ? { labels: labels.join(',') } : {}),
                     });
+
                     for await (const { data } of pages) {
                         for (const item of data) {
-                            if (!isObject(item) || item.pull_request) continue;
+                            if (!isObject(item) || item.pull_request) {
+                                continue;
+                            }
+
                             if (issues.length === limit) {
                                 truncated = true;
+
                                 break;
                             }
+
                             issues.push(toIssueSummary(item));
                         }
-                        if (truncated) break;
+
+                        if (truncated) {
+                            break;
+                        }
                     }
+
                     return { issues, truncated };
                 });
             },

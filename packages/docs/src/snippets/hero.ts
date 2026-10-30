@@ -39,7 +39,11 @@ export const triage = defineAgent({
                 // waits in `waiting` until the owner signs off, across restarts
                 const { approved } = await context.channels.findOneOrFail('owner')
                     .approve({ title: `Close #${issue}?`, address: 'ops' });
-                if (!approved) throw new ToolDeniedError('The owner keeps it open.');
+
+                if (!approved) {
+                    throw new ToolDeniedError('The owner keeps it open.');
+                }
+
                 return closeIssue(issue);
             },
         }),

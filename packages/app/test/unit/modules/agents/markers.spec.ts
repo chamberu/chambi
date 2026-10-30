@@ -54,13 +54,14 @@ describe('revision markers moved by another process', () => {
         }, /removed this agent's revision marker/],
         ['moved', async (_engine: Engine, store: ReturnType<typeof createMemoryStore>, clock: ControllableClock) => {
             await store.agentRevisions.save({
-                agent: 'greeter', 
-                hash: 'h0', 
-                changedAt: clock.now(), 
+                agent: 'greeter',
+                hash: 'h0',
+                changedAt: clock.now(),
             });
         }, /registered other content for this agent/],
     ])('a marker %s elsewhere is an issue on the replica whose folder did not change, until it matches again', async (_label, act, message) => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
         const setup = buildAgentsDirHarness({
@@ -68,9 +69,11 @@ describe('revision markers moved by another process', () => {
             clock,
             store,
         });
+
         harnesses.push(setup.harness);
         await setup.harness.setup();
         await setup.watch();
+
         const marker = await store.agentRevisions.findOne('greeter');
 
         await act(otherEngine(store, clock), store, clock);
@@ -89,13 +92,16 @@ describe('revision markers moved by another process', () => {
 
     it('a job does not remove an agent whose folder it does not see', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
-            agent: 'elsewhere', 
-            hash: 'h1', 
-            changedAt: clock.now(), 
+            agent: 'elsewhere',
+            hash: 'h1',
+            changedAt: clock.now(),
         });
+
         const runId = await queueRun(store, clock, 'elsewhere');
         const setup = buildAgentsDirHarness({
             root: root.path,
@@ -103,6 +109,7 @@ describe('revision markers moved by another process', () => {
             clock,
             store,
         });
+
         harnesses.push(setup.harness);
 
         await setup.harness.setup();
@@ -118,6 +125,7 @@ describe('a job never reloads an agent', () => {
 
     it('a job writes the first marker and runs', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
         const runId = await queueRun(store, clock, 'greeter');
@@ -128,10 +136,12 @@ describe('a job never reloads an agent', () => {
             mode: 'job',
             job: { agent: 'greeter' },
         });
+
         harnesses.push(setup.harness);
         await setup.harness.setup();
 
         const hash = await hashAgentFolder(join(root.path, 'greeter'));
+
         expect((await store.agentRevisions.findOne('greeter'))?.hash).toBe(hash);
         expect(setup.engine().agentRevision('greeter')).toBe(hash);
         expect((await store.runs.findOne(runId))?.status).toBe('queued');
@@ -140,13 +150,16 @@ describe('a job never reloads an agent', () => {
 
     it('a job moves a different marker when the agent has no unsettled runs', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
-            agent: 'greeter', 
-            hash: OLD, 
-            changedAt: START, 
+            agent: 'greeter',
+            hash: OLD,
+            changedAt: START,
         });
+
         const setup = buildAgentsDirHarness({
             root: root.path,
             clock,
@@ -154,6 +167,7 @@ describe('a job never reloads an agent', () => {
             mode: 'job',
             job: { agent: 'greeter' },
         });
+
         harnesses.push(setup.harness);
         await setup.harness.setup();
 
@@ -163,13 +177,16 @@ describe('a job never reloads an agent', () => {
 
     it('a job with a changed folder fails and cancels nothing', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
-            agent: 'greeter', 
-            hash: OLD, 
-            changedAt: START, 
+            agent: 'greeter',
+            hash: OLD,
+            changedAt: START,
         });
+
         const runId = await queueRun(store, clock, 'greeter');
         const setup = buildAgentsDirHarness({
             root: root.path,
@@ -178,18 +195,22 @@ describe('a job never reloads an agent', () => {
             mode: 'job',
             job: { agent: 'greeter' },
         });
+
         harnesses.push(setup.harness);
 
         const error = await setup.harness.setup().then(() => undefined, (e: unknown) => e);
+
         expect(error).toBeInstanceOf(InvalidRunStateError);
+
         const hash = await hashAgentFolder(join(root.path, 'greeter'));
+
         expect((error as Error).message).toContain('greeter');
         expect((error as Error).message).toContain(OLD.slice(0, 12));
         expect((error as Error).message).toContain(hash.slice(0, 12));
         expect(await store.agentRevisions.findOne('greeter')).toEqual({
-            agent: 'greeter', 
-            hash: OLD, 
-            changedAt: START, 
+            agent: 'greeter',
+            hash: OLD,
+            changedAt: START,
         });
         expect((await store.runs.findOne(runId))?.status).toBe('queued');
     });
@@ -199,13 +220,16 @@ describe('a job never reloads an agent', () => {
             'greeter/agent.ts': agentFile('v1'),
             'triage/agent.ts': agentFile('v1', 'test/model', 'triage'),
         });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
-            agent: 'triage', 
-            hash: OLD, 
-            changedAt: START, 
+            agent: 'triage',
+            hash: OLD,
+            changedAt: START,
         });
+
         const runId = await queueRun(store, clock, 'triage');
         const setup = buildAgentsDirHarness({
             root: root.path,
@@ -214,6 +238,7 @@ describe('a job never reloads an agent', () => {
             mode: 'job',
             job: { agent: 'greeter' },
         });
+
         harnesses.push(setup.harness);
         await setup.harness.setup();
 

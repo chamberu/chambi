@@ -34,6 +34,7 @@ export function createAuthupAdapter(
     storage: Storage = window.sessionStorage,
 ): IAuthupAdapter {
     const pinia = createPinia();
+
     app.use(pinia);
     install(app, {
         baseURL: config.url,
@@ -44,6 +45,7 @@ export function createAuthupAdapter(
         cookieSecure: window.location.protocol === 'https:',
         ...createSessionCookies(storage),
     });
+
     const store = injectStore(pinia, app);
 
     return {
@@ -51,6 +53,7 @@ export function createAuthupAdapter(
             const pkce = await createPKCE();
             const state = createState();
             const redirectUri = `${window.location.origin}${uiBase}/login/callback`;
+
             saveAuthorizationRequest({
                 state,
                 code_verifier: pkce.code_verifier,
@@ -58,6 +61,7 @@ export function createAuthupAdapter(
                 client_id: config.clientId,
                 ...(config.realmId ? { realm_id: config.realmId } : {}),
             });
+
             return buildAuthorizeURL({
                 baseURL: config.url,
                 clientId: config.clientId,
@@ -70,8 +74,13 @@ export function createAuthupAdapter(
         },
         async complete(code, state) {
             const request = loadAuthorizationRequest();
+
             clearAuthorizationRequest();
-            if (!request || request.state !== state) throw new Error('The sign-in state does not match; start again.');
+
+            if (!request || request.state !== state) {
+                throw new Error('The sign-in state does not match; start again.');
+            }
+
             await store.exchangeAuthorizationCode(code, {
                 code_verifier: request.code_verifier,
                 redirect_uri: request.redirect_uri,
@@ -81,6 +90,7 @@ export function createAuthupAdapter(
         },
         async token() {
             await store.resolve();
+
             return store.accessToken || undefined;
         },
         // true while a token is in place after resolve(), rotated or not: a
@@ -92,6 +102,7 @@ export function createAuthupAdapter(
             } catch {
                 return false;
             }
+
             return !!store.accessToken;
         },
         async signOut() {

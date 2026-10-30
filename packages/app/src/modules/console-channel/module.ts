@@ -28,7 +28,10 @@ export class ConsoleChannelModule implements IModule {
     }
 
     async setup(container: IContainer): Promise<void> {
-        if (container.resolve(AppToken.CONTEXT).mode === 'migrate') return;
+        if (container.resolve(AppToken.CONTEXT).mode === 'migrate') {
+            return;
+        }
+
         container.registerMany(AppToken.CHANNELS, { useValue: consoleChannel(this.options) });
     }
 }

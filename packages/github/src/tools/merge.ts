@@ -65,36 +65,51 @@ function requireSha(value: unknown): string {
     if (typeof value !== 'string' || !SHA.test(value)) {
         throw new ValidationError(`sha must be the head commit sha of the pull request, got ${JSON.stringify(value)}.`);
     }
+
     return value;
 }
 
 function requireMethod(value: unknown, fallback: GithubMergeMethod): GithubMergeMethod {
-    if (value === undefined) return fallback;
+    if (value === undefined) {
+        return fallback;
+    }
+
     if (!(MERGE_METHODS as readonly unknown[]).includes(value)) {
         throw new ValidationError(`method must be one of ${MERGE_METHODS.join(', ')}.`);
     }
+
     return value as GithubMergeMethod;
 }
 
 function optionalString(value: unknown, name: string, max?: number): string | undefined {
-    if (value === undefined) return undefined;
+    if (value === undefined) {
+        return undefined;
+    }
+
     const text = requireString(value, name);
-    if (max !== undefined && text.length > max) throw new ValidationError(`${name} must have at most ${max} characters.`);
+
+    if (max !== undefined && text.length > max) {
+        throw new ValidationError(`${name} must have at most ${max} characters.`);
+    }
+
     return text;
 }
 
 /** `branch` or `owner:branch`, as `owner:branch` (an unqualified head is a branch of the repository's owner). */
 function requireHead(value: unknown, owner: string): string {
     const head = requireString(value, 'head');
+
     if (!HEAD.test(head) || head.includes('..')) {
         throw new ValidationError(`head must be a branch or "owner:branch" for a fork, got ${JSON.stringify(head)}.`);
     }
+
     return head.includes(':') ? head : `${owner}:${head}`;
 }
 
 /** `<runId>:github_create_pull_request:<sha256 of repo, head, base, title, body, draft>`. */
 function pullRequestKey(input: CreatePullRequestInput, ctx: ToolContext): string {
     const { owner, repo } = parseRepo(input.repo);
+
     return inputEffectKey(ctx.run.runId, 'github_create_pull_request', [
         `${owner}/${repo}`.toLowerCase(),
         input.head,
@@ -106,10 +121,10 @@ function pullRequestKey(input: CreatePullRequestInput, ctx: ToolContext): string
 }
 
 function toCreated(data: {
-    number: number; 
-    html_url: string; 
-    base: { ref: string }; 
-    head: { ref: string; label?: string | null } 
+    number: number;
+    html_url: string;
+    base: { ref: string };
+    head: { ref: string; label?: string | null }
 }): GithubCreatedPullRequest {
     return {
         number: data.number,
@@ -165,6 +180,7 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
                 const { owner, repo } = parseRepo(input.repo);
                 const head = requireHead(input.head, owner);
                 const marker = effectMarker(key);
+
                 return withOctokit(app, ctx, { owner, repo }, async (octokit) => {
                     const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/pulls', {
                         owner,
@@ -173,22 +189,33 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
                         head,
                         per_page: 100,
                     });
+
                     for await (const { data } of pages) {
                         for (const pull of data) {
-                            if (pull.body?.includes(marker)) return toCreated(pull);
+                            if (pull.body?.includes(marker)) {
+                                return toCreated(pull);
+                            }
                         }
                     }
+
                     return undefined;
                 });
             },
             execute: async (input, options) => {
                 const { owner, repo } = parseRepo(input.repo);
+
                 requireHead(input.head, owner);
+
                 const title = requireString(input.title, 'title');
                 const body = requireString(input.body, 'body');
                 const given = input.base === undefined ? undefined : requireRef(input.base, 'base');
-                if (input.draft !== undefined && typeof input.draft !== 'boolean') throw new ValidationError('draft must be a boolean.');
+
+                if (input.draft !== undefined && typeof input.draft !== 'boolean') {
+                    throw new ValidationError('draft must be a boolean.');
+                }
+
                 const marker = effectMarker(pullRequestKey(input, options.context));
+
                 return withOctokit(app, options.context, { owner, repo }, async (octokit) => {
                     const base = given ?? (await octokit.request('GET /repos/{owner}/{repo}', { owner, repo })).data.default_branch;
                     const { data } = await octokit.request('POST /repos/{owner}/{repo}/pulls', {
@@ -201,6 +228,7 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
                         body: `${body}\n\n${marker}`,
                         draft: input.draft === true,
                     });
+
                     return toCreated(data);
                 });
             },
@@ -239,6 +267,7 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
                 const pullNumber = requireInteger(input.number, 'number', 1);
                 const sha = requireSha(input.sha);
                 const method = requireMethod(input.method, options.mergeMethod);
+
                 return withOctokit(app, ctx, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
                         owner,
@@ -246,12 +275,16 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
                         pull_number: pullNumber,
                     });
                     const pull = toPullRequest(data as unknown as Record<string, unknown>);
-                    if (!pull.merged || pull.headSha !== sha) return undefined;
+
+                    if (!pull.merged || pull.headSha !== sha) {
+                        return undefined;
+                    }
+
                     return {
-                        number: pull.number, 
-                        sha: pull.mergeCommitSha ?? sha, 
-                        method, 
-                        alreadyMerged: true, 
+                        number: pull.number,
+                        sha: pull.mergeCommitSha ?? sha,
+                        method,
+                        alreadyMerged: true,
                     };
                 });
             },
@@ -262,6 +295,7 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
                 const method = requireMethod(input.method, options.mergeMethod);
                 const commitTitle = optionalString(input.commitTitle, 'commitTitle', COMMIT_TITLE_MAX_CHARS);
                 const commitMessage = optionalString(input.commitMessage, 'commitMessage');
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
                         owner,
@@ -270,49 +304,67 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
                     });
                     const pull = toPullRequest(data as unknown as Record<string, unknown>);
                     const n = pull.number;
+
                     if (pull.merged && pull.headSha === sha) {
                         return {
-                            number: n, 
-                            sha: pull.mergeCommitSha ?? sha, 
-                            method, 
-                            alreadyMerged: true, 
+                            number: n,
+                            sha: pull.mergeCommitSha ?? sha,
+                            method,
+                            alreadyMerged: true,
                         };
                     }
+
                     if (pull.merged || pull.state !== 'open') {
                         throw new ToolDeniedError(`Pull request #${n} is ${pull.merged ? 'merged' : 'closed'}.`);
                     }
-                    if (pull.headSha !== sha) throw new ToolDeniedError(`The head of #${n} moved to ${pull.headSha}; read its checks again.`);
-                    if (pull.draft) throw new ToolDeniedError(`#${n} is a draft.`);
+
+                    if (pull.headSha !== sha) {
+                        throw new ToolDeniedError(`The head of #${n} moved to ${pull.headSha}; read its checks again.`);
+                    }
+
+                    if (pull.draft) {
+                        throw new ToolDeniedError(`#${n} is a draft.`);
+                    }
+
                     if (pull.mergeable === null) {
                         throw new ToolDeniedError(`GitHub is still computing whether #${n} can merge; read it again in a minute.`);
                     }
+
                     if (!pull.mergeable || !(MERGE_STATES as readonly string[]).includes(pull.mergeableState)) {
                         throw new ToolDeniedError(`#${n} cannot merge: mergeable_state is ${pull.mergeableState}.`);
                     }
+
                     const checks = await readChecks(octokit, { owner, repo }, {
-                        number: n, 
-                        headSha: pull.headSha, 
-                        base: pull.base, 
+                        number: n,
+                        headSha: pull.headSha,
+                        base: pull.base,
                     });
+
                     // fail closed: a token that cannot read the protection may be on its bypass list
                     if (!checks.required.known) {
                         throw new ToolDeniedError(`The required checks of ${pull.base} could not be read (branch protection or rulesets); #${n} must be merged by hand.`);
                     }
+
                     const notGreen = [
                         ...checks.checks.filter((check) => check.required && check.outcome !== 'success').map((check) => check.name),
                         ...checks.required.missing,
                     ];
+
                     if (notGreen.length > 0) {
                         throw new ToolDeniedError(`#${n} has required checks that are not green: ${[...new Set(notGreen)].join(', ')}.`);
                     }
+
                     // CI has not reported yet (a push seconds ago), or has not finished
                     if (checks.state === 'none') {
                         throw new ToolDeniedError(`#${n} has no checks reported yet; read its checks again once CI ran.`);
                     }
+
                     const running = checks.checks.filter((check) => check.outcome === 'pending').map((check) => check.name);
+
                     if (running.length > 0) {
                         throw new ToolDeniedError(`#${n} has checks that are still running: ${[...new Set(running)].join(', ')}.`);
                     }
+
                     // only these fields: nothing that asks GitHub to bypass protection
                     const { data: merged } = await octokit.request('PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge', {
                         owner,
@@ -323,11 +375,12 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
                         ...(commitTitle ? { commit_title: commitTitle } : {}),
                         ...(commitMessage ? { commit_message: commitMessage } : {}),
                     });
+
                     return {
-                        number: n, 
-                        sha: merged.sha, 
-                        method, 
-                        alreadyMerged: false, 
+                        number: n,
+                        sha: merged.sha,
+                        method,
+                        alreadyMerged: false,
                     };
                 });
             },

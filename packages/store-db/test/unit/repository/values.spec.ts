@@ -64,8 +64,11 @@ describePostgres('createDatabaseStore values', () => {
             startedAt: new Date(1_000),
             finishedAt: new Date(2_000),
         };
+
         await store.steps.insert(step);
+
         const steps = await store.steps.find('r1');
+
         expect(steps).toEqual([step]);
         expect(Object.keys(steps[0]!)).not.toContain('error');
 
@@ -91,13 +94,16 @@ describePostgres('createDatabaseStore values', () => {
             finishReason: 'tool-calls',
             createdAt: new Date(3_000),
         };
+
         await store.checkpoints.save(cp);
         await expect(store.checkpoints.findOne('r1')).resolves.toEqual(cp);
     });
 
     it('steps.find orders by index, then insertion', async () => {
         await seedRun(dataSource, 'r1');
+
         const at = new Date(1_000);
+
         for (const [index, name] of [[2, 'two'], [0, 'zero'], [1, 'one-a'], [1, 'one-b']] as const) {
             await store.steps.insert({
                 runId: 'r1',
@@ -108,17 +114,19 @@ describePostgres('createDatabaseStore values', () => {
                 finishedAt: at,
             });
         }
+
         const steps = await store.steps.find('r1');
+
         expect(steps.map((s) => s.name)).toEqual(['zero', 'one-a', 'one-b', 'two']);
     });
 
     it('store NUL characters and lone surrogates as U+FFFD, keeping escaped text and surrogate pairs', async () => {
         const raw = {
-            nul: 'a\u0000b',
-            'k\u0000': 1,
+            nul: 'a\0b',
+            'k\0': 1,
             lone: 'x\uD800y\uDC00z',
             pair: 'emoji \uD83D\uDE00',
-            literal: '\\u0000 and \\\u0000 and \\uD800',
+            literal: '\\u0000 and \\\0 and \\uD800',
         };
         const clean = {
             nul: 'a\uFFFDb',
@@ -135,10 +143,11 @@ describePostgres('createDatabaseStore values', () => {
         await expect(store.effects.findOne('e')).resolves.toEqual({ result: clean });
 
         await store.state.upsertDocument('a', 'c', '1', raw);
-        await expect(store.state.findDocuments('a', 'c', { where: { nul: 'a\u0000b' } }))
+        await expect(store.state.findDocuments('a', 'c', { where: { nul: 'a\0b' } }))
             .resolves.toEqual([{ id: '1', doc: clean }]);
 
         const at = new Date(1_000);
+
         await store.runs.insert({
             id: 'r1',
             agent: 'a',
@@ -165,7 +174,9 @@ describePostgres('createDatabaseStore values', () => {
             startedAt: at,
             finishedAt: at,
         });
+
         const [step] = await store.steps.find('r1');
+
         expect(step).toMatchObject({
             input: clean,
             output: clean,
@@ -181,7 +192,9 @@ describePostgres('createDatabaseStore values', () => {
         expect((await store.checkpoints.findOne('r1'))?.messages).toEqual([{ role: 'user', content: clean.nul }]);
 
         await store.runs.update('r1', { output: raw });
+
         const run = await store.runs.findOne('r1');
+
         expect(run?.trigger.payload).toEqual(clean);
         expect(run?.output).toEqual(clean);
     });
@@ -194,6 +207,7 @@ describePostgres('createDatabaseStore values', () => {
         await store.state.upsertDocument('a', 'c', '5', null);
 
         const ids = async (where: Record<string, unknown>) => (await store.state.findDocuments('a', 'c', { where })).map((d) => d.id);
+
         await expect(ids({ a: undefined })).resolves.toEqual(['2']);
         await expect(ids({ a: undefined, b: 1 })).resolves.toEqual(['2']);
         await expect(ids({ b: 1 })).resolves.toEqual(['2', '4']);
@@ -206,6 +220,7 @@ describePostgres('createDatabaseStore values', () => {
         await store.state.upsertDocument('a', 'c', '3', { k: null });
 
         const ids = async (q: { where?: Record<string, unknown>; limit?: number }) => (await store.state.findDocuments('a', 'c', q)).map((d) => d.id);
+
         await expect(ids({ where: { nested: { x: [1] } } })).resolves.toEqual(['1']);
         await expect(ids({ where: { k: null } })).resolves.toEqual(['1', '3']);
         await expect(ids({ where: { k: null }, limit: 1 })).resolves.toEqual(['1']);

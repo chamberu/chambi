@@ -13,6 +13,7 @@ export * from './auth/index.ts';
 export * from './channels/index.ts';
 export * from './mcp/index.ts';
 export * from './me/index.ts';
+export * from './request/index.ts';
 export * from './runs/index.ts';
 export * from './shutdown/index.ts';
 export * from './subscriptions/index.ts';

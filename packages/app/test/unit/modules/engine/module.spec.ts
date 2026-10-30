@@ -95,7 +95,9 @@ function build(options: {
             ...(options.modules ?? []),
         ],
     });
+
     harnesses.push(harness);
+
     return {
         harness,
         clock,
@@ -118,35 +120,42 @@ async function rejectionOf(promise: Promise<unknown>): Promise<Error> {
     } catch (error) {
         return error as Error;
     }
+
     throw new Error('expected a rejection');
 }
 
 describe('engineModule', () => {
     it('is named and depends on config and store', () => {
         const module = engineModule();
+
         expect(module.name).toBe(ModuleName.ENGINE);
         expect(module.dependencies).toEqual([ModuleName.CONFIG, ModuleName.STORE]);
     });
 
     it('start mode builds and starts the engine', async () => {
         const { harness } = build({ agents: [agentWith(textModel('triaged'))] });
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         const run = await engine.getRun(runId);
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('triaged');
     });
 
     it('job mode builds but does not start', async () => {
         const { harness } = build({ mode: 'job', agents: [agentWith(textModel())] });
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.status).toBe('queued');
@@ -160,11 +169,14 @@ describe('engineModule', () => {
             // a given store: the module never connects
             store: createMemoryStore(),
         });
+
         await harness.setup();
 
         expect(harness.container.has(AppToken.ENGINE)).toBe(false);
+
         // the agent channel is contributed in start and job mode only
         const channels = harness.container.has(AppToken.CHANNELS) ? harness.container.resolveAll(AppToken.CHANNELS) : [];
+
         expect(channels.map((channel) => channel.name)).not.toContain('agent');
     });
 
@@ -176,11 +188,13 @@ describe('engineModule', () => {
                 container.registerMany(AppToken.CHANNELS, { useValue: httpChannel() });
             })],
         });
+
         await harness.setup();
         expect(harness.container.resolve(AppToken.ENGINE).getChannel('http')?.name).toBe('http');
 
         const without = build({ agents: [agent] });
         const error = await rejectionOf(without.harness.setup());
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toBe('Agent "triage" subscribes to unknown channel "http".');
     });
@@ -188,8 +202,11 @@ describe('engineModule', () => {
     it.each(['start', 'job'] as const)('contributes the agent channel in %s mode', async (mode) => {
         const agent = agentWith(textModel(), { channels: [handoff.on()] });
         const { harness } = build({ mode, agents: [agent] });
+
         await harness.setup();
+
         const names = harness.container.resolveAll(AppToken.CHANNELS).map((channel) => channel.name);
+
         expect(names).toContain(AGENT_CHANNEL_NAME);
         expect(harness.container.resolve(AppToken.ENGINE).getChannel('agent')?.name).toBe('agent');
     });
@@ -202,6 +219,7 @@ describe('engineModule', () => {
             })],
         });
         const error = await rejectionOf(harness.setup());
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toBe('The channel "agent" is registered more than once.');
     });
@@ -218,6 +236,7 @@ describe('engineModule', () => {
         });
 
         const error = await rejectionOf(harness.setup());
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toBe('The channel "console" is registered more than once.');
     });
@@ -228,13 +247,17 @@ describe('engineModule', () => {
             name: 'recorder',
             engineCreated: (engine) => {
                 events.push(`engineCreated:${engine.listAgents().length}`);
+
                 // the engine is not started yet: a run dispatched here waits for start()
                 const original = engine.start.bind(engine);
+
                 engine.start = async () => {
                     events.push('start');
                     await original();
                 };
+
                 const drain = engine.drain.bind(engine);
+
                 engine.drain = async (input) => {
                     await drain(input);
                     events.push('drain');
@@ -250,6 +273,7 @@ describe('engineModule', () => {
                 container.registerMany(AppToken.LIFECYCLE_HOOKS, { useValue: hook });
             })],
         });
+
         await harness.setup();
         expect(events).toEqual(['engineCreated:1', 'start']);
 
@@ -263,10 +287,12 @@ describe('engineModule', () => {
             agents: [agentWith('anthropic/m')],
             models: { anthropic: customProvider({ languageModels: { m: model } }) },
         });
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.output).toBe('from fake');
@@ -280,10 +306,12 @@ describe('engineModule', () => {
             env: { CHAMVI_MODEL: 'test/m' },
             models: { test: customProvider({ languageModels: { m: model } }) },
         });
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.output).toBe('from default');
@@ -298,10 +326,12 @@ describe('engineModule', () => {
             model: 'test/code',
             models: { test: customProvider({ languageModels: { env: fromEnv, code: fromCode } }) },
         });
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.output).toBe('from env');
@@ -313,10 +343,12 @@ describe('engineModule', () => {
             agents: [agentWith(undefined)],
             model: textModel('from code object'),
         });
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.output).toBe('from code object');
@@ -325,6 +357,7 @@ describe('engineModule', () => {
     it('a code agent on an unconfigured provider fails setup naming the variable', async () => {
         const { harness } = build({ agents: [agentWith('anthropic/m')] });
         const error = await rejectionOf(harness.setup());
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toContain('ANTHROPIC_API_KEY');
         expect(error.message).toContain('CHAMVI_PROVIDER_ANTHROPIC_TYPE');
@@ -333,6 +366,7 @@ describe('engineModule', () => {
     it('an agent without model and no default fails setup', async () => {
         const { harness } = build({ agents: [agentWith(undefined)] });
         const error = await rejectionOf(harness.setup());
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toContain('CHAMVI_MODEL');
     });
@@ -346,6 +380,7 @@ describe('engineModule', () => {
             },
         });
         const error = await rejectionOf(harness.setup());
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toContain('CHAMVI_PROVIDER_ROUTR_API_KEY');
         expect(error.message).toContain('CHAMVI_PROVIDER_LOCAL_TYPE');
@@ -354,12 +389,15 @@ describe('engineModule', () => {
 
     it('never touches the global provider', async () => {
         const sentinel = customProvider({ languageModels: {} });
+
         globalThis.AI_SDK_DEFAULT_PROVIDER = sentinel;
+
         try {
             const { harness } = build({
                 agents: [agentWith('test/m')],
                 models: { test: customProvider({ languageModels: { m: textModel() } }) },
             });
+
             await harness.setup();
             expect(globalThis.AI_SDK_DEFAULT_PROVIDER).toBe(sentinel);
             await harness.stop();
@@ -377,7 +415,9 @@ describe('engineModule', () => {
             inputSchema: jsonSchema<Record<string, never>>({ type: 'object', properties: {} }),
             execute: async (_input, { context }) => {
                 const result = await generateText({ model: resolveModel(context, 'test/inner'), prompt: 'hi' });
+
                 answer = result.text;
+
                 return answer;
             },
         });
@@ -392,10 +432,12 @@ describe('engineModule', () => {
                 }),
             },
         });
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.status).toBe('completed');
@@ -417,11 +459,13 @@ describe('engineModule', () => {
                 container.registerMany(AppToken.CHANNELS, { useValue: failing });
             })],
         });
+
         await harness.setup();
         // the drain stops the channels first; a failing stop is reported and the drain goes on
         await harness.stop();
 
         const entry = logger.entries.find((e) => e.level === 'error' && e.msg === 'engine error');
+
         expect(JSON.stringify(entry)).toContain('channel down');
     });
 });

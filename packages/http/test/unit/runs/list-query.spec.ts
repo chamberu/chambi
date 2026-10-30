@@ -13,9 +13,9 @@ const parse = (query: string) => parseRunListQuery(new URLSearchParams(query));
 describe('parseRunListQuery', () => {
     it('defaults the page', () => {
         expect(parse('')).toEqual({
-            limit: 50, 
-            offset: 0, 
-            order: 'asc', 
+            limit: 50,
+            offset: 0,
+            order: 'asc',
         });
     });
 
@@ -41,6 +41,7 @@ describe('parseRunListQuery', () => {
     it('reads an agent name the wire coerces to a scalar back as the registered name', () => {
         const names = ['123', '007', 'true', 'null', '0x10'];
         const read = (query: string) => parseRunListQuery(new URLSearchParams(query), names).agent;
+
         expect(read('filter[agent]=123')).toBe('123');
         expect(read('filter=eq(agent,\'123\')')).toBe('123');
         expect(read('filter[agent]=007')).toBe('007');

@@ -37,7 +37,7 @@
 npm install @chamvi/sandbox-docker @chamvi/sandbox @chamvi/core ai --save
 ```
 
-ESM only, Node.js `>=22`. `@chamvi/core` and `@chamvi/sandbox` are peer dependencies. The Docker API is reached through [dockerode](https://www.npmjs.com/package/dockerode) 5 (with `@types/dockerode`, since the options take a `Dockerode` client); it pulls in `docker-modem`, `tar-fs`, `@balena/dockerignore` and the gRPC packages `@grpc/grpc-js`, `@grpc/proto-loader` and `protobufjs` as its own dependencies. [smob](https://www.npmjs.com/package/smob) is the only other runtime dependency.
+ESM only, Node.js `>=24.3.0`. `@chamvi/core` and `@chamvi/sandbox` are peer dependencies. The Docker API is reached through [dockerode](https://www.npmjs.com/package/dockerode) 5 (with `@types/dockerode`, since the options take a `Dockerode` client); it pulls in `docker-modem`, `tar-fs`, `@balena/dockerignore` and the gRPC packages `@grpc/grpc-js`, `@grpc/proto-loader` and `protobufjs` as its own dependencies. [smob](https://www.npmjs.com/package/smob) is the only other runtime dependency.
 
 ## Usage
 
@@ -82,7 +82,7 @@ Each workspace is a container `chamvi-ws-<id>`:
 
 ## Image
 
-The default image is `ghcr.io/chamvi/sandbox-dev:trixie` (`DEFAULT_SANDBOX_IMAGE`): Debian, git, curl, ripgrep, jq, build-essential, `tini` and [mise](https://mise.jdx.dev), which installs any toolchain at runtime (`mise use -g node@22`, `mise install`), built for `linux/amd64` and `linux/arm64` from [`images/sandbox-dev`](../../images/sandbox-dev). Tags: `trixie` (rebuilt on changes and weekly) and `trixie-<short sha>` (pushed once per commit that changes the image).
+The default image is `ghcr.io/chamvi/sandbox-dev:trixie` (`DEFAULT_SANDBOX_IMAGE`): Debian, git, curl, ripgrep, jq, build-essential, `tini` and [mise](https://mise.jdx.dev), which installs any toolchain at runtime (`mise use -g node@24`, `mise install`), built for `linux/amd64` and `linux/arm64` from [`images/sandbox-dev`](../../images/sandbox-dev). Tags: `trixie` (rebuilt on changes and weekly) and `trixie-<short sha>` (pushed once per commit that changes the image).
 
 - A run may pick an image (`create_workspace({ image })`) only when the manager has an allow-list (`allowImage`, or `CHAMVI_SANDBOX_IMAGES` in `sandboxModule()`); without one the tool has no `image` parameter.
 - `pull: 'missing'` (default) pulls an image once when the daemon lacks it, `'always'` before every create (a mutable tag then follows its rebuilds), `'never'` never. It covers every image: the provider's, the manager's `image` and one a run asked for (`create_workspace({ image })`).

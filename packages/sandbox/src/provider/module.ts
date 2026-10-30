@@ -41,9 +41,11 @@ export function assertCreateInput(input: WorkspaceCreateOptions, options: { imag
     if (typeof input?.runId !== 'string' || input.runId.length === 0) {
         throw new ValidationError('runId must be a non-empty string.');
     }
+
     if (options.image && input.image !== undefined && !isName(input.image)) {
         throw new ValidationError('image must be a non-empty string.');
     }
+
     assertSandboxEnv(input.env);
 }
 
@@ -64,13 +66,18 @@ export function assertImageOption(image: unknown): void {
  * undefined or a memory quantity above zero; InvalidAgentDefinitionError otherwise.
  */
 export function assertTmpSizeOption(value: unknown): void {
-    if (value === undefined) return;
+    if (value === undefined) {
+        return;
+    }
+
     let bytes = 0;
+
     try {
         bytes = parseMemory(value as string);
     } catch {
         // reported below
     }
+
     if (!(bytes > 0)) {
         throw new InvalidAgentDefinitionError(`tmpSize must be a positive memory quantity like "1Gi" or "512Mi", got ${JSON.stringify(value)}.`);
     }
@@ -99,8 +106,15 @@ export function buildWorkspaceInfo(
         createdAt,
         expiresAt: new Date(createdAt.getTime() + maxLifetimeMs),
     };
-    if (input.repo !== undefined) info.repo = input.repo;
-    if (input.ref !== undefined) info.ref = input.ref;
+
+    if (input.repo !== undefined) {
+        info.repo = input.repo;
+    }
+
+    if (input.ref !== undefined) {
+        info.ref = input.ref;
+    }
+
     return info;
 }
 
@@ -116,6 +130,7 @@ export function lifetimeSeconds(info: Pick<WorkspaceInfo, 'createdAt' | 'expires
 /** True when an `EXPIRES_AT_KEY` value (epoch ms as a string) is at or before `now`. */
 export function isExpiredAt(value: string | undefined, now: number): boolean {
     const expiresAt = Number(value);
+
     return !!value && Number.isFinite(expiresAt) && expiresAt <= now;
 }
 
@@ -125,7 +140,8 @@ export function isExpiredAt(value: string | undefined, now: number): boolean {
  */
 export function collectionError(count: number, failures: readonly unknown[]): SandboxError {
     const [first] = failures;
-    const message = first instanceof Error ? first.message : String(first);
+    const message = Error.isError(first) ? first.message : String(first);
+
     return new SandboxError(
         `garbage collection removed ${count} workspaces, ${failures.length} failed (first: ${message})`,
         { cause: new AggregateError(failures) },
@@ -138,10 +154,14 @@ export function collectionError(count: number, failures: readonly unknown[]): Sa
  * ValidationError otherwise.
  */
 export function assertDeployment(value: unknown): string {
-    if (value === undefined) return DEFAULT_DEPLOYMENT;
+    if (value === undefined) {
+        return DEFAULT_DEPLOYMENT;
+    }
+
     if (typeof value !== 'string' || !DEPLOYMENT_PATTERN.test(value)) {
         throw new ValidationError('deployment must be at most 63 letters, digits, `-`, `_` or `.`, starting and ending with a letter or digit.');
     }
+
     return value;
 }
 
@@ -166,7 +186,11 @@ export function workspaceLabels(input: {
         [WORKSPACE_LABEL]: input.id,
         [DEPLOYMENT_LABEL]: input.deployment,
     };
-    if (input.repo !== undefined) labels[REPO_KEY_LABEL] = repoKey(input.repo);
+
+    if (input.repo !== undefined) {
+        labels[REPO_KEY_LABEL] = repoKey(input.repo);
+    }
+
     return labels;
 }
 
@@ -180,9 +204,19 @@ export function workspaceMetadata(info: WorkspaceInfo): Record<string, string> {
         [CREATED_AT_KEY]: String(info.createdAt.getTime()),
         [EXPIRES_AT_KEY]: String(info.expiresAt.getTime()),
     };
-    if (info.repo !== undefined) metadata[REPO_URL_KEY] = info.repo;
-    if (info.ref !== undefined) metadata[REF_KEY] = info.ref;
-    if (info.image !== undefined) metadata[IMAGE_KEY] = info.image;
+
+    if (info.repo !== undefined) {
+        metadata[REPO_URL_KEY] = info.repo;
+    }
+
+    if (info.ref !== undefined) {
+        metadata[REF_KEY] = info.ref;
+    }
+
+    if (info.image !== undefined) {
+        metadata[IMAGE_KEY] = info.image;
+    }
+
     return metadata;
 }
 
@@ -196,9 +230,16 @@ export function readWorkspaceInfo(values: Readonly<Record<string, string | undef
     const runId = values[RUN_LABEL];
     const createdAt = readEpoch(values[CREATED_AT_KEY]);
     const expiresAt = readEpoch(values[EXPIRES_AT_KEY]);
-    if (!isName(runId) || createdAt === undefined || expiresAt === undefined) return undefined;
+
+    if (!isName(runId) || createdAt === undefined || expiresAt === undefined) {
+        return undefined;
+    }
+
     const repo = values[REPO_URL_KEY];
-    if (repo !== undefined && !isNormalizedRepo(repo)) return undefined;
+
+    if (repo !== undefined && !isNormalizedRepo(repo)) {
+        return undefined;
+    }
 
     const info: WorkspaceInfo = {
         runId: runId as string,
@@ -206,9 +247,19 @@ export function readWorkspaceInfo(values: Readonly<Record<string, string | undef
         createdAt: new Date(createdAt),
         expiresAt: new Date(expiresAt),
     };
-    if (repo !== undefined) info.repo = repo;
-    if (isName(values[REF_KEY])) info.ref = values[REF_KEY];
-    if (isName(values[IMAGE_KEY])) info.image = values[IMAGE_KEY];
+
+    if (repo !== undefined) {
+        info.repo = repo;
+    }
+
+    if (isName(values[REF_KEY])) {
+        info.ref = values[REF_KEY];
+    }
+
+    if (isName(values[IMAGE_KEY])) {
+        info.image = values[IMAGE_KEY];
+    }
+
     return info;
 }
 
@@ -219,19 +270,25 @@ export function readWorkspaceInfo(values: Readonly<Record<string, string | undef
  */
 export function createSettledCheck(isSettled: GarbageCollectOptions['isSettled']): (runId: string) => Promise<boolean | SandboxError> {
     const answers = new Map<string, Promise<boolean | SandboxError>>();
+
     return (runId) => {
-        if (!isSettled) return Promise.resolve(false);
+        if (!isSettled) {
+            return Promise.resolve(false);
+        }
+
         let answer = answers.get(runId);
+
         if (!answer) {
             answer = isSettled(runId).then(
                 (settled) => settled === true,
                 (error: unknown) => new SandboxError(
-                    `cannot tell whether run ${runId} settled: ${error instanceof Error ? error.message : String(error)}`,
+                    `cannot tell whether run ${runId} settled: ${Error.isError(error) ? error.message : String(error)}`,
                     { cause: error },
                 ),
             );
             answers.set(runId, answer);
         }
+
         return answer;
     };
 }

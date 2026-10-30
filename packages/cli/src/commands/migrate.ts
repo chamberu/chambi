@@ -24,12 +24,14 @@ export function createMigrateCommand(context: CliContext): CommandDef<typeof MIG
         args: MIGRATE_ARGS,
         async run({ args }) {
             assertKnownArgs(args, MIGRATE_ARGS);
+
             const entry = await resolveEntry({
                 cwd: context.cwd,
                 entry: args.entry,
                 kind: 'built',
             });
             const app = await loadEntryApp(entry, context);
+
             await app.migrate({ env: context.env });
         },
     });

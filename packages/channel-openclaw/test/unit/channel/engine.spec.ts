@@ -51,8 +51,13 @@ function setup(
                 // the owner's chat; overrides deliver.to
                 address: 'owner-chat',
             });
-            if (!approved) return 'not deployed';
+
+            if (!approved) {
+                return 'not deployed';
+            }
+
             executed.push(input);
+
             return `deployed ${input.env}`;
         },
     });
@@ -60,6 +65,7 @@ function setup(
         inputSchema: z.object({ text: z.string(), to: z.string() }),
         execute: async ({ text, to }, { context }) => {
             await context.channels.findOneOrFail('openclaw').emit({ title: 'Release', body: text }, to);
+
             return 'sent';
         },
     });
@@ -89,7 +95,9 @@ function setup(
             errors.push(error);
         },
     });
+
     engines.push(engine);
+
     return {
         clock,
         fake,
@@ -103,20 +111,25 @@ type Ctx = ReturnType<typeof setup>;
 
 async function dispatch(ctx: Ctx) {
     await ctx.engine.start();
+
     const { runId } = await ctx.engine.dispatch({
         agent: 'deployer',
         trigger: 'http',
         channel: 'http',
         payload: {},
     });
+
     await ctx.engine.idle();
+
     return runId;
 }
 
 async function dispatchToWaiting(ctx: Ctx) {
     const runId = await dispatch(ctx);
     const run = await ctx.engine.getRun(runId);
+
     expect(run?.status).toBe('waiting');
+
     return runId;
 }
 
@@ -124,9 +137,12 @@ describe('openclawChannel with the engine', () => {
     it('sends one hook per approval', async () => {
         const ctx = setup();
         const runId = await dispatchToWaiting(ctx);
+
         expect(ctx.fake.requests).toHaveLength(1);
         expect(ctx.fake.dispatched).toHaveLength(1);
+
         const waiting = (await ctx.engine.getRun(runId))!.waiting!;
+
         expect(waiting.notifiedAt).toBeInstanceOf(Date);
         expect(ctx.fake.requests[0]!.headers['idempotency-key']).toBe(`${runId}:${waiting.approvalId}`);
         expect(ctx.fake.dispatched[0]).toMatchObject({ channel: 'telegram', to: 'owner-chat' });
@@ -140,15 +156,20 @@ describe('openclawChannel with the engine', () => {
 
     it('retries a failed hook with the same key', async () => {
         const ctx = setup();
+
         ctx.fake.failNext(503);
+
         const runId = await dispatchToWaiting(ctx);
+
         expect(ctx.errors).toHaveLength(1);
         expect((ctx.errors[0] as ChamviError).code).toBe('openclaw_request');
         expect((await ctx.engine.getRun(runId))?.waiting?.notifiedAt).toBeUndefined();
 
         await ctx.engine.tick();
         expect(ctx.fake.requests).toHaveLength(2);
+
         const [first, second] = ctx.fake.requests;
+
         expect(second!.headers['idempotency-key']).toBe(first!.headers['idempotency-key']);
         expect(JSON.stringify(second!.body)).toBe(JSON.stringify(first!.body));
         expect(ctx.fake.dispatched).toHaveLength(1);
@@ -157,8 +178,11 @@ describe('openclawChannel with the engine', () => {
 
     it('replays a lost response', async () => {
         const ctx = setup();
+
         ctx.fake.loseNextResponse();
+
         const runId = await dispatchToWaiting(ctx);
+
         expect(ctx.errors).toHaveLength(1);
         // OpenClaw admitted the first send, the engine never learned it
         expect(ctx.fake.dispatched).toHaveLength(1);
@@ -175,12 +199,15 @@ describe('openclawChannel with the engine', () => {
         const runId = await dispatchToWaiting(ctx);
         const waiting = (await ctx.engine.getRun(runId))!.waiting!;
         const [request] = ctx.fake.requests;
+
         expect((request!.body as { message: string }).message).toContain(`Approve or deny: https://chamvi.example/ui/approvals?run=${runId}&approval=${waiting.approvalId}&agent=deployer`);
+
         const sent = JSON.stringify({
             url: request!.url,
             headers: request!.headers,
             body: request!.body,
         });
+
         expect(sent).not.toContain('resume_run');
 
         await ctx.engine.approve(runId, { approvalId: waiting.approvalId, approved: true });
@@ -203,6 +230,7 @@ describe('openclawChannel with the engine', () => {
             { parts: [{ type: 'text', text: 'Announced.' }] },
         ]));
         const runId = await dispatch(ctx);
+
         expect((await ctx.engine.getRun(runId))?.status).toBe('completed');
         expect(ctx.fake.requests).toHaveLength(1);
         expect(ctx.fake.dispatched[0]).toMatchObject({ channel: 'telegram', to: '-100777' });

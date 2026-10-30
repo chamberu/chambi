@@ -13,6 +13,7 @@ import type { PurgingRepository } from './types.ts';
 
 function passwordsOf(url: string): string[] {
     let password: string;
+
     try {
         ({ password } = new URL(url));
     } catch {
@@ -34,6 +35,7 @@ const MASK_DEPTH = 5;
 
 function maskString(value: string, needles: string[]): string {
     let masked = value;
+
     for (const needle of needles) {
         masked = masked.replaceAll(needle, MASKED_PAIR);
     }
@@ -45,11 +47,14 @@ function maskFields(value: object, needles: string[], depth: number, seen: Set<o
     if (depth > MASK_DEPTH || seen.has(value)) {
         return;
     }
+
     seen.add(value);
 
     const record = value as Record<string, unknown>;
+
     for (const key of Object.getOwnPropertyNames(value)) {
         let field: unknown;
+
         try {
             field = record[key];
         } catch {
@@ -58,6 +63,7 @@ function maskFields(value: object, needles: string[], depth: number, seen: Set<o
 
         if (typeof field === 'string') {
             const masked = maskString(field, needles);
+
             if (masked !== field) {
                 try {
                     record[key] = masked;
@@ -80,6 +86,7 @@ function maskFields(value: object, needles: string[], depth: number, seen: Set<o
  */
 export function maskPassword(error: unknown, url: string): unknown {
     const needles = passwordsOf(url).map((password) => `:${password}@`);
+
     if (needles.length === 0) {
         return error;
     }

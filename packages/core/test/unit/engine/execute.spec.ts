@@ -27,7 +27,9 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 const engines: Engine[] = [];
 
 /** Lets already-queued microtasks settle; not a sleep. */
-const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 /** Holds the first call of `method` until `control.pending` is called. */
 function createGatedStore(method: 'insert' | 'save') {
@@ -35,28 +37,44 @@ function createGatedStore(method: 'insert' | 'save') {
     const control: { pending?: () => void; log: string[] } = { log: [] };
     let gated = false;
     const gate = async () => {
-        if (gated) return;
+        if (gated) {
+            return;
+        }
+
         gated = true;
         await new Promise<void>((resolve) => {
             control.pending = resolve;
         });
     };
     const insert = store.steps.insert.bind(store.steps);
+
     vi.spyOn(store.steps, 'insert').mockImplementation(async (...args) => {
-        if (method === 'insert') await gate();
+        if (method === 'insert') {
+            await gate();
+        }
+
         return insert(...args);
     });
+
     const save = store.checkpoints.save.bind(store.checkpoints);
+
     vi.spyOn(store.checkpoints, 'save').mockImplementation(async (...args) => {
-        if (method === 'save') await gate();
+        if (method === 'save') {
+            await gate();
+        }
+
         await save(...args);
         control.log.push('checkpoint');
     });
+
     return { control, store };
 }
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -86,7 +104,9 @@ function make(def: TestAgent, opts: Partial<EngineOptions> & { store?: IStore } 
         onError: () => {},
         ...opts,
     });
+
     engines.push(engine);
+
     return { store, engine };
 }
 
@@ -111,19 +131,25 @@ function hangingModel() {
     const model = new MockLanguageModelV4({
         doStream: (options) => {
             calls.push(options);
+
             return new Promise((_resolve, reject) => {
                 options.abortSignal?.addEventListener('abort', () => reject(options.abortSignal?.reason));
             });
         },
     });
+
     return { model, calls };
 }
 
 async function runOnce(def: Parameters<typeof make>[0], opts: Parameters<typeof make>[1] = {}) {
     const { engine, store } = make(def, opts);
+
     await engine.start();
+
     const { runId } = await engine.dispatch(env);
+
     await engine.idle();
+
     return {
         engine,
         store,
@@ -147,6 +173,7 @@ describe('executeRun', () => {
             ]),
             tools: () => ({ lookup: lookup() }),
         });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('done');
         expect(run?.usage).toEqual({ inputTokens: 8, outputTokens: 10 });
@@ -164,8 +191,11 @@ describe('executeRun', () => {
             tools: () => ({ lookup: lookup() }),
         });
         const running: unknown[] = [];
+
         engine.on('run.updated', (e) => {
-            if (e.type === 'run.updated' && e.run.status === 'running') running.push(e.run.usage);
+            if (e.type === 'run.updated' && e.run.status === 'running') {
+                running.push(e.run.usage);
+            }
         });
         await engine.start();
         await engine.dispatch(env);
@@ -179,8 +209,11 @@ describe('executeRun', () => {
 
     it('starts from a user message rendering the trigger', async () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'ok' }] }]);
+
         await runOnce({ model });
+
         const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
+
         expect(prompt).toContain('You triage.');
         expect(prompt).toContain('```json');
         expect(prompt).toContain('\\"issue\\": 42');
@@ -200,12 +233,18 @@ describe('executeRun', () => {
                 ]),
                 tools: () => ({ lookup: lookup() }),
             }, { store });
+
             made.engine.on('step.appended', (e) => {
-                if (e.type === 'step.appended') appended.push(e.step.kind);
+                if (e.type === 'step.appended') {
+                    appended.push(e.step.kind);
+                }
             });
             await made.engine.start();
+
             const dispatched = await made.engine.dispatch(env);
+
             await made.engine.idle();
+
             return { engine: made.engine, runId: dispatched.runId };
         })();
 
@@ -213,11 +252,14 @@ describe('executeRun', () => {
         expect(save.mock.calls.map(([cp]) => cp.stepIndex)).toEqual([0, 1, 2]);
         // user, (assistant + tool) x 2, assistant
         expect(save.mock.calls.map(([cp]) => cp.messages.length)).toEqual([3, 5, 6]);
+
         const latest = await store.checkpoints.findOne(runId);
+
         expect(latest?.messages[0]?.role).toBe('user');
         expect(latest?.messages.at(-1)?.role).toBe('assistant');
 
         const steps = await store.steps.find(runId);
+
         expect(steps.map((s) => s.kind)).toEqual(['llm', 'tool', 'llm', 'tool', 'llm']);
         expect(steps.map((s) => s.index)).toEqual([0, 1, 2, 3, 4]);
         expect(steps[1]).toMatchObject({
@@ -238,9 +280,12 @@ describe('executeRun', () => {
             tools: () => ({ lookup: lookup() }),
             budget: budget({ maxSteps: 3 }),
         });
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('BudgetExceeded');
+
         const steps = await store.steps.find(runId);
+
         expect(steps.filter((s) => s.kind === 'llm')).toHaveLength(3);
     });
 
@@ -254,6 +299,7 @@ describe('executeRun', () => {
             tools: () => ({ lookup: lookup() }),
             budget: budget({ maxSteps: 10, maxTokens: 50 }),
         });
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('BudgetExceeded');
         expect((await store.steps.find(runId)).filter((s) => s.kind === 'llm')).toHaveLength(3);
@@ -265,6 +311,7 @@ describe('executeRun', () => {
             tools: () => ({ lookup: lookup() }),
             budget: budget({ maxSteps: 2 }),
         });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('done');
     });
@@ -273,15 +320,22 @@ describe('executeRun', () => {
         const clock = new ControllableClock(new Date('2026-01-01T00:00:00Z'));
         const { model, calls } = hangingModel();
         const { engine, store } = make({ model, budget: budget({ timeoutMs: 50 }) }, { clock });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(1));
         clock.advance(49);
-        await new Promise<void>((resolve) => { setImmediate(resolve); });
+        await new Promise<void>((resolve) => {
+            setImmediate(resolve);
+        });
         expect((await store.runs.findOne(runId))?.status).toBe('running');
         clock.advance(1);
         await engine.idle();
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('Timeout');
     });
@@ -290,14 +344,21 @@ describe('executeRun', () => {
         const { model, calls } = hangingModel();
         const { engine, store } = make({ model });
         const statuses: string[] = [];
+
         engine.on('run.updated', (e) => {
-            if (e.type === 'run.updated') statuses.push(e.run.status);
+            if (e.type === 'run.updated') {
+                statuses.push(e.run.status);
+            }
         });
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(1));
         await engine.cancel(runId);
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('cancelled');
         expect(run?.claim).toBeUndefined();
         expect(run?.finishedAt).toBeInstanceOf(Date);
@@ -311,6 +372,7 @@ describe('executeRun', () => {
         const model = mockModel([]);
         const { engine, store } = make({ model });
         const { runId } = await engine.dispatch(env);
+
         await engine.cancel(runId);
         expect((await store.runs.findOne(runId))?.status).toBe('cancelled');
         await engine.start();
@@ -321,9 +383,12 @@ describe('executeRun', () => {
 
     it('cancel rejects unknown and settled runs', async () => {
         const { engine } = make({ model: mockModel([{ parts: [{ type: 'text', text: 'ok' }] }]) });
+
         await expect(engine.cancel('nope')).rejects.toMatchObject({ code: 'run_not_found' });
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
         await expect(engine.cancel(runId)).rejects.toMatchObject({ code: 'invalid_run_state' });
     });
@@ -342,10 +407,13 @@ describe('executeRun', () => {
                 }),
             }),
         });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('recovered');
         expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain('kaput');
+
         const steps = await store.steps.find(runId);
+
         expect(steps.map((s) => s.kind)).toEqual(['llm', 'tool', 'llm']);
         expect(steps[1]?.error).toEqual({ code: 'tool_broke', message: 'kaput' });
     });
@@ -360,6 +428,7 @@ describe('executeRun', () => {
                 }),
             }),
         });
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'RepoGone', message: 'repository gone' });
         expect(model.doStreamCalls).toHaveLength(1);
@@ -372,17 +441,25 @@ describe('executeRun', () => {
             tools: () => ({ lookup: lookup() }),
         }, { store: gate.store });
         const events = gate.control.log;
+
         engine.on('run.updated', (e) => {
-            if (e.type === 'run.updated') events.push(`run:${e.run.status}`);
+            if (e.type === 'run.updated') {
+                events.push(`run:${e.run.status}`);
+            }
         });
         engine.on('step.appended', (e) => {
-            if (e.type === 'step.appended') events.push(`step:${e.step.kind}`);
+            if (e.type === 'step.appended') {
+                events.push(`step:${e.step.kind}`);
+            }
         });
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await vi.waitFor(() => expect(gate.control.pending).toBeDefined());
 
         const cancelled = engine.cancel(runId);
+
         await flush();
         gate.control.pending?.();
         await cancelled;
@@ -390,8 +467,11 @@ describe('executeRun', () => {
 
         const steps = (await gate.store.steps.find(runId)).map((s) => s.kind);
         const checkpoint = await gate.store.checkpoints.findOne(runId);
+
         // let the abandoned generate run on
-        for (let i = 0; i < 10; i++) await flush();
+        for (let i = 0; i < 10; i++) {
+            await flush();
+        }
 
         expect((await gate.store.runs.findOne(runId))?.status).toBe('cancelled');
         // the completed step lands with its tool row and checkpoint before the run settles
@@ -411,6 +491,7 @@ describe('executeRun', () => {
         const model = mockModel([]);
         const { engine } = make({ model, budget: budget({ maxSteps: 2 }) }, { store });
         const { runId } = await engine.dispatch(env);
+
         await store.checkpoints.save({
             runId,
             stepIndex: 1,
@@ -423,15 +504,23 @@ describe('executeRun', () => {
         });
         await engine.start();
         await engine.idle();
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe(status);
-        if (status === 'completed') expect(run?.output).toBe('final answer');
-        else expect(run?.error?.code).toBe('BudgetExceeded');
+
+        if (status === 'completed') {
+            expect(run?.output).toBe('final answer');
+        } else {
+            expect(run?.error?.code).toBe('BudgetExceeded');
+        }
+
         expect(model.doStreamCalls).toHaveLength(0);
     });
 
     it('model error marks run failed', async () => {
         const { run } = await runOnce({ model: mockModel([]) });
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'mock script exhausted' });
     });
@@ -441,6 +530,7 @@ describe('executeRun', () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'resumed' }] }]);
         const { engine } = make({ model }, { store });
         const { runId } = await engine.dispatch(env);
+
         await store.checkpoints.save({
             runId,
             stepIndex: 0,
@@ -455,13 +545,16 @@ describe('executeRun', () => {
         await engine.idle();
 
         const prompt = model.doStreamCalls[0]?.prompt ?? [];
+
         expect(prompt.filter((m) => m.role !== 'system')).toEqual([
             { role: 'user', content: [{ type: 'text', text: 'seeded question' }] },
             { role: 'assistant', content: [{ type: 'text', text: 'seeded answer' }] },
             { role: 'user', content: [{ type: 'text', text: 'go on' }] },
         ]);
         expect((await store.runs.findOne(runId))?.output).toBe('resumed');
+
         const latest = await store.checkpoints.findOne(runId);
+
         expect(latest?.stepIndex).toBe(1);
         expect(latest?.messages).toHaveLength(4);
     });

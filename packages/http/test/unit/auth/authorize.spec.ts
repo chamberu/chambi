@@ -30,13 +30,18 @@ function probeApp(auth: Authenticator[]) {
     const { engine } = createTestApp();
     const ctx = buildContext({ engine, auth });
     const app = new App();
+
     app.get('/probe', defineCoreHandler(async (event) => {
         const permission = event.searchParams.get('p') ?? undefined;
+
         await authorize(event, ctx, permission);
+
         const principal = await authorize(event, ctx, permission);
+
         return { id: principal.id };
     }));
     app.use(createErrorHandler(ctx));
+
     return app;
 }
 
@@ -48,6 +53,7 @@ const probe = (app: App, token?: string, permission?: string) => app.fetch(new R
 describe('authorize', () => {
     it('answers 401 with WWW-Authenticate without a token', async () => {
         const response = await probe(probeApp([reader]));
+
         expect(response.status).toBe(401);
         expect(response.headers.get('www-authenticate')).toBe('Bearer');
         expect(await response.json()).toMatchObject({ message: 'Authentication required.' });
@@ -55,23 +61,27 @@ describe('authorize', () => {
 
     it('lets a known token through', async () => {
         const response = await probe(probeApp([reader]), READER_TOKEN, 'run:read');
+
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ id: 'reader' });
     });
 
     it('answers 403 for a missing permission', async () => {
         const response = await probe(probeApp([reader]), READER_TOKEN, 'run:cancel');
+
         expect(response.status).toBe(403);
         expect(await response.json()).toMatchObject({ message: 'Missing permission "run:cancel".' });
     });
 
     it('skips an authenticator that throws when a later one resolves', async () => {
         const response = await probe(probeApp([throwing, reader]), READER_TOKEN);
+
         expect(response.status).toBe(200);
     });
 
     it('answers the remembered error when nothing resolves', async () => {
         const response = await probe(probeApp([throwing]), READER_TOKEN);
+
         expect(response.status).toBe(401);
         expect(response.headers.get('www-authenticate')).toBe('Bearer');
         expect(await response.json()).toMatchObject({ message: 'rejected by the first authenticator' });
@@ -104,9 +114,11 @@ describe('authorize', () => {
         const malformed: Authenticator = async () => principal as unknown as Principal;
         const next: Authenticator = async (request) => {
             later++;
+
             return reader(request);
         };
         const response = await probe(probeApp([malformed, next]), READER_TOKEN);
+
         expect(response.status).toBe(500);
         expect(later).toBe(0);
     });
@@ -115,9 +127,11 @@ describe('authorize', () => {
         let calls = 0;
         const counting: Authenticator = async (request) => {
             calls++;
+
             return reader(request);
         };
         const response = await probe(probeApp([counting]), READER_TOKEN);
+
         expect(response.status).toBe(200);
         expect(calls).toBe(1);
     });

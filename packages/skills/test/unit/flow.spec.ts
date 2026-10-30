@@ -33,6 +33,7 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
         doStream: async () => {
             const index = turn++;
             const input = index === 0 ? { name: 'audit' } : { name: 'audit', reference: 'references/checks.md' };
+
             return {
                 stream: simulateReadableStream<LanguageModelV4StreamPart>({
                     chunks: index < 2 ? [
@@ -96,6 +97,7 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
         directory,
     };
     let engine: Engine | undefined;
+
     try {
         const catalog = await prepareCatalog(options, { audit: hash });
         const agent = defineAgent({
@@ -104,26 +106,33 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
             tools: catalog.tools,
             model,
         });
+
         engine = new Engine({
             agents: [agent],
             store,
             clock,
         });
         await engine.start();
+
         const { runId } = await engine.dispatch({
             agent: 'reviewer',
             channel: 'http',
             trigger: 'http',
             payload: {},
         });
+
         await engine.idle();
         expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
+
         const initial = JSON.stringify(model.doStreamCalls[0]!.prompt);
+
         expect(initial).toContain(hash);
         expect(initial).toContain('Review code');
         expect(initial).not.toContain('PRIVATE');
         expect(initial).not.toContain(directory);
+
         const tools = (await store.steps.find(runId)).filter((step) => step.kind === 'tool');
+
         expect(tools.map((step) => step.output)).toMatchObject([
             {
                 hash,

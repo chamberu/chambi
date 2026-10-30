@@ -50,11 +50,13 @@ class CountingAgentRevisionRepository extends MemoryAgentRevisionRepository {
 
     override async save(...args: Parameters<MemoryAgentRevisionRepository['save']>) {
         this.revisionWrites++;
+
         return super.save(...args);
     }
 
     override async delete(...args: Parameters<MemoryAgentRevisionRepository['delete']>) {
         this.revisionWrites++;
+
         return super.delete(...args);
     }
 }
@@ -63,10 +65,15 @@ function createCountingStore(options: { clock: ControllableClock }) {
     const store = createMemoryStore(options);
     const { runs }: { runs: IRunRepository & { failing?: string } } = store;
     const update = runs.update.bind(runs);
+
     runs.update = async (...args) => {
-        if (args[0] === runs.failing) throw new Error('store down');
+        if (args[0] === runs.failing) {
+            throw new Error('store down');
+        }
+
         return update(...args);
     };
+
     return {
         ...store,
         runs,
@@ -77,7 +84,10 @@ function createCountingStore(options: { clock: ControllableClock }) {
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -95,10 +105,12 @@ function make(opts: Partial<EngineOptions> & { store?: ReturnType<typeof createC
         },
         ...opts,
     });
+
     engine.on('agents.changed', (e) => {
         changes.push(e);
     });
     engines.push(engine);
+
     return {
         store,
         clock,
@@ -139,6 +151,7 @@ async function parkWaiting(store: IStore, clock: ControllableClock, id: string, 
         createdAt: now,
         updatedAt: now,
     };
+
     await store.runs.insert(run);
 }
 
@@ -147,6 +160,7 @@ const statusOf = async (engine: Engine, id: string) => (await engine.getRun(id))
 describe('Engine agent registry', () => {
     it('putAgent adds an agent and emits added', async () => {
         const { engine, changes } = make();
+
         await expect(engine.putAgent(digest)).resolves.toBe('added');
         expect(engine.listAgents().map((a) => a.name)).toEqual(['triage', 'digest']);
         expect(engine.getAgent('digest')).toBe(digest);
@@ -164,6 +178,7 @@ describe('Engine agent registry', () => {
             model,
             instructions: 'z',
         });
+
         await expect(engine.putAgent(next)).resolves.toBe('replaced');
         expect(engine.listAgents()).toEqual([next, digest]);
         expect(changes).toEqual([{
@@ -176,6 +191,7 @@ describe('Engine agent registry', () => {
     it('a local replace without a revision cancels the runs created before it', async () => {
         const { engine, clock } = make();
         const { runId: before } = await engine.dispatch(env());
+
         clock.advance(1_000);
         await engine.putAgent(defineAgent({
             name: 'triage',
@@ -183,7 +199,9 @@ describe('Engine agent registry', () => {
             instructions: 'z',
         }));
         expect(await statusOf(engine, before)).toBe('cancelled');
+
         const { runId: after } = await engine.dispatch(env());
+
         expect(await statusOf(engine, after)).toBe('queued');
     });
 
@@ -199,6 +217,7 @@ describe('Engine agent registry', () => {
                 options: {},
             }],
         });
+
         await expect(engine.putAgent(broken)).rejects.toThrow(InvalidAgentDefinitionError);
         await expect(engine.putAgent(broken)).rejects.toThrow('Agent "digest" subscribes to unknown channel "nope".');
         expect(engine.listAgents()).toEqual([triage]);
@@ -212,6 +231,7 @@ describe('Engine agent registry', () => {
             clock,
         } = make();
         const { runId } = await engine.dispatch(env());
+
         clock.advance(1_000);
         await engine.putAgent(triage, { revision: 'h1' });
         expect(await statusOf(engine, runId)).toBe('queued');
@@ -228,10 +248,12 @@ describe('Engine agent registry', () => {
         const store = createCountingStore({ clock });
         const a = make({ store, clock });
         const b = make({ store, clock });
+
         await a.engine.putAgent(triage, { revision: 'h1' });
         await b.engine.putAgent(triage, { revision: 'h1' });
 
         const { runId: queued } = await a.engine.dispatch(env());
+
         await parkWaiting(store, clock, 'waiting-run');
         clock.advance(1_000);
 
@@ -240,10 +262,13 @@ describe('Engine agent registry', () => {
             model,
             instructions: 'v2',
         });
+
         await expect(a.engine.putAgent(next, { revision: 'h2' })).resolves.toBe('replaced');
         expect(await statusOf(a.engine, queued)).toBe('cancelled');
         expect(await statusOf(a.engine, 'waiting-run')).toBe('cancelled');
+
         const changedAt = clock.now();
+
         expect(await store.agentRevisions.findOne('triage')).toEqual({
             agent: 'triage',
             hash: 'h2',
@@ -251,7 +276,9 @@ describe('Engine agent registry', () => {
         });
 
         clock.advance(1_000);
+
         const { runId: fresh } = await a.engine.dispatch(env());
+
         await b.engine.putAgent(next, { revision: 'h2' });
         expect(await statusOf(b.engine, fresh)).toBe('queued');
         expect(await store.agentRevisions.findOne('triage')).toEqual({
@@ -269,8 +296,11 @@ describe('Engine agent registry', () => {
             store,
             changes,
         } = make();
+
         await engine.putAgent(triage, { revision: 'h1' });
+
         const writes = store.agentRevisions.revisionWrites;
+
         changes.length = 0;
         await expect(engine.putAgent(triage, { revision: 'h1' })).resolves.toBe('unchanged');
         expect(store.agentRevisions.revisionWrites).toBe(writes);
@@ -283,14 +313,25 @@ describe('Engine agent registry', () => {
             store,
             clock,
         } = make();
+
         await store.locks.acquire('agents:triage', 'someone', 600_000);
+
         const put = engine.putAgent(triage, { revision: 'h1' });
         let outcome: unknown;
-        put.then(() => { outcome = 'resolved'; }, (error: unknown) => { outcome = error; });
+
+        put.then(() => {
+            outcome = 'resolved';
+        }, (error: unknown) => {
+            outcome = error;
+        });
+
         for (let i = 0; i < 20 && outcome === undefined; i++) {
-            await new Promise<void>((resolve) => { setImmediate(resolve); });
+            await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+            });
             clock.advance(20_000);
         }
+
         expect(outcome).toBeInstanceOf(Error);
         expect((outcome as Error).name).toBe('InvalidRunStateError');
         expect(await store.agentRevisions.findOne('triage')).toBeUndefined();
@@ -304,10 +345,14 @@ describe('Engine agent registry', () => {
             clock,
             changes,
         } = make({ agents: [triage, digest] });
+
         await engine.putAgent(triage, { revision: 'h1' });
         changes.length = 0;
+
         const { runId } = await engine.dispatch(env());
+
         await parkWaiting(store, clock, 'waiting-run');
+
         const { runId: other } = await engine.dispatch(env('digest'));
 
         await expect(engine.removeAgent('triage')).resolves.toBe(true);
@@ -328,6 +373,7 @@ describe('Engine agent registry', () => {
     it('removeAgent of a code agent cancels its runs', async () => {
         const { engine } = make();
         const { runId } = await engine.dispatch(env());
+
         await expect(engine.removeAgent('triage')).resolves.toBe(true);
         expect(await statusOf(engine, runId)).toBe('cancelled');
         expect(engine.listAgents()).toEqual([]);
@@ -341,6 +387,7 @@ describe('Engine agent registry', () => {
             clock,
             agents: [digest],
         });
+
         await owner.engine.putAgent(triage, { revision: 'h1' });
         await owner.engine.dispatch(env());
         await parkWaiting(store, clock, 'waiting-run');
@@ -350,9 +397,12 @@ describe('Engine agent registry', () => {
             clock,
             agents: [digest],
         });
+
         await expect(other.engine.removeAgent('triage')).resolves.toBe(false);
         expect(await statusOf(other.engine, 'waiting-run')).toBe('cancelled');
+
         const { data } = await store.runs.find({ agent: 'triage' });
+
         expect(data.map((r) => r.status)).toEqual(['cancelled', 'cancelled']);
         expect(await store.agentRevisions.findOne('triage')).toBeUndefined();
         expect(other.changes).toEqual([]);
@@ -364,6 +414,7 @@ describe('Engine agent registry', () => {
             store,
             changes,
         } = make();
+
         await expect(engine.removeAgent('nope')).resolves.toBe(false);
         expect(store.agentRevisions.revisionWrites).toBe(0);
         expect(changes).toEqual([]);
@@ -372,8 +423,11 @@ describe('Engine agent registry', () => {
     it('a cancel failure is reported and the other runs are still cancelled', async () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const store = createCountingStore({ clock });
+
         store.runs.failing = 'broken';
+
         const { engine, errors } = make({ store, clock });
+
         await parkWaiting(store, clock, 'broken');
         await parkWaiting(store, clock, 'fine');
         await engine.removeAgent('triage');
@@ -385,6 +439,7 @@ describe('Engine agent registry', () => {
     it('dispatch of an unknown agent throws AgentNotFoundError', async () => {
         const { engine, store } = make();
         const error = await engine.dispatch(env('nope')).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(AgentNotFoundError);
         expect((error as AgentNotFoundError).code).toBe('agent_not_found');
         expect((error as Error).message).toBe('unknown agent: nope');
@@ -403,6 +458,7 @@ function gatedModel() {
                 options.abortSignal?.addEventListener('abort', () => reject(options.abortSignal?.reason));
                 gate.then(() => resolve(), reject);
             });
+
             return {
                 stream: simulateReadableStream({
                     chunks: [
@@ -435,6 +491,7 @@ function gatedModel() {
             };
         },
     });
+
     return {
         model,
         release,
@@ -442,7 +499,9 @@ function gatedModel() {
     };
 }
 
-const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 describe('cancel reasons', () => {
     const revA = 'a'.repeat(64);
@@ -463,8 +522,11 @@ describe('cancel reasons', () => {
             store,
             clock,
         } = make();
+
         await engine.putAgent(triage, { revision: revA });
+
         const { runId } = await engine.dispatch(env());
+
         await parkWaiting(store, clock, 'waiting-run');
         clock.advance(1_000);
         await engine.putAgent(next, { revision: revB });
@@ -478,6 +540,7 @@ describe('cancel reasons', () => {
             store,
             clock,
         } = make();
+
         await engine.putAgent(triage, { revision: revA });
         await parkWaiting(store, clock, 'waiting-run');
         await engine.removeAgent('triage');
@@ -493,6 +556,7 @@ describe('cancel reasons', () => {
     it('replacing a code agent stores agent_replaced without a revision', async () => {
         const { engine, clock } = make();
         const { runId } = await engine.dispatch(env());
+
         clock.advance(1_000);
         await engine.putAgent(next);
         expect(await engine.getRun(runId)).toMatchObject({
@@ -512,9 +576,12 @@ describe('cancel reasons', () => {
             instructions: 'x',
         });
         const { engine, clock } = make({ agents: [hanging] });
+
         await engine.putAgent(hanging, { revision: revA });
         await engine.start();
+
         const { runId } = await engine.dispatch(env());
+
         await vi.waitFor(() => expect(gated.calls()).toBe(1));
         clock.advance(1_000);
         await engine.putAgent(next, { revision: revB });
@@ -544,10 +611,13 @@ describe('cancel reasons', () => {
             agents: [hanging],
             owner: 'B',
         });
+
         await a.engine.putAgent(hanging, { revision: revA });
         await b.engine.putAgent(hanging, { revision: revA });
         await a.engine.start();
+
         const { runId } = await a.engine.dispatch(env());
+
         await vi.waitFor(() => expect(gated.calls()).toBe(1));
         clock.advance(1);
         await b.engine.putAgent(next, { revision: revB });
@@ -587,17 +657,22 @@ describe('cancel reasons', () => {
             agents: [hanging],
             owner: 'B',
         });
+
         await a.engine.putAgent(hanging, { revision: revA });
         await b.engine.putAgent(hanging, { revision: revA });
         await a.engine.start();
+
         const { runId } = await a.engine.dispatch(env());
+
         await vi.waitFor(() => expect(gated.calls()).toBe(1));
         clock.advance(1);
         await b.engine.putAgent(next, { revision: revB });
         expect((await store.runs.findOne(runId))?.error).toEqual(replacedError);
         gated.release();
         await a.engine.idle();
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('completed');
         expect(run?.error).toBeUndefined();
     });
@@ -609,6 +684,7 @@ describe('cancel reasons', () => {
             clock,
         } = make();
         const events: AgentRunsCancelled[] = [];
+
         engine.on('agents.cancelled', (e) => {
             events.push(e);
         });
@@ -639,8 +715,11 @@ describe('cancel reasons', () => {
     it('a user cancel stores no error', async () => {
         const { engine } = make();
         const { runId } = await engine.dispatch(env());
+
         await engine.cancel(runId);
+
         const run = await engine.getRun(runId);
+
         expect(run?.status).toBe('cancelled');
         expect(run?.error).toBeUndefined();
     });
@@ -661,11 +740,17 @@ describe('checkAgent and putAgent reload: false', () => {
         const spied = new Proxy(store, {
             get(target, key, receiver) {
                 const value = Reflect.get(target, key, receiver);
-                if (typeof value === 'function') calls.push(String(key));
+
+                if (typeof value === 'function') {
+                    calls.push(String(key));
+                }
+
                 return value;
             },
         });
+
         Object.defineProperty(engine, 'store', { value: spied });
+
         const broken = defineAgent({
             name: 'x',
             model,
@@ -676,6 +761,7 @@ describe('checkAgent and putAgent reload: false', () => {
                 options: {},
             }],
         });
+
         expect(() => engine.checkAgent(broken)).toThrow(InvalidAgentDefinitionError);
         expect(() => engine.checkAgent(broken)).toThrow('Agent "x" subscribes to unknown channel "github".');
         expect(calls).toEqual([]);
@@ -689,6 +775,7 @@ describe('checkAgent and putAgent reload: false', () => {
             model: 'anthropic/claude',
             instructions: 'y',
         });
+
         expect(() => engine.checkAgent(stringly)).toThrow(InvalidAgentDefinitionError);
         expect(() => engine.checkAgent(next)).not.toThrow();
     });
@@ -696,6 +783,7 @@ describe('checkAgent and putAgent reload: false', () => {
     it('reload: false writes the first marker and cancels nothing', async () => {
         const { engine, store } = make();
         const { runId } = await engine.dispatch(env());
+
         await expect(engine.putAgent(next, { revision: revA, reload: false })).resolves.toBe('replaced');
         expect(await statusOf(engine, runId)).toBe('queued');
         expect((await store.agentRevisions.findOne('triage'))?.hash).toBe(revA);
@@ -703,9 +791,12 @@ describe('checkAgent and putAgent reload: false', () => {
 
     it('reload: false keeps an equal marker', async () => {
         const { engine, store } = make();
+
         await engine.putAgent(triage, { revision: revA });
+
         const before = await store.agentRevisions.findOne('triage');
         const writes = store.agentRevisions.revisionWrites;
+
         await engine.putAgent(next, { revision: revA, reload: false });
         expect(await store.agentRevisions.findOne('triage')).toEqual(before);
         expect(store.agentRevisions.revisionWrites).toBe(writes);
@@ -718,12 +809,17 @@ describe('checkAgent and putAgent reload: false', () => {
             clock,
             changes,
         } = make();
+
         await engine.putAgent(triage, { revision: revA });
+
         const { runId } = await engine.dispatch(env());
+
         await engine.cancel(runId);
         clock.advance(1_000);
         changes.length = 0;
+
         const cancelled: AgentRunsCancelled[] = [];
+
         engine.on('agents.cancelled', (e) => {
             cancelled.push(e);
         });
@@ -742,7 +838,9 @@ describe('checkAgent and putAgent reload: false', () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const store = createCountingStore({ clock });
         const other = make({ store, clock });
+
         await other.engine.putAgent(triage, { revision: revA });
+
         const { runId } = await other.engine.dispatch(env());
         const { engine, changes } = make({
             store,
@@ -750,6 +848,7 @@ describe('checkAgent and putAgent reload: false', () => {
             agents: [],
         });
         const attempt = engine.putAgent(next, { revision: revB, reload: false });
+
         await expect(attempt).rejects.toThrow(InvalidRunStateError);
         await expect(engine.putAgent(next, { revision: revB, reload: false })).rejects.toThrow(
             'Agent "triage" runs revision aaaaaaaaaaaa in the store, not bbbbbbbbbbbb; this process does not reload agents.',
@@ -775,7 +874,9 @@ describe('putAgent formerRevision', () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const store = createCountingStore({ clock });
         const other = make({ store, clock });
+
         await other.engine.putAgent(triage, { revision: revA });
+
         const { runId } = await other.engine.dispatch(env());
         const { engine } = make({
             store,
@@ -783,7 +884,10 @@ describe('putAgent formerRevision', () => {
             agents: [],
         });
         const cancelled: unknown[] = [];
-        engine.on('agents.cancelled', (event) => { cancelled.push(event); });
+
+        engine.on('agents.cancelled', (event) => {
+            cancelled.push(event);
+        });
 
         await expect(engine.putAgent(next, {
             revision: revB,
@@ -800,14 +904,19 @@ describe('putAgent formerRevision', () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const store = createCountingStore({ clock });
         const other = make({ store, clock });
+
         await other.engine.putAgent(triage, { revision: revC });
+
         const { runId } = await other.engine.dispatch(env());
+
         clock.advance(1);
+
         const { engine } = make({
             store,
             clock,
             agents: [],
         });
+
         await engine.putAgent(next, { revision: revB, formerRevision: revA });
         expect((await store.agentRevisions.findOne('triage'))?.hash).toBe(revB);
         expect(await statusOf(engine, runId)).toBe('cancelled');

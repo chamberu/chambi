@@ -53,6 +53,7 @@ const hardened: PodInput = {
 describe('buildPod', () => {
     it('sleeps for the lifetime with a deadline, replacing the image entrypoint', () => {
         const pod = buildPod(input);
+
         // an absolute deadline: a pod scheduled late still stops at expiresAt (2026-01-01T00:10:00Z)
         expect(pod.spec?.containers[0]?.command).toEqual(['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', '1767226200']);
         expect(pod.spec?.containers[0]?.args).toBeUndefined();
@@ -61,16 +62,19 @@ describe('buildPod', () => {
 
     it('names the pod after the workspace', () => {
         const pod = buildPod(input);
+
         expect(pod.metadata?.name).toBe('chamvi-ws-w1');
         expect(pod.metadata?.namespace).toBe('agents');
 
         const name = buildPod({ ...input, id: randomUUID() }).metadata!.name!;
+
         expect(name).toMatch(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/);
         expect(name.length).toBeLessThanOrEqual(63);
     });
 
     it('labels and annotates the pod', () => {
         const pod = buildPod(input);
+
         expect(pod.metadata?.labels).toEqual({
             'app.kubernetes.io/managed-by': 'chamvi',
             'app.kubernetes.io/component': 'sandbox',
@@ -91,17 +95,19 @@ describe('buildPod', () => {
         const pod = buildPod({
             ...input,
             info: {
-                ...input.info, 
-                repo, 
-                ref: 'main', 
-            }, 
+                ...input.info,
+                repo,
+                ref: 'main',
+            },
         });
+
         expect(pod.metadata?.labels?.['chamvi.dev/repo-key']).toBe(repoKey(repo));
         expect(pod.metadata?.annotations).toMatchObject({ 'chamvi.dev/repo': repo, 'chamvi.dev/ref': 'main' });
     });
 
     it('runs the pod as root with a RuntimeDefault seccomp profile', () => {
         const { spec } = buildPod(input);
+
         expect(spec).toMatchObject({
             restartPolicy: 'Never',
             automountServiceAccountToken: false,
@@ -133,8 +139,11 @@ describe('buildPod', () => {
 
     it('runs the one container as root with a writable root and the package-manager capabilities', () => {
         const { spec } = buildPod(input);
+
         expect(spec?.containers).toHaveLength(1);
+
         const container = spec!.containers[0]!;
+
         expect(container).toMatchObject({
             name: 'sandbox',
             image: 'img',
@@ -156,11 +165,13 @@ describe('buildPod', () => {
             privileged: false,
             capabilities: { drop: ['ALL'], add: [...ROOT_CAPABILITIES] },
         });
+
         const resources = {
             cpu: '500m',
             memory: '1Gi',
             'ephemeral-storage': '4Gi',
         };
+
         expect(container.resources).toEqual({ limits: resources, requests: resources });
         expect(container.volumeMounts).toEqual([
             { name: 'workspace', mountPath: '/workspace' },
@@ -172,6 +183,7 @@ describe('buildPod', () => {
 
     it('restores the hardened mode with a non-root user and a read-only root', () => {
         const { spec } = buildPod(hardened);
+
         expect(spec?.securityContext).toEqual({
             runAsNonRoot: true,
             runAsUser: 1000,
@@ -190,6 +202,7 @@ describe('buildPod', () => {
 
     it('mounts the shared cache claim', () => {
         const { spec } = buildPod({ ...input, cacheClaim: 'chamvi-cache' });
+
         expect(spec?.volumes?.at(-1)).toEqual({ name: 'cache', persistentVolumeClaim: { claimName: 'chamvi-cache' } });
     });
 
@@ -199,11 +212,13 @@ describe('buildPod', () => {
 
     it('passes the pull policy', () => {
         const pod = buildPod({ ...input, imagePullPolicy: 'Always' });
+
         expect(pod.spec?.containers[0]?.imagePullPolicy).toBe('Always');
     });
 
     it('does not copy the host environment', () => {
         process.env.CHAMVI_SECRET_PROBE = 's3cret';
+
         try {
             expect(JSON.stringify(buildPod(input))).not.toContain('s3cret');
         } finally {
@@ -220,6 +235,7 @@ describe('buildPod', () => {
                 'app.kubernetes.io/managed-by': 'z',
             },
         });
+
         expect(pod.metadata?.labels?.['chamvi.dev/run']).toBe('r1');
         expect(pod.metadata?.labels?.['chamvi.dev/workspace']).toBe('w1');
         expect(pod.metadata?.labels?.['app.kubernetes.io/managed-by']).toBe('chamvi');

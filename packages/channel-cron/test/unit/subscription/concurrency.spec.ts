@@ -23,6 +23,7 @@ describe.each(Object.entries(builders))('%s cron subscription concurrency', (_na
 
     it.each([false, 1, 4] as const)('keeps cap %s on the subscription', (concurrencyMaxRuns) => {
         const subscription = build(concurrencyMaxRuns);
+
         expect(subscription.concurrencyMaxRuns).toBe(concurrencyMaxRuns);
         expect(subscription.options).not.toHaveProperty('concurrencyMaxRuns');
     });

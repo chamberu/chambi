@@ -26,9 +26,9 @@ import type { CodingSetup } from '../../utils/setup.ts';
 
 type Grep = {
     matches: Array<{
-        path: string; 
-        line: number; 
-        text: string 
+        path: string;
+        line: number;
+        text: string
     }>;
     truncated: boolean;
     engine: string;
@@ -45,6 +45,7 @@ beforeAll(async () => {
     // Pin the fallback engines under test; Docker tests cover ripgrep.
     await Promise.all(['sh', 'git', 'grep', 'cut', 'tr', 'cat', 'find'].map(async (name) => {
         const executable = execFileSync('/bin/sh', ['-c', 'command -v "$1"', 'sh', name], { encoding: 'utf8' }).trim();
+
         await symlink(executable, join(searchPath, name));
     }));
 });
@@ -54,9 +55,13 @@ afterAll(async () => {
 });
 beforeEach(async () => {
     s = await setupCoding(fixture);
+
     const originalExec = s.workspace.exec;
     const exec = originalExec.bind(s.workspace);
-    restoreExec = () => { s.workspace.exec = originalExec; };
+
+    restoreExec = () => {
+        s.workspace.exec = originalExec;
+    };
     s.workspace.exec = (argv, options) => exec(argv[2] === GREP_SCRIPT ? ['env', `PATH=${searchPath}`, ...argv] : argv, options);
 });
 afterEach(async () => {
@@ -69,9 +74,9 @@ describe('grep', () => {
     it('finds a line', async () => {
         await expect(s.call('grep', { pattern: 'const b' })).resolves.toMatchObject({
             matches: [{
-                path: 'src/a.ts', 
-                line: 2, 
-                text: 'export const b = 2;', 
+                path: 'src/a.ts',
+                line: 2,
+                text: 'export const b = 2;',
             }],
             truncated: false,
         });
@@ -79,11 +84,13 @@ describe('grep', () => {
 
     it('ignores case on request', async () => {
         await expect(s.call('grep', { pattern: 'CONST B' })).resolves.toMatchObject({ matches: [], truncated: false });
+
         const { matches } = await s.call<Grep>('grep', { pattern: 'CONST B', ignoreCase: true });
+
         expect(matches).toEqual([{
-            path: 'src/a.ts', 
-            line: 2, 
-            text: 'export const b = 2;', 
+            path: 'src/a.ts',
+            line: 2,
+            text: 'export const b = 2;',
         }]);
     });
 
@@ -99,9 +106,9 @@ describe('grep', () => {
     it('stops at the limit', async () => {
         await expect(s.call('grep', { pattern: 'export', limit: 1 })).resolves.toMatchObject({
             matches: [{
-                path: 'src/a.ts', 
-                line: 1, 
-                text: 'export const a = 1;', 
+                path: 'src/a.ts',
+                line: 1,
+                text: 'export const a = 1;',
             }],
             truncated: true,
         });
@@ -114,9 +121,9 @@ describe('grep', () => {
         await s.workspace.writeFile('dist/out.js', 'export const c = 3;\n');
         await expect(s.call('grep', { pattern: 'const c' })).resolves.toMatchObject({
             matches: [{
-                path: 'new.ts', 
-                line: 1, 
-                text: 'export const c = 3;', 
+                path: 'new.ts',
+                line: 1,
+                text: 'export const c = 3;',
             }],
             truncated: false,
         });
@@ -126,23 +133,27 @@ describe('grep', () => {
         await s.workspace.writeFile('we:ird.ts', 'const a = 0;\n');
         await expect(s.call('grep', { pattern: 'const a', path: 'src' })).resolves.toMatchObject({
             matches: [{
-                path: 'src/a.ts', 
-                line: 1, 
-                text: 'export const a = 1;', 
+                path: 'src/a.ts',
+                line: 1,
+                text: 'export const a = 1;',
             }],
             truncated: false,
         });
+
         const { matches } = await s.call<Grep>('grep', { pattern: '^const a' });
+
         expect(matches).toEqual([{
-            path: 'we:ird.ts', 
-            line: 1, 
-            text: 'const a = 0;', 
+            path: 'we:ird.ts',
+            line: 1,
+            text: 'const a = 0;',
         }]);
     });
 
     it('cuts long lines at LINE_MAX_CHARS', async () => {
         await s.workspace.writeFile('long.txt', `needle${'y'.repeat(1_000)}\n`);
+
         const { matches } = await s.call<Grep>('grep', { pattern: 'needle' });
+
         expect(matches).toHaveLength(1);
         expect(matches[0]!.text).toHaveLength(500);
     });
@@ -150,22 +161,24 @@ describe('grep', () => {
     it('keeps a NUL past the binary check inside the match text', async () => {
         // git -I only inspects the first 8000 bytes; a later NUL must not shift the -z records
         await s.workspace.writeFile('late.txt', `${'x'.repeat(9_000)}\nneedle one\nneedle\0two\nneedle three\n`);
+
         const { matches } = await s.call<Grep>('grep', { pattern: 'needle', path: 'late.txt' });
+
         expect(matches).toEqual([
             {
-                path: 'late.txt', 
-                line: 2, 
-                text: 'needle one', 
+                path: 'late.txt',
+                line: 2,
+                text: 'needle one',
             },
             {
-                path: 'late.txt', 
-                line: 3, 
-                text: 'needle\0two', 
+                path: 'late.txt',
+                line: 3,
+                text: 'needle\0two',
             },
             {
-                path: 'late.txt', 
-                line: 4, 
-                text: 'needle three', 
+                path: 'late.txt',
+                line: 4,
+                text: 'needle three',
             },
         ]);
     });
@@ -185,23 +198,26 @@ describe('grep: engines and ignored files', () => {
         await s.workspace.writeFile('dist/out.js', 'export const c = 3;\n');
         await s.workspace.writeFile('.hidden/x.ts', 'export const c = 4;\n');
         await expect(s.call('grep', { pattern: 'const c' })).resolves.toMatchObject({ matches: [{ path: '.hidden/x.ts', line: 1 }] });
+
         const { matches } = await s.call<Grep>('grep', { pattern: 'const c', includeIgnored: true });
+
         expect(matches.map((match) => match.path).sort()).toEqual(['.hidden/x.ts', 'dist/out.js']);
     });
 
     it('searches an output log of bash with grep', async () => {
         const run = await s.call<{ stdoutLog: string }>('bash', { command: 'printf "a\\nneedle 1\\nb\\nneedle 2\\n"' });
+
         await expect(s.call('grep', { pattern: 'needle', path: run.stdoutLog })).resolves.toEqual({
             matches: [
                 {
-                    path: run.stdoutLog, 
-                    line: 2, 
-                    text: 'needle 1', 
+                    path: run.stdoutLog,
+                    line: 2,
+                    text: 'needle 1',
                 },
                 {
-                    path: run.stdoutLog, 
-                    line: 4, 
-                    text: 'needle 2', 
+                    path: run.stdoutLog,
+                    line: 4,
+                    text: 'needle 2',
                 },
             ],
             truncated: false,

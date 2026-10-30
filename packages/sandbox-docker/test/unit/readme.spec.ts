@@ -25,13 +25,16 @@ describe('README example', () => {
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = readme.matchAll(/```typescript\n([\s\S]*?)```/g).map((m) => m[1]).toArray();
+
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
     it('builds the provider without contacting the daemon', () => {
         // a socket that does not exist: any request would fail
         vi.stubEnv('DOCKER_HOST', 'unix:///nonexistent');
+
         const sandbox = createSandbox();
+
         expect(sandbox.name).toBe('docker');
     });
 });

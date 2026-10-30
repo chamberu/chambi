@@ -26,11 +26,18 @@ export function createFakeFetch(answers: FakeAnswer[]) {
             body: typeof init.body === 'string' ? init.body : undefined,
             signal: init.signal,
         };
+
         requests.push(request);
+
         const answer = answers.shift();
-        if (!answer) throw new Error(`no answer queued for ${request.method} ${request.url}`);
+
+        if (!answer) {
+            throw new Error(`no answer queued for ${request.method} ${request.url}`);
+        }
+
         return typeof answer === 'function' ? answer(request) : answer;
     };
+
     return { fetch: fetch as typeof globalThis.fetch, requests };
 }
 
@@ -43,9 +50,13 @@ export function sse(chunks: string[], status = 200): Response {
     const encoder = new TextEncoder();
     const body = new ReadableStream<Uint8Array>({
         start(controller) {
-            for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+            for (const chunk of chunks) {
+                controller.enqueue(encoder.encode(chunk));
+            }
+
             controller.close();
         },
     });
+
     return new Response(body, { status, headers: { 'content-type': 'text/event-stream' } });
 }

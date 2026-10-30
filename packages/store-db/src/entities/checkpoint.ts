@@ -35,6 +35,7 @@ export class CheckpointEntity {
         nullable: true,
     })
     conversationScopeId!: string | null;
+
     @Column({
         name: 'conversation_generation',
         type: 'integer',
@@ -63,6 +64,7 @@ export class CheckpointEntity {
 
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
+
     @OneToOne(() => RunEntity, {
         nullable: false,
         onDelete: 'NO ACTION',

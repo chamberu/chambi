@@ -9,11 +9,12 @@ export function docker() {
         // a bridge without inter-container traffic, firewalled from the host
         network: 'chamvi-sandbox',
         limits: {
-            cpu: '2', 
-            memory: '4Gi', 
-            pids: 1024, 
+            cpu: '2',
+            memory: '4Gi',
+            pids: 1024,
         },
     });
+
     // #endregion docker
     return provider;
 }
@@ -25,11 +26,12 @@ export function kubernetes() {
         namespace: 'agents-sandbox',
         podLabels: { 'example.com/egress': 'restricted' },
         limits: {
-            cpu: '2', 
-            memory: '4Gi', 
-            storage: '8Gi', 
+            cpu: '2',
+            memory: '4Gi',
+            storage: '8Gi',
         },
     });
+
     // #endregion k8s
     return provider;
 }

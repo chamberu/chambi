@@ -50,6 +50,7 @@ function build(options: {
         env: { ...options.env },
         modules: [configModule({ clock, logger }), storeModule(options.store)],
     });
+
     return {
         harness,
         clock,
@@ -62,6 +63,7 @@ let admin: DataSource | undefined;
 async function openAdmin(url: string): Promise<DataSource> {
     admin = new DataSource({ type: 'postgres', url });
     await admin.initialize();
+
     return admin;
 }
 
@@ -69,6 +71,7 @@ async function closeAdmin(): Promise<void> {
     if (admin?.isInitialized) {
         await admin.destroy();
     }
+
     admin = undefined;
 }
 
@@ -78,7 +81,9 @@ async function createUrlWithPassword(password: string): Promise<string> {
     const role = `chamvi_role_${randomUUID().replaceAll('-', '')}`;
     const database = url.pathname.slice(1);
     const seed = new DataSource({ type: 'postgres', url: url.href });
+
     await seed.initialize();
+
     try {
         await seed.query(`CREATE ROLE "${role}" LOGIN PASSWORD '${password}'`);
         await seed.query(`ALTER DATABASE "${database}" OWNER TO "${role}"`);
@@ -88,11 +93,13 @@ async function createUrlWithPassword(password: string): Promise<string> {
 
     url.username = role;
     url.password = password;
+
     return url.href;
 }
 
 async function tableExists(dataSource: DataSource, table: string): Promise<boolean> {
     const rows: Array<{ exists: string | null }> = await dataSource.query('SELECT to_regclass($1) AS exists', [table]);
+
     return rows[0]?.exists !== null;
 }
 
@@ -101,6 +108,7 @@ describe('storeModule on a database URL', () => {
         const { harness, logger } = build({ env: { DATABASE_URL: 'postgres://u:sekr3t@127.0.0.1:1/x' } });
 
         const error = await harness.setup().then(() => undefined, (e: unknown) => e);
+
         expect(error).toBeInstanceOf(Error);
         expect(inspect(error, { depth: 5 })).not.toContain('sekr3t');
         expect(logger.lines.join('\n')).not.toContain('sekr3t');
@@ -112,6 +120,7 @@ describe('storeModule on a database URL', () => {
         const { harness } = build({ check: true, env: { DATABASE_URL: 'postgres://u:sekr3t@127.0.0.1:1/x' } });
 
         const error = await harness.setup().then(() => undefined, (e: unknown) => e);
+
         expect(error).toBeInstanceOf(Error);
         expect(error).not.toBeInstanceOf(InvalidAgentDefinitionError);
         expect(inspect(error, { depth: 5 })).not.toContain('sekr3t');
@@ -123,7 +132,11 @@ describe('storeModule on a database URL', () => {
         const server = createServer((socket) => {
             sockets.push(socket);
         });
-        await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+
+        await new Promise<void>((resolve) => {
+            server.listen(0, '127.0.0.1', resolve);
+        });
+
         const { port } = server.address() as AddressInfo;
 
         class QuickStoreModule extends StoreModule {
@@ -136,12 +149,15 @@ describe('storeModule on a database URL', () => {
 
         try {
             const began = Date.now();
+
             await expect(harness.setup()).rejects.toBeInstanceOf(Error);
             expect(Date.now() - began).toBeLessThan(5_000);
             expect(harness.container.has(AppToken.STORE)).toBe(false);
         } finally {
             sockets.forEach((socket) => socket.destroy());
-            await new Promise((resolve) => { server.close(resolve); });
+            await new Promise((resolve) => {
+                server.close(resolve);
+            });
         }
     });
 
@@ -160,6 +176,7 @@ describe('storeModule on a database URL', () => {
 
     it('stop during migrate: an aborted context initializes nothing', async () => {
         const { harness } = build({ mode: 'migrate', env: { DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x' } });
+
         harness.controller.abort(createStoppedError());
 
         await expect(harness.setup()).rejects.toMatchObject({ code: APP_ERROR_CODE.STOPPED });
@@ -172,9 +189,11 @@ describePostgres('storeModule on Postgres', () => {
     it('migrate mode migrates and closes', async () => {
         const url = await createTestDatabaseUrl();
         const { harness } = build({ mode: 'migrate', env: { DATABASE_URL: url } });
+
         await harness.setup();
 
         const dataSource = harness.container.resolve(AppToken.DATA_SOURCE);
+
         expect(await tableExists(dataSource, 'chamvi_runs')).toBe(true);
         expect(harness.container.resolve(AppToken.STORE).runs).toBeInstanceOf(DatabaseRunRepository);
 
@@ -185,9 +204,11 @@ describePostgres('storeModule on Postgres', () => {
     it('start mode migrates', async () => {
         const url = await createTestDatabaseUrl();
         const { harness } = build({ env: { DATABASE_URL: url } });
+
         await harness.setup();
 
         const store = harness.container.resolve(AppToken.STORE);
+
         await expect(store.runs.find({})).resolves.toMatchObject({ total: 0 });
         await harness.stop();
     });
@@ -195,9 +216,11 @@ describePostgres('storeModule on Postgres', () => {
     it('start mode skips the migration with CHAMVI_MIGRATE=false', async () => {
         const url = await createTestDatabaseUrl();
         const { harness } = build({ env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'false' } });
+
         await harness.setup();
 
         const store = harness.container.resolve(AppToken.STORE);
+
         expect(store.runs).toBeInstanceOf(DatabaseRunRepository);
         await expect(store.runs.find({})).rejects.toThrow();
         await harness.stop();
@@ -206,6 +229,7 @@ describePostgres('storeModule on Postgres', () => {
     it('options.url wins over DATABASE_URL', async () => {
         const url = await createTestDatabaseUrl();
         const { harness } = build({ env: { DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x' }, store: { url } });
+
         await harness.setup();
 
         expect(harness.container.resolve(AppToken.STORE).runs).toBeInstanceOf(DatabaseRunRepository);
@@ -215,12 +239,14 @@ describePostgres('storeModule on Postgres', () => {
     it('a failed migration leaves no open connection', async () => {
         const url = await createTestDatabaseUrl();
         const seed = new DataSource({ type: 'postgres', url });
+
         await seed.initialize();
         await seed.query('CREATE TABLE "chamvi_checkpoints" ("id" int)');
         await seed.destroy();
 
         const { harness } = build({ env: { DATABASE_URL: url } });
         const error = await harness.setup().then(() => undefined, (e: unknown) => e);
+
         expect(error).toBeInstanceOf(QueryFailedError);
         expect(error).toMatchObject({ driverError: { code: '42P07' } });
         expect((error as Error).message).toMatch(/chamvi_checkpoints/);
@@ -231,12 +257,14 @@ describePostgres('storeModule on Postgres', () => {
     it('a failed migration keeps the TypeORM error for a password found in the stack', async () => {
         const url = await createUrlWithPassword('postgres');
         const seed = new DataSource({ type: 'postgres', url });
+
         await seed.initialize();
         await seed.query('CREATE TABLE "chamvi_checkpoints" ("id" int)');
         await seed.destroy();
 
         const { harness } = build({ env: { DATABASE_URL: url } });
         const error = await harness.setup().then(() => undefined, (e: unknown) => e);
+
         expect(error).toBeInstanceOf(QueryFailedError);
         expect(error).toMatchObject({ driverError: { code: '42P07' } });
         expect((error as Error).message).toBe('relation "chamvi_checkpoints" already exists');
@@ -248,14 +276,19 @@ describePostgres('storeModule on Postgres', () => {
         const { initialize } = DataSource.prototype;
         const spy = vi.spyOn(DataSource.prototype, 'initialize').mockImplementation(async function (this: DataSource) {
             const result = await initialize.call(this);
+
             harness.controller.abort(createStoppedError());
+
             return result;
         });
 
         try {
             const error = await harness.setup().then(() => undefined, (e: unknown) => e);
+
             expect(error).toMatchObject({ code: APP_ERROR_CODE.STOPPED, message: 'The app was stopped.' });
+
             const dataSource = harness.container.resolve(AppToken.DATA_SOURCE);
+
             expect(dataSource.isInitialized).toBe(false);
             expect(await tableExists(await openAdmin(url), 'chamvi_runs')).toBe(false);
         } finally {
@@ -272,14 +305,18 @@ describePostgres('storeModule on Postgres', () => {
             entities: STORE_ENTITIES,
             migrations: STORE_MIGRATIONS,
         });
+
         await dataSource.initialize();
 
         try {
             const { harness } = build({ env: { DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x' }, store: { dataSource } });
+
             await harness.setup();
 
             expect(harness.container.resolve(AppToken.DATA_SOURCE)).toBe(dataSource);
+
             const store = harness.container.resolve(AppToken.STORE);
+
             expect(store.runs).toBeInstanceOf(DatabaseRunRepository);
             await expect(store.runs.find({})).resolves.toMatchObject({ total: 0 });
 
@@ -297,9 +334,11 @@ describePostgres('storeModule on Postgres', () => {
             clock,
             logger,
         } = build({ env: { DATABASE_URL: url } });
+
         await harness.setup();
 
         const store = harness.container.resolve(AppToken.STORE);
+
         await store.locks.acquire('lock', 'owner', 1000);
         await runHooks(harness.container, 'started');
         clock.advance(DEFAULT_PURGE_INTERVAL_MS);
@@ -317,11 +356,14 @@ describePostgres('storeModule on Postgres', () => {
         const { harness } = build({ check: true, env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'false' } });
 
         const error = await harness.setup().then(() => undefined, (e: unknown) => e);
+
         expect(error).toMatchObject({ code: APP_ERROR_CODE.STORE_NOT_MIGRATED });
         expect((error as Error).message).toBe(
             `The store has ${STORE_MIGRATIONS.length} pending migration(s); run chamvi migrate or set CHAMVI_MIGRATE=true.`,
         );
+
         const ds = await openAdmin(url);
+
         try {
             expect(await tableExists(ds, 'migrations')).toBe(false);
             expect(await tableExists(ds, 'chamvi_runs')).toBe(false);
@@ -333,10 +375,12 @@ describePostgres('storeModule on Postgres', () => {
     it('check mode with CHAMVI_MIGRATE=true passes and migrates nothing', async () => {
         const url = await createTestDatabaseUrl();
         const { harness } = build({ check: true, env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'true' } });
+
         await harness.setup();
         await harness.stop();
 
         const ds = await openAdmin(url);
+
         try {
             expect(await tableExists(ds, 'migrations')).toBe(false);
             expect(await tableExists(ds, 'chamvi_runs')).toBe(false);
@@ -348,10 +392,12 @@ describePostgres('storeModule on Postgres', () => {
     it('check mode on a migrated database passes', async () => {
         const url = await createTestDatabaseUrl();
         const first = build({ env: { DATABASE_URL: url } });
+
         await first.harness.setup();
         await first.harness.stop();
 
         const { harness } = build({ check: true, env: { DATABASE_URL: url, CHAMVI_MIGRATE: 'false' } });
+
         await harness.setup();
         expect(harness.container.resolve(AppToken.STORE).runs).toBeInstanceOf(DatabaseRunRepository);
         await harness.stop();

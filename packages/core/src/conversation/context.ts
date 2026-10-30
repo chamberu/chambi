@@ -22,7 +22,10 @@ const executions = new WeakMap<RunContext, {
 }>();
 
 export function bindConversationRun(context: RunContext, capability: Conversations, run: Run): void {
-    if (!run.conversation) return;
+    if (!run.conversation) {
+        return;
+    }
+
     executions.set(context, {
         capability,
         run: structuredClone(run),
@@ -36,7 +39,11 @@ export function conversationFor(context: RunContext) {
 
 export async function checkConversation(context: RunContext, operation: `${ConversationOperation.RECALL | ConversationOperation.NOTES}` = ConversationOperation.RECALL): Promise<void> {
     const bound = executions.get(context);
-    if (!bound) return;
+
+    if (!bound) {
+        return;
+    }
+
     await bound.capability.check(bound.run, operation);
 }
 
@@ -46,6 +53,7 @@ export function bindConversationIntake(engine: Engine, dispatch: Intake): void {
 
 export function dispatchConversation(engine: Engine, channel: Pick<IChannel, 'name'>, envelope: ChannelDispatchEnvelope, target: ConversationTarget): Promise<DispatchResult> {
     const dispatch = intake.get(engine);
+
     if (!dispatch) {
         return Promise.reject(new ValidationError('Conversation intake is unavailable.'));
     }

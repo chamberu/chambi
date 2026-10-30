@@ -31,6 +31,7 @@ export const reader = defineAgent({
                     // fails the whole run with code 'FatalToolError'
                     throw new FatalToolError(`Refusing to read ${path}.`);
                 }
+
                 // any other error goes back to the model as a tool error result
                 return readFile(path);
             },
@@ -53,7 +54,11 @@ const deploy = defineTool({
     execute: async ({ version }, { context }) => {
         // the invoker is a snapshot of who started the run
         const { invoker } = context.run.trigger;
-        if (!invoker) throw new FatalToolError('deploy needs an invoker');
+
+        if (!invoker) {
+            throw new FatalToolError('deploy needs an invoker');
+        }
+
         // aborts on cancel, drain or timeout
         return deployVersion(version, invoker.id, context.run.signal);
     },
@@ -74,9 +79,17 @@ export const ops = defineAgent({
         // a release manager deploys without asking, everyone else waits for the owner
         async beforeToolExecution({ toolName, input }, ctx) {
             const { invoker } = ctx.run.trigger;
-            if (toolName !== 'deploy' || (invoker && hasPermission(invoker.permissions, 'release:manage'))) return input;
+
+            if (toolName !== 'deploy' || (invoker && hasPermission(invoker.permissions, 'release:manage'))) {
+                return input;
+            }
+
             const { approved } = await approve(ctx, { title: 'Deploy?', body: JSON.stringify(input) });
-            if (!approved) throw new ToolDeniedError('The owner refused the deploy.');
+
+            if (!approved) {
+                throw new ToolDeniedError('The owner refused the deploy.');
+            }
+
             return input;
         },
     },

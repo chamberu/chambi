@@ -41,6 +41,7 @@ describe('assertCreateInput', () => {
 describe('abortedCreate', () => {
     it('is a SandboxError with the cause when given', () => {
         const cause = new Error('dropped');
+
         expect(abortedCreate()).toBeInstanceOf(SandboxError);
         expect(abortedCreate().message).toBe('workspace creation aborted');
         expect(abortedCreate().cause).toBeUndefined();
@@ -77,17 +78,20 @@ describe('lifetimeSeconds', () => {
 describe('buildWorkspaceInfo', () => {
     it('expires maxLifetimeMs after createdAt and names the repo and ref when given', () => {
         const createdAt = new Date(1_000);
+
         expect(buildWorkspaceInfo({ runId: 'r' }, 'local', createdAt, 5_000)).toEqual({
             runId: 'r',
             provider: 'local',
             createdAt,
             expiresAt: new Date(6_000),
         });
+
         const info = buildWorkspaceInfo({
-            runId: 'r', 
-            repo: 'https://example.com/a/b.git', 
-            ref: 'main', 
+            runId: 'r',
+            repo: 'https://example.com/a/b.git',
+            ref: 'main',
         }, 'k8s', createdAt, 5_000);
+
         expect(info.repo).toBe('https://example.com/a/b.git');
         expect(info.ref).toBe('main');
     });
@@ -111,6 +115,7 @@ describe('collectionError', () => {
     it('names the count and the first failure and carries every failure', () => {
         const failures = [new Error('first'), 'second'];
         const error = collectionError(2, failures);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect(error.message).toBe('garbage collection removed 2 workspaces, 2 failed (first: first)');
         expect(error.cause).toBeInstanceOf(AggregateError);

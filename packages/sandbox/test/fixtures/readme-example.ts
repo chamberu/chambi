@@ -17,5 +17,6 @@ export function createWorkspaces(
 
     // dispose a run's workspaces once it completed, failed or was cancelled
     workspaces.attach(engine);
+
     return workspaces;
 }

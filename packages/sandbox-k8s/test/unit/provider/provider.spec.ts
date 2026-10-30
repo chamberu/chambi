@@ -31,7 +31,11 @@ const PROBE = ['sh', '-c', expect.stringContaining('command -v git')];
 /** HEAD for `rev-parse HEAD`; no remote branch of that name for `rev-parse -q --verify` (a tag). */
 const answerRevParse: FakeExecHandler = (argv) => {
     const command = unwrap(argv);
-    if (command[1] !== 'rev-parse') return {};
+
+    if (command[1] !== 'rev-parse') {
+        return {};
+    }
+
     return command[2] === '-q' ? { exitCode: 1 } : { stdout: `${COMMIT}\n` };
 };
 
@@ -47,6 +51,7 @@ function setup(onExec: FakeExecHandler = answerRevParse, options: Partial<Kubern
         clock,
         ...options,
     });
+
     return {
         clock,
         client,
@@ -61,6 +66,7 @@ describe('kubernetes sandbox', () => {
             clock,
             provider,
         } = setup();
+
         client.statuses = [pending, pending, { phase: 'Running' }];
 
         const creating = provider.create({
@@ -69,7 +75,12 @@ describe('kubernetes sandbox', () => {
             ref: 'v1',
         });
         let done = false;
-        creating.then(() => { done = true; }, () => { done = true; });
+
+        creating.then(() => {
+            done = true;
+        }, () => {
+            done = true;
+        });
 
         await flush();
         expect(client.reads).toBe(1);
@@ -81,9 +92,12 @@ describe('kubernetes sandbox', () => {
         clock.advance(POLL_MS);
 
         const workspace = await creating;
+
         expect(client.reads).toBe(3);
         expect(client.created).toHaveLength(1);
+
         const name = `chamvi-ws-${workspace.id}`;
+
         expect(client.created[0]!.metadata?.name).toBe(name);
         expect(client.created[0]!.metadata?.labels?.['chamvi.dev/run']).toBe('r1');
         expect(client.execs.map((call) => call.name)).toEqual(Array(9).fill(name));
@@ -114,9 +128,11 @@ describe('kubernetes sandbox', () => {
 
     it('refuses a runId that is no valid label value before creating a pod', async () => {
         const { client, provider } = setup();
+
         for (const runId of ['a:b', 'a/b', '-a', 'a'.repeat(64)]) {
             await expect(provider.create({ runId })).rejects.toBeInstanceOf(ValidationError);
         }
+
         expect(client.created).toHaveLength(0);
     });
 
@@ -125,6 +141,7 @@ describe('kubernetes sandbox', () => {
             unwrap(argv)[0] === 'cat' ? { stdout: new TextDecoder().decode(input.stdin), exitCode: 3 } : {}
         ));
         const workspace = await provider.create({ runId: 'r1' });
+
         expect(client.execs.map((call) => call.argv)).toEqual([
             PROBE,
             wrapped(['git', 'init', '-q', '.']),
@@ -137,6 +154,7 @@ describe('kubernetes sandbox', () => {
             stdin: 'piped ✓',
             timeoutMs: 1500,
         });
+
         expect(client.execs.at(-1)).toEqual({
             name: `chamvi-ws-${workspace.id}`,
             argv: wrapped(['cat'], '1.5', '/workspace/sub'),
@@ -154,6 +172,7 @@ describe('kubernetes sandbox', () => {
     it('refuses an image without git before the checkout and deletes the pod', async () => {
         const { client, provider } = setup((argv) => (argv[0] === 'sh' && argv.length === 3 ? { exitCode: 3, stdout: 'git\n' } : {}));
         const error = await provider.create({ runId: 'r1', repo: REPO }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toContain('image img lacks what a workspace needs: git.');
         expect(client.execs).toHaveLength(1);
@@ -162,6 +181,7 @@ describe('kubernetes sandbox', () => {
 
     it('applies the operator\'s pull policy to every image', async () => {
         const { client, provider } = setup(answerRevParse, { imagePullPolicy: 'Always' });
+
         await provider.create({ runId: 'r1' });
         await provider.create({ runId: 'r2', image: 'python:3.13' });
         await provider.create({ runId: 'r3', image: 'registry.local/acme/builder:2' });
@@ -176,8 +196,11 @@ describe('kubernetes sandbox', () => {
             cache: { claimName: 'chamvi-cache' },
             tmpSize: '2Gi',
         });
+
         await provider.create({ runId: 'r1' });
+
         const { spec } = client.created[0]!;
+
         expect(spec?.securityContext?.runAsUser).toBe(1000);
         expect(spec?.containers[0]?.securityContext?.readOnlyRootFilesystem).toBe(true);
         expect(spec?.volumes).toContainEqual({ name: 'cache', persistentVolumeClaim: { claimName: 'chamvi-cache' } });
@@ -195,15 +218,16 @@ describe('kubernetes sandbox', () => {
         ['a bad tmpSize', { tmpSize: 'lots' }],
     ])('refuses %s', (_name, options) => {
         expect(() => createKubernetesSandbox({
-            namespace: 'agents', 
-            client: createFakePodClient(), 
-            ...options, 
+            namespace: 'agents',
+            client: createFakePodClient(),
+            ...options,
         } as never))
             .toThrow(InvalidAgentDefinitionError);
     });
 
     it('fails fast on an image pull error', async () => {
         const { client, provider } = setup();
+
         client.statuses = [{
             phase: 'Pending',
             containerStatuses: [{
@@ -217,6 +241,7 @@ describe('kubernetes sandbox', () => {
         }];
 
         const error = await provider.create({ runId: 'r1' }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toContain('ErrImagePull');
         expect((error as Error).message).toContain('pull access denied');
@@ -231,9 +256,11 @@ describe('kubernetes sandbox', () => {
             clock,
             provider,
         } = setup();
+
         client.statuses = [pending];
 
         const creating = provider.create({ runId: 'r1' });
+
         await flush();
         clock.advance(START_TIMEOUT_MS - 1);
         await flush();
@@ -247,6 +274,7 @@ describe('kubernetes sandbox', () => {
 
     it('fails a pod in phase Failed', async () => {
         const { client, provider } = setup();
+
         client.statuses = [{
             phase: 'Failed',
             reason: 'Evicted',
@@ -254,6 +282,7 @@ describe('kubernetes sandbox', () => {
         }];
 
         const error = await provider.create({ runId: 'r1' }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toMatch(/Failed/);
         expect((error as Error).message).toContain('Evicted');
@@ -272,6 +301,7 @@ describe('kubernetes sandbox', () => {
             repo: REPO,
             ref: 'nope',
         }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toContain("couldn't find remote ref nope");
         expect(client.deleted).toEqual([client.created[0]!.metadata!.name]);
@@ -279,6 +309,7 @@ describe('kubernetes sandbox', () => {
 
     it('disposes when the pod cannot be created', async () => {
         const { client, provider } = setup();
+
         client.create = async () => {
             throw new SandboxError('cannot create pod: forbidden');
         };
@@ -291,10 +322,13 @@ describe('kubernetes sandbox', () => {
             clock,
             provider,
         } = setup();
+
         client.statuses = [pending];
+
         const controller = new AbortController();
 
         const creating = provider.create({ runId: 'r1', signal: controller.signal });
+
         await flush();
         controller.abort();
         clock.advance(POLL_MS);
@@ -306,6 +340,7 @@ describe('kubernetes sandbox', () => {
 
     it('creates no pod for an already aborted signal', async () => {
         const { client, provider } = setup();
+
         await expect(provider.create({ runId: 'r1', signal: AbortSignal.abort() })).rejects.toThrow(/aborted/);
         expect(client.created).toHaveLength(0);
     });
@@ -313,7 +348,10 @@ describe('kubernetes sandbox', () => {
     it('marks a workspace whose pod failed as gone', async () => {
         const { client, provider } = setup();
         const workspace = await provider.create({ runId: 'r1' });
-        client.onExec = () => { throw new SandboxError('cannot exec in pod: container not found ("sandbox")'); };
+
+        client.onExec = () => {
+            throw new SandboxError('cannot exec in pod: container not found ("sandbox")');
+        };
         client.statuses = [{ phase: 'Failed', reason: 'Evicted' }];
         expect(workspace.disposed).toBe(false);
 
@@ -327,8 +365,11 @@ describe('kubernetes sandbox', () => {
     it('marks a workspace whose pod was deleted as gone', async () => {
         const { client, provider } = setup();
         const workspace = await provider.create({ runId: 'r1' });
+
         client.pods.delete(`chamvi-ws-${workspace.id}`);
-        client.onExec = () => { throw new SandboxError('cannot exec in pod: Unexpected server response: 404'); };
+        client.onExec = () => {
+            throw new SandboxError('cannot exec in pod: Unexpected server response: 404');
+        };
 
         await expect(workspace.exec(['true'])).rejects.toThrow(/is gone/);
         expect(workspace.disposed).toBe(true);
@@ -337,7 +378,10 @@ describe('kubernetes sandbox', () => {
     it('keeps a workspace whose pod still runs after a failed exec', async () => {
         const { client, provider } = setup();
         const workspace = await provider.create({ runId: 'r1' });
-        client.onExec = () => { throw new SandboxError('exec connection closed without an exit status'); };
+
+        client.onExec = () => {
+            throw new SandboxError('exec connection closed without an exit status');
+        };
 
         await expect(workspace.exec(['true'])).rejects.toThrow('exec connection closed without an exit status');
         expect(workspace.disposed).toBe(false);
@@ -357,9 +401,11 @@ describe('kubernetes sandbox', () => {
 
     it('uses the default image and pull policy', async () => {
         const { client, provider } = setup(undefined, { image: undefined });
+
         await provider.create({ runId: 'r1' });
 
         const container = client.created[0]!.spec!.containers[0]!;
+
         expect(container.image).toBe(DEFAULT_SANDBOX_IMAGE);
         expect(container.imagePullPolicy).toBe('IfNotPresent');
     });
@@ -371,6 +417,7 @@ describe('kubernetes sandbox', () => {
             podLabels: { team: 'x' },
             imagePullPolicy: 'Always',
         });
+
         await provider.create({
             runId: 'r1',
             image: 'other',
@@ -380,6 +427,7 @@ describe('kubernetes sandbox', () => {
 
         const pod = client.created[0]!;
         const container = pod.spec!.containers[0]!;
+
         expect(pod.metadata?.namespace).toBe('agents');
         expect(pod.metadata?.labels?.team).toBe('x');
         expect(pod.metadata?.annotations?.['chamvi.dev/expires-at']).toBe(String(START + 60_000));
@@ -399,6 +447,7 @@ describe('kubernetes sandbox', () => {
 
     it('requires a namespace', () => {
         const client = createFakePodClient();
+
         expect(() => createKubernetesSandbox({ namespace: '', client })).toThrow(InvalidAgentDefinitionError);
         expect(() => createKubernetesSandbox({ client } as never)).toThrow(InvalidAgentDefinitionError);
     });
@@ -412,11 +461,13 @@ describe('kubernetes sandbox', () => {
         'a'.repeat(64),
     ])('rejects the namespace %s', (namespace) => {
         const client = createFakePodClient();
+
         expect(() => createKubernetesSandbox({ namespace, client })).toThrow(InvalidAgentDefinitionError);
     });
 
     it('accepts valid pod labels', () => {
         const client = createFakePodClient();
+
         expect(() => createKubernetesSandbox({
             namespace: 'a'.repeat(63),
             client,
@@ -439,6 +490,7 @@ describe('kubernetes sandbox', () => {
         ['a key name over 63 characters', { ['k'.repeat(64)]: 'x' }],
     ])('rejects podLabels with %s', (_name, podLabels) => {
         const client = createFakePodClient();
+
         expect(() => createKubernetesSandbox({
             namespace: 'agents',
             client,
@@ -455,6 +507,7 @@ describe('kubernetes sandbox', () => {
         'app.kubernetes.io/component',
     ])('rejects podLabels that override %s', (key) => {
         const client = createFakePodClient();
+
         expect(() => createKubernetesSandbox({
             namespace: 'agents',
             client,
@@ -475,6 +528,7 @@ describe('kubernetes sandbox', () => {
         ['a client without the API', { client: {} }],
     ])('rejects %s', (_name, options) => {
         const client = createFakePodClient();
+
         expect(() => createKubernetesSandbox({
             namespace: 'agents',
             client,
@@ -485,6 +539,7 @@ describe('kubernetes sandbox', () => {
 
     it('validates the create input', async () => {
         const { client, provider } = setup();
+
         await expect(provider.create({ runId: '' })).rejects.toThrow(/runId/);
         await expect(provider.create({ runId: 'r1', env: { 'A B': 'x' } })).rejects.toBeInstanceOf(InvalidAgentDefinitionError);
         expect(client.created).toHaveLength(0);
@@ -493,20 +548,23 @@ describe('kubernetes sandbox', () => {
     describe('find', () => {
         /** Answers the remote's default branch (main), else like answerRevParse. */
         const answerCommit: FakeExecHandler = (argv, input) => {
-            if (unwrap(argv).includes('ls-remote')) return { stdout: `ref: refs/heads/main\tHEAD\n${COMMIT}\tHEAD\n` };
+            if (unwrap(argv).includes('ls-remote')) {
+                return { stdout: `ref: refs/heads/main\tHEAD\n${COMMIT}\tHEAD\n` };
+            }
+
             return answerRevParse(argv, input);
         };
 
         it('rebuilds a running pod\'s workspace in another provider from its labels and annotations', async () => {
             const {
-                client, 
-                clock, 
-                provider, 
+                client,
+                clock,
+                provider,
             } = setup(answerCommit);
             const created = await provider.create({
-                runId: 'r1', 
-                repo: REPO, 
-                ref: 'v1', 
+                runId: 'r1',
+                repo: REPO,
+                ref: 'v1',
             });
 
             const replica = createKubernetesSandbox({
@@ -515,8 +573,11 @@ describe('kubernetes sandbox', () => {
                 client,
                 clock,
             });
+
             client.selectors.length = 0;
+
             const found = await replica.find('r1');
+
             expect(client.selectors).toEqual(['app.kubernetes.io/managed-by=chamvi,app.kubernetes.io/component=sandbox,chamvi.dev/deployment=default,chamvi.dev/run=r1']);
             expect(found.map((workspace) => workspace.id)).toEqual([created.id]);
             expect(created.info.defaultBranch).toBe('main');
@@ -529,36 +590,42 @@ describe('kubernetes sandbox', () => {
             const { provider } = setup();
             const workspace = await provider.create({ runId: 'r1' });
             const [found] = await provider.find('r1');
+
             expect(found).toBe(workspace);
         });
 
         it('never answers a held workspace past its expiry', async () => {
             const { provider, clock } = setup();
             const workspace = await provider.create({ runId: 'r1' });
+
             clock.advance(workspace.info.expiresAt.getTime() - clock.now().getTime());
             expect(await provider.find('r1')).toEqual([]);
         });
 
         it('skips pods that do not run, are being deleted, expired or belong to another deployment', async () => {
             const {
-                client, 
-                clock, 
-                provider, 
+                client,
+                clock,
+                provider,
             } = setup();
             const failed = await provider.create({ runId: 'r1' });
             const deleting = await provider.create({ runId: 'r1' });
             const expired = await provider.create({ runId: 'r1', limits: { maxLifetimeMs: 60_000 } });
+
             await provider.create({ runId: 'r1', deployment: 'ci' });
+
             const running = await provider.create({ runId: 'r1' });
+
             client.pods.get(`chamvi-ws-${failed.id}`)!.status = { phase: 'Failed' };
             client.pods.get(`chamvi-ws-${deleting.id}`)!.metadata!.deletionTimestamp = new Date();
             clock.advance(60_000);
 
             const replica = createKubernetesSandbox({
-                namespace: 'agents', 
-                client, 
-                clock, 
+                namespace: 'agents',
+                client,
+                clock,
             });
+
             expect((await replica.find('r1')).map((workspace) => workspace.id)).toEqual([running.id]);
             expect(expired.info.expiresAt.getTime()).toBe(START + 60_000);
         });
@@ -571,6 +638,7 @@ describe('kubernetes sandbox', () => {
             } = setup();
             const half = await provider.create({ runId: 'r1', repo: REPO });
             const done = await provider.create({ runId: 'r1' });
+
             // the record a finished checkout writes last is missing
             client.gitConfig.get(`chamvi-ws-${half.id}`)!.delete('chamvi.checkout');
 
@@ -579,6 +647,7 @@ describe('kubernetes sandbox', () => {
                 client,
                 clock,
             });
+
             expect((await replica.find('r1')).map((workspace) => workspace.id)).toEqual([done.id]);
             // left to the garbage collection
             expect(client.deleted).toEqual([]);
@@ -586,6 +655,7 @@ describe('kubernetes sandbox', () => {
 
         it('finds nothing for a runId that is no label value, without a request', async () => {
             const { client, provider } = setup();
+
             expect(await provider.find('not a label!')).toEqual([]);
             expect(client.selectors).toEqual([]);
             await expect(provider.find('r1', { deployment: 'a b' })).rejects.toBeInstanceOf(ValidationError);

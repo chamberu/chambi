@@ -28,8 +28,15 @@ export function readCronOptions(agent: Agent, subscription: ChannelSubscription)
         overlap = 'skip',
         payload,
     } = subscription.options;
-    if (typeof expression !== 'string') throw fail('has no cron expression.');
-    if (timezone !== undefined && typeof timezone !== 'string') throw fail('has an invalid timezone.');
+
+    if (typeof expression !== 'string') {
+        throw fail('has no cron expression.');
+    }
+
+    if (timezone !== undefined && typeof timezone !== 'string') {
+        throw fail('has an invalid timezone.');
+    }
+
     if (!OVERLAP_POLICIES.includes(overlap as OverlapPolicy)) {
         throw fail(`has an unknown overlap policy "${String(overlap)}".`);
     }
@@ -77,5 +84,6 @@ export async function fireCronSubscription(ctx: CronTickContext): Promise<CronTi
     const result = ctx.dispatch ?
         await ctx.dispatch(envelope) :
         await engine.dispatch({ ...envelope, channel: subscription.channel });
+
     return { dispatched: true, ...result };
 }

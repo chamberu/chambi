@@ -23,12 +23,20 @@ export type IssuedApproval = {
 export function recordApprovals(engine: Engine): { calls: IssuedApproval[] } {
     const calls: IssuedApproval[] = [];
     const seen = new Set<string>();
+
     engine.on('run.updated', (event) => {
-        if (event.type !== 'run.updated') return;
+        if (event.type !== 'run.updated') {
+            return;
+        }
+
         const { run } = event;
         const { waiting } = run;
         const key = waiting ? `${run.id}:${waiting.approvalId}` : '';
-        if (run.status !== 'waiting' || !waiting || seen.has(key)) return;
+
+        if (run.status !== 'waiting' || !waiting || seen.has(key)) {
+            return;
+        }
+
         seen.add(key);
         calls.push({
             runId: run.id,
@@ -38,6 +46,7 @@ export function recordApprovals(engine: Engine): { calls: IssuedApproval[] } {
             expiresAt: waiting.expiresAt,
         });
     });
+
     return { calls };
 }
 
@@ -48,9 +57,16 @@ export function recordApprovals(engine: Engine): { calls: IssuedApproval[] } {
 export function gateTool(toolName: string): AgentHooks {
     return {
         async beforeToolExecution(info, ctx) {
-            if (info.toolName !== toolName) return info.input;
+            if (info.toolName !== toolName) {
+                return info.input;
+            }
+
             const decision = await approve(ctx, { title: `Run ${toolName}?` });
-            if (!decision.approved) throw new ToolDeniedError(`${toolName} denied: ${decision.reason ?? 'no reason'}`);
+
+            if (!decision.approved) {
+                throw new ToolDeniedError(`${toolName} denied: ${decision.reason ?? 'no reason'}`);
+            }
+
             return info.input;
         },
     };

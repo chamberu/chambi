@@ -37,9 +37,9 @@ type CommentInput = NumberInput & { body: string };
 type LabelsInput = NumberInput & { labels: string[] };
 type CloseInput = NumberInput & { reason?: 'completed' | 'not_planned' };
 type IssueInput = RepoInput & {
-    title: string; 
-    body: string; 
-    labels?: string[] 
+    title: string;
+    body: string;
+    labels?: string[]
 };
 
 
@@ -53,32 +53,44 @@ const CLOSE_REASONS = ['completed', 'not_planned'];
 function commentKey(input: CommentInput, ctx: ToolContext, options: Pick<ToolExecutionOptions<unknown>, 'toolCallId' | 'messages'>): string {
     const { owner, repo } = parseRepo(input.repo);
     const issueNumber = requireInteger(input.number, 'number', 1);
+
     return `${ctx.run.runId}:github_create_comment:${owner.toLowerCase()}/${repo.toLowerCase()}#${issueNumber}:${stepOf(options)}`;
 }
 
 /** `<runId>:github_create_issue:<sha256 of repo, title, body, labels>`: one issue per run and input. */
 function issueKey(input: IssueInput, ctx: ToolContext): string {
     const { owner, repo } = parseRepo(input.repo);
+
     return inputEffectKey(ctx.run.runId, 'github_create_issue', [`${owner}/${repo}`.toLowerCase(), input.title, input.body, input.labels ?? []]);
 }
 
 function requireLabels(value: unknown): string[] {
+    const hasInvalidLabel = Array.isArray(value) &&
+        value.length !== 0 &&
+        value.length <= LABELS_MAX &&
+        value.some((label) => typeof label !== 'string' || label.length === 0);
+
     if (
         !Array.isArray(value) ||
         value.length === 0 ||
         value.length > LABELS_MAX ||
-        value.some((label) => typeof label !== 'string' || label.length === 0)
+        hasInvalidLabel
     ) {
         throw new ValidationError(`labels must be 1 to ${LABELS_MAX} non-empty strings.`);
     }
+
     return value as string[];
 }
 
 function requireReason(value: unknown): CloseInput['reason'] {
-    if (value === undefined) return undefined;
+    if (value === undefined) {
+        return undefined;
+    }
+
     if (typeof value !== 'string' || !CLOSE_REASONS.includes(value)) {
         throw new ValidationError(`reason must be one of ${CLOSE_REASONS.join(', ')}.`);
     }
+
     return value as CloseInput['reason'];
 }
 
@@ -105,6 +117,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const issueNumber = requireInteger(input.number, 'number', 1);
                 const labels = requireLabels(input.labels);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/labels', {
                         owner,
@@ -112,6 +125,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                         issue_number: issueNumber,
                         labels,
                     });
+
                     return { labels: data.map((label) => label.name) };
                 });
             },
@@ -121,10 +135,10 @@ export function createWriteTools(app: IGithubApp): ToolSet {
             description: 'Comment on an issue or pull request. One comment per issue per step: put everything for one issue into one call; a second call for the same issue in the same step returns the first comment and posts nothing.',
             inputSchema: numberSchema<CommentInput>('issue', {
                 body: {
-                    type: 'string', 
-                    minLength: 1, 
-                    description: 'The comment in GitHub Markdown.', 
-                }, 
+                    type: 'string',
+                    minLength: 1,
+                    description: 'The comment in GitHub Markdown.',
+                },
             }),
             effectKey: commentKey,
             alreadyApplied: async (key, input, ctx) => {
@@ -132,6 +146,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const issueNumber = requireInteger(input.number, 'number', 1);
                 const marker = effectMarker(key);
                 const since = reconcileSince(ctx);
+
                 return withOctokit(app, ctx, { owner, repo }, async (octokit) => {
                     const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
                         owner,
@@ -140,14 +155,23 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                         since,
                         per_page: 100,
                     });
+
                     for await (const { data } of pages) {
                         for (const comment of data) {
-                            if (!comment.body?.includes(marker)) continue;
+                            if (!comment.body?.includes(marker)) {
+                                continue;
+                            }
+
                             const user = isObject(comment.user) ? comment.user : undefined;
-                            if (user?.type !== 'Bot' || !isSameLogin(user.login, await app.botLogin())) continue;
+
+                            if (user?.type !== 'Bot' || !isSameLogin(user.login, await app.botLogin())) {
+                                continue;
+                            }
+
                             return { id: Number(comment.id), url: comment.html_url };
                         }
                     }
+
                     return undefined;
                 });
             },
@@ -155,6 +179,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const body = requireString(input.body, 'body');
                 const { owner, repo } = parseRepo(input.repo);
                 const key = commentKey(input, options.context, options);
+
                 return withOctokit(app, options.context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
                         owner,
@@ -162,6 +187,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                         issue_number: input.number,
                         body: `${body}\n\n${effectMarker(key)}`,
                     });
+
                     return { id: Number(data.id), url: data.html_url };
                 });
             },
@@ -179,13 +205,18 @@ export function createWriteTools(app: IGithubApp): ToolSet {
             alreadyApplied: async (_key, input, ctx) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const issueNumber = requireInteger(input.number, 'number', 1);
+
                 return withOctokit(app, ctx, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/issues/{issue_number}', {
                         owner,
                         repo,
                         issue_number: issueNumber,
                     });
-                    if (data.state !== 'closed') return undefined;
+
+                    if (data.state !== 'closed') {
+                        return undefined;
+                    }
+
                     return {
                         number: data.number,
                         state: 'closed' as const,
@@ -197,6 +228,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const issueNumber = requireInteger(input.number, 'number', 1);
                 const reason = requireReason(input.reason);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('PATCH /repos/{owner}/{repo}/issues/{issue_number}', {
                         owner,
@@ -205,6 +237,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                         state: 'closed',
                         ...(reason !== undefined ? { state_reason: reason } : {}),
                     });
+
                     return {
                         number: data.number,
                         state: 'closed' as const,
@@ -240,6 +273,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
             alreadyApplied: async (key, input, ctx) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const marker = effectMarker(key);
+
                 return withOctokit(app, ctx, { owner, repo }, async (octokit) => {
                     const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/issues', {
                         owner,
@@ -249,11 +283,15 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                         since: reconcileSince(ctx),
                         per_page: 100,
                     });
+
                     for await (const { data } of pages) {
                         for (const issue of data) {
-                            if (issue.body?.includes(marker)) return { number: issue.number, url: issue.html_url };
+                            if (issue.body?.includes(marker)) {
+                                return { number: issue.number, url: issue.html_url };
+                            }
                         }
                     }
+
                     return undefined;
                 });
             },
@@ -266,6 +304,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                     undefined :
                     requireLabels(input.labels);
                 const marker = effectMarker(issueKey(input, options.context));
+
                 return withOctokit(app, options.context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('POST /repos/{owner}/{repo}/issues', {
                         owner,
@@ -274,6 +313,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
                         body: `${body}\n\n${marker}`,
                         ...(labels ? { labels } : {}),
                     });
+
                     return { number: data.number, url: data.html_url };
                 });
             },

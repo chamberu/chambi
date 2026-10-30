@@ -31,6 +31,7 @@ describe('excerptOf', () => {
             head,
             tail,
         });
+
         expect(excerpt.truncated).toBe(true);
         expect(excerpt.text).toBe(`one\ntwo \n[... 102 bytes cut, full output in ${LOG}]\n end\n`);
     });
@@ -42,6 +43,7 @@ describe('parseReport', () => {
             `chamvi-report 2\n/workspace/src\n3 ${LOG}\n${Buffer.from('hi\n').toString('base64')}\n-\n-\n`,
             'noise\nchamvi-report-stderr\n0 ~/.chamvi/out/0123456789ab.stderr.log\n-\n-\n',
         );
+
         expect(report?.status).toBe(2);
         expect(report?.cwd).toBe('/workspace/src');
         expect(Buffer.from(report!.stdout.head).toString()).toBe('hi\n');
@@ -50,6 +52,7 @@ describe('parseReport', () => {
 
     it('reads a report without a status (the call was killed)', () => {
         const report = parseReport(`chamvi-report -\n/workspace\n0 ${LOG}\n-\n-\n`, `chamvi-report-stderr\n0 ${LOG}\n-\n-\n`);
+
         expect(report?.status).toBeUndefined();
     });
 

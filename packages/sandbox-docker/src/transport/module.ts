@@ -33,7 +33,10 @@ export function createDockerTransport(
     return {
         async exec(argv: readonly string[], options: TransportExecOptions): Promise<TransportExecResult> {
             const { signal, stdin } = options;
-            if (signal.aborted) throw abortError(signal);
+
+            if (signal.aborted) {
+                throw abortError(signal);
+            }
 
             const exec = await container.exec({
                 Cmd: [...argv],
@@ -53,13 +56,18 @@ export function createDockerTransport(
             // for the socket's whole life: stdin the command never read stays
             // queued and fails (EPIPE) once the daemon closes the connection
             stream.on('error', () => undefined);
+
             const ended = streamEnded(stream, signal);
+
             docker.modem.demuxStream(stream, createSinkStream(options.stdout), createSinkStream(options.stderr));
+
             if (stdin !== undefined) {
                 // after the demux listeners, so no output is lost; end() half-closes the socket (stdin EOF)
                 stream.end(stdin);
             }
+
             let end: 'ended' | 'closed';
+
             try {
                 end = await ended;
             } finally {
@@ -69,6 +77,7 @@ export function createDockerTransport(
 
             let wait = INSPECT_POLL_INITIAL_MS;
             let info = await exec.inspect({ abortSignal: signal });
+
             while (info.Running) {
                 await delay(clock, wait, signal, () => abortError(signal));
                 wait = Math.min(wait * 2, INSPECT_POLL_MAX_MS);
@@ -85,9 +94,13 @@ export function createDockerTransport(
         async alive(signal: AbortSignal): Promise<boolean> {
             try {
                 const info = await container.inspect({ abortSignal: signal });
+
                 return info.State.Running;
             } catch (error) {
-                if (isStatus(error, 404)) return false;
+                if (isStatus(error, 404)) {
+                    return false;
+                }
+
                 throw error;
             }
         },

@@ -24,5 +24,6 @@ const UNSUPPORTED_JSONB_ESCAPE = /(?<!\\)((?:\\\\)*)\\u(?:0000|d[89a-f][0-9a-f]{
 export function toJsonParameter(value: unknown): { toJSON: () => unknown } {
     const text = JSON.stringify(value);
     const clean = text.replace(UNSUPPORTED_JSONB_ESCAPE, '$1\\ufffd');
+
     return { toJSON: () => (clean === text ? value : JSON.parse(clean)) };
 }

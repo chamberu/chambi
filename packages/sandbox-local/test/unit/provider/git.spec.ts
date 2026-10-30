@@ -72,6 +72,7 @@ describe.skipIf(!serving && !process.env.CI)('git against a private https host',
             provider: createLocalSandbox({ root: join(tmp, 'anonymous'), env: { GIT_SSL_CAINFO: server.caFile } }),
             gcIntervalMs: 0,
         });
+
         try {
             await expect(anonymous.acquire('r1', { repo: repoUrl() })).rejects.toThrow(SandboxError);
         } finally {
@@ -81,9 +82,12 @@ describe.skipIf(!serving && !process.env.CI)('git against a private https host',
 
     it('checks out a private branch through the workspace helper, then plain git fetches, pulls and pushes', async () => {
         const workspaces = manager();
+
         try {
             const { workspace } = await workspaces.acquire('r1', { repo: repoUrl(), ref: 'feature' });
+
             expect(workspace.info.defaultBranch).toBe('main');
+
             const sh = async (command: string) => workspace.exec(['sh', '-c', command]);
 
             expect((await sh('git rev-parse --abbrev-ref HEAD')).stdout.trim()).toBe('feature');
@@ -99,8 +103,10 @@ describe.skipIf(!serving && !process.env.CI)('git against a private https host',
     it('fails a checkout with a refused token without echoing it', async () => {
         const wrong = 'glpat-wrongTokenValue';
         const workspaces = manager(undefined, wrong);
+
         try {
             const error = await workspaces.acquire('r1', { repo: repoUrl() }).catch((e: unknown) => e);
+
             expect(error).toBeInstanceOf(SandboxError);
             expect((error as Error).message).toMatch(/checkout failed: git ls-remote/);
             expect((error as Error).message).not.toContain(wrong);
@@ -113,12 +119,18 @@ describe.skipIf(!serving && !process.env.CI)('git against a private https host',
         const root = join(tmp, 'restart');
         const first = manager(root);
         const { workspace } = await first.acquire('r1', { repo: repoUrl() });
+
         await first.close();
+
         const restarted = manager(root);
+
         try {
             const found = await restarted.get('r1');
+
             expect(found.id).toBe(workspace.id);
+
             const file = await found.exec(['sh', '-c', 'cat "$HOME/.chamvi/credentials"']);
+
             expect(file.stdout).toContain('[redacted]');
             expect((await found.exec(['git', 'fetch', '-q', 'origin'])).exitCode).toBe(0);
         } finally {
@@ -128,18 +140,22 @@ describe.skipIf(!serving && !process.env.CI)('git against a private https host',
 
     it('keeps the token in the 0600 file only, and answers it redacted', async () => {
         const workspaces = manager();
+
         try {
             const { workspace } = await workspaces.acquire('r1', { repo: repoUrl() });
             const sh = async (command: string) => workspace.exec(['sh', '-c', command]);
 
             const file = await sh('cat "$HOME/.chamvi/credentials"; ls -l "$HOME/.chamvi/credentials"');
+
             expect(file.stdout).toContain('[redacted]');
             expect(file.stdout).not.toContain(TOKEN);
             expect(file.stdout).toMatch(/^-rw-------/m);
             expect((await sh('cat .git/config; env')).stdout).not.toContain(TOKEN);
 
             expect((await sh('git fetch -q origin feature')).exitCode).toBe(0);
+
             const fill = await sh(`printf 'protocol=https\\nhost=${server.host}\\npath=demo.git\\n\\n' | git credential fill`);
+
             expect(fill.stdout).toContain('password=[redacted]');
 
             expect((await sh('git switch -q -c from-bash && git commit -q --allow-empty -m bash && git push -q origin HEAD:refs/heads/from-bash 2>&1')).exitCode).toBe(0);

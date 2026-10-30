@@ -18,23 +18,33 @@ function transportAnswering(answer: Answer) {
     const transport: IExecTransport = {
         async exec(argv, options) {
             calls.push({ argv: [...argv], options });
+
             if (answer === 'hang') {
                 return new Promise((_resolve, reject) => {
                     options.signal.addEventListener('abort', () => reject(new Error('detached')), { once: true });
                 });
             }
-            if (answer instanceof Error) throw answer;
-            if (answer.stdout) options.stdout.write(new TextEncoder().encode(answer.stdout));
+
+            if (Error.isError(answer)) {
+                throw answer;
+            }
+
+            if (answer.stdout) {
+                options.stdout.write(new TextEncoder().encode(answer.stdout));
+            }
+
             return { exitCode: answer.exitCode };
         },
         remove: async () => undefined,
     };
+
     return { transport, calls };
 }
 
 describe('probeImage', () => {
     it('runs one sh script outside the timeout wrapper and resolves on exit 0', async () => {
         const { transport, calls } = transportAnswering({ exitCode: 0 });
+
         await expect(probeImage(transport, { image: 'img' })).resolves.toBeUndefined();
         expect(calls).toHaveLength(1);
         expect(calls[0]!.argv).toEqual(['sh', '-c', expect.stringContaining('command -v git')]);
@@ -44,6 +54,7 @@ describe('probeImage', () => {
     it('names what the image lacks', async () => {
         const { transport } = transportAnswering({ exitCode: 3, stdout: 'git timeout-k\n' });
         const error = await probeImage(transport, { image: 'alpine:3' }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toBe('image alpine:3 lacks what a workspace needs: git, a timeout that supports -k (GNU coreutils). ' +
             'Pick an image with sh, git and coreutils, or install them in it.');
@@ -51,22 +62,26 @@ describe('probeImage', () => {
 
     it('names a missing timeout', async () => {
         const { transport } = transportAnswering({ exitCode: 3, stdout: 'timeout' });
+
         await expect(probeImage(transport, { image: 'img' })).rejects.toThrow('lacks what a workspace needs: timeout.');
     });
 
     it('names sh when the script cannot start', async () => {
         const { transport } = transportAnswering({ exitCode: 127 });
+
         await expect(probeImage(transport, { image: 'scratch-tool' })).rejects.toThrow('image scratch-tool lacks what a workspace needs: sh.');
     });
 
     it('reports any other exit', async () => {
         const { transport } = transportAnswering({ exitCode: 1 });
+
         await expect(probeImage(transport, { image: 'img' })).rejects.toThrow('cannot probe image img: the probe exited with 1.');
     });
 
     it('wraps a transport failure', async () => {
         const { transport } = transportAnswering(new Error('connection reset'));
         const error = await probeImage(transport, { image: 'img' }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toBe('cannot probe image img: connection reset');
     });
@@ -75,6 +90,7 @@ describe('probeImage', () => {
         const clock = new ControllableClock();
         const { transport, calls } = transportAnswering('hang');
         const probing = probeImage(transport, { image: 'img', clock });
+
         await Promise.resolve();
         clock.advance(IMAGE_PROBE_TIMEOUT_MS);
         await expect(probing).rejects.toThrow(`cannot probe image img: no answer within ${IMAGE_PROBE_TIMEOUT_MS} ms.`);
@@ -86,10 +102,11 @@ describe('probeImage', () => {
         const controller = new AbortController();
         const { transport } = transportAnswering('hang');
         const probing = probeImage(transport, {
-            image: 'img', 
-            clock, 
-            signal: controller.signal, 
+            image: 'img',
+            clock,
+            signal: controller.signal,
         });
+
         await Promise.resolve();
         controller.abort();
         await expect(probing).rejects.toThrow('workspace creation aborted');
@@ -97,6 +114,7 @@ describe('probeImage', () => {
 
     it('runs nothing for an aborted signal', async () => {
         const { transport, calls } = transportAnswering({ exitCode: 0 });
+
         await expect(probeImage(transport, { image: 'img', signal: AbortSignal.abort() })).rejects.toThrow('workspace creation aborted');
         expect(calls).toHaveLength(0);
     });

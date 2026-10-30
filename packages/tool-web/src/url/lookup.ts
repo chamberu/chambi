@@ -11,12 +11,15 @@ import type { WebLookup } from './types.ts';
 /** `dns.lookup` with every address; the signal ends the wait, not the lookup. */
 export const systemLookup: WebLookup = async (hostname, signal) => {
     signal.throwIfAborted();
+
     const answers = await new Promise<Array<{ address: string; family: number }>>((resolve, reject) => {
         const onAbort = () => reject(signal.reason);
+
         signal.addEventListener('abort', onAbort, { once: true });
         dnsLookup(hostname, { all: true, verbatim: true })
             .then(resolve, reject)
             .finally(() => signal.removeEventListener('abort', onAbort));
     });
+
     return answers.map((answer) => ({ address: answer.address, family: answer.family }));
 };

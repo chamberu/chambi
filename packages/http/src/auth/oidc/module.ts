@@ -23,12 +23,18 @@ export function oidc(options: OidcOptions): Authenticator {
     if (typeof options.principal !== 'function') {
         throw new InvalidAgentDefinitionError('oidc() needs a principal function.');
     }
+
     if (!Array.isArray(options.issuers) || options.issuers.length === 0) {
         throw new InvalidAgentDefinitionError('oidc() needs at least one issuer.');
     }
+
     for (const issuer of options.issuers) {
         const audiences = Array.isArray(issuer.audience) ? issuer.audience : [issuer.audience];
-        if (audiences.length === 0 || audiences.some((audience) => typeof audience !== 'string' || audience.length === 0)) {
+
+        const hasInvalidAudience = audiences.length !== 0 &&
+            audiences.some((audience) => typeof audience !== 'string' || audience.length === 0);
+
+        if (audiences.length === 0 || hasInvalidAudience) {
             // vouchly skips the aud check without one
             throw new InvalidAgentDefinitionError(`oidc() issuer "${issuer.id}" needs an audience.`);
         }
@@ -43,9 +49,13 @@ export function oidc(options: OidcOptions): Authenticator {
 
     return async (request) => {
         const token = readBearerToken(request);
-        if (token === undefined) return undefined;
+
+        if (token === undefined) {
+            return undefined;
+        }
 
         let result: VerifyResult;
+
         try {
             result = await verifier.verify(token);
         } catch (error) {
@@ -53,13 +63,18 @@ export function oidc(options: OidcOptions): Authenticator {
         }
 
         const principal = await options.principal(result);
-        if (!principal) throw new UnauthorizedError({ message: 'The token is not allowed.' });
+
+        if (!principal) {
+            throw new UnauthorizedError({ message: 'The token is not allowed.' });
+        }
+
         if (!isPrincipal(principal)) {
             // a server misconfiguration (500 and onError), not a client error
             throw new InvalidAgentDefinitionError(
                 `The oidc() principal mapper of issuer "${result.issuer.id}" must return a non-empty id and kind and a permissions array of strings.`,
             );
         }
+
         return principal;
     };
 }

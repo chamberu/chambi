@@ -10,44 +10,15 @@ import type { IClock } from '@chamvi/core';
 import { CREDENTIAL_REFRESH_MS, CREDENTIAL_RETRY_MS } from '../credentials/constants.ts';
 import { createRedactor, credentialRequest, resolveGitCredential } from '../credentials/helpers.ts';
 import type {
-    GitAccess,
     GitCredential,
     IGitCredentials,
-    Redactor,
 } from '../credentials/types.ts';
 import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../git/constants.ts';
 import { credentialKey, credentialsFileContent, urlOrigin } from '../git/helpers.ts';
 import type { ExecResult, IWorkspace } from '../workspace/types.ts';
 import { CREDENTIAL_INSTALL_TIMEOUT_MS } from './constants.ts';
 
-/** The credential handling of one manager; only built when it has credential sources. */
-export type CredentialSupport = {
-    readonly redactor: Redactor;
-    /**
-     * The first credential the sources answer for an https `url` (redacted
-     * from then on), else undefined; undefined for a `file://` repository.
-     * SandboxError for a failing source.
-     */
-    lookup(url: string, access: GitAccess, runId: string, signal?: AbortSignal): Promise<GitCredential | undefined>;
-    /**
-     * Writes the credentials file of `workspace` (raw,
-     * not wrapped) when it has none from this process yet, or one of its
-     * credentials expires within `CREDENTIAL_REFRESH_MS`: the repository's
-     * write credential, else (none, or a failing write lookup, reported to
-     * `onError`) its read credential. A credential already inside that
-     * window is rewritten `CREDENTIAL_RETRY_MS` later at the earliest. A failure goes to
-     * `onError` and is retried `CREDENTIAL_RETRY_MS` later; it never throws.
-     * A workspace this process created anonymously (`fresh`) holds no file
-     * yet; one whose checkout was authenticated holds the read credential,
-     * and one it found again may hold an earlier process's: the first
-     * install overwrites (or clears) both. The file is never read back: it
-     * is writable from inside the workspace, so its content is no secret to
-     * redact.
-     */
-    refresh(workspace: IWorkspace, options?: { fresh?: boolean }): Promise<void>;
-    /** The workspace the manager hands out: redacting and refreshing before each call. One per raw workspace. */
-    wrap(workspace: IWorkspace): IWorkspace;
-};
+import type { CredentialSupport } from './types.ts';
 
 type InstallState = {
     installed?: boolean;
@@ -83,9 +54,16 @@ export function createCredentialSupport(input: {
     const wrapped = new WeakMap<IWorkspace, IWorkspace>();
 
     const lookup: CredentialSupport['lookup'] = async (url, access, runId, signal) => {
-        if (!isHttps(url)) return undefined;
+        if (!isHttps(url)) {
+            return undefined;
+        }
+
         const credential = await resolveGitCredential(sources, credentialRequest(url, access, runId, signal));
-        if (credential) redactor.add(credential.password, credential.expiresAt);
+
+        if (credential) {
+            redactor.add(credential.password, credential.expiresAt);
+        }
+
         return credential;
     };
 
@@ -96,36 +74,57 @@ export function createCredentialSupport(input: {
         const entries: Array<GitCredential & { key: string }> = [];
         let repo: GitCredential | undefined;
         let writeError: unknown;
+
         try {
             repo = await lookup(url, 'write', runId);
         } catch (error) {
             // e.g. an App without contents: write: the read credential still serves fetch and pull
             writeError = error;
         }
+
         if (!repo) {
             // a failing read lookup fails the install (reported once by refresh)
             repo = await lookup(url, 'read', runId);
-            if (writeError !== undefined) onError(redactor.redactError(writeError));
+
+            if (writeError !== undefined) {
+                onError(redactor.redactError(writeError));
+            }
         }
-        if (repo) entries.push({ key: credentialKey(url), ...repo });
+
+        if (repo) {
+            entries.push({ key: credentialKey(url), ...repo });
+        }
+
         // a token for the whole host (private dependencies of the same host)
         const host = await lookup(`${urlOrigin(url)}/`, 'read', runId);
-        if (host) entries.push({ key: `${urlOrigin(url)}/`, ...host });
+
+        if (host) {
+            entries.push({ key: `${urlOrigin(url)}/`, ...host });
+        }
 
         // nothing to write into a workspace known to hold nothing: keep its own git config
         // (a helper of the image) untouched; stale credentials are always cleared
-        if (entries.length === 0 && state.empty === true) return undefined;
+        if (entries.length === 0 && state.empty === true) {
+            return undefined;
+        }
+
         const content = credentialsFileContent(entries);
         const result = await workspace.exec(
             ['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(content))],
             { stdin: content, timeoutMs: CREDENTIAL_INSTALL_TIMEOUT_MS },
         );
+
         if (result.exitCode !== 0 || result.timedOut) {
             const reason = result.timedOut ? 'timed out' : `exited with ${result.exitCode}`;
             throw new SandboxError(`writing the git credentials of workspace ${workspace.id} ${reason}: ${redactor.redact(result.stderr.trim()).slice(0, 500)}`);
         }
+
         const expiries = entries.flatMap((entry) => (entry.expiresAt ? [entry.expiresAt.getTime()] : []));
-        if (expiries.length === 0) return undefined;
+
+        if (expiries.length === 0) {
+            return undefined;
+        }
+
         // a source may keep answering a token inside the window (IGithubApp until 5 minutes
         // before its expiry): try again a minute later instead of before every exec
         return Math.max(Math.min(...expiries) - CREDENTIAL_REFRESH_MS, clock.now().getTime() + CREDENTIAL_RETRY_MS);
@@ -133,25 +132,46 @@ export function createCredentialSupport(input: {
 
     const stateOf = (workspace: IWorkspace): InstallState | undefined => {
         const { repo } = workspace.info;
-        if (repo === undefined || !isHttps(repo)) return undefined;
+
+        if (repo === undefined || !isHttps(repo)) {
+            return undefined;
+        }
+
         let state = states.get(workspace);
+
         if (!state) {
             state = {};
             states.set(workspace, state);
         }
+
         return state;
     };
 
     const refresh: CredentialSupport['refresh'] = async (workspace, options = {}) => {
         const state = stateOf(workspace);
-        if (!state) return;
-        if (options.fresh) state.empty = true;
+
+        if (!state) {
+            return;
+        }
+
+        if (options.fresh) {
+            state.empty = true;
+        }
+
         const now = clock.now().getTime();
-        if (state.installed && (state.refreshAt === undefined || now < state.refreshAt)) return;
-        if (state.retryAt !== undefined && now < state.retryAt) return;
+
+        if (state.installed && (state.refreshAt === undefined || now < state.refreshAt)) {
+            return;
+        }
+
+        if (state.retryAt !== undefined && now < state.retryAt) {
+            return;
+        }
+
         if (!state.pending) {
             const current = state;
             const write = install(workspace, current);
+
             current.pending = write.then((refreshAt) => {
                 current.installed = true;
                 current.empty = undefined;
@@ -164,16 +184,18 @@ export function createCredentialSupport(input: {
                 delete current.pending;
             });
         }
+
         await state.pending;
     };
 
     const redactResult = (result: ExecResult): ExecResult => {
         const stdout = redactor.redact(result.stdout);
         const stderr = redactor.redact(result.stderr);
+
         return stdout === result.stdout && stderr === result.stderr ? result : {
-            ...result, 
-            stdout, 
-            stderr, 
+            ...result,
+            stdout,
+            stderr,
         };
     };
 
@@ -187,7 +209,11 @@ export function createCredentialSupport(input: {
 
     const wrap: CredentialSupport['wrap'] = (workspace) => {
         const known = wrapped.get(workspace);
-        if (known) return known;
+
+        if (known) {
+            return known;
+        }
+
         const proxy: IWorkspace = {
             get id() {
                 return workspace.id;
@@ -200,6 +226,7 @@ export function createCredentialSupport(input: {
             },
             exec: (argv, options) => guard(async () => {
                 await refresh(workspace);
+
                 return redactResult(await workspace.exec(argv, options));
             }),
             readFile: (path) => guard(async () => redactor.redact(await workspace.readFile(path))),
@@ -211,7 +238,9 @@ export function createCredentialSupport(input: {
             redact: (text) => redactor.redact(text),
             redactedSpans: (text) => redactor.redactedSpans(text),
         };
+
         wrapped.set(workspace, proxy);
+
         return proxy;
     };
 

@@ -29,10 +29,13 @@ const { host } = globalThis.location;
 async function useToken(): Promise<void> {
     if (!token.value.trim()) {
         error.value = 'Paste a token first.';
+
         return;
     }
+
     busy.value = true;
     error.value = undefined;
+
     try {
         await session.signInWithToken(token.value.trim());
         token.value = '';
@@ -49,6 +52,7 @@ async function useToken(): Promise<void> {
 async function useAuthup(): Promise<void> {
     busy.value = true;
     error.value = undefined;
+
     try {
         await session.startAuthup(returnTo.value);
     } catch (e) {

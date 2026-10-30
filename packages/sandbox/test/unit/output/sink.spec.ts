@@ -12,6 +12,7 @@ describe('createSinkStream', () => {
     it('hands every chunk to the sink', async () => {
         const collector = createOutputCollector(64);
         const stream = createSinkStream(collector);
+
         stream.write(new TextEncoder().encode('hello '));
         stream.write(new TextEncoder().encode('world'));
         await new Promise<void>((resolve) => {

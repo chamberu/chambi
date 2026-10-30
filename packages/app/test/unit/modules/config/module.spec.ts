@@ -18,6 +18,7 @@ describe('configModule', () => {
         const clock = new ControllableClock();
         const logger = createRecordingLogger();
         const module = configModule({ clock, logger });
+
         expect(module.name).toBe(ModuleName.CONFIG);
         expect(module.dependencies ?? []).toEqual([]);
 
@@ -39,7 +40,9 @@ describe('configModule', () => {
         });
 
         expect(harness.container.resolve(AppToken.CLOCK)).toBe(systemClock);
+
         const logger = harness.container.resolve(AppToken.LOGGER);
+
         expect(typeof logger.warn).toBe('function');
         await harness.stop();
     });

@@ -30,18 +30,24 @@ export function createPodTransport(client: IPodClient, name: string): IExecTrans
                 stderr: createSinkStream(options.stderr),
                 signal: options.signal,
             });
+
             return { exitCode };
         },
 
         async alive(): Promise<boolean> {
             let pod: V1Pod;
+
             try {
                 pod = await client.read(name);
             } catch (error) {
                 // the client wraps the ApiException as the cause
-                if (isObject(error) && isApiStatus(error.cause, 404)) return false;
+                if (isObject(error) && isApiStatus(error.cause, 404)) {
+                    return false;
+                }
+
                 throw error;
             }
+
             return !pod.metadata?.deletionTimestamp && podState(pod).state !== 'failed';
         },
 

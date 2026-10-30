@@ -22,9 +22,13 @@ import { markerKey, parseAddress, renderComment } from './helpers.ts';
 import type { ResolvedGithubChannelOptions } from './types.ts';
 
 function requestError(error: unknown): ChamviError {
-    if (error instanceof ChamviError) return error;
+    if (error instanceof ChamviError) {
+        return error;
+    }
+
     const status = isObject(error) && typeof error.status === 'number' ? error.status : undefined;
-    const message = error instanceof Error ? error.message : String(error);
+    const message = Error.isError(error) ? error.message : String(error);
+
     return new ChamviError({
         message: status !== undefined ? `GitHub ${status}: ${message}` : `GitHub request failed: ${message}`,
         code: GITHUB_REQUEST_ERROR_CODE,
@@ -49,20 +53,36 @@ async function installationOf(
     const event = trigger.channel === options.name && isObject(payload) && isPositiveInteger(payload.installationId) ?
         payload.installationId :
         undefined;
+
     if (event !== undefined && isObject(payload)) {
         const body = isObject(payload.payload) ? payload.payload : {};
         const repository = isObject(body.repository) ? body.repository.full_name : undefined;
-        if (typeof repository === 'string' && repository.toLowerCase() === `${target.owner}/${target.repo}`.toLowerCase()) return event;
+
+        if (typeof repository === 'string' && repository.toLowerCase() === `${target.owner}/${target.repo}`.toLowerCase()) {
+            return event;
+        }
     }
+
     let found: number | undefined;
+
     try {
         found = await options.app.installationFor(target);
     } catch (error) {
         throw requestError(error);
     }
-    if (found !== undefined) return found;
-    if (event !== undefined) return event;
-    if (options.app.installationId !== undefined) return options.app.installationId;
+
+    if (found !== undefined) {
+        return found;
+    }
+
+    if (event !== undefined) {
+        return event;
+    }
+
+    if (options.app.installationId !== undefined) {
+        return options.app.installationId;
+    }
+
     throw new InvalidAgentDefinitionError(
         `githubChannel: run ${message.runId} of agent "${message.agent}" has no GitHub installation; ` +
         'install the App on the repository or set installationId on createGithubApp() for runs not started by a GitHub delivery.',
@@ -81,11 +101,14 @@ async function installationOf(
  */
 export function createCommentSender(options: ResolvedGithubChannelOptions) {
     const { app } = options;
+
     return async (message: ChannelMessage, address: string, opts: ChannelSendOptions): Promise<void> => {
         const target = parseAddress(address);
+
         if (!target) {
             throw new ValidationError(`The GitHub channel needs an address like "owner/repo#12", got ${JSON.stringify(address)}.`);
         }
+
         opts.signal?.throwIfAborted();
 
         const controller = new AbortController();
@@ -95,12 +118,15 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
         });
         const timer = options.clock.setTimeout(() => controller.abort(timeout), options.timeoutMs);
         const signal = opts.signal ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
+
         try {
             const installationId = await untilAborted(installationOf(target, message, opts.trigger, options), signal);
             const octokit = await app.octokit(installationId);
+
             octokit.hook.before('request', (request) => {
                 request.request = { ...request.request, signal };
             });
+
             const marker = effectMarker(markerKey(message.key));
             const since = new Date(new Date(opts.trigger.receivedAt).getTime() - RECONCILE_SKEW_MS).toISOString();
             const route = {
@@ -113,13 +139,21 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
                 since,
                 per_page: 100,
             });
+
             for await (const { data } of pages) {
                 for (const comment of data) {
-                    if (!comment.body?.includes(marker)) continue;
+                    if (!comment.body?.includes(marker)) {
+                        continue;
+                    }
+
                     const user = isObject(comment.user) ? comment.user : undefined;
-                    if (user?.type === 'Bot' && isSameLogin(user.login, await app.botLogin())) return;
+
+                    if (user?.type === 'Bot' && isSameLogin(user.login, await app.botLogin())) {
+                        return;
+                    }
                 }
             }
+
             await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
                 ...route,
                 body: renderComment(message, {
@@ -129,10 +163,19 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
                 }),
             });
         } catch (error) {
-            if (opts.signal?.aborted) throw opts.signal.reason;
-            if (error instanceof ChamviError) throw error;
+            if (opts.signal?.aborted) {
+                throw opts.signal.reason;
+            }
+
+            if (error instanceof ChamviError) {
+                throw error;
+            }
+
             // Octokit wraps the abort reason as a 500 RequestError
-            if (controller.signal.aborted) throw timeout;
+            if (controller.signal.aborted) {
+                throw timeout;
+            }
+
             throw requestError(error);
         } finally {
             timer.clear();

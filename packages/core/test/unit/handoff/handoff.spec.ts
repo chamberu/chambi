@@ -56,7 +56,11 @@ const text = (t: string): MockResponse => ({ parts: [{ type: 'text', text: t }] 
 /** True for a run handed off (its first message renders channel `agent`). */
 function isChild(options: LanguageModelV4CallOptions): boolean {
     const first = options.prompt.find((m) => m.role === 'user');
-    if (!first || typeof first.content === 'string') return false;
+
+    if (!first || typeof first.content === 'string') {
+        return false;
+    }
+
     return first.content.some((part) => part.type === 'text' && part.text.includes('"channel": "agent"'));
 }
 
@@ -64,6 +68,7 @@ function isChild(options: LanguageModelV4CallOptions): boolean {
 function routedModel(parent: MockResponse[], child: MockResponse[] = []) {
     const parentModel = mockModel(parent);
     const childModel = mockModel([...child, ...Array.from({ length: 50 }, () => text('child done'))]);
+
     return new MockLanguageModelV4({ doStream: (options) => (isChild(options) ? childModel : parentModel).doStream(options) });
 }
 
@@ -80,7 +85,10 @@ const fan = defineTool({
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -88,7 +96,10 @@ class LossyRepository extends MemoryEffectRepository {
     lose = false;
 
     override async findOne(key: string) {
-        if (this.lose && key.includes(':handoff:')) return undefined;
+        if (this.lose && key.includes(':handoff:')) {
+            return undefined;
+        }
+
         return super.findOne(key);
     }
 }
@@ -97,16 +108,33 @@ class LossyRepository extends MemoryEffectRepository {
 function laggingRepository(): IStore {
     const store = createMemoryStore({ clock: new ControllableClock(START) });
     const read = store.effects.findOne.bind(store.effects);
-    const tick = () => new Promise((resolve) => { setImmediate(resolve); });
+    const tick = () => new Promise((resolve) => {
+        setImmediate(resolve);
+    });
     let reads = 0;
+
     store.effects.findOne = async (key: string) => {
-        if (!key.includes(':handoff:')) return read(key);
+        if (!key.includes(':handoff:')) {
+            return read(key);
+        }
+
         reads += 1;
-        if (reads !== 2) return read(key);
-        for (let i = 0; i < 50 && !(await read(key)); i++) await tick();
-        for (let i = 0; i < 5; i++) await tick();
+
+        if (reads !== 2) {
+            return read(key);
+        }
+
+        for (let i = 0; i < 50 && !(await read(key)); i++) {
+            await tick();
+        }
+
+        for (let i = 0; i < 5; i++) {
+            await tick();
+        }
+
         return undefined;
     };
+
     return store;
 }
 
@@ -132,9 +160,13 @@ function setup(options: {
         clock,
         agents: [agent],
         channels: [agentChannel()],
-        onError: (error) => { errors.push(error); },
+        onError: (error) => {
+            errors.push(error);
+        },
     });
+
     engines.push(engine);
+
     return {
         engine,
         store,
@@ -145,6 +177,7 @@ function setup(options: {
 
 async function dispatchParent(engine: Engine, extra: { invoker?: Invoker } = {}) {
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: 'maintainer',
         trigger: 'test',
@@ -152,12 +185,15 @@ async function dispatchParent(engine: Engine, extra: { invoker?: Invoker } = {})
         payload: {},
         ...extra,
     });
+
     await engine.idle();
+
     return runId;
 }
 
 async function children(store: IStore): Promise<Run[]> {
     const { data } = await store.runs.find({ agent: 'maintainer' });
+
     return data.filter((run) => run.trigger.channel === 'agent');
 }
 
@@ -177,6 +213,7 @@ describe('startHandoff()', () => {
         const { engine, store } = setup({ parent: [turn(call(pr)), text('done')] });
         const parentId = await dispatchParent(engine);
         const [child] = await children(store);
+
         expect(child).toBeDefined();
         expect(child!.trigger).toMatchObject({
             agent: 'maintainer',
@@ -195,7 +232,9 @@ describe('startHandoff()', () => {
         });
         expect(child!.concurrencyKey).toBe('o/r#5');
         expect(child!.address).toBe('o/r#5');
+
         const [step] = await toolSteps(store, parentId);
+
         expect(step?.output).toEqual({ runId: child!.id, deduplicated: false });
         expect((await store.runs.findOne(parentId))?.status).toBe('completed');
     });
@@ -207,21 +246,29 @@ describe('startHandoff()', () => {
             permissions: ['*'],
         };
         const { engine, store } = setup({ parent: [turn(call(pr)), text('done')] });
+
         await dispatchParent(engine, { invoker });
+
         const [child] = await children(store);
+
         expect(child!.trigger.invoker).toEqual(invoker);
     });
 
     it('a second parent with the same key gets the existing child', async () => {
         const store = createMemoryStore({ clock: new ControllableClock(START) });
         const first = setup({ parent: [turn(call(pr)), text('done')], store });
+
         await dispatchParent(first.engine);
         first.engine.stop();
+
         const second = setup({ parent: [turn(call(pr)), text('done')], store });
         const secondId = await dispatchParent(second.engine);
         const all = await children(store);
+
         expect(all).toHaveLength(1);
+
         const [step] = await toolSteps(store, secondId);
+
         expect(step?.output).toEqual({ runId: all[0]!.id, deduplicated: true });
         expect(await store.effects.findOne(`handoff-count:${secondId}`)).toMatchObject({ result: { count: 1 } });
     });
@@ -236,6 +283,7 @@ describe('startHandoff()', () => {
             concurrencyKey: pr.concurrencyKey,
             address: pr.address,
         })}`;
+
         expect(await store.effects.findOne(key)).toEqual({ result: { runId: child!.id, deduplicated: false } });
     });
 
@@ -243,8 +291,11 @@ describe('startHandoff()', () => {
         const { engine, store } = setup({ parent: [turn(call(pr, 'c1')), turn(call(pr, 'c2')), text('done')] });
         const parentId = await dispatchParent(engine);
         const all = await children(store);
+
         expect(all).toHaveLength(1);
+
         const steps = await toolSteps(store, parentId);
+
         expect(steps.map((s) => s.output)).toEqual([
             { runId: all[0]!.id, deduplicated: false },
             { runId: all[0]!.id, deduplicated: false },
@@ -254,12 +305,17 @@ describe('startHandoff()', () => {
 
     it('a lost record still yields one child', async () => {
         const store = { ...createMemoryStore({ clock: new ControllableClock(START) }), effects: new LossyRepository() };
+
         store.effects.lose = true;
+
         const { engine } = setup({ parent: [turn(call(pr, 'c1')), turn(call(pr, 'c2')), text('done')], store });
         const parentId = await dispatchParent(engine);
         const all = await children(store);
+
         expect(all).toHaveLength(1);
+
         const steps = await toolSteps(store, parentId);
+
         expect(steps.map((s) => (s.output as { runId: string }).runId)).toEqual([all[0]!.id, all[0]!.id]);
         expect(steps[1]?.output).toEqual({ runId: all[0]!.id, deduplicated: true });
     });
@@ -267,6 +323,7 @@ describe('startHandoff()', () => {
     it('identical calls in one step start one child', async () => {
         const { engine, store } = setup({ parent: [turn(call(pr, 'c1'), call(pr, 'c2')), text('done')] });
         const parentId = await dispatchParent(engine);
+
         expect(await children(store)).toHaveLength(1);
         expect(await store.effects.findOne(`handoff-count:${parentId}`)).toMatchObject({ result: { count: 1 } });
     });
@@ -276,8 +333,11 @@ describe('startHandoff()', () => {
         const { engine } = setup({ parent: [turn(call(pr, 'c1'), call(pr, 'c2')), text('done')], store });
         const parentId = await dispatchParent(engine);
         const all = await children(store);
+
         expect(all).toHaveLength(1);
+
         const steps = await toolSteps(store, parentId);
+
         expect(steps.map((s) => s.output)).toEqual([
             { runId: all[0]!.id, deduplicated: false },
             { runId: all[0]!.id, deduplicated: false },
@@ -287,7 +347,9 @@ describe('startHandoff()', () => {
 
     it('a call whose record was lost redoes its hand-off at the limit', async () => {
         const store = { ...createMemoryStore({ clock: new ControllableClock(START) }), effects: new LossyRepository() };
+
         store.effects.lose = true;
+
         const { engine } = setup({
             parent: [turn(call(pr, 'c1')), turn(call(pr, 'c2')), text('done')],
             subscription: handoff.on({ maxPerRun: 1 }),
@@ -295,8 +357,11 @@ describe('startHandoff()', () => {
         });
         const parentId = await dispatchParent(engine);
         const all = await children(store);
+
         expect(all).toHaveLength(1);
+
         const steps = await toolSteps(store, parentId);
+
         expect(steps.map((s) => s.output)).toEqual([
             { runId: all[0]!.id, deduplicated: false },
             { runId: all[0]!.id, deduplicated: true },
@@ -314,18 +379,21 @@ describe('startHandoff()', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 const run = context.run as { agent: string, trigger: Run['trigger'] };
+
                 run.agent = 'nobody';
                 run.trigger.invoker = {
                     id: 'root',
                     kind: 'user',
                     permissions: ['*'],
                 };
+
                 return startHandoff(context, { payload: 1 });
             },
         });
         const { engine, store } = setup({ parent: [turn(call({}, 'c1', 'forge')), text('done')], tools: { forge } });
         const parentId = await dispatchParent(engine, { invoker });
         const [child] = await children(store);
+
         expect(child!.agent).toBe('maintainer');
         expect(child!.trigger.invoker).toEqual(invoker);
         expect(child!.trigger.parent).toEqual({
@@ -341,6 +409,7 @@ describe('startHandoff()', () => {
             inputSchema: z.object({ payload: z.unknown() }),
             execute: async (input, { context }) => {
                 delete (context.run.trigger as { parent?: unknown }).parent;
+
                 return startHandoff(context, { payload: input.payload });
             },
         });
@@ -349,11 +418,16 @@ describe('startHandoff()', () => {
             child: [turn(call({ payload: 2 }, 'c2', 'orphan')), text('child done')],
             tools: { orphan },
         });
+
         await dispatchParent(engine);
         await engine.idle();
+
         const all = await children(store);
+
         expect(all).toHaveLength(1);
+
         const [step] = await toolSteps(store, all[0]!.id);
+
         expect(step?.error).toMatchObject({ code: 'validation_error', message: expect.stringMatching(/cannot hand off again/) });
     });
 
@@ -371,10 +445,15 @@ describe('startHandoff()', () => {
     it('a maxPerRun changed after registration is a tool error', async () => {
         const subscription = handoff.on();
         const { engine, store } = setup({ parent: [turn(call(pr)), text('done')], subscription });
+
         (subscription.options as { maxPerRun: unknown }).maxPerRun = '3';
+
         const parentId = await dispatchParent(engine);
+
         expect(await children(store)).toHaveLength(0);
+
         const [step] = await toolSteps(store, parentId);
+
         expect(step?.error).toMatchObject({ code: 'invalid_agent_definition' });
     });
 
@@ -382,18 +461,26 @@ describe('startHandoff()', () => {
         const store = createMemoryStore({ clock: new ControllableClock(START) });
         const first = setup({ parent: [turn(call({ payload: { pr: 'o/r#5' } })), text('done')], store });
         const firstId = await dispatchParent(first.engine);
+
         first.engine.stop();
+
         const [child] = await children(store);
+
         expect(child!.trigger.idempotencyKey).toMatch(new RegExp(`^handoff:${firstId}:[0-9a-f]{64}$`));
+
         const second = setup({ parent: [turn(call({ payload: { pr: 'o/r#5' } })), text('done')], store });
+
         await dispatchParent(second.engine);
         expect(await children(store)).toHaveLength(2);
     });
 
     it('a key over 255 characters is hashed', async () => {
         const { engine, store } = setup({ parent: [turn(call({ payload: 1, idempotencyKey: 'k'.repeat(300) })), text('done')] });
+
         await dispatchParent(engine);
+
         const [child] = await children(store);
+
         expect(child!.trigger.idempotencyKey).toMatch(/^sha256:[0-9a-f]{64}$/);
     });
 
@@ -410,9 +497,12 @@ describe('startHandoff()', () => {
             }, 'c2')), text('done')],
             subscription,
         });
+
         await dispatchParent(engine);
+
         const all = await children(store);
         const byPr = Object.fromEntries(all.map((run) => [(run.trigger.payload as { pr: string }).pr, run]));
+
         expect(byPr.a!.trigger).toMatchObject({ idempotencyKey: 'handoff:i:a', concurrencyKey: 'c:a' });
         expect(byPr.b!.trigger).toMatchObject({ idempotencyKey: 'handoff:mine', concurrencyKey: 'own' });
     });
@@ -425,8 +515,11 @@ describe('startHandoff()', () => {
         });
         const parentId = await dispatchParent(engine);
         const all = await children(store);
+
         expect(all.map((run) => run.trigger.payload)).toEqual([{ pr: 'O/R#5' }]);
+
         const steps = await toolSteps(store, parentId);
+
         expect(steps.find((s) => s.error)?.error).toMatchObject({ code: 'validation_error' });
     });
 
@@ -448,12 +541,15 @@ describe('startHandoff()', () => {
         });
         const parentId = await dispatchParent(engine);
         const paused = await store.runs.findOne(parentId);
+
         expect(paused?.status).toBe('waiting');
         await engine.approve(parentId, { approvalId: paused!.waiting!.approvalId, approved: true });
         await engine.idle();
         expect((await store.runs.findOne(parentId))?.status).toBe('completed');
         expect(await children(store)).toHaveLength(3);
+
         const steps = (await toolSteps(store, parentId)).filter((s) => s.name === 'fan');
+
         expect(steps.at(-1)?.error).toMatchObject({ code: 'validation_error', message: expect.stringMatching(/reached its 3 hand-offs/) });
     });
 
@@ -462,11 +558,16 @@ describe('startHandoff()', () => {
             parent: [turn(call({ payload: 1 })), text('done')],
             child: [turn(call({ payload: 2 })), text('child done')],
         });
+
         await dispatchParent(engine);
         await engine.idle();
+
         const [child] = await children(store);
+
         expect(await children(store)).toHaveLength(1);
+
         const [step] = await toolSteps(store, child!.id);
+
         expect(step?.error).toMatchObject({ code: 'validation_error', message: expect.stringMatching(/cannot hand off again/) });
     });
 
@@ -474,6 +575,7 @@ describe('startHandoff()', () => {
         const { engine, store } = setup({ parent: [turn(call({ payload: 1 })), text('done')], subscription: false });
         const parentId = await dispatchParent(engine);
         const [step] = await toolSteps(store, parentId);
+
         expect(step?.error).toMatchObject({ code: 'validation_error', message: expect.stringMatching(/accepts no hand-offs/) });
         expect(await children(store)).toHaveLength(0);
     });
@@ -482,11 +584,12 @@ describe('startHandoff()', () => {
         [{}, /payload/],
         [{ payload: 1, concurrencyKey: '' }, /concurrency key/],
         [{ payload: 1, idempotencyKey: '' }, /idempotency key/],
-        [{ payload: 1, address: 'a\u0000b' }, /address/],
+        [{ payload: 1, address: 'a\0b' }, /address/],
     ])('refuses the input %j', async (input, message) => {
         const { engine, store } = setup({ parent: [turn(call(input)), text('done')] });
         const parentId = await dispatchParent(engine);
         const [step] = await toolSteps(store, parentId);
+
         expect(step?.error).toMatchObject({ code: 'validation_error', message: expect.stringMatching(message) });
         expect(await children(store)).toHaveLength(0);
     });
@@ -497,9 +600,11 @@ describe('startHandoff()', () => {
             parent: [text('done')],
             tools: ((ctx: ToolContext) => {
                 seen.push(startHandoff(ctx, { payload: 1 }).catch((error: unknown) => error));
+
                 return {};
             }) as never,
         });
+
         await dispatchParent(engine);
         expect(await seen[0]).toBeInstanceOf(InvalidRunStateError);
     });
@@ -517,6 +622,7 @@ describe('startHandoff()', () => {
         });
         const parentId = await dispatchParent(engine);
         const [step] = await toolSteps(store, parentId);
+
         expect(step?.output).toBe('no host');
     });
 
@@ -533,6 +639,7 @@ describe('startHandoff()', () => {
         });
         const parentId = await dispatchParent(engine);
         const [step] = await toolSteps(store, parentId);
+
         expect(step?.output).toBe('refused');
     });
 });

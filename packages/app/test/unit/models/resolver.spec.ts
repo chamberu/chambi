@@ -24,7 +24,9 @@ import { textModel } from '@chamvi/test-kit';
 
 function notFound(specifier: string): Error {
     const error = new Error(`Cannot find package '${specifier}' imported from /app/node_modules/@chamvi/app/dist/index.mjs`);
+
     (error as Error & { code: string }).code = 'ERR_MODULE_NOT_FOUND';
+
     return error;
 }
 
@@ -43,10 +45,13 @@ function fakeImporter(packages: Record<string, string>, models: Record<string, R
     const imported: string[] = [];
     const importer = async (specifier: string): Promise<unknown> => {
         imported.push(specifier);
+
         const factory = packages[specifier];
+
         if (!factory) {
             throw notFound(specifier);
         }
+
         return {
             [factory]: (input: Record<string, unknown>) => {
                 calls.push({
@@ -54,10 +59,12 @@ function fakeImporter(packages: Record<string, string>, models: Record<string, R
                     factory,
                     input,
                 });
+
                 return customProvider({ languageModels: models });
             },
         };
     };
+
     return {
         importer,
         calls,
@@ -71,6 +78,7 @@ function errorOf(fn: () => unknown): Error {
     } catch (error) {
         return error as Error;
     }
+
     throw new Error('expected a throw');
 }
 
@@ -96,7 +104,9 @@ describe('createModelResolver', () => {
             model: input.model,
             providers: input.providers,
         });
+
         expect(issues).toEqual([]);
+
         return settings;
     }
 
@@ -125,6 +135,7 @@ describe('createModelResolver', () => {
 
     it('passes a set base URL and the headers', async () => {
         const fake = fakeImporter({ '@ai-sdk/anthropic': 'createAnthropic' });
+
         await createModelResolver(
             await settingsOf({
                 providers: {
@@ -168,12 +179,15 @@ describe('createModelResolver', () => {
 
     it('reads no bare variable from process.env', async () => {
         const previous = process.env.ANTHROPIC_API_KEY;
+
         process.env.ANTHROPIC_API_KEY = 'from-process';
+
         try {
             const fake = fakeImporter({ '@ai-sdk/anthropic': 'createAnthropic' });
             const resolver = await createModelResolver(await settingsOf(), { importer: fake.importer });
 
             const error = errorOf(() => resolver.check('anthropic/m', 'triage'));
+
             expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
             expect(error.message).toBe(
                 'Agent "triage" uses provider "anthropic", which is not configured. ' +
@@ -244,6 +258,7 @@ describe('createModelResolver', () => {
 
     it('passes the key of an openai-compatible provider that has one', async () => {
         const fake = fakeImporter({ '@ai-sdk/openai-compatible': 'createOpenAICompatible' });
+
         await createModelResolver(
             await settingsOf({
                 providers: {
@@ -305,6 +320,7 @@ describe('createModelResolver', () => {
         );
 
         const model = resolver.resolve('gw/anthropic/claude-sonnet-5-5');
+
         expect(typeof model).toBe('object');
         expect((model as { modelId: string }).modelId).toBe('anthropic/claude-sonnet-5-5');
     });
@@ -345,9 +361,11 @@ describe('createModelResolver', () => {
         );
 
         const message = 'Provider type "openai-compatible" needs package @ai-sdk/openai-compatible.';
+
         expect([...resolver.errors]).toEqual([['router', message]]);
 
         const error = errorOf(() => resolver.check('router/m', 'a'));
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toBe(message);
         expect(errorOf(() => resolver.resolve('router/m')).message).toBe(message);
@@ -390,6 +408,7 @@ describe('createModelResolver', () => {
         const resolver = await createModelResolver(await settingsOf({ env: { ANTHROPIC_API_KEY: 'sk-test' } }));
 
         const model = resolver.resolve('anthropic/claude-sonnet-5-5') as { provider: string; modelId: string };
+
         expect(model.provider).toContain('anthropic');
         expect(model.modelId).toBe('claude-sonnet-5-5');
     });
@@ -399,6 +418,7 @@ describe('createModelResolver', () => {
         const resolver = await createModelResolver(await settingsOf({ env: { OPENAI_API_KEY: 'sk-test' } }));
 
         const message = 'Provider type "openai" needs package @ai-sdk/openai.';
+
         expect(resolver.errors.get('openai')).toBe(message);
         expect(errorOf(() => resolver.check('openai/gpt-5', 'a')).message).toBe(message);
     });

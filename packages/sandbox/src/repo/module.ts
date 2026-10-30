@@ -49,19 +49,27 @@ export function normalizeRepo(input: string, options: NormalizeRepoOptions = {})
     }
 
     let normalized: string;
+
     if (GITHUB_SHORTHAND_PATTERN.test(input)) {
         const name = input.slice(input.indexOf('/') + 1);
-        if (name === '.' || name === '..') throw new ValidationError(REPO_RULE);
+
+        if (name === '.' || name === '..') {
+            throw new ValidationError(REPO_RULE);
+        }
+
         normalized = `${GITHUB_URL}/${input}${input.endsWith('.git') ? '' : '.git'}`;
     } else {
         const url = parseUrl(input);
+
         if (!url || input.includes('?') || input.includes('#') || url.username !== '' || url.password !== '') {
             throw new ValidationError(REPO_RULE);
         }
+
         if (url.protocol === 'https:') {
             if (url.hostname === '' || url.pathname === '/' || url.pathname === '') {
                 throw new ValidationError(REPO_RULE);
             }
+
             // credential lookups decode the path: a malformed escape is refused here
             decodeRepoPath(url.pathname);
         } else if (url.protocol === 'file:' && options.allowFileRepos === true) {
@@ -71,12 +79,14 @@ export function normalizeRepo(input: string, options: NormalizeRepoOptions = {})
         } else {
             throw new ValidationError(REPO_RULE);
         }
+
         normalized = url.href;
     }
 
     if (options.allowRepo && !options.allowRepo(normalized)) {
         throw new ValidationError('repository not allowed.');
     }
+
     return normalized;
 }
 
@@ -125,13 +135,19 @@ export async function prepareWorkspace(
         credential,
         signal,
     } = input;
+
     if (repo === undefined && ref !== undefined) {
         throw new ValidationError('ref needs a repo.');
     }
+
     if (repo !== undefined && !isNormalizedRepo(repo)) {
         throw new ValidationError('repo must be a normalized https or file URL (see normalizeRepo).');
     }
-    if (ref !== undefined) assertGitRef(ref);
+
+    if (ref !== undefined) {
+        assertGitRef(ref);
+    }
+
     if (depth !== undefined && (!Number.isSafeInteger(depth) || depth < 1)) {
         throw new ValidationError('depth must be an integer of at least 1.');
     }
@@ -146,6 +162,7 @@ export async function prepareWorkspace(
     }) => {
         const reason = result.timedOut ? 'timed out' : `exited with ${result.exitCode}`;
         const stderr = redact(result.stderr.trim()).slice(0, CHECKOUT_STDERR_MAX_LENGTH);
+
         return new SandboxError(`checkout failed: ${what} ${reason}${stderr ? `: ${stderr}` : ''}`);
     };
     const exec = async (argv: string[], stdin?: string) => {
@@ -156,14 +173,22 @@ export async function prepareWorkspace(
                 signal,
             });
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            if (redact(message) !== message) throw new SandboxError(redact(message));
+            const message = Error.isError(error) ? error.message : String(error);
+
+            if (redact(message) !== message) {
+                throw new SandboxError(redact(message));
+            }
+
             throw error;
         }
     };
     const step = async (name: string, argv: string[], allowFailure = false) => {
         const result = await exec(argv);
-        if ((result.exitCode !== 0 && !allowFailure) || result.timedOut) throw fail(`git ${name}`, result);
+
+        if ((result.exitCode !== 0 && !allowFailure) || result.timedOut) {
+            throw fail(`git ${name}`, result);
+        }
+
         return result;
     };
     // with a credential the installed helper answers, so it is not reset
@@ -173,19 +198,26 @@ export async function prepareWorkspace(
     const remoteStep = (name: string, args: string[]) => step(name, [...remoteGit, ...args]);
 
     await step('init', ['git', 'init', '-q', '.']);
+
     if (repo === undefined) {
         // the last step (see below)
         await step('config', ['git', 'config', CHECKOUT_KEY, NO_REPO_CHECKOUT]);
+
         return {};
     }
+
     await step('remote', ['git', 'remote', 'add', 'origin', repo]);
+
     if (secret) {
         const content = credentialsFileContent([{ key: credentialKey(repo), ...credential! }]);
         const result = await exec(
             ['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(content))],
             content,
         );
-        if (result.exitCode !== 0 || result.timedOut) throw fail('installing the git credential', result);
+
+        if (result.exitCode !== 0 || result.timedOut) {
+            throw fail('installing the git credential', result);
+        }
     }
 
     const announced = parseDefaultBranch((await remoteStep('ls-remote', ['ls-remote', '--symref', repo, 'HEAD'])).stdout);
@@ -193,26 +225,35 @@ export async function prepareWorkspace(
     const defaultBranch = announced !== undefined && isGitRef(announced) ? announced : undefined;
     const target = ref ?? defaultBranch;
     const refs = target === undefined ? ['HEAD'] : [target];
-    if (defaultBranch !== undefined && defaultBranch !== target) refs.push(defaultBranch);
+
+    if (defaultBranch !== undefined && defaultBranch !== target) {
+        refs.push(defaultBranch);
+    }
+
     await remoteStep('fetch', ['fetch', '-q', ...(depth === undefined ? [] : ['--depth', String(depth)]), 'origin', ...refs]);
 
     const isBranch = target !== undefined &&
         (await step('rev-parse', ['git', 'rev-parse', '-q', '--verify', `refs/remotes/origin/${target}`], true)).exitCode === 0;
+
     await step('checkout', isBranch ?
         ['git', 'checkout', '-q', '-B', target, '--track', `origin/${target}`] :
         ['git', '-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']);
 
     const commit = (await step('rev-parse', ['git', 'rev-parse', 'HEAD'])).stdout.trim();
+
     if (!COMMIT_PATTERN.test(commit)) {
         throw new SandboxError('checkout failed: git rev-parse printed no commit.');
     }
+
     if (defaultBranch !== undefined) {
         await step('config', ['git', 'config', CHECKOUT_DEFAULT_BRANCH_KEY, defaultBranch]);
     }
+
     // the last step, recorded with the workspace: a provider's find skips a
     // workspace without it (a create that died before here) and rebuilds
     // info.commit and info.defaultBranch from it
     await step('config', ['git', 'config', CHECKOUT_KEY, commit]);
+
     return defaultBranch === undefined ? { commit } : { commit, defaultBranch };
 }
 
@@ -234,36 +275,72 @@ export async function readCheckout(
     clock: IClock = systemClock,
 ): Promise<{ commit?: string; defaultBranch?: string } | undefined> {
     let stdout: string | undefined;
+
     for (let attempt = 1; stdout === undefined; attempt++) {
         try {
             const result = await workspace.exec(['git', 'config', '--get-regexp', '^chamvi\\.'], { timeoutMs: CHECKOUT_READ_TIMEOUT_MS, signal });
+
             // exit 1 without output: no record, a create that died before its checkout finished
-            if (result.exitCode === 1 && !result.timedOut && result.stdout.trim() === '') return undefined;
-            if (result.exitCode === 0 && !result.timedOut) ({ stdout } = result);
+            if (result.exitCode === 1 && !result.timedOut && result.stdout.trim() === '') {
+                return undefined;
+            }
+
+            if (result.exitCode === 0 && !result.timedOut) {
+                ({ stdout } = result);
+            }
         } catch {
             // the exec itself failed: read again below
         }
-        if (stdout !== undefined) break;
-        if (attempt >= CHECKOUT_READ_ATTEMPTS || signal?.aborted) return undefined;
+
+        if (stdout !== undefined) {
+            break;
+        }
+
+        if (attempt >= CHECKOUT_READ_ATTEMPTS || signal?.aborted) {
+            return undefined;
+        }
+
         try {
             await delay(clock, CHECKOUT_READ_RETRY_MS, signal, () => new SandboxError('checkout read aborted'));
         } catch {
             return undefined;
         }
     }
+
     let checkout: string | undefined;
     let defaultBranch: string | undefined;
+
     for (const line of stdout.split('\n')) {
         const space = line.indexOf(' ');
-        if (space < 0) continue;
+
+        if (space < 0) {
+            continue;
+        }
+
         // git prints the variable names lower-cased
         const key = line.slice(0, space);
         const value = line.slice(space + 1).trim();
-        if (key === CHECKOUT_KEY) checkout = value;
-        if (key === CHECKOUT_DEFAULT_BRANCH_KEY.toLowerCase() && isGitRef(value)) defaultBranch = value;
+
+        if (key === CHECKOUT_KEY) {
+            checkout = value;
+        }
+
+        if (key === CHECKOUT_DEFAULT_BRANCH_KEY.toLowerCase() && isGitRef(value)) {
+            defaultBranch = value;
+        }
     }
-    if (checkout === undefined) return undefined;
-    if (workspace.info.repo === undefined) return checkout === NO_REPO_CHECKOUT ? {} : undefined;
-    if (!COMMIT_PATTERN.test(checkout)) return undefined;
+
+    if (checkout === undefined) {
+        return undefined;
+    }
+
+    if (workspace.info.repo === undefined) {
+        return checkout === NO_REPO_CHECKOUT ? {} : undefined;
+    }
+
+    if (!COMMIT_PATTERN.test(checkout)) {
+        return undefined;
+    }
+
     return defaultBranch === undefined ? { commit: checkout } : { commit: checkout, defaultBranch };
 }

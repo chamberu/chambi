@@ -27,6 +27,7 @@ describe('public api', () => {
 
     it('publishes conversation persistence separately from the agent api', () => {
         const manifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+
         expect(manifest.exports['./conversation/persistence']).toEqual({
             types: './dist/conversation/persistence.d.mts',
             import: './dist/conversation/persistence.mjs',
@@ -47,7 +48,9 @@ describe('public api', () => {
             'isSameEmit',
             'userItemId',
         ];
+
         expect(Object.keys(persistence).sort()).toEqual(names);
+
         for (const name of names) {
             expect(persistence[name as keyof typeof persistence]).toBeTypeOf('function');
             expect(core).not.toHaveProperty(name);
@@ -163,6 +166,7 @@ describe('public api', () => {
         expect(core.MemoryConversationRepository).toBeTypeOf('function');
         expectTypeOf<core.MemoryConversationRepositoryOptions>().toEqualTypeOf<{ clock?: core.IClock }>();
         expectTypeOf<core.MemoryConversationRepository>().toMatchTypeOf<core.IConversationRepository>();
+
         for (const name of [
             'normalizeConversationLimits',
             'identityId',
@@ -178,6 +182,7 @@ describe('public api', () => {
         ]) {
             expect(core).not.toHaveProperty(name);
         }
+
         expectTypeOf<core.ConversationIdentity>().toEqualTypeOf<{
             agent: string;
             channel: string;

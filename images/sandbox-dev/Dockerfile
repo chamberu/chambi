@@ -36,7 +36,7 @@ RUN mkdir -m 0777 /workspace && mkdir -p -m 1777 /home/sandbox && mkdir -m 1777 
 # mode too), never in /cache, which holds package downloads only and may be
 # a volume several runs share: a toolchain or a `git` one run planted there
 # would run in every later workspace. mise's shims go at the end of the
-# PATH, so `mise use -g node@22` makes node a plain command. mise trusts
+# PATH, so `mise use -g node@24` makes node a plain command. mise trusts
 # the repository's config and reads .nvmrc and .python-version
 ENV DEBIAN_FRONTEND=noninteractive \
     CI=true \

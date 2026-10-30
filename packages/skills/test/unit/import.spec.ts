@@ -15,8 +15,10 @@ it('imports the main runtime without installation or filesystem writes', async (
     const writeFile = vi.spyOn(fs, 'writeFile');
     const execFile = vi.spyOn(childProcess, 'execFile');
     const spawn = vi.spyOn(childProcess, 'spawn');
+
     try {
         await import('@chamvi/skills');
+
         for (const operation of [mkdir, mkdtemp, writeFile, execFile, spawn]) {
             expect(operation).not.toHaveBeenCalled();
         }

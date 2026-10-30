@@ -33,6 +33,7 @@ function inboxClient(approve: (id: string, body: ApproveBody) => Promise<void>) 
         listRuns: async (filter) => {
             queries.push(filter);
             lists++;
+
             return {
                 data: [waitingRun()],
                 meta: {
@@ -44,6 +45,7 @@ function inboxClient(approve: (id: string, body: ApproveBody) => Promise<void>) 
         },
         approve,
     });
+
     return {
         client,
         queries,
@@ -56,6 +58,7 @@ describe('useApprovals', () => {
         const { client, queries } = inboxClient(async () => {});
         const scope = effectScope();
         const inbox = scope.run(() => useApprovals(client))!;
+
         await flush();
         expect(queries[0]).toEqual({
             status: ['waiting'],
@@ -68,23 +71,26 @@ describe('useApprovals', () => {
 
     it('sends the selection with an approval', async () => {
         const answered: Array<[string, ApproveBody]> = [];
-        const { client } = inboxClient(async (id, body) => { answered.push([id, body]); });
+        const { client } = inboxClient(async (id, body) => {
+            answered.push([id, body]);
+        });
         const scope = effectScope();
         const inbox = scope.run(() => useApprovals(client))!;
+
         await flush();
         await inbox.answer(waitingRun(), true, '', ['b']);
         await inbox.answer(waitingRun(), false, 'no', ['b']);
         await inbox.answer(waitingRun(), true, '', []);
         expect(answered).toEqual([
             ['r1', {
-                approvalId: 'a1', 
-                approved: true, 
-                selected: ['b'], 
+                approvalId: 'a1',
+                approved: true,
+                selected: ['b'],
             }],
             ['r1', {
-                approvalId: 'a1', 
-                approved: false, 
-                reason: 'no', 
+                approvalId: 'a1',
+                approved: false,
+                reason: 'no',
             }],
             ['r1', { approvalId: 'a1', approved: true }],
         ]);
@@ -93,9 +99,12 @@ describe('useApprovals', () => {
 
     it('answer approves the current approval id', async () => {
         const answered: Array<[string, ApproveBody]> = [];
-        const { client } = inboxClient(async (id, body) => { answered.push([id, body]); });
+        const { client } = inboxClient(async (id, body) => {
+            answered.push([id, body]);
+        });
         const scope = effectScope();
         const inbox = scope.run(() => useApprovals(client))!;
+
         await flush();
         expect(await inbox.answer(waitingRun(), false, 'not now')).toBe('answered');
         expect(answered).toEqual([['r1', {
@@ -109,38 +118,54 @@ describe('useApprovals', () => {
     });
 
     it('answer maps 409 to an already-answered result and refreshes', async () => {
-        const { client, lists } = inboxClient(async () => { throw apiError(409, 'invalid_run_state'); });
+        const { client, lists } = inboxClient(async () => {
+            throw apiError(409, 'invalid_run_state');
+        });
         const scope = effectScope();
         const inbox = scope.run(() => useApprovals(client))!;
+
         await flush();
+
         const before = lists();
+
         expect(await inbox.answer(waitingRun(), true)).toBe('already-answered');
         expect(lists()).toBe(before + 1);
         scope.stop();
     });
 
     it('answer maps 403 to forbidden', async () => {
-        const { client } = inboxClient(async () => { throw apiError(403, 'forbidden'); });
+        const { client } = inboxClient(async () => {
+            throw apiError(403, 'forbidden');
+        });
         const scope = effectScope();
         const inbox = scope.run(() => useApprovals(client))!;
+
         await flush();
         expect(await inbox.answer(waitingRun(), true)).toBe('forbidden');
         scope.stop();
     });
 
     it('answer rethrows anything else', async () => {
-        const { client } = inboxClient(async () => { throw apiError(500, 'boom'); });
+        const { client } = inboxClient(async () => {
+            throw apiError(500, 'boom');
+        });
         const scope = effectScope();
         const inbox = scope.run(() => useApprovals(client))!;
+
         await flush();
         await expect(inbox.answer(waitingRun(), true)).rejects.toMatchObject({ status: 500 });
         scope.stop();
     });
 
     it('keeps a 403 listing as error', async () => {
-        const client = fakeClient({ listRuns: async () => { throw apiError(403, 'forbidden'); } });
+        const client = fakeClient({
+            listRuns: async () => {
+                throw apiError(403, 'forbidden');
+            },
+        });
         const scope = effectScope();
         const inbox = scope.run(() => useApprovals(client))!;
+
         await flush();
         expect(inbox.error.value?.status).toBe(403);
         expect(inbox.runs.value).toEqual([]);

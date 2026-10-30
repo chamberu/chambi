@@ -35,15 +35,23 @@ export async function cancelAgentRuns(
         data.filter((run) => run.createdAt.getTime() < before.getTime());
     const results = await Promise.allSettled(runs.map((run) => ctx.cancel(run.id, reason)));
     const cancelled: string[] = [];
+
     runs.forEach((run, i) => {
         const result = results[i];
+
         if (result?.status === 'fulfilled') {
             cancelled.push(run.id);
+
             return;
         }
-        if (result?.reason instanceof RunNotFoundError || result?.reason instanceof InvalidRunStateError) return;
+
+        if (result?.reason instanceof RunNotFoundError || result?.reason instanceof InvalidRunStateError) {
+            return;
+        }
+
         ctx.onError(result?.reason, run);
     });
+
     return cancelled;
 }
 
@@ -68,18 +76,31 @@ export async function syncRevision(
 ): Promise<string[] | undefined> {
     return withAgentLock(ctx, agent, async () => {
         const marker = await ctx.store.agentRevisions.findOne(agent);
-        if (marker?.hash === revision) return undefined;
-        if (await moveFormerMarker(ctx, marker, revision, former)) return undefined;
+
+        if (marker?.hash === revision) {
+            return undefined;
+        }
+
+        if (await moveFormerMarker(ctx, marker, revision, former)) {
+            return undefined;
+        }
+
         const reason = agentCancelReason(agent, 'replaced', revision);
         const cancelled = marker ? await cancelAgentRuns(ctx, agent, reason, ctx.clock.now()) : [];
         const changedAt = ctx.clock.now();
+
         await ctx.store.agentRevisions.save({
             agent,
             hash: revision,
             changedAt,
         });
-        if (!marker) return undefined;
+
+        if (!marker) {
+            return undefined;
+        }
+
         cancelled.push(...await cancelAgentRuns(ctx, agent, reason, changedAt));
+
         return cancelled;
     });
 }
@@ -100,14 +121,18 @@ export async function claimRevision(
 ): Promise<void> {
     await withAgentLock(ctx, agent, async () => {
         const marker = await ctx.store.agentRevisions.findOne(agent);
-        if (marker?.hash === revision) return;
-        if (await moveFormerMarker(ctx, marker, revision, former)) return;
+
+        if ((marker?.hash === revision) || (await moveFormerMarker(ctx, marker, revision, former))) {
+            return;
+        }
+
         if (marker) {
             const { data } = await ctx.store.runs.find({
                 agent,
                 status: UNSETTLED,
                 limit: 1,
             });
+
             if (data.length > 0) {
                 const stored = marker.hash.slice(0, REVISION_PREFIX_LENGTH);
                 const loaded = revision.slice(0, REVISION_PREFIX_LENGTH);
@@ -116,6 +141,7 @@ export async function claimRevision(
                 );
             }
         }
+
         await ctx.store.agentRevisions.save({
             agent,
             hash: revision,
@@ -136,13 +162,23 @@ export async function dropRevision(ctx: RegistryContext, agent: string, options:
     return withAgentLock(ctx, agent, async () => {
         const reason = agentCancelReason(agent, 'removed');
         const marker = await ctx.store.agentRevisions.findOne(agent);
+
         if (marker) {
-            if (options.revision !== undefined && marker.hash !== options.revision) return undefined;
+            if (options.revision !== undefined && marker.hash !== options.revision) {
+                return undefined;
+            }
+
             const cancelled = await cancelAgentRuns(ctx, agent, reason);
+
             await ctx.store.agentRevisions.delete(agent);
+
             return cancelled;
         }
-        if (options.registered) return cancelAgentRuns(ctx, agent, reason);
+
+        if (options.registered) {
+            return cancelAgentRuns(ctx, agent, reason);
+        }
+
         return undefined;
     });
 }
@@ -157,7 +193,11 @@ async function moveFormerMarker(
     revision: string,
     former: string | undefined,
 ): Promise<boolean> {
-    if (marker === undefined || former === undefined || marker.hash !== former) return false;
+    if (marker === undefined || former === undefined || marker.hash !== former) {
+        return false;
+    }
+
     await ctx.store.agentRevisions.save({ ...marker, hash: revision });
+
     return true;
 }

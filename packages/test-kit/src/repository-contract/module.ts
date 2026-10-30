@@ -29,12 +29,14 @@ export function describeRepositoryContract(
     const setup = async () => {
         const clock = new ControllableClock();
         const store = await create(clock);
+
         return { clock, store };
     };
 
     describe('repository contract', () => {
         it('findOneOrFail rejects missing identities without creating them', async () => {
             const { store } = await setup();
+
             await expect(store.runs.findOneOrFail('missing')).rejects.toMatchObject({ code: 'run_not_found' });
             await expect(store.artifacts.findOneOrFail('missing')).rejects.toMatchObject({ code: 'artifact_not_found' });
             await expect(store.checkpoints.findOneOrFail('missing')).rejects.toMatchObject({ code: 'repository_not_found' });
@@ -47,6 +49,7 @@ export function describeRepositoryContract(
 
         it('findOrFail rejects empty collections and pages even when total is nonzero', async () => {
             const { store } = await setup();
+
             await expect(store.runs.findOrFail({})).rejects.toMatchObject({ code: 'repository_not_found' });
             await expect(store.steps.findOrFail('missing')).rejects.toMatchObject({ code: 'repository_not_found' });
             await expect(store.artifacts.findOrFail('missing')).rejects.toMatchObject({ code: 'repository_not_found' });
@@ -66,29 +69,39 @@ export function describeRepositoryContract(
         it('OrFail queries preserve ordered results, latest checkpoints and copies', async () => {
             const { store } = await setup();
             const run = makeRun('r1');
+
             await store.runs.insert(run);
             await store.runs.insert(makeRun('r2', { createdAt: new Date(2_000) }));
+
             const found = await store.runs.findOneOrFail('r1');
+
             found.trigger.payload = { changed: true };
             expect(await store.runs.findOneOrFail('r1')).toEqual(run);
             expect((await store.runs.findOrFail({ order: 'desc', limit: 1 })).data.map((row) => row.id)).toEqual(['r2']);
+
             const checkpoint = {
                 runId: 'r1',
                 stepIndex: 2,
                 messages: [],
                 createdAt: new Date(1_000),
             };
+
             await store.checkpoints.save(checkpoint);
             await store.checkpoints.save({ ...checkpoint, stepIndex: 1 });
             expect(await store.checkpoints.findOneOrFail('r1')).toEqual(checkpoint);
+
             const artifact = makeArtifact('a1');
+
             await store.artifacts.insert(artifact, new Uint8Array([1, 2, 3]));
             expect(await store.artifacts.findOneOrFail('a1')).toEqual(artifact);
             expect(await store.artifacts.findOrFail('r1')).toEqual([artifact]);
+
             const revision = makeAgentRevision('a');
+
             await store.agentRevisions.save(revision);
             expect(await store.agentRevisions.findOneOrFail('a')).toEqual(revision);
             expect(await store.agentRevisions.findOrFail()).toEqual([revision]);
+
             const step: Step = {
                 runId: 'r1',
                 index: 0,
@@ -97,22 +110,27 @@ export function describeRepositoryContract(
                 startedAt: new Date(1_000),
                 finishedAt: new Date(1_001),
             };
+
             await store.steps.insert(step);
             expect(await store.steps.findOrFail('r1')).toEqual([step]);
         });
 
         it('findOneOrFail treats falsy stored values as present and preserves scope', async () => {
             const { store } = await setup();
+
             for (const value of [null, false, 0, '']) {
                 await store.state.set('a', 'key', value);
                 expect(await store.state.findOneOrFail('a', 'key')).toEqual(value);
                 await store.effects.save('effect', value);
                 expect(await store.effects.findOneOrFail('effect')).toEqual({ result: value });
             }
+
             await expect(store.state.findOneOrFail('b', 'key')).rejects.toMatchObject({ code: 'repository_not_found' });
             expect(await store.state.findOrFail('a')).toEqual([{ key: 'key', value: '' }]);
             await store.state.upsertDocument('a', 'notes', '1', { title: 'first' });
+
             const docs = await store.state.findDocumentsOrFail('a', 'notes', { where: { title: 'first' } });
+
             expect(docs).toEqual([{ id: '1', doc: { title: 'first' } }]);
             docs[0]!.doc = { changed: true };
             expect(await store.state.findDocumentsOrFail('a', 'notes')).toEqual([{ id: '1', doc: { title: 'first' } }]);
@@ -125,8 +143,11 @@ export function describeRepositoryContract(
             const results = await Promise.all(
                 Array.from({ length: 20 }, (_, i) => store.idempotency.claim('github', 'd1', `run-${i}`, 60_000)),
             );
+
             expect(results.filter((r) => r.created)).toHaveLength(1);
+
             const winner = results.find((r) => r.created)!;
+
             expect(winner.runId).toMatch(/^run-\d+$/);
             expect(results.every((r) => r.runId === winner.runId)).toBe(true);
         });
@@ -134,6 +155,7 @@ export function describeRepositoryContract(
         it('idempotency.claim expires after ttl', async () => {
             const { store, clock } = await setup();
             const first = await store.idempotency.claim('github', 'd1', 'run-1', 1_000);
+
             expect(first).toEqual({ created: true, runId: 'run-1' });
             expect(await store.idempotency.claim('github', 'd1', 'run-2', 1_000)).toEqual({ created: false, runId: 'run-1' });
             clock.advance(1_001);
@@ -142,18 +164,22 @@ export function describeRepositoryContract(
 
         it('runs.update enforces expectStatus', async () => {
             const { store } = await setup();
+
             await store.runs.insert(makeRun('r1'));
             await expect(
                 store.runs.update('r1', { status: RunStatus.RUNNING }, { expectStatus: [RunStatus.WAITING] }),
             ).rejects.toBeInstanceOf(InvalidRunStateError);
             expect((await store.runs.findOne('r1'))?.status).toBe(RunStatus.QUEUED);
+
             const updated = await store.runs.update('r1', { status: RunStatus.RUNNING }, { expectStatus: [RunStatus.QUEUED] });
+
             expect(updated.status).toBe(RunStatus.RUNNING);
             expect((await store.runs.findOne('r1'))?.status).toBe(RunStatus.RUNNING);
         });
 
         it('runs.claim grants a single owner until expiry', async () => {
             const { store, clock } = await setup();
+
             await store.runs.insert(makeRun('r1'));
             expect(await store.runs.claim('r1', 'w1', 1_000)).toBe(true);
             expect(await store.runs.claim('r1', 'w2', 1_000)).toBe(false);
@@ -166,6 +192,7 @@ export function describeRepositoryContract(
 
         it('runs.claim can be taken over after expiry', async () => {
             const { store, clock } = await setup();
+
             await store.runs.insert(makeRun('r1'));
             expect(await store.runs.claim('r1', 'w1', 1_000)).toBe(true);
             clock.advance(1_001);
@@ -176,10 +203,13 @@ export function describeRepositoryContract(
 
         it('checkpoints.findOne returns highest stepIndex', async () => {
             const { store } = await setup();
+
             expect(await store.checkpoints.findOne('r1')).toBeUndefined();
             await store.runs.insert(makeRun('r1'));
             await store.runs.insert(makeRun('r2'));
+
             const at = new Date(1_000);
+
             await store.checkpoints.save({
                 runId: 'r1',
                 stepIndex: 2,
@@ -209,8 +239,11 @@ export function describeRepositoryContract(
 
         it('checkpoints.save with an equal stepIndex replaces the latest', async () => {
             const { store } = await setup();
+
             await store.runs.insert(makeRun('r1'));
+
             const at = new Date(1_000);
+
             await store.checkpoints.save({
                 runId: 'r1',
                 stepIndex: 2,
@@ -228,6 +261,7 @@ export function describeRepositoryContract(
 
         it('lock acquire is exclusive and released by owner only', async () => {
             const { store } = await setup();
+
             expect(await store.locks.acquire('k', 'a', 1_000)).toBe(true);
             expect(await store.locks.acquire('k', 'b', 1_000)).toBe(false);
             await store.locks.release('k', 'b');
@@ -238,6 +272,7 @@ export function describeRepositoryContract(
 
         it('effect roundtrip', async () => {
             const { store } = await setup();
+
             expect(await store.effects.findOne('e1')).toBeUndefined();
             await store.effects.save('e1', { ok: true });
             expect(await store.effects.findOne('e1')).toEqual({ result: { ok: true } });
@@ -247,6 +282,7 @@ export function describeRepositoryContract(
 
         it('state.find lists one agent\'s keys in code-point order with limit and offset', async () => {
             const { store } = await setup();
+
             await store.state.set('triage', 'b', 2);
             await store.state.set('triage', 'a-1', { n: 1 });
             await store.state.set('triage', 'B', 'upper');
@@ -266,12 +302,14 @@ export function describeRepositoryContract(
             expect(await store.state.find('nobody')).toEqual([]);
 
             const [, first] = await store.state.find('triage');
+
             (first!.value as number[]).push(2);
             expect((await store.state.find('triage'))[1]!.value).toEqual([1]);
         });
 
         it('state.find orders an astral key after every BMP key (code points, not UTF-16 units)', async () => {
             const { store } = await setup();
+
             await store.state.set('triage', '\u{1F600}', 'emoji');
             await store.state.set('triage', '\uFFFD', 'replacement');
             await store.state.set('triage', 'z', 'ascii');
@@ -281,6 +319,7 @@ export function describeRepositoryContract(
 
         it('state.set with undefined removes the key', async () => {
             const { store } = await setup();
+
             await store.state.set('a', 'k', 1);
             await store.state.set('a', 'k', undefined);
             expect(await store.state.findOne('a', 'k')).toBeUndefined();
@@ -289,6 +328,7 @@ export function describeRepositoryContract(
 
         it('state kv and docs roundtrip, state.findDocuments where filters by top-level equality', async () => {
             const { store } = await setup();
+
             expect(await store.state.findOne('a', 'k')).toBeUndefined();
             await store.state.set('a', 'k', { n: 1 });
             expect(await store.state.findOne('a', 'k')).toEqual({ n: 1 });
@@ -300,7 +340,9 @@ export function describeRepositoryContract(
             await store.state.upsertDocument('b', 'todos', '1', { title: 'other', done: true });
 
             expect(await store.state.findDocuments('a', 'todos')).toHaveLength(3);
+
             const done = await store.state.findDocuments('a', 'todos', { where: { done: true } });
+
             expect(done.map((d) => d.id).sort()).toEqual(['2', '3']);
             expect(await store.state.findDocuments('a', 'todos', { where: { done: true }, limit: 1 })).toHaveLength(1);
 
@@ -312,6 +354,7 @@ export function describeRepositoryContract(
 
         it('runs.find filters by agent, status, concurrencyKey and returns total', async () => {
             const { store } = await setup();
+
             await store.runs.insert(makeRun('r3', {
                 agent: 'a',
                 status: RunStatus.RUNNING,
@@ -337,6 +380,7 @@ export function describeRepositoryContract(
             }));
 
             const all = await store.runs.find({});
+
             expect(all.total).toBe(4);
             expect(all.data.map((r) => r.id)).toEqual(['r1', 'r2', 'r3', 'r4']);
 
@@ -349,17 +393,20 @@ export function describeRepositoryContract(
                 limit: 1,
                 offset: 1,
             });
+
             expect(page.total).toBe(3);
             expect(page.data.map((r) => r.id)).toEqual(['r3']);
         });
 
         it('runs.find without a limit returns every matching run', async () => {
             const { store } = await setup();
+
             for (let i = 0; i < 250; i++) {
                 await store.runs.insert(makeRun(`r${String(i).padStart(3, '0')}`, { createdAt: new Date(i) }));
             }
 
             const all = await store.runs.find({});
+
             expect(all.total).toBe(250);
             expect(all.data).toHaveLength(250);
             expect((await store.runs.find({ offset: 200 })).data).toHaveLength(50);
@@ -367,10 +414,13 @@ export function describeRepositoryContract(
 
         it('runs.claim is atomic under concurrency', async () => {
             const { store } = await setup();
+
             await store.runs.insert(makeRun('r1'));
+
             const results = await Promise.all(
                 Array.from({ length: 20 }, (_, i) => store.runs.claim('r1', `w${i}`, 1_000)),
             );
+
             expect(results.filter(Boolean)).toHaveLength(1);
         });
 
@@ -379,11 +429,13 @@ export function describeRepositoryContract(
             const results = await Promise.all(
                 Array.from({ length: 20 }, (_, i) => store.locks.acquire('k', `o${i}`, 1_000)),
             );
+
             expect(results.filter(Boolean)).toHaveLength(1);
         });
 
         it('lock expires after ttl and can be taken over', async () => {
             const { store, clock } = await setup();
+
             expect(await store.locks.acquire('k', 'a', 1_000)).toBe(true);
             clock.advance(999);
             expect(await store.locks.acquire('k', 'b', 1_000)).toBe(false);
@@ -395,6 +447,7 @@ export function describeRepositoryContract(
 
         it('expiry boundary: exactly at expiresAt counts as expired', async () => {
             const { store, clock } = await setup();
+
             await store.runs.insert(makeRun('r1'));
             expect(await store.runs.claim('r1', 'w1', 1_000)).toBe(true);
             await store.idempotency.claim('s', 'k', 'run-1', 1_000);
@@ -409,19 +462,24 @@ export function describeRepositoryContract(
 
         it('runs.update on a missing run throws RunNotFoundError', async () => {
             const { store } = await setup();
+
             await expect(store.runs.update('nope', { status: RunStatus.RUNNING })).rejects.toBeInstanceOf(RunNotFoundError);
         });
 
         it('runs.claim and renewClaim on a missing run return false', async () => {
             const { store } = await setup();
+
             expect(await store.runs.claim('nope', 'w', 1_000)).toBe(false);
             expect(await store.runs.renewClaim('nope', 'w', 1_000)).toBe(false);
         });
 
         it('runs.update accepts several allowed statuses', async () => {
             const { store } = await setup();
+
             await store.runs.insert(makeRun('r1', { status: RunStatus.WAITING }));
+
             const run = await store.runs.update('r1', { status: RunStatus.RUNNING }, { expectStatus: [RunStatus.QUEUED, RunStatus.WAITING] });
+
             expect(run.status).toBe(RunStatus.RUNNING);
             await expect(
                 store.runs.update('r1', { status: RunStatus.FAILED }, { expectStatus: [RunStatus.QUEUED, RunStatus.WAITING] }),
@@ -430,6 +488,7 @@ export function describeRepositoryContract(
 
         it('runs.update enforces expectOwner against the current claim', async () => {
             const { store, clock } = await setup();
+
             await store.runs.insert(makeRun('r1', { status: RunStatus.RUNNING }));
             await expect(
                 store.runs.update('r1', { status: RunStatus.COMPLETED }, { expectOwner: 'w1' }),
@@ -444,25 +503,30 @@ export function describeRepositoryContract(
                 store.runs.update('r1', { status: RunStatus.COMPLETED }, { expectStatus: [RunStatus.RUNNING], expectOwner: 'w1' }),
             ).rejects.toBeInstanceOf(InvalidRunStateError);
             expect((await store.runs.findOne('r1'))?.status).toBe(RunStatus.RUNNING);
+
             const updated = await store.runs.update(
                 'r1',
                 { status: RunStatus.COMPLETED, claim: undefined },
                 { expectStatus: [RunStatus.RUNNING], expectOwner: 'w2' },
             );
+
             expect(updated.status).toBe(RunStatus.COMPLETED);
             expect(updated.claim).toBeUndefined();
         });
 
         it('runs.update preserves untouched fields and does not clobber claim', async () => {
             const { store } = await setup();
+
             await store.runs.insert(makeRun('r1', {
                 concurrencyKey: 'k',
                 address: 't',
                 usage: { inputTokens: 3, outputTokens: 4 },
             }));
             await store.runs.claim('r1', 'w1', 1_000);
+
             const before = await store.runs.findOne('r1');
             const updated = await store.runs.update('r1', { status: RunStatus.RUNNING });
+
             expect(updated.claim).toEqual(before?.claim);
             expect(updated.concurrencyKey).toBe('k');
             expect(updated.address).toBe('t');
@@ -475,21 +539,28 @@ export function describeRepositoryContract(
         it('run.address and trigger.channel round-trip', async () => {
             const { store } = await setup();
             const run = makeRun('r1', { address: 'owner/repo#7' });
+
             run.trigger = {
                 ...run.trigger,
                 channel: 'github',
                 address: 'owner/repo#7',
             };
             await store.runs.insert(run);
+
             const stored = await store.runs.findOne('r1');
+
             expect(stored?.address).toBe('owner/repo#7');
             expect(stored?.trigger.channel).toBe('github');
             expect(stored?.trigger.address).toBe('owner/repo#7');
             expect(stored?.trigger).not.toHaveProperty('source');
             expect(stored?.trigger).not.toHaveProperty('thread');
+
             const updated = await store.runs.update('r1', { address: 'owner/repo#8' });
+
             expect(updated.address).toBe('owner/repo#8');
+
             const listed = await store.runs.find({});
+
             expect(listed.data[0]?.address).toBe('owner/repo#8');
             expect(listed.data[0]?.trigger.channel).toBe('github');
         });
@@ -503,6 +574,7 @@ export function describeRepositoryContract(
                 agent: 'a',
                 depth: 1,
             };
+
             run.trigger = {
                 ...run.trigger,
                 channel: 'agent',
@@ -510,13 +582,16 @@ export function describeRepositoryContract(
             };
             await store.runs.insert(run);
             expect((await store.runs.findOne('r1'))?.trigger.parent).toEqual(parent);
+
             const listed = await store.runs.find({});
+
             expect(listed.data[0]?.trigger.parent).toEqual(parent);
         });
 
         it('an envelope stored before channels (source, thread) reads back as channel and address', async () => {
             const { store } = await setup();
             const run = makeRun('r1');
+
             run.trigger = {
                 id: run.trigger.id,
                 agent: run.trigger.agent,
@@ -527,6 +602,7 @@ export function describeRepositoryContract(
                 thread: 'owner/repo#7',
             } as unknown as typeof run.trigger;
             await store.runs.insert(run);
+
             for (const stored of [
                 await store.runs.findOne('r1'),
                 (await store.runs.find({})).data[0],
@@ -541,24 +617,29 @@ export function describeRepositoryContract(
 
         it('runs.find breaks createdAt ties by id ascending', async () => {
             const { store } = await setup();
+
             for (const id of ['b', 'c', 'a']) {
                 await store.runs.insert(makeRun(id));
             }
+
             expect((await store.runs.find({})).data.map((r) => r.id)).toEqual(['a', 'b', 'c']);
         });
 
         it('runs.find order desc returns newest first, ties by id descending, and pages from the newest', async () => {
             const { store } = await setup();
+
             await store.runs.insert(makeRun('b'));
             await store.runs.insert(makeRun('a'));
             await store.runs.insert(makeRun('c', { createdAt: new Date(2_000) }));
             expect((await store.runs.find({ order: 'desc' })).data.map((r) => r.id)).toEqual(['c', 'b', 'a']);
             expect((await store.runs.find({ order: 'asc' })).data.map((r) => r.id)).toEqual(['a', 'b', 'c']);
+
             const page = await store.runs.find({
                 order: 'desc',
                 limit: 1,
                 offset: 1,
             });
+
             expect(page.data.map((r) => r.id)).toEqual(['b']);
             expect(page.total).toBe(3);
         });
@@ -568,8 +649,11 @@ export function describeRepositoryContract(
             const results = await Promise.all(
                 Array.from({ length: 5 }, (_, i) => store.runs.insert(makeRun('r1', { address: `t${i}` }))),
             );
+
             expect(results.filter(Boolean)).toHaveLength(1);
+
             const winner = results.indexOf(true);
+
             expect((await store.runs.findOne('r1'))?.address).toBe(`t${winner}`);
             await store.runs.update('r1', { status: RunStatus.RUNNING });
             expect(await store.runs.insert(makeRun('r1'))).toBe(false);
@@ -583,21 +667,27 @@ export function describeRepositoryContract(
 
             // run
             const run = makeRun('r1');
+
             await store.runs.insert(run);
             run.usage.inputTokens = 99;
             run.trigger.payload = { changed: true };
+
             const got = (await store.runs.findOne('r1'))!;
+
             expect(got.usage.inputTokens).toBe(0);
             expect(got.trigger.payload).toEqual({});
             got.usage.inputTokens = 77;
             expect((await store.runs.findOne('r1'))?.usage.inputTokens).toBe(0);
             await store.runs.claim('r1', 'w', 1_000);
+
             const claimed = (await store.runs.findOne('r1'))!;
+
             claimed.claim!.owner = 'evil';
             expect((await store.runs.findOne('r1'))?.claim?.owner).toBe('w');
 
             // checkpoint
             const messages = [{ role: 'user', content: 'hi' }] as Checkpoint['messages'];
+
             await store.checkpoints.save({
                 runId: 'r1',
                 stepIndex: 1,
@@ -605,7 +695,9 @@ export function describeRepositoryContract(
                 createdAt: at,
             });
             messages.push({ role: 'user', content: 'later' });
+
             const cp = (await store.checkpoints.findOne('r1'))!;
+
             expect(cp.messages).toHaveLength(1);
             cp.messages.push({ role: 'user', content: 'x' });
             expect((await store.checkpoints.findOne('r1'))?.messages).toHaveLength(1);
@@ -619,36 +711,48 @@ export function describeRepositoryContract(
                 startedAt: at,
                 finishedAt: at,
             };
+
             await store.steps.insert(step);
             (step.input as { a: number }).a = 2;
+
             const steps = await store.steps.find('r1');
+
             expect(steps[0]!.input).toEqual({ a: 1 });
             (steps[0]!.input as { a: number }).a = 3;
             expect((await store.steps.find('r1'))[0]!.input).toEqual({ a: 1 });
 
             // effect
             const result = { list: [1] };
+
             await store.effects.save('e', result);
             result.list.push(2);
+
             const effect = (await store.effects.findOne('e'))!;
+
             expect(effect.result).toEqual({ list: [1] });
             (effect.result as { list: number[] }).list.push(3);
             expect(await store.effects.findOne('e')).toEqual({ result: { list: [1] } });
 
             // doc
             const doc = { n: [1] };
+
             await store.state.upsertDocument('a', 'c', '1', doc);
             doc.n.push(2);
+
             const docs = await store.state.findDocuments('a', 'c');
+
             expect(docs[0]!.doc).toEqual({ n: [1] });
             (docs[0]!.doc as { n: number[] }).n.push(3);
             expect((await store.state.findDocuments('a', 'c'))[0]!.doc).toEqual({ n: [1] });
 
             // kv
             const value = { n: [1] };
+
             await store.state.set('a', 'k', value);
             value.n.push(2);
+
             const stored = (await store.state.findOne('a', 'k')) as { n: number[] };
+
             expect(stored).toEqual({ n: [1] });
             stored.n.push(3);
             expect(await store.state.findOne('a', 'k')).toEqual({ n: [1] });
@@ -657,6 +761,7 @@ export function describeRepositoryContract(
         it('artifacts.insert inserts only when the id is absent, also under concurrency', async () => {
             const { store } = await setup();
             const first = makeArtifact('a1', { filename: 'first.txt' });
+
             expect(await store.artifacts.insert(first, new Uint8Array([1, 2, 3]))).toBe(true);
             expect(await store.artifacts.insert(makeArtifact('a1', { filename: 'second.txt', size: 1 }), new Uint8Array([9]))).toBe(false);
             expect(await store.artifacts.findOne('a1')).toEqual(first);
@@ -665,6 +770,7 @@ export function describeRepositoryContract(
             const results = await Promise.all(
                 Array.from({ length: 10 }, (_, i) => store.artifacts.insert(makeArtifact('a2', { size: 1 }), new Uint8Array([i]))),
             );
+
             expect(results.filter(Boolean)).toHaveLength(1);
             expect((await store.artifacts.find('r1')).filter((a) => a.id === 'a2')).toHaveLength(1);
         });
@@ -672,16 +778,22 @@ export function describeRepositoryContract(
         it('artifacts.findOne and artifacts.read return metadata and plain Uint8Array bytes', async () => {
             const { store } = await setup();
             const artifact = makeArtifact('a1', { size: 4 });
+
             await store.artifacts.insert(artifact, new Uint8Array([0, 255, 10, 13]));
+
             const got = await store.artifacts.findOne('a1');
+
             expect(got).toEqual(artifact);
             expect(got?.createdAt).toBeInstanceOf(Date);
             expect(got).not.toHaveProperty('data');
+
             const bytes = await store.artifacts.read('a1');
+
             expect(bytes?.constructor).toBe(Uint8Array);
             expect(Array.from(bytes!)).toEqual([0, 255, 10, 13]);
 
             const empty = makeArtifact('a2', { size: 0, filename: undefined });
+
             await store.artifacts.insert(empty, new Uint8Array());
             expect((await store.artifacts.read('a2'))?.byteLength).toBe(0);
             expect((await store.artifacts.findOne('a2'))?.filename).toBeUndefined();
@@ -689,6 +801,7 @@ export function describeRepositoryContract(
 
         it('artifact reads of unknown ids are empty', async () => {
             const { store } = await setup();
+
             expect(await store.artifacts.findOne('nope')).toBeUndefined();
             expect(await store.artifacts.read('nope')).toBeUndefined();
             expect(await store.artifacts.find('nope')).toEqual([]);
@@ -696,11 +809,14 @@ export function describeRepositoryContract(
 
         it('artifacts.find returns the run\'s artifacts by createdAt, then id', async () => {
             const { store } = await setup();
+
             await store.artifacts.insert(makeArtifact('c', { createdAt: new Date(2_000) }), new Uint8Array([1]));
             await store.artifacts.insert(makeArtifact('b', { createdAt: new Date(1_000) }), new Uint8Array([1]));
             await store.artifacts.insert(makeArtifact('a', { createdAt: new Date(2_000) }), new Uint8Array([1]));
             await store.artifacts.insert(makeArtifact('z', { runId: 'r2', createdAt: new Date(500) }), new Uint8Array([1]));
+
             const listed = await store.artifacts.find('r1');
+
             expect(listed.map((a) => a.id)).toEqual(['b', 'a', 'c']);
             expect(listed[0]).toEqual(makeArtifact('b', { createdAt: new Date(1_000) }));
             expect((await store.artifacts.find('r2')).map((a) => a.id)).toEqual(['z']);
@@ -710,6 +826,7 @@ export function describeRepositoryContract(
             const { store } = await setup();
             const artifact: Artifact = makeArtifact('a1');
             const data = new Uint8Array([1, 2, 3]);
+
             await store.artifacts.insert(artifact, data);
             data[0] = 9;
             artifact.mediaType = 'text/html';
@@ -718,22 +835,29 @@ export function describeRepositoryContract(
             expect(await store.artifacts.findOne('a1')).toEqual(makeArtifact('a1'));
 
             const read = (await store.artifacts.read('a1'))!;
+
             read[1] = 9;
             expect(Array.from((await store.artifacts.read('a1'))!)).toEqual([1, 2, 3]);
+
             const got = (await store.artifacts.findOne('a1'))!;
+
             got.size = 99;
+
             const [listed] = await store.artifacts.find('r1');
+
             listed!.filename = 'evil';
             expect(await store.artifacts.findOne('a1')).toEqual(makeArtifact('a1'));
         });
 
         it('agentRevisions.findOne of an unknown agent is undefined', async () => {
             const { store } = await setup();
+
             expect(await store.agentRevisions.findOne('a')).toBeUndefined();
         });
 
         it('agentRevisions.save upserts', async () => {
             const { store } = await setup();
+
             await store.agentRevisions.save(makeAgentRevision('a'));
             expect(await store.agentRevisions.findOne('a')).toEqual(makeAgentRevision('a'));
             await store.agentRevisions.save(makeAgentRevision('a', { hash: 'h2', changedAt: new Date(2_000) }));
@@ -747,6 +871,7 @@ export function describeRepositoryContract(
 
         it('agentRevisions.delete removes it and ignores a missing one', async () => {
             const { store } = await setup();
+
             await store.agentRevisions.save(makeAgentRevision('a'));
             await store.agentRevisions.save(makeAgentRevision('b'));
             await store.agentRevisions.delete('a');
@@ -757,6 +882,7 @@ export function describeRepositoryContract(
 
         it('agentRevisions.find orders by agent code point', async () => {
             const { store } = await setup();
+
             expect(await store.agentRevisions.find()).toEqual([]);
             await store.agentRevisions.save(makeAgentRevision('b'));
             await store.agentRevisions.save(makeAgentRevision('a-b'));
@@ -767,16 +893,20 @@ export function describeRepositoryContract(
         it('agent revisions are copied in and out', async () => {
             const { store } = await setup();
             const revision: AgentRevision = makeAgentRevision('a');
+
             await store.agentRevisions.save(revision);
             revision.hash = 'evil';
             revision.changedAt.setTime(0);
             expect(await store.agentRevisions.findOne('a')).toEqual(makeAgentRevision('a'));
 
             const got = (await store.agentRevisions.findOne('a'))!;
+
             expect(got.changedAt).toBeInstanceOf(Date);
             got.hash = 'evil';
             got.changedAt.setTime(0);
+
             const [listed] = await store.agentRevisions.find();
+
             expect(listed!.changedAt).toBeInstanceOf(Date);
             listed!.hash = 'evil';
             listed!.changedAt.setTime(0);

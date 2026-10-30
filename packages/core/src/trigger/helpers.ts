@@ -16,19 +16,35 @@ const isNonEmptyString = (value: unknown): value is string => typeof value === '
  * invoker fields; throws ValidationError otherwise.
  */
 export function toInvoker(value: unknown, label = 'invoker'): Invoker {
-    if (!isObject(value)) throw new ValidationError(`The ${label} must be an object.`);
+    if (!isObject(value)) {
+        throw new ValidationError(`The ${label} must be an object.`);
+    }
+
     const {
         id,
         kind,
         name,
         permissions,
     } = value as Record<string, unknown>;
-    if (!isNonEmptyString(id)) throw new ValidationError(`The ${label} needs a non-empty id.`);
-    if (!isNonEmptyString(kind)) throw new ValidationError(`The ${label} needs a non-empty kind.`);
-    if (name !== undefined && typeof name !== 'string') throw new ValidationError(`The ${label} name must be a string.`);
-    if (!Array.isArray(permissions) || permissions.some((p) => !(typeof p === 'string'))) {
+
+    if (!isNonEmptyString(id)) {
+        throw new ValidationError(`The ${label} needs a non-empty id.`);
+    }
+
+    if (!isNonEmptyString(kind)) {
+        throw new ValidationError(`The ${label} needs a non-empty kind.`);
+    }
+
+    if (name !== undefined && typeof name !== 'string') {
+        throw new ValidationError(`The ${label} name must be a string.`);
+    }
+
+    const validPermissions = Array.isArray(permissions) && permissions.every((p) => typeof p === 'string');
+
+    if (!validPermissions) {
         throw new ValidationError(`The ${label} permissions must be an array of strings.`);
     }
+
     return {
         id,
         kind,
@@ -45,7 +61,11 @@ export function toInvoker(value: unknown, label = 'invoker'): Invoker {
 export function idempotencyScope(envelope: Pick<TriggerEnvelope, 'agent' | 'channel' | 'invoker'>): string {
     const base = `${envelope.agent}:${envelope.channel}`;
     const { invoker } = envelope;
-    if (!invoker) return base;
+
+    if (!invoker) {
+        return base;
+    }
+
     return `${base}:${encodeURIComponent(invoker.kind)}:${encodeURIComponent(invoker.id)}`;
 }
 
@@ -62,8 +82,14 @@ export function normalizeEnvelope(raw: Record<string, unknown>): TriggerEnvelope
         ...rest
     } = raw;
     const output: Record<string, unknown> = { ...rest };
-    if (output.channel === undefined && source !== undefined) output.channel = source;
-    if (output.address === undefined && thread !== undefined) output.address = thread;
+
+    if (output.channel === undefined && source !== undefined) {
+        output.channel = source;
+    }
+
+    if (output.address === undefined && thread !== undefined) {
+        output.address = thread;
+    }
 
     return output as TriggerEnvelope;
 }

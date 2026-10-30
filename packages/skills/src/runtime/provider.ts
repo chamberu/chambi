@@ -22,8 +22,10 @@ export const skillRuntimeProvider: ISkillRuntimeProvider = Object.freeze({
     snapshot(inputs: readonly SkillInput[], tools: ToolSet) {
         const snapshots = copySkillInputs(inputs);
         const headers = composeSkillIdentities(skillHeaders(snapshots));
+
         assertSkillContents(snapshots.flatMap((input) => isSkillSource(input) ? [] : [input]));
         assertSkillToolCollision(headers, tools);
+
         return Object.freeze(snapshots.map((input) => Object.freeze({ ...input, runtime: skillRuntimeProvider })));
     },
     create: (globals: readonly SkillInput[]) => new SkillRuntime(globals),

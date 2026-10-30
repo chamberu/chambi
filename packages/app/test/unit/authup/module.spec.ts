@@ -51,8 +51,10 @@ function fakeVerifier() {
                 permissions: [{ name: 'run:read' }],
             } as Awaited<ReturnType<ITokenVerifier['verify']>>;
         }
+
         throw new Error('invalid_token');
     });
+
     return { verify };
 }
 
@@ -93,7 +95,9 @@ async function served(verifier: ITokenVerifier) {
             httpModule({ metrics: false, rateLimit: false }),
         ],
     });
+
     harnesses.push(harness);
+
     return (token: string) => fetch(`http://127.0.0.1:${port}/me`, { headers: { authorization: `Bearer ${token}` } });
 }
 
@@ -122,6 +126,7 @@ describe('authupModule', () => {
         const me = await served(verifier);
 
         const response = await me('authup-token');
+
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({
             id: 'user-1',
@@ -136,6 +141,7 @@ describe('authupModule', () => {
         const me = await served(verifier);
 
         const response = await me(TOKEN);
+
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({ id: 'ops' });
         expect(verifier.verify).not.toHaveBeenCalled();
@@ -160,14 +166,18 @@ describe('oidcModule', () => {
                 authupModule({ verifier: fakeVerifier() }),
             ],
         });
+
         harnesses.push(harness);
 
         const entries = harness.container.resolveAll(AppToken.AUTHENTICATORS);
+
         expect(entries.map((entry) => [entry.name, entry.order])).toEqual([
             ['oidc', AUTHENTICATOR_ORDER.OIDC],
             ['authup', AUTHENTICATOR_ORDER.AUTHUP],
         ]);
+
         const byName = new Map(entries.map((entry) => [entry.name, entry.authenticator]));
+
         expect(resolveAuthenticators(harness.container)).toEqual([byName.get('authup'), byName.get('oidc')]);
     });
 });

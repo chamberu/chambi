@@ -9,11 +9,16 @@ import { SandboxError, ValidationError } from '@chamvi/core';
 
 /** `argv` is a non-empty list of strings without NUL, the first one non-empty. */
 export function assertArgv(argv: readonly string[]): void {
+    const hasInvalidArgument = Array.isArray(argv) &&
+        argv.length !== 0 &&
+        argv[0] !== '' &&
+        argv.some((arg) => !(typeof arg === 'string' && !arg.includes('\0')));
+
     if (
         !Array.isArray(argv) ||
         argv.length === 0 ||
         argv[0] === '' ||
-        argv.some((arg) => !(typeof arg === 'string' && !arg.includes('\0')))
+        hasInvalidArgument
     ) {
         throw new ValidationError('argv must be a non-empty list of strings without NUL, starting with the command.');
     }

@@ -18,36 +18,48 @@ import type { StateSchema } from './types.ts';
 export function describeIssues(issues: readonly Issue[]): string {
     return flattenIssueItems(issues).map((issue) => {
         const path = issue.path.map(String).join('.');
+
         return path ? `${path}: ${issue.message}` : issue.message;
     }).join('; ');
 }
 
 export async function validate(agent: string, coll: string, schema: StateSchema | undefined, doc: unknown): Promise<unknown> {
-    if (!schema) return doc;
+    if (!schema) {
+        return doc;
+    }
+
     const collSchema = Object.hasOwn(schema, coll) ? schema[coll] : undefined;
+
     if (!collSchema) {
         throw new ValidationError(`Agent "${agent}" declares no state collection "${coll}".`);
     }
+
     const result = await collSchema['~standard'].validate(doc);
+
     if (result.issues) {
         const issues = buildIssuesForStandardSchemaIssues(result.issues);
         throw new ValidationError(`Invalid "${coll}" document: ${describeIssues(issues)}`, issues);
     }
+
     return result.value;
 }
 
 /** The collection's JSON Schema when its Standard Schema can produce one, else any object. */
 export function docJsonSchema(schema: StateSchema[string]): JSONSchema7 {
     const converter = (schema['~standard'] as Partial<StandardJSONSchemaV1.Props>).jsonSchema;
+
     if (converter) {
         try {
             const converted = { ...converter.input({ target: 'draft-07' }) } as JSONSchema7;
+
             delete converted.$schema;
+
             return converted;
         } catch {
             // not representable as JSON Schema: fall through
         }
     }
+
     return { type: 'object' };
 }
 

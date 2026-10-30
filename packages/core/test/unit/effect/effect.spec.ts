@@ -35,6 +35,7 @@ import { mockModel } from '../../utils/mock-model.ts';
 
 function toolContext(runId: string): ToolContext {
     const store = createMemoryStore();
+
     return {
         channels: {} as ToolContext['channels'],
         run: {
@@ -58,13 +59,18 @@ const callOpts = { toolCallId: 'c', messages: [] };
 const schema = z.object({ body: z.string(), n: z.number().optional() });
 
 const engines: Engine[] = [];
+
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
 async function call(tools: ToolSet, name: string, input: unknown, context: ToolContext = ctx) {
     const t = tools[name];
+
     return (t?.execute as (i: unknown, o: unknown) => Promise<unknown>)(input, { ...callOpts, context });
 }
 
@@ -75,17 +81,21 @@ describe('effect tools', () => {
             inputSchema: schema,
             effectKey: (input, c) => {
                 seen.push(c);
+
                 return `${c.run.runId}:k:${input.body}`;
             },
             alreadyApplied: async (_key, _input, c) => {
                 seen.push(c);
+
                 return undefined;
             },
             execute: async (_input, { context }) => {
                 seen.push(context);
+
                 return 'ok';
             },
         });
+
         expect(post.contextSchema).toBe(toolContextSchema);
         await call(wrapToolsForRun({ post }, ctx, createMemoryStore().effects), 'post', { body: 'x' });
         expect(seen).toEqual([ctx, ctx, ctx]);
@@ -98,11 +108,13 @@ describe('effect tools', () => {
             inputSchema: schema,
             effectKey: (_input, c, options) => {
                 seen.push(options.toolCallId, options.messages.length);
+
                 return `${c.run.runId}:k`;
             },
             execute: async () => 'ok',
         });
         const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
+
         await (tools.post?.execute as (i: unknown, o: unknown) => Promise<unknown>)(
             { body: 'x' },
             {
@@ -118,6 +130,7 @@ describe('effect tools', () => {
     it('keeps contextSchema and forwards options.context through the wrapper', async () => {
         const plain = defineTool({ inputSchema: schema, execute: async (_i, { context }) => context });
         const wrapped = wrapToolsForRun({ plain }, ctx, createMemoryStore().effects, { allow: () => true });
+
         expect(wrapped.plain!.contextSchema).toBe(toolContextSchema);
         expect(await call(wrapped, 'plain', { body: 'x' })).toBe(ctx);
     });
@@ -131,6 +144,7 @@ describe('effect tools', () => {
         });
         const store = createMemoryStore();
         const r2 = toolContext('r2');
+
         await call(wrapToolsForRun({ post }, ctx, store.effects), 'post', { body: 'x' });
         await call(wrapToolsForRun({ post }, r2, store.effects), 'post', { body: 'x' }, r2);
         expect(runs).toBe(2);
@@ -148,6 +162,7 @@ describe('effect tools', () => {
         const a = await call(tools, 'post', { body: 'hi' });
         const b = await call(tools, 'post', { body: 'hi' });
         const c = await call(tools, 'post', { body: 'other' });
+
         expect(a).toEqual({ id: 1 });
         expect(b).toEqual({ id: 1 });
         expect(c).toEqual({ id: 2 });
@@ -162,7 +177,9 @@ describe('effect tools', () => {
         });
         // a crash before the checkpoint lands: the resumed run starts from scratch
         const store = createMemoryStore();
+
         vi.spyOn(store.checkpoints, 'save').mockResolvedValue(undefined);
+
         const turn = {
             parts: [{
                 type: 'tool-call' as const,
@@ -182,32 +199,41 @@ describe('effect tools', () => {
                 })],
                 onError: () => {},
             });
+
             engines.push(engine);
+
             return engine;
         };
 
         const first = make(mockModel([turn, done]));
+
         await first.start();
+
         const { runId } = await first.dispatch({
             agent: 'triage',
             trigger: 'http',
             channel: 'http',
             payload: {},
         });
+
         await first.idle();
         first.stop();
         expect(runs).toBe(1);
 
         // the process died mid-run: requeue and resume with a model re-issuing the call
         await store.runs.update(runId, { status: 'queued', claim: undefined });
+
         const second = make(mockModel([turn, done]));
+
         await second.start();
         await second.idle();
 
         expect((await store.runs.findOne(runId))?.status).toBe('completed');
         expect(runs).toBe(1);
+
         // the replayed call was re-issued and answered from the stored effect
         const toolSteps = (await store.steps.find(runId)).filter((st) => st.kind === 'tool');
+
         expect(toolSteps).toHaveLength(2);
         expect(toolSteps.map((st) => st.output)).toEqual([{ id: 1 }, { id: 1 }]);
     });
@@ -220,11 +246,13 @@ describe('effect tools', () => {
             execute: async () => ({ id: ++runs }),
             alreadyApplied: async (key) => {
                 seen.push(key);
+
                 return { id: 99 };
             },
         });
         const store = createMemoryStore();
         const tools = wrapToolsForRun({ post }, ctx, store.effects);
+
         expect(await call(tools, 'post', { body: 'hi' })).toEqual({ id: 99 });
         expect(runs).toBe(0);
         expect(seen).toEqual([`r1:post:${stableHash({ body: 'hi' })}`]);
@@ -236,11 +264,15 @@ describe('effect tools', () => {
         const post = defineEffectTool({
             inputSchema: schema,
             execute: async () => {
-                if (++runs === 1) throw new Error('boom');
+                if (++runs === 1) {
+                    throw new Error('boom');
+                }
+
                 return 'ok';
             },
         });
         const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
+
         await expect(call(tools, 'post', { body: 'hi' })).rejects.toThrow('boom');
         expect(await call(tools, 'post', { body: 'hi' })).toBe('ok');
     });
@@ -252,6 +284,7 @@ describe('effect tools', () => {
             execute: async () => 'x',
         });
         const store = createMemoryStore();
+
         await call(wrapToolsForRun({ post }, ctx, store.effects), 'post', { body: 'hi' });
         expect(await store.effects.findOne('custom:hi')).toEqual({ result: 'x' });
     });
@@ -260,6 +293,7 @@ describe('effect tools', () => {
         let runs = 0;
         const plain = tool({ inputSchema: schema, execute: async () => ++runs });
         const tools = wrapToolsForRun({ plain }, ctx, createMemoryStore().effects);
+
         // wrapped only to run inside its tool-call frame
         expect(tools.plain).toMatchObject({ inputSchema: plain.inputSchema });
         await call(tools, 'plain', { body: 'hi' });
@@ -269,6 +303,7 @@ describe('effect tools', () => {
 
     it('marks effect tools', () => {
         const post = defineEffectTool({ inputSchema: schema, execute: async () => 1 });
+
         expect(post[EFFECT]).toBe(true);
     });
 
@@ -291,12 +326,16 @@ describe('effect tools', () => {
         const post = defineEffectTool({
             inputSchema: schema,
             execute: async () => {
-                await new Promise((r) => { setImmediate(r); });
+                await new Promise((r) => {
+                    setImmediate(r);
+                });
+
                 return ++runs;
             },
         });
         const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
         const out = await Promise.all([call(tools, 'post', { body: 'hi' }), call(tools, 'post', { body: 'hi' })]);
+
         expect(out).toEqual([1, 1]);
         expect(runs).toBe(1);
     });
@@ -308,10 +347,12 @@ describe('effect tools', () => {
             execute: async () => 'x',
             alreadyApplied: async () => {
                 checks++;
+
                 return undefined;
             },
         });
         const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
+
         await call(tools, 'post', { body: 'hi' });
         await call(tools, 'post', { body: 'hi' });
         expect(checks).toBe(1);
@@ -319,10 +360,13 @@ describe('effect tools', () => {
 
     it('returns the result when putEffect fails', async () => {
         const broken = createMemoryStore();
+
         vi.spyOn(broken.effects, 'save').mockRejectedValue(new Error('disk full'));
+
         const post = defineEffectTool({ inputSchema: schema, execute: async () => 'sent' });
         const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const tools = wrapToolsForRun({ post }, ctx, broken.effects);
+
         expect(await call(tools, 'post', { body: 'hi' })).toBe('sent');
         expect(spy).toHaveBeenCalled();
         spy.mockRestore();
@@ -337,6 +381,7 @@ describe('effect tools', () => {
             execute: async () => 'x',
         });
         const tools = wrapToolsForRun({ post }, ctx, createMemoryStore().effects);
+
         await expect(call(tools, 'post', { body: 'hi' })).rejects.toThrow('bad key');
     });
 });
@@ -348,11 +393,13 @@ describe('tool allow check', () => {
         const post = defineEffectTool({ inputSchema: schema, execute: async () => ++runs });
         const store = createMemoryStore();
         const tools = wrapToolsForRun({ plain, post }, ctx, store.effects, { allow: (name) => name === 'none' });
+
         await expect(call(tools, 'plain', { body: 'hi' })).rejects.toBeInstanceOf(ToolNotAllowedError);
         await expect(call(tools, 'post', { body: 'hi' })).rejects.toMatchObject({ code: 'tool_not_allowed' });
         expect(runs).toBe(0);
 
         const allowed = wrapToolsForRun({ plain }, ctx, store.effects, { allow: (name) => name === 'plain' });
+
         expect(await call(allowed, 'plain', { body: 'hi' })).toBe(1);
     });
 });

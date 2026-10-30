@@ -33,6 +33,9 @@ export function providedOf(ctx: object): ReadonlyMap<ContextKey<unknown>, unknow
 
 /** The key's name for a message, `<unnamed>` for a foreign key without a string name. */
 export function contextKeyName(key: unknown): string {
-    if (isObject(key) && typeof key.name === 'string') return key.name;
+    if (isObject(key) && typeof key.name === 'string') {
+        return key.name;
+    }
+
     return '<unnamed>';
 }

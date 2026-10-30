@@ -64,11 +64,13 @@ async function served(env: Record<string, string> = {}, basePath = '') {
             uiModule({ env, root: ROOT }),
         ],
     });
+
     harnesses.push(harness);
 
     const response = await fetch(`http://127.0.0.1:${port}${basePath}/ui/`);
     const html = await response.text();
     const match = /<script type="application\/json" id="chamvi-config">(.*?)<\/script>/s.exec(html);
+
     return {
         response,
         html,
@@ -87,6 +89,7 @@ describe('uiModule', () => {
 
     it('serves the dashboard under /ui', async () => {
         const { response, config } = await served();
+
         expect(response.status).toBe(200);
         expect(config).toEqual({
             apiBase: '',
@@ -97,6 +100,7 @@ describe('uiModule', () => {
 
     it('follows CHAMVI_BASE_PATH', async () => {
         const { response, config } = await served({}, '/api');
+
         expect(response.status).toBe(200);
         expect(config).toMatchObject({ apiBase: '/api', uiBase: '/api/ui' });
     });
@@ -107,6 +111,7 @@ describe('uiModule', () => {
             CHAMVI_UI_AUTHUP_CLIENT_ID: 'chamvi-ui',
             CHAMVI_UI_AUTHUP_REALM_ID: 'master',
         });
+
         expect(config?.auth).toEqual({
             tokens: true,
             authup: {
@@ -117,6 +122,7 @@ describe('uiModule', () => {
         });
 
         const without = await served({ AUTHUP_URL: 'https://auth.example.com/api' });
+
         expect(without.config?.auth).toEqual({ tokens: true });
     });
 

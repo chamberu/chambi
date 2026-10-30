@@ -37,9 +37,17 @@ function tokenSource(clock: ControllableClock) {
         },
         async get(request) {
             requests.push(request);
-            if (failing) throw failing;
-            if (request.path === '') return undefined;
+
+            if (failing) {
+                throw failing;
+            }
+
+            if (request.path === '') {
+                return undefined;
+            }
+
             issued++;
+
             return {
                 username: 'x-access-token',
                 password: `${request.access}-token-${issued}`,
@@ -47,6 +55,7 @@ function tokenSource(clock: ControllableClock) {
             } satisfies GitCredential;
         },
     };
+
     return source;
 }
 
@@ -71,9 +80,12 @@ function setup(
         clock,
         gcIntervalMs: 0,
         credentials: source,
-        onError: (error) => { errors.push(error); },
+        onError: (error) => {
+            errors.push(error);
+        },
         ...options,
     });
+
     return {
         clock,
         provider,
@@ -87,10 +99,11 @@ function setup(
 describe('workspace manager credentials', () => {
     it('hands the checkout a read credential and the depth', async () => {
         const {
-            manager, 
-            provider, 
-            source, 
+            manager,
+            provider,
+            source,
         } = setup({ depth: 5 });
+
         await manager.acquire('r1', { repo: 'octo/demo' });
         expect(provider.created[0]!.checkout).toEqual({
             depth: 5,
@@ -111,14 +124,18 @@ describe('workspace manager credentials', () => {
 
     it('checks out anonymously when no source answers, and passes no checkout without credentials or depth', async () => {
         const { manager, provider } = setup({ credentials: [{ get: async () => undefined }] });
+
         await manager.acquire('r1', { repo: 'octo/demo' });
         expect(provider.created[0]!.checkout).toBeUndefined();
     });
 
     it('fails the create with a SandboxError naming the repository when a source fails', async () => {
         const { manager, source } = setup();
+
         source.fail(new Error('GitHub is down'));
+
         const error = await manager.acquire('r1', { repo: 'octo/demo' }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toContain('github.com/octo/demo');
     });
@@ -127,25 +144,33 @@ describe('workspace manager credentials', () => {
         it('installs the read credential when the write lookup fails, reporting the failure once', async () => {
             const reads: string[] = [];
             const {
-                manager, 
-                provider, 
-                errors, 
+                manager,
+                provider,
+                errors,
             } = setup({
                 credentials: {
                     async get(request) {
-                        if (request.path === '') return undefined;
-                        if (request.access === 'write') throw new Error('GitHub 422: The permissions requested are not granted to this installation.');
+                        if (request.path === '') {
+                            return undefined;
+                        }
+
+                        if (request.access === 'write') {
+                            throw new Error('GitHub 422: The permissions requested are not granted to this installation.');
+                        }
+
                         reads.push(request.url);
+
                         return {
-                            username: 'x-access-token', 
-                            password: `read-token-${reads.length}`, 
-                            expiresAt: new Date(START + HOUR), 
+                            username: 'x-access-token',
+                            password: `read-token-${reads.length}`,
+                            expiresAt: new Date(START + HOUR),
                         };
                     },
                 },
             });
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
+
             expect(installs(raw)).toHaveLength(1);
             expect(installs(raw)[0]!.options.stdin).toBe('https://github.com/octo/demo\tx-access-token\tread-token-2\n');
             expect(errors).toHaveLength(1);
@@ -162,6 +187,7 @@ describe('workspace manager credentials', () => {
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
             const [install] = installs(raw);
+
             expect(install).toBeDefined();
             expect(install!.options.stdin).toBe('https://github.com/octo/demo\tx-access-token\twrite-token-2\n');
             expect(install!.argv.at(-1)).toBe(String(Buffer.byteLength(install!.options.stdin!)));
@@ -169,12 +195,13 @@ describe('workspace manager credentials', () => {
 
         it('refreshes before an exec once a credential expires within 10 minutes, not earlier', async () => {
             const {
-                manager, 
-                provider, 
-                clock, 
+                manager,
+                provider,
+                clock,
             } = setup();
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
+
             await workspace.exec(['true']);
             expect(installs(raw)).toHaveLength(1);
 
@@ -192,16 +219,18 @@ describe('workspace manager credentials', () => {
 
         it('writes a fresh credentials file into a workspace found again before its first exec', async () => {
             const {
-                manager, 
-                provider, 
-                build, 
+                manager,
+                provider,
+                build,
             } = setup();
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
+
             expect(installs(raw)).toHaveLength(1);
 
             const restarted = build();
             const found = await restarted.get('r1');
+
             await found.exec(['true']);
             expect(installs(raw)).toHaveLength(2);
             expect(raw.calls.at(-1)!.argv).toEqual(['true']);
@@ -209,20 +238,22 @@ describe('workspace manager credentials', () => {
 
         it('reports a failing source, keeps exec working and retries a minute later', async () => {
             const {
-                manager, 
-                provider, 
-                clock, 
-                source, 
+                manager,
+                provider,
+                clock,
+                source,
                 errors,
             } = setup();
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
+
             clock.advance(HOUR - 60_000);
             source.fail(new Error('GitHub is down'));
 
             await expect(workspace.exec(['true'])).resolves.toMatchObject({ exitCode: 0 });
             expect(errors).toHaveLength(1);
             expect(String(errors[0])).toContain('GitHub is down');
+
             const asked = source.requests.length;
 
             clock.advance(59_999);
@@ -241,27 +272,36 @@ describe('workspace manager credentials', () => {
             let token = { password: 'cached-token-1', expiresAt: new Date(START + HOUR) };
             let issued = 1;
             const {
-                manager, 
-                provider, 
-                clock, 
+                manager,
+                provider,
+                clock,
             } = setup({
                 credentials: {
                     async get(request) {
-                        if (request.path === '') return undefined;
+                        if (request.path === '') {
+                            return undefined;
+                        }
+
                         if (clock.now().getTime() >= token.expiresAt.getTime() - 300_000) {
                             issued++;
                             token = { password: `cached-token-${issued}`, expiresAt: new Date(clock.now().getTime() + HOUR) };
                         }
+
                         return { username: 'x-access-token', ...token };
                     },
                 },
             });
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
+
             expect(installs(raw)).toHaveLength(1);
 
             clock.advance(HOUR - 540_000);
-            for (let i = 0; i < 5; i++) await workspace.exec(['true']);
+
+            for (let i = 0; i < 5; i++) {
+                await workspace.exec(['true']);
+            }
+
             expect(installs(raw)).toHaveLength(2);
 
             clock.advance(60_000);
@@ -284,6 +324,7 @@ describe('workspace manager credentials', () => {
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             // the token the install wrote (read-token-1 went to the checkout)
             const token = 'write-token-2';
+
             provider.workspaces.get(workspace.id)!.files.set('/workspace/t.txt', `t=${token}`);
             await expect(workspace.readFile('/workspace/t.txt')).resolves.toBe('t=[redacted]');
             await expect(workspace.readFileRaw!('/workspace/t.txt')).resolves.toBe(`t=${token}`);
@@ -293,45 +334,53 @@ describe('workspace manager credentials', () => {
             const COMMON = 'common-word-written-by-a-model';
             const file = `https://github.com/octo/demo\tx-access-token\t${COMMON}\n`;
             const {
-                manager, 
-                provider, 
-                build, 
+                manager,
+                provider,
+                build,
             } = setup({}, (argv) => {
-                if (argv[0] === 'cat') return { stdout: `notes ${COMMON}\n` };
+                if (argv[0] === 'cat') {
+                    return { stdout: `notes ${COMMON}\n` };
+                }
+
                 return {};
             });
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
+
             // the model wrote a common string where the tokens live
             raw.files.set('/home/sandbox/.chamvi/credentials', file);
             raw.files.set('/workspace/notes.txt', `notes ${COMMON}`);
 
             const restarted = build();
             const found = await restarted.get('r1');
+
             await expect(found.readFile('/workspace/notes.txt')).resolves.toBe(`notes ${COMMON}`);
             await expect(found.exec(['cat', 'notes.txt'])).resolves.toMatchObject({ stdout: `notes ${COMMON}\n` });
 
             // another run of the same process sees it unchanged too
             const { workspace: other } = await restarted.acquire('r2', { repo: 'octo/demo' });
+
             provider.workspaces.get(other.id)!.files.set('/workspace/notes.txt', `notes ${COMMON}`);
             await expect(other.readFile('/workspace/notes.txt')).resolves.toBe(`notes ${COMMON}`);
 
             // the only shell call naming the credentials file is the install
             const reads = raw.calls.filter((call) => call.argv.some((arg) => arg.includes('.chamvi/credentials')) && !isInstall(call.argv));
+
             expect(reads).toEqual([]);
         });
 
         it('writes the credentials of a found workspace before its first exec', async () => {
             const {
-                manager, 
-                provider, 
-                build, 
+                manager,
+                provider,
+                build,
             } = setup();
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
             const before = raw.calls.length;
 
             const found = await build().get('r1');
+
             await found.exec(['true']);
             expect(raw.calls.slice(before).map((call) => (isInstall(call.argv) ? 'install' : call.argv.join(' ')))).toEqual(['install', 'true']);
         });
@@ -339,6 +388,7 @@ describe('workspace manager credentials', () => {
         it('installs nothing while no source answers and the workspace holds no credentials', async () => {
             const { manager, provider } = setup({ credentials: { get: async () => undefined } });
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+
             await workspace.exec(['true']);
             expect(installs(provider.workspaces.get(workspace.id)!)).toHaveLength(0);
         });
@@ -346,23 +396,29 @@ describe('workspace manager credentials', () => {
         it('clears the credentials an earlier process wrote once no source answers', async () => {
             let file: string | undefined;
             const {
-                manager, 
-                provider, 
-                build, 
+                manager,
+                provider,
+                build,
             } = setup(
                 { credentials: { get: async () => undefined } },
                 (argv, options) => {
-                    if (isInstall(argv)) file = options.stdin ?? '';
+                    if (isInstall(argv)) {
+                        file = options.stdin ?? '';
+                    }
+
                     return {};
                 },
             );
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const raw = provider.workspaces.get(workspace.id)!;
+
             expect(installs(raw)).toHaveLength(0);
 
             // an earlier process with a source wrote a token; this one adopts the workspace
             raw.files.set('/home/sandbox/.chamvi/credentials', 'https://github.com/octo/demo\tx-access-token\tghs_writtenByTheProcessBeforeTheRestart\n');
+
             const adopted = await build().get('r1');
+
             await adopted.exec(['true']);
             await adopted.exec(['true']);
             expect(installs(raw)).toHaveLength(1);
@@ -372,6 +428,7 @@ describe('workspace manager credentials', () => {
         it('installs nothing in a workspace without a repository', async () => {
             const { manager, provider } = setup();
             const { workspace } = await manager.acquire('r1', {});
+
             await workspace.exec(['true']);
             expect(installs(provider.workspaces.get(workspace.id)!)).toHaveLength(0);
         });
@@ -380,6 +437,7 @@ describe('workspace manager credentials', () => {
             const { manager, provider } = setup({ credentials: staticGitCredentials([{ host: 'github.com', token: 'ghp_hosttoken' }]) });
             const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
             const [install] = installs(provider.workspaces.get(workspace.id)!);
+
             expect(install!.options.stdin).toBe('https://github.com/octo/demo\tx-access-token\tghp_hosttoken\n' +
                 'https://github.com/\tx-access-token\tghp_hosttoken\n');
         });
@@ -390,16 +448,23 @@ describe('workspace manager credentials', () => {
         const { manager, provider } = setup({
             credentials: {
                 async get(request) {
-                    if (!answering || request.path === '') return undefined;
+                    if (!answering || request.path === '') {
+                        return undefined;
+                    }
+
                     answering = false;
+
                     return { username: 'x-access-token', password: 'read-token-1' };
                 },
             },
         });
         const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+
         expect(provider.created[0]!.checkout?.credential).toEqual({ username: 'x-access-token', password: 'read-token-1' });
+
         // the provider's checkout wrote the read credential: the first install empties the file
         const raw = provider.workspaces.get(workspace.id)!;
+
         expect(installs(raw)).toHaveLength(1);
         expect(installs(raw)[0]!.options.stdin).toBe('');
     });
@@ -408,9 +473,11 @@ describe('workspace manager credentials', () => {
         let leak = '';
         const { manager } = setup({}, (argv) => (argv[0] === 'cat' ? { stdout: `token=${leak}\n`, stderr: `again ${leak}` } : {}));
         const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+
         leak = 'write-token-2';
 
         const result = await workspace.exec(['cat', '/home/sandbox/.chamvi/credentials']);
+
         expect(result.stdout).toBe('token=[redacted]\n');
         expect(result.stderr).toBe('again [redacted]');
         expect(workspace.redact?.('a read-token-1 b')).toBe('a [redacted] b');
@@ -422,6 +489,7 @@ describe('workspace manager credentials', () => {
         await expect(workspace.readBytes('notes.txt')).resolves.toEqual(new TextEncoder().encode('leaked [redacted]'));
 
         const error = await workspace.readFile('missing-write-token-2').catch((e: unknown) => e);
+
         expect((error as Error).message).not.toContain('write-token-2');
         expect((error as Error).message).toContain('[redacted]');
     });
@@ -430,16 +498,18 @@ describe('workspace manager credentials', () => {
         const clock = new ControllableClock(new Date(START));
         const provider = createFakeProvider({ clock });
         const manager = createWorkspaceManager({
-            provider, 
-            clock, 
-            gcIntervalMs: 0, 
+            provider,
+            clock,
+            gcIntervalMs: 0,
         });
         const { workspace } = await manager.acquire('r1', { repo: 'octo/demo' });
+
         expect(workspace).toBe(provider.workspaces.get(workspace.id));
     });
 
     it('sets the commit identity in the workspace environment', async () => {
         const { manager, provider } = setup({ author: { name: 'demo[bot]', email: '1+demo[bot]@users.noreply.github.com' }, env: { FOO: 'bar' } });
+
         await manager.acquire('r1', {});
         expect(provider.created[0]!.env).toEqual({
             FOO: 'bar',
@@ -459,6 +529,7 @@ describe('workspace manager credentials', () => {
             { author: { name: '', email: 'a@b' } },
             { author: { name: 'a\nb', email: 'a@b' } },
         ];
+
         for (const options of bad) {
             expect(() => createWorkspaceManager({ provider, ...options })).toThrow(InvalidAgentDefinitionError);
         }

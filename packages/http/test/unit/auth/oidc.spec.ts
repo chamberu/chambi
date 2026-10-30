@@ -69,11 +69,13 @@ describe('oidc', () => {
         ['a list with an empty entry', ['chamvi', '']],
     ])('needs an audience on every issuer (%s)', (_name, audience) => {
         const candidate = { ...issuer, audience } as Issuer;
+
         expect(() => oidc({ issuers: [candidate], principal: mapper })).toThrow(InvalidAgentDefinitionError);
     });
 
     it('maps a valid token to a principal', async () => {
         const token = await signToken(key.privateKey, claims());
+
         expect(await make()(request(token))).toEqual({
             id: 'ci:repo:acme/x',
             kind: 'oidc',
@@ -88,26 +90,31 @@ describe('oidc', () => {
             permissions: r.claims.repository === 'acme/x' ? ['agent:deploy:run'] : [],
         }));
         const token = await signToken(key.privateKey, claims({ repository: 'acme/x' }));
+
         expect((await auth(request(token)))?.permissions).toEqual(['agent:deploy:run']);
     });
 
     it('rejects an expired token with token_expired', async () => {
         const token = await signToken(key.privateKey, claims(), { expiresIn: Math.floor(Date.now() / 1000) - 600 });
+
         await expect(make()(request(token))).rejects.toMatchObject({ status: 401, code: 'token_expired' });
     });
 
     it('rejects a wrong audience with claim_invalid', async () => {
         const token = await signToken(key.privateKey, claims({ aud: 'someone-else' }));
+
         await expect(make()(request(token))).rejects.toMatchObject({ status: 401, code: 'claim_invalid' });
     });
 
     it('rejects a token signed by another key with signature_invalid', async () => {
         const token = await signToken(other.privateKey, claims());
+
         await expect(make()(request(token))).rejects.toMatchObject({ status: 401, code: 'signature_invalid' });
     });
 
     it('resolves undefined for another issuer or a non-JWT token', async () => {
         const token = await signToken(key.privateKey, claims({ iss: 'https://other.test' }));
+
         expect(await make()(request(token))).toBeUndefined();
         expect(await make()(request('not-a-jwt'))).toBeUndefined();
         expect(await make()(request())).toBeUndefined();
@@ -121,16 +128,19 @@ describe('oidc', () => {
             },
         };
         const token = await signToken(key.privateKey, claims());
+
         await expect(make(mapper, [failing])(request(token))).rejects.toMatchObject({ status: 503 });
     });
 
     it('answers 401 for a kid the issuer does not publish', async () => {
         const token = await signToken(key.privateKey, claims(), { kid: 'k2' });
+
         await expect(make()(request(token))).rejects.toMatchObject({ status: 401, code: 'key_unavailable' });
     });
 
     it('rejects a token the mapper does not allow', async () => {
         const token = await signToken(key.privateKey, claims());
+
         await expect(make(() => undefined)(request(token))).rejects.toMatchObject({
             status: 401,
             message: 'The token is not allowed.',
@@ -139,37 +149,38 @@ describe('oidc', () => {
 
     it.each([
         ['an empty id', {
-            id: '', 
-            kind: 'oidc', 
-            permissions: [], 
+            id: '',
+            kind: 'oidc',
+            permissions: [],
         }],
         ['a non-string id', {
-            id: 42, 
-            kind: 'oidc', 
-            permissions: [], 
+            id: 42,
+            kind: 'oidc',
+            permissions: [],
         }],
         ['permissions that are no array', {
-            id: 'ci', 
-            kind: 'oidc', 
-            permissions: 'agent:deploy:run', 
+            id: 'ci',
+            kind: 'oidc',
+            permissions: 'agent:deploy:run',
         }],
         ['a non-string permission', {
-            id: 'ci', 
-            kind: 'oidc', 
-            permissions: [42], 
+            id: 'ci',
+            kind: 'oidc',
+            permissions: [42],
         }],
         ['no kind', {
-            id: 'ci', 
-            permissions: [], 
+            id: 'ci',
+            permissions: [],
         }],
         ['an empty kind', {
-            id: 'ci', 
-            kind: '', 
-            permissions: [], 
+            id: 'ci',
+            kind: '',
+            permissions: [],
         }],
     ])('treats a mapper result with %s as a server misconfiguration', async (_name, principal) => {
         const token = await signToken(key.privateKey, claims());
         const auth = make(() => principal as unknown as Principal);
+
         await expect(auth(request(token))).rejects.toBeInstanceOf(InvalidAgentDefinitionError);
     });
 });

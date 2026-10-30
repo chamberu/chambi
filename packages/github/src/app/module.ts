@@ -71,23 +71,35 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
     function lookupInstallation(owner: string, repo: string): Promise<GithubInstallation | undefined> {
         const key = `${owner}/${repo}`.toLowerCase();
         const cached = installationCache.get(key);
-        if (cached && clock.now().getTime() < cached.expiresAt) return Promise.resolve(cached.installation);
+
+        if (cached && clock.now().getTime() < cached.expiresAt) {
+            return Promise.resolve(cached.installation);
+        }
+
         let pending = pendingLookups.get(key);
+
         if (!pending) {
             pending = tokens.app()
                 .then((octokit) => octokit.request('GET /repos/{owner}/{repo}/installation', { owner, repo }))
                 .then(({ data }) => {
                     const installation = toInstallation(data);
+
                     installationCache.set(key, { installation, expiresAt: clock.now().getTime() + INSTALLATION_CACHE_TTL_MS });
+
                     return installation;
                 }, (error: unknown) => {
                     installationCache.delete(key);
-                    if ((error as { status?: number })?.status === 404) return undefined;
+
+                    if ((error as { status?: number })?.status === 404) {
+                        return undefined;
+                    }
+
                     throw toolError(error);
                 })
                 .finally(() => pendingLookups.delete(key));
             pendingLookups.set(key, pending);
         }
+
         return pending;
     }
 
@@ -96,6 +108,7 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
         ...(installationId !== undefined ? { installationId } : {}),
         async octokit(id: number): Promise<GithubOctokit> {
             const token = await tokens.get(id);
+
             return new PaginatedOctokit({
                 auth: token,
                 baseUrl,
@@ -108,17 +121,21 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
                 login = tokens.app()
                     .then(async (octokit) => {
                         const { data } = await octokit.request('GET /app');
+
                         if (typeof data?.slug !== 'string' || data.slug.length === 0) {
                             // a login of `[bot]` would never match and disable the self-sender guard
                             throw new ChamviError({ message: 'GET /app answered without the App slug; set slug on createGithubApp().', code: GITHUB_REQUEST_ERROR_CODE });
                         }
+
                         return `${data.slug}[bot]`;
                     })
                     .catch((error: unknown) => {
                         login = undefined;
+
                         throw error;
                     });
             }
+
             return login;
         },
         botIdentity(): Promise<GithubBotIdentity> {
@@ -127,20 +144,24 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
                     const name = await app.botLogin();
                     // a public endpoint: the App's JWT cannot read users, and no installation is needed
                     const octokit = withAppTimeout(new PaginatedOctokit({
-                        baseUrl, 
-                        userAgent: GITHUB_USER_AGENT, 
-                        request, 
+                        baseUrl,
+                        userAgent: GITHUB_USER_AGENT,
+                        request,
                     }), clock);
                     const { data } = await octokit.request('GET /users/{username}', { username: name });
+
                     if (typeof data?.id !== 'number') {
                         throw new ChamviError({ message: `GET /users/${name} answered without a user id.`, code: GITHUB_REQUEST_ERROR_CODE });
                     }
+
                     return { name, email: `${data.id}+${name}@users.noreply.github.com` };
                 })().catch((error: unknown) => {
                     identity = undefined;
+
                     throw toolError(error);
                 });
             }
+
             return identity;
         },
         async installationFor(target): Promise<number | undefined> {
@@ -153,6 +174,7 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
             try {
                 const octokit = await tokens.app();
                 const items = await octokit.paginate('GET /app/installations', { per_page: 100 });
+
                 return items.map((item) => toInstallation(item));
             } catch (error) {
                 throw toolError(error);
@@ -161,12 +183,18 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
         async repositoryToken(target, tokenOptions): Promise<GithubRepositoryToken | undefined> {
             const { owner, repo } = target;
             const installation = await lookupInstallation(owner, repo);
-            if (installation === undefined) return undefined;
+
+            if (installation === undefined) {
+                return undefined;
+            }
+
             const scoped = await tokens.repository(installation.id, repo, tokenOptions.permissions).catch((error: unknown) => {
                 // the App may have been removed from the repository: look it up again next time
                 installationCache.delete(`${owner}/${repo}`.toLowerCase());
+
                 throw toolError(error);
             });
+
             return { token: scoped.token, expiresAt: new Date(scoped.expiresAt) };
         },
         verifySignature(body: Uint8Array, signature: string | null): boolean {
@@ -181,8 +209,10 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
         },
         writeTools(toolsOptions?: GithubWriteToolsOptions): ToolSet {
             const mergeMethod = resolveMergeMethod(toolsOptions?.mergeMethod);
+
             return { ...createWriteTools(app), ...createPullRequestWriteTools(app, { mergeMethod }) };
         },
     };
+
     return app;
 }

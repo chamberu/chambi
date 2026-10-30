@@ -90,23 +90,38 @@ export function parseMatches(output: string): { matches: GrepMatch[]; unparsed: 
     const matches: GrepMatch[] = [];
     let unparsed = 0;
     let position = 0;
+
     while (position < output.length) {
         const lineEnd = output.indexOf('\n', position);
         const pathEnd = output.indexOf('\0', position);
         const record = pathEnd === -1 || (lineEnd !== -1 && lineEnd < pathEnd) ?
             undefined :
             /^(\d+)[:\0]/.exec(output.slice(pathEnd + 1, pathEnd + 22));
+
         if (!record) {
             // a line without a record: skip it, a cut one at the end is dropped
-            if (lineEnd === -1) break;
-            if (!BINARY_NOTICE.test(output.slice(position, lineEnd))) unparsed++;
+            if (lineEnd === -1) {
+                break;
+            }
+
+            if (!BINARY_NOTICE.test(output.slice(position, lineEnd))) {
+                unparsed++;
+            }
+
             position = lineEnd + 1;
+
             continue;
         }
+
         const textStart = pathEnd + 1 + record[0].length;
         const textEnd = output.indexOf('\n', textStart);
-        if (textEnd === -1) break;
+
+        if (textEnd === -1) {
+            break;
+        }
+
         const path = output.slice(position, pathEnd);
+
         matches.push({
             path: path.startsWith('./') ? path.slice(2) : path,
             line: Number(record[1]),
@@ -114,6 +129,7 @@ export function parseMatches(output: string): { matches: GrepMatch[]; unparsed: 
         });
         position = textEnd + 1;
     }
+
     return { matches, unparsed };
 }
 
@@ -126,23 +142,29 @@ export function parseMatches(output: string): { matches: GrepMatch[]; unparsed: 
 export function grepResult(result: ExecResult, limit: number, logPath: string | undefined): GrepResult {
     const newline = result.stdout.indexOf('\n');
     const engine = result.stdout.slice(0, Math.max(newline, 0)) as GrepEngine;
+
     if (!ENGINES.includes(engine) || result.timedOut) {
         throw gitFailure('grep', result);
     }
+
     const output = result.stdout.slice(newline + 1);
     const { matches: found, unparsed } = parseMatches(output);
     const matches = logPath === undefined ? found : found.map((match) => ({ ...match, path: logPath }));
     // grep and ripgrep exit 2 also for an unreadable file among matches; git grep 128 for a bad pattern
     const failed = engine === 'git-grep' ? result.exitCode === 128 : result.exitCode === 2;
+
     if (failed && matches.length === 0) {
         throw new ValidationError(`grep failed: ${gitMessage(result)}`);
     }
+
     if (!failed && result.exitCode !== 0 && result.exitCode !== 1) {
         throw gitFailure('grep', result);
     }
+
     if (matches.length === 0 && unparsed > 0) {
         throw new SandboxError(`grep output could not be parsed (${engine}): ${cutText(output.trim(), 200)}`);
     }
+
     return {
         matches: matches.slice(0, limit),
         truncated: matches.length > limit || result.stdoutTruncated,
@@ -193,6 +215,7 @@ export function grepTool(workspaces: CodingWorkspaces): Tool<GrepInput, GrepResu
                 includeIgnored ? '1' : '0',
                 below === undefined ? '' : 'home',
             ], { signal: signalOf(abortSignal, context) });
+
             return grepResult(result, limit, below === undefined ? undefined : body.path as string);
         },
     });
@@ -213,17 +236,26 @@ async function listFiles(
 ): Promise<ListFilesResult> {
     const workspace = await workspaceOf(workspaces, body, context);
     const argv = ['git', 'ls-files', '-z', '--cached', '--others'];
-    if (!input.includeIgnored) argv.push('--exclude-standard');
+
+    if (!input.includeIgnored) {
+        argv.push('--exclude-standard');
+    }
+
     argv.push('--', input.pathspec);
+
     const result = await workspace.exec(argv, { signal: input.signal });
+
     if (result.exitCode !== 0) {
         throw gitFailure(input.what, result);
     }
 
     const entries = result.stdout.split('\0');
+
     // the entry after the last NUL is empty, or cut by the output cap
     entries.pop();
+
     const files = [...new Set(entries)].sort();
+
     return {
         files: files.slice(0, input.limit),
         truncated: files.length > input.limit || result.stdoutTruncated,
@@ -243,6 +275,7 @@ export function listFilesTool(workspaces: CodingWorkspaces): Tool<ListFilesInput
             const path = optionalPath(body.path);
             const includeIgnored = optionalBoolean(body.includeIgnored, 'includeIgnored') ?? false;
             const limit = optionalInteger(body.limit, 'limit', 1, LIST_MAX_RESULTS) ?? LIST_DEFAULT_RESULTS;
+
             // literal: a path such as ':!src' names a file, it is no pathspec magic
             return listFiles(workspaces, body, context, {
                 pathspec: `:(literal)${path}`,
@@ -258,9 +291,11 @@ export function listFilesTool(workspaces: CodingWorkspaces): Tool<ListFilesInput
 /** A glob pattern relative to the searched path; ValidationError for an absolute one or one with a `..` segment. */
 function requirePattern(value: unknown): string {
     const pattern = requireString(value, 'pattern');
+
     if (pattern.startsWith('/') || pattern.includes('\0') || pattern.split('/').includes('..')) {
         throw new ValidationError('pattern must be relative to path, without .. segments.');
     }
+
     return pattern;
 }
 
@@ -287,6 +322,7 @@ export function globTool(workspaces: CodingWorkspaces): Tool<GlobInput, GlobResu
             const limit = optionalInteger(body.limit, 'limit', 1, LIST_MAX_RESULTS) ?? LIST_DEFAULT_RESULTS;
             // the path is literal inside the glob: escape its glob characters
             const prefix = path === '.' ? '' : `${path.replace(/[*?[\\]/g, '\\$&')}/`;
+
             return listFiles(workspaces, body, context, {
                 pathspec: `:(glob)${prefix}${pattern}`,
                 includeIgnored,

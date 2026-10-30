@@ -42,6 +42,7 @@ const reply = defineTool({
     inputSchema: z.object({ body: z.string() }),
     execute: async ({ body }, { context }) => {
         await context.channels.findOneOrFail().emit({ body });
+
         return 'sent';
     },
 });
@@ -75,12 +76,19 @@ function closeAgent(gh: IGithubApp) {
         tools: () => gh.writeTools(),
         hooks: {
             async beforeToolExecution(call, ctx) {
-                if (call.toolName !== 'github_close_issue') return undefined;
+                if (call.toolName !== 'github_close_issue') {
+                    return undefined;
+                }
+
                 const decision = await ctx.channels.findOneOrFail('github').approve({
                     title: 'Close octo/demo#5?',
                     body: 'It duplicates #3.',
                 });
-                if (!decision.approved) throw new ToolDeniedError('The owner keeps the issue open.');
+
+                if (!decision.approved) {
+                    throw new ToolDeniedError('The owner keeps the issue open.');
+                }
+
                 return undefined;
             },
         },
@@ -89,17 +97,24 @@ function closeAgent(gh: IGithubApp) {
 
 async function start(setup: GithubTestApp): Promise<string> {
     engines.push(setup.engine);
+
     const { issue } = (JSON.parse(ISSUES_OPENED) as { issue: Record<string, unknown> });
+
     setup.fake.issues.set('octo/demo#5', { ...issue });
+
     const response = await deliver(setup.app, {
         event: 'issues',
         delivery: 'd-1',
         body: ISSUES_OPENED,
     });
+
     expect(response.status).toBe(202);
+
     const { runs } = await response.json() as { runs: Array<{ runId: string }> };
+
     await setup.engine.start();
     await setup.engine.idle();
+
     return runs[0]!.runId;
 }
 
@@ -126,8 +141,11 @@ describe('github channel with the engine', () => {
             ]),
         });
         const runId = await start(setup);
+
         expect((await setup.engine.getRun(runId))?.status).toBe('completed');
+
         const comments = setup.fake.comments.get('octo/demo#5') ?? [];
+
         expect(comments).toHaveLength(1);
         expect(String(comments[0]!.body)).toContain('Done.');
         expect(String(comments[0]!.body)).toContain(`<!-- chamvi:effect=${runId}:emit:github:`);
@@ -139,6 +157,7 @@ describe('github channel with the engine', () => {
         const runId = await start(setup);
 
         const waiting = (await setup.engine.getRun(runId))!;
+
         expect(waiting.status).toBe('waiting');
         expect(waiting.waiting).toMatchObject({
             toolName: 'github_close_issue',
@@ -146,9 +165,13 @@ describe('github channel with the engine', () => {
             address: 'octo/demo#5',
         });
         expect(waiting.waiting?.notifiedAt).toBeInstanceOf(Date);
+
         const comments = () => setup.fake.comments.get('octo/demo#5') ?? [];
+
         expect(comments()).toHaveLength(1);
+
         const body = String(comments()[0]!.body);
+
         expect(body).toContain('### Close octo/demo#\u200D5?');
         expect(body).toContain('It duplicates #3.');
         expect(body).toContain(`Approve or deny: https://chamvi.example/ui/approvals?run=${runId}&approval=${waiting.waiting!.approvalId}&agent=triage`);
@@ -169,8 +192,10 @@ describe('github channel with the engine', () => {
     it('reconciles a lost response', async () => {
         const setup = createGithubTestApp({ agents: closeAgent });
         let lost = false;
+
         setup.fake.route('POST', '/repos/:owner/:repo/issues/:number/comments', ({ params, body }) => {
             const key = `${params.owner}/${params.repo}#${params.number}`;
+
             setup.fake.comments.set(key, [...(setup.fake.comments.get(key) ?? []), {
                 id: 1,
                 body: (body as { body: string }).body,
@@ -178,11 +203,18 @@ describe('github channel with the engine', () => {
                 created_at: '2026-10-20T10:00:00.000Z',
                 updated_at: '2026-10-20T10:00:00.000Z',
             }]);
-            if (lost) return { status: 201, body: { id: 1 } };
+
+            if (lost) {
+                return { status: 201, body: { id: 1 } };
+            }
+
             lost = true;
+
             return { status: 502, body: { message: 'Bad Gateway' } };
         });
+
         const runId = await start(setup);
+
         expect(setup.errors).toHaveLength(1);
         expect((setup.errors[0] as ChamviError).code).toBe('github_request');
         expect(setup.fake.comments.get('octo/demo#5')).toHaveLength(1);

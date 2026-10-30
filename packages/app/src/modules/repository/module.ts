@@ -62,18 +62,21 @@ export class StoreModule implements IModule {
         const migrate = context.mode === 'migrate' || config.store.migrate;
 
         let store: IStore;
+
         if (this.options.store) {
             ({ store } = this.options);
         } else if (this.options.dataSource) {
             if (!this.options.dataSource.isInitialized) {
                 throw new InvalidAgentDefinitionError('storeModule({ dataSource }) needs an initialized data source.');
             }
+
             container.register(AppToken.DATA_SOURCE, { useValue: this.options.dataSource });
             store = await this.databaseStore(context, this.options.dataSource, clock, migrate);
         } else if (typeof url === 'string') {
             store = await this.connect(container, logger, context, url, clock, migrate);
         } else {
             store = createMemoryStore({ clock });
+
             if (!config.dev) {
                 logger.warn(MEMORY_STORE_WARNING);
             }
@@ -86,31 +89,38 @@ export class StoreModule implements IModule {
         }
 
         const purging = Object.values(store).filter(isPurgingRepository);
-        if (context.mode === 'start' && !context.check && config.store.purgeIntervalMs > 0 && purging.length > 0) {
-            const purge = createPurgeTimer({
-                repositories: purging,
-                clock,
-                intervalMs: config.store.purgeIntervalMs,
-                logger,
-            });
-            this.purge = purge;
-            container.registerMany(AppToken.LIFECYCLE_HOOKS, {
-                useValue: {
-                    name: PURGE_HOOK_NAME,
-                    started: () => purge.start(),
-                    stopping: () => purge.stop(),
-                },
-            });
+
+        if (context.mode !== 'start' || context.check || config.store.purgeIntervalMs <= 0 || purging.length === 0) {
+            return;
         }
+
+        const purge = createPurgeTimer({
+            repositories: purging,
+            clock,
+            intervalMs: config.store.purgeIntervalMs,
+            logger,
+        });
+
+        this.purge = purge;
+        container.registerMany(AppToken.LIFECYCLE_HOOKS, {
+            useValue: {
+                name: PURGE_HOOK_NAME,
+                started: () => purge.start(),
+                stopping: () => purge.stop(),
+            },
+        });
     }
 
     async teardown(): Promise<void> {
         const { purge } = this;
+
         this.purge = undefined;
         await purge?.stop();
 
         const dataSource = this.created;
+
         this.created = undefined;
+
         if (dataSource?.isInitialized) {
             await dataSource.destroy();
         }
@@ -137,21 +147,27 @@ export class StoreModule implements IModule {
         });
 
         throwIfStopped(context);
+
         try {
             await dataSource.initialize();
         } catch (error) {
             await destroyQuietly(dataSource, logger, url);
+
             throw maskPassword(error, url);
         }
+
         container.register(AppToken.DATA_SOURCE, { useValue: dataSource });
 
         // orkos never tears down a module whose setup threw, so close what was opened here
         try {
             const store = await this.databaseStore(context, dataSource, clock, migrate);
+
             this.created = dataSource;
+
             return store;
         } catch (error) {
             await destroyQuietly(dataSource, logger, url);
+
             throw maskPassword(error, url);
         }
     }
@@ -159,13 +175,15 @@ export class StoreModule implements IModule {
     protected async databaseStore(context: AppContext, dataSource: DataSource, clock: IClock, migrate: boolean): Promise<IStore> {
         const {
             createDatabaseStore,
-            migrateStore, 
-            pendingMigrations, 
+            migrateStore,
+            pendingMigrations,
         } = await import('@chamvi/store-db');
+
         if (context.check) {
             // read-only: a start with CHAMVI_MIGRATE (the default) would apply them, else it cannot run
             if (!migrate) {
                 const pending = await pendingMigrations(dataSource);
+
                 if (pending.length > 0) {
                     throw new ChamviError({
                         code: APP_ERROR_CODE.STORE_NOT_MIGRATED,
@@ -179,6 +197,7 @@ export class StoreModule implements IModule {
         }
 
         throwIfStopped(context);
+
         return createDatabaseStore({ dataSource, clock });
     }
 }

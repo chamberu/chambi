@@ -40,24 +40,34 @@ export const byteLength = (text: string): number => Buffer.byteLength(text, 'utf
 export function parseIncludes(text: string): string[] {
     const includes: string[] = [];
     let fence: { char: string; length: number } | undefined;
+
     for (const line of text.split(/\r?\n/)) {
         const match = FENCE_PATTERN.exec(line);
         const marker = match?.[1] ?? '';
         const rest = match?.[2] ?? '';
+
         if (fence) {
             if (match && marker[0] === fence.char && marker.length >= fence.length && rest.trim() === '') {
                 fence = undefined;
             }
+
             continue;
         }
+
         // an info string of a backtick fence holds no backtick
         if (match && !(marker[0] === '`' && rest.includes('`'))) {
             fence = { char: marker.charAt(0), length: marker.length };
+
             continue;
         }
+
         const include = INCLUDE_PATTERN.exec(line.trim())?.[1];
-        if (include) includes.push(include);
+
+        if (include) {
+            includes.push(include);
+        }
     }
+
     return includes;
 }
 
@@ -73,8 +83,12 @@ export function pathPrefix(path: string, count: number): string {
 
 /** The directories from the root down to `dir` (both included). */
 export function directoryChain(dir: string): string[] {
-    if (dir === '.') return ['.'];
+    if (dir === '.') {
+        return ['.'];
+    }
+
     const components = dir.split('/');
+
     return ['.', ...components.map((_, index) => components.slice(0, index + 1).join('/'))];
 }
 
@@ -87,6 +101,7 @@ export function resolveInclude(including: string, reference: string): IncludeTar
             message: `The reference is longer than ${INSTRUCTION_PATH_MAX_BYTES} bytes.`,
         };
     }
+
     if (
         reference.includes('\0') ||
         SCHEME_PATTERN.test(reference) ||
@@ -100,8 +115,13 @@ export function resolveInclude(including: string, reference: string): IncludeTar
             message: 'Only relative paths inside the workspace can be included.',
         };
     }
+
     let path = posix.normalize(posix.join(posix.dirname(including), reference));
-    if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+
+    if (path.length > 1 && path.endsWith('/')) {
+        path = path.slice(0, -1);
+    }
+
     if (path === '..' || path.startsWith('../')) {
         return {
             kind: 'diagnostic',
@@ -109,6 +129,7 @@ export function resolveInclude(including: string, reference: string): IncludeTar
             message: 'The reference leaves the workspace.',
         };
     }
+
     if (byteLength(path) > INSTRUCTION_PATH_MAX_BYTES) {
         return {
             kind: 'diagnostic',
@@ -116,6 +137,7 @@ export function resolveInclude(including: string, reference: string): IncludeTar
             message: `The path is longer than ${INSTRUCTION_PATH_MAX_BYTES} bytes.`,
         };
     }
+
     if (isGitPath(path)) {
         return {
             kind: 'diagnostic',
@@ -123,6 +145,7 @@ export function resolveInclude(including: string, reference: string): IncludeTar
             message: 'Paths in .git are never read.',
         };
     }
+
     return { kind: 'path', path };
 }
 
@@ -131,15 +154,19 @@ export function assertScriptResult(result: ExecResult): void {
     if (result.timedOut) {
         throw new SandboxError('Repository instruction discovery timed out.');
     }
+
     if (result.stdoutTruncated || result.stderrTruncated) {
         throw new SandboxError('Repository instruction discovery printed more than the output cap.');
     }
+
     if (result.exitCode === MISSING_UTILITY_EXIT) {
         const missing = new RegExp(`^${PROTOCOL} missing (head|base64|tr)\\n$`).exec(result.stdout);
+
         if (missing) {
             throw new SandboxError(`Repository instruction discovery needs ${missing[1]} in /usr/bin or /bin of the workspace image.`);
         }
     }
+
     if (result.exitCode !== 0) {
         throw new SandboxError(`Repository instruction discovery failed (exit ${result.exitCode}).`);
     }
@@ -149,17 +176,24 @@ const malformed = () => new SandboxError('Repository instruction discovery answe
 
 function parseStatus(text: string): InspectionStatus {
     const match = STATUS_PATTERN.exec(text);
-    if (!match) throw malformed();
+
+    if (!match) {
+        throw malformed();
+    }
+
     if (match[2] === 'link' || match[2] === 'denied') {
         return { kind: match[2], at: Number(match[3]) };
     }
+
     return { kind: match[1] as 'absent' | 'file' | 'dir' | 'special' };
 }
 
 /** The statuses of an `inspect` answer for `count` paths, in order. */
 export function parseInspectOutput(result: ExecResult, count: number): InspectionStatus[] {
     assertScriptResult(result);
+
     const lines = result.stdout.split('\n');
+
     if (
         result.stderr !== '' ||
         lines.length !== count + 3 ||
@@ -169,40 +203,82 @@ export function parseInspectOutput(result: ExecResult, count: number): Inspectio
     ) {
         throw malformed();
     }
+
     return lines.slice(1, count + 1).map((line, index) => {
         const space = line.indexOf(' ');
-        if (space < 0 || line.slice(0, space) !== String(index)) throw malformed();
+
+        if (space < 0 || line.slice(0, space) !== String(index)) {
+            throw malformed();
+        }
+
         return parseStatus(line.slice(space + 1));
     });
 }
 
 function decodeBase64(data: string): Uint8Array {
-    if (data.length % 4 !== 0 || !BASE64_PATTERN.test(data)) throw malformed();
+    if (data.length % 4 !== 0 || !BASE64_PATTERN.test(data)) {
+        throw malformed();
+    }
+
     const bytes = Buffer.from(data, 'base64');
+
     // canonical only: a re-encoding gives the same text back
-    if (bytes.toString('base64') !== data) throw malformed();
+    if (bytes.toString('base64') !== data) {
+        throw malformed();
+    }
+
     return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
 /** The outcome of a `read` answer. */
 export function parseReadOutput(result: ExecResult): ReadOutcome {
     assertScriptResult(result);
+
     const lines = result.stdout.split('\n');
     const head = new RegExp(`^${PROTOCOL} read (.+)$`).exec(lines[0] ?? '')?.[1];
-    if (head === undefined) throw malformed();
+
+    if (head === undefined) {
+        throw malformed();
+    }
+
     if (head !== 'file') {
-        if (result.stderr !== '' || lines.length !== 3 || lines[1] !== `${PROTOCOL} end` || lines[2] !== '') throw malformed();
-        if (head === 'denied') return { kind: 'unreadable' };
+        if (result.stderr !== '' || lines.length !== 3 || lines[1] !== `${PROTOCOL} end` || lines[2] !== '') {
+            throw malformed();
+        }
+
+        if (head === 'denied') {
+            return { kind: 'unreadable' };
+        }
+
         const status = parseStatus(head);
-        if (status.kind === 'file') throw malformed();
+
+        if (status.kind === 'file') {
+            throw malformed();
+        }
+
         return status;
     }
-    if (lines.length !== 4 || lines[2] !== `${PROTOCOL} end` || lines[3] !== '') throw malformed();
+
+    if (lines.length !== 4 || lines[2] !== `${PROTOCOL} end` || lines[3] !== '') {
+        throw malformed();
+    }
+
     const status = new RegExp(`^${PROTOCOL} head (\\d+)\\n$`).exec(result.stderr)?.[1];
-    if (status === undefined) throw malformed();
+
+    if (status === undefined) {
+        throw malformed();
+    }
+
     const bytes = decodeBase64(lines[1] ?? '');
-    if (bytes.byteLength > INSTRUCTION_SOURCE_MAX_BYTES + 1) throw malformed();
-    if (status !== '0') return { kind: 'unreadable' };
+
+    if (bytes.byteLength > INSTRUCTION_SOURCE_MAX_BYTES + 1) {
+        throw malformed();
+    }
+
+    if (status !== '0') {
+        return { kind: 'unreadable' };
+    }
+
     return { kind: 'bytes', bytes };
 }
 
@@ -223,24 +299,36 @@ export function createDiagnosticList(redact: (text: string) => string): Diagnost
     const reserve = byteLength(closing.path) + byteLength(closing.message);
     let bytes = 0;
     let full = false;
+
     return {
         entries,
         add(path, code, message) {
-            if (full) return;
+            if (full) {
+                return;
+            }
+
             const key = `${code}\0${path}`;
-            if (seen.has(key)) return;
+
+            if (seen.has(key)) {
+                return;
+            }
+
             seen.add(key);
+
             const entry = {
                 path: redact(path),
                 code,
                 message: redact(message),
             };
             const size = byteLength(entry.path) + byteLength(entry.message);
+
             if (entries.length >= INSTRUCTION_DIAGNOSTICS_MAX - 1 || bytes + size > INSTRUCTION_DIAGNOSTICS_MAX_BYTES - reserve) {
                 full = true;
                 entries.push(closing);
+
                 return;
             }
+
             bytes += size;
             entries.push(entry);
         },

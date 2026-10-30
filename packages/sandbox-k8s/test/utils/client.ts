@@ -57,8 +57,10 @@ const running: Partial<V1PodStatus> = {
 /** Matches `key=value,key=value` selectors, the only form the provider sends. */
 function matches(pod: V1Pod, selector: string): boolean {
     const labels = pod.metadata?.labels ?? {};
+
     return selector.split(',').every((term) => {
         const [key, value] = term.split('=');
+
         return labels[key!] === value;
     });
 }
@@ -85,18 +87,27 @@ export function createFakePodClient(onExec: FakeExecHandler = () => ({})): FakeP
         async create(pod) {
             const name = pod.metadata!.name!;
             const stored = structuredClone(pod);
+
             client.created.push(stored);
             client.pods.set(name, stored);
+
             return structuredClone(stored);
         },
 
         async read(name) {
             client.reads++;
+
             const pod = client.pods.get(name);
+
             // like the real client: the ApiException as the cause
-            if (!pod) throw new SandboxError(`cannot read pod ${name}: not found`, { cause: { code: 404 } });
+            if (!pod) {
+                throw new SandboxError(`cannot read pod ${name}: not found`, { cause: { code: 404 } });
+            }
+
             const status = client.statuses.length > 1 ? client.statuses.shift() : client.statuses[0];
+
             pod.status = structuredClone(status ?? running) as V1PodStatus;
+
             return structuredClone(pod);
         },
 
@@ -107,6 +118,7 @@ export function createFakePodClient(onExec: FakeExecHandler = () => ({})): FakeP
 
         async list(labelSelector) {
             client.selectors.push(labelSelector);
+
             return client.pods.values().toArray()
                 .filter((pod) => matches(pod, labelSelector))
                 .map((pod) => structuredClone(pod));
@@ -118,36 +130,62 @@ export function createFakePodClient(onExec: FakeExecHandler = () => ({})): FakeP
                 argv: [...input.argv],
                 ...(input.stdin ? { stdin: new TextDecoder().decode(input.stdin) } : {}),
             });
+
             const answer = gitConfig(name, unwrap(input.argv)) ?? await client.onExec(input.argv, input);
-            if (answer.stdout) input.stdout.write(new TextEncoder().encode(answer.stdout));
-            if (answer.stderr) input.stderr.write(new TextEncoder().encode(answer.stderr));
+
+            if (answer.stdout) {
+                input.stdout.write(new TextEncoder().encode(answer.stdout));
+            }
+
+            if (answer.stderr) {
+                input.stderr.write(new TextEncoder().encode(answer.stderr));
+            }
+
             return { exitCode: answer.exitCode ?? 0 };
         },
     };
     /** Runs `git config` against the pod's config; undefined for any other command. */
     const gitConfig = (name: string, command: string[]): FakeExecAnswer | undefined => {
-        if (command[0] !== 'git' || command[1] !== 'config') return undefined;
+        if (command[0] !== 'git' || command[1] !== 'config') {
+            return undefined;
+        }
+
         let config = client.gitConfig.get(name);
+
         if (!config) {
             config = new Map();
             client.gitConfig.set(name, config);
         }
+
         const [, , first, second, third] = command;
+
         if (first === '--get') {
             const value = config.get(second!);
+
             return value === undefined ? { exitCode: 1 } : { stdout: `${value}\n` };
         }
+
         if (first === '--get-regexp') {
             // git prints the variable names lower-cased
             const pattern = new RegExp(second!, 'i');
             const lines = [...config].filter(([key]) => pattern.test(key)).map(([key, value]) => `${key.toLowerCase()} ${value}\n`);
+
             return lines.length === 0 ? { exitCode: 1 } : { stdout: lines.join('') };
         }
-        if (first === '--unset') return config.delete(second!) ? {} : { exitCode: 5 };
-        if (third !== undefined || second === undefined) return { exitCode: 2 };
+
+        if (first === '--unset') {
+            return config.delete(second!) ? {} : { exitCode: 5 };
+        }
+
+        if (third !== undefined || second === undefined) {
+            return { exitCode: 2 };
+        }
+
         config.set(first!, second);
+
         return {};
     };
+
     return client;
 }
 

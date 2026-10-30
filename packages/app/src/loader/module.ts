@@ -55,9 +55,11 @@ const requireCache = createRequire(import.meta.url).cache;
  */
 export async function loadAgent(dir: string, options: LoadAgentOptions = {}): Promise<LoadedAgent> {
     const base = dirname(dir);
+
     try {
         await assertNoNodeModules(dir);
         await assertNoScripts(dir);
+
         // Hashed before and after the read: a read that straddles an edit is
         // refused, so the returned hash always names the content that was read.
         const hash = await hashAgentFolder(dir);
@@ -69,9 +71,11 @@ export async function loadAgent(dir: string, options: LoadAgentOptions = {}): Pr
                 forgetRequired(dir);
             }
         });
+
         if (await hashAgentFolder(dir) !== hash) {
             throw new InvalidAgentDefinitionError(`${basename(dir)}: changed while loading; load it again.`);
         }
+
         return {
             agent,
             hash,
@@ -82,6 +86,7 @@ export async function loadAgent(dir: string, options: LoadAgentOptions = {}): Pr
             const message = relativize(error.message, base);
             throw message === error.message ? error : new InvalidAgentDefinitionError(message);
         }
+
         throw new InvalidAgentDefinitionError(relativize(`${basename(dir)}: ${messageOf(error)}`, base));
     }
 }
@@ -93,6 +98,7 @@ export async function loadAgent(dir: string, options: LoadAgentOptions = {}): Pr
 export async function loadAgents(root: string, options: LoadAgentOptions = {}): Promise<LoadAgentsResult> {
     const agents: LoadedAgent[] = [];
     const issues: AgentLoadIssue[] = [];
+
     for (const name of await listAgentFolders(root)) {
         try {
             agents.push(await loadAgent(join(root, name), options));
@@ -100,12 +106,14 @@ export async function loadAgents(root: string, options: LoadAgentOptions = {}): 
             issues.push({ agent: name, message: relativize(messageOf(error), root) });
         }
     }
+
     return { agents, issues };
 }
 
 /** The names of the direct subfolders of `root` not starting with `.` or `_` (and not `node_modules`), in code-point order. */
 export async function listAgentFolders(root: string): Promise<string[]> {
     const found = await locateMany('*', { cwd: root, onlyDirectories: true });
+
     return found
         .map((info) => basename(info.path))
         .filter((name) => !name.startsWith('.') && !name.startsWith('_') && name !== NODE_MODULES_DIR)
@@ -142,6 +150,7 @@ async function assertNoScripts(dir: string): Promise<void> {
     const scripts = found
         .map((info) => relative(dir, info.path).split(sep).join('/'))
         .sort(compareCodePoints);
+
     if (scripts.length > 0) {
         throw new InvalidAgentDefinitionError(
             `${basename(dir)}/${scripts[0]}: a JavaScript file is not reloaded fresh; write helpers as .ts or .mts.`,
@@ -152,13 +161,19 @@ async function assertNoScripts(dir: string): Promise<void> {
 /** Drops the CommonJS cache entries below `dir` (a required `.json` file), so the next load reads them again. */
 function forgetRequired(dir: string): void {
     const prefixes = [`${dir}${sep}`];
+
     try {
         prefixes.push(`${realpathSync(dir)}${sep}`);
     } catch {
         // gone meanwhile
     }
+
     for (const key of Object.keys(requireCache)) {
-        if (prefixes.some((prefix) => key.startsWith(prefix))) delete requireCache[key];
+        const isUnderDirectory = prefixes.some((prefix) => key.startsWith(prefix));
+
+        if (isUnderDirectory) {
+            delete requireCache[key];
+        }
     }
 }
 
@@ -174,32 +189,41 @@ export async function hashAgentFolder(dir: string): Promise<string> {
 
 async function buildAgent(dir: string, load: (path: string) => Promise<unknown>): Promise<Agent> {
     const name = basename(dir);
+
     if (name.length > AGENT_NAME_MAX_LENGTH || !AGENT_NAME_PATTERN.test(name)) {
         throw new InvalidAgentDefinitionError(
             `${name}: the folder name is no agent name (must match ${AGENT_NAME_PATTERN} and be at most ${AGENT_NAME_MAX_LENGTH} characters).`,
         );
     }
+
     const agentFile = join(dir, AGENT_FILE);
     const rel = `${name}/${AGENT_FILE}`;
+
     if (!await isFile(agentFile)) {
         throw new InvalidAgentDefinitionError(`${name}: has no ${AGENT_FILE}.`);
     }
+
     let mod: unknown;
+
     try {
         mod = await load(agentFile);
     } catch (error) {
         throw new InvalidAgentDefinitionError(`${rel}: ${messageOf(error)}`);
     }
+
     const declared = defaultExportOf(mod, rel);
+
     // structural, so an agent built by another @chamvi/core copy passes too
     if (!isObject(declared) || typeof declared.name !== 'string' || !isObject(declared.definition)) {
         throw new InvalidAgentDefinitionError(`${rel}: the default export must be defineAgent(...)'s result.`);
     }
+
     if (declared.name !== name) {
         throw new InvalidAgentDefinitionError(
             `${rel}: defineAgent names "${declared.name}", but the folder is "${name}"; the names must match.`,
         );
     }
+
     // through this copy of defineAgent, so its checks and budget defaults apply
     return defineAgent({ ...declared.definition, name } as AgentDefinition);
 }

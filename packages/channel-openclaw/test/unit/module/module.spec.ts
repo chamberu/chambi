@@ -57,6 +57,7 @@ afterEach(async () => {
 describe('openclawModule', () => {
     it('is named after the channel and depends on config', () => {
         const module = openclawModule({ env: openclawEnv() });
+
         expect(module.name).toBe('chamvi:channel:openclaw');
         expect(module.dependencies).toEqual([ModuleName.CONFIG]);
     });
@@ -82,11 +83,13 @@ describe('openclawModule', () => {
         ['OPENCLAW_HOOKS_PATH', 'hooks', 'OPENCLAW_HOOKS_PATH must start with "/"'],
     ])('a malformed %s throws when called, naming the variable', (name, value, message) => {
         let error: unknown;
+
         try {
             openclawModule({ env: openclawEnv({ [name]: value }) });
         } catch (e) {
             error = e;
         }
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect((error as Error).message.startsWith(message)).toBe(true);
     });
@@ -110,8 +113,11 @@ describe('openclawModule', () => {
             env: {},
             modules: [configModule({ logger: createRecordingLogger() }), openclawModule({ env: openclawEnv() })],
         });
+
         harnesses.push(harness);
+
         const channels = harness.container.resolveAll(AppToken.CHANNELS);
+
         expect(channels.map((channel) => channel.name)).toEqual(['openclaw']);
         expect(channels[0]!.out).toBeTypeOf('function');
         expect(channels[0]!.in).toBeUndefined();
@@ -135,9 +141,11 @@ describe('openclawModule', () => {
                 }),
             ],
         });
+
         harnesses.push(harness);
 
         const [channel] = harness.container.resolveAll(AppToken.CHANNELS);
+
         await channel!.out!({
             kind: 'approval',
             key: 'r1:a1',
@@ -150,7 +158,9 @@ describe('openclawModule', () => {
         }, '', sendOptions(clock));
 
         expect(fake.dispatched).toHaveLength(1);
+
         const [body] = fake.dispatched;
+
         expect(body).toMatchObject({
             channel: 'telegram',
             to: '12345',
@@ -162,6 +172,7 @@ describe('openclawModule', () => {
     it('two names give two modules and two channels', async () => {
         const a = openclawModule({ env: openclawEnv() });
         const b = openclawModule({ env: openclawEnv(), name: 'ops' });
+
         expect(a.name).toBe('chamvi:channel:openclaw');
         expect(b.name).toBe('chamvi:channel:ops');
 
@@ -169,6 +180,7 @@ describe('openclawModule', () => {
             env: {},
             modules: [configModule({ logger: createRecordingLogger() }), a, b],
         });
+
         harnesses.push(harness);
         expect(harness.container.resolveAll(AppToken.CHANNELS).map((n) => n.name)).toEqual(['openclaw', 'ops']);
     });

@@ -22,16 +22,22 @@ const roots: string[] = [];
 const fixtures: GitFixture[] = [];
 async function setup() {
     const fixture = await createGitFixture({ 'skills/audit/SKILL.md': '---\nname: audit\ndescription: Review\n---\nBODY\n' });
+
     fixtures.push(fixture);
+
     const root = await fs.mkdtemp(join(tmpdir(), 'chamvi-cancel-'));
+
     roots.push(root);
+
     const options = {
         source: fixture.path,
         revision: fixture.commit,
         names: ['audit'],
         directory: join(root, 'corpus'),
     };
+
     await prepareSkills(options);
+
     return { root, options };
 }
 afterEach(async () => {
@@ -46,10 +52,13 @@ it('observes cancellation after staged verification and preserves the old corpus
     const controller = new AbortController();
     const reason = new Error('cancel before promotion');
     const rename = vi.spyOn(fs, 'rename');
+
     await expect(prepareSkills({
         ...options,
         signal: controller.signal,
-        verify: () => { controller.abort(reason); },
+        verify: () => {
+            controller.abort(reason);
+        },
     })).rejects.toBe(reason);
     expect(rename).not.toHaveBeenCalled();
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
@@ -60,22 +69,28 @@ it.each(['promotion', 'rollback'] as const)('finishes %s and cleanup before obse
     const controller = new AbortController();
     const reason = new Error('cancel during promotion');
     const rename = fs.rename.bind(fs);
+
     vi.spyOn(fs, 'rename').mockImplementation(async (source, destination) => {
         if (String(destination).endsWith('/previous')) {
             await rename(source, destination);
             controller.abort(reason);
+
             return;
         }
+
         if (phase === 'rollback' && String(source).endsWith('/.agents/skills')) {
             throw new Error('promotion failed');
         }
+
         await rename(source, destination);
     });
+
     if (phase === 'rollback') {
         await expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toMatchObject({ name: 'InvalidAgentDefinitionError' });
     } else {
         await expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toBe(reason);
     }
+
     expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('BODY');
     expect(await fs.readdir(root)).toEqual(['corpus']);
 });
@@ -83,11 +98,13 @@ it.each(['promotion', 'rollback'] as const)('finishes %s and cleanup before obse
 it('preserves an independent verifier failure when the caller also cancels', async () => {
     const { root, options } = await setup();
     const controller = new AbortController();
+
     await expect(prepareSkills({
         ...options,
         signal: controller.signal,
         verify: () => {
             controller.abort(new Error('caller canceled'));
+
             throw new Error('PRIVATE verifier failure');
         },
     })).rejects.toMatchObject({ name: 'InvalidAgentDefinitionError' });
@@ -97,8 +114,10 @@ it('preserves an independent verifier failure when the caller also cancels', asy
 it('preserves cleanup failure when the caller cancels during cleanup', async () => {
     const { options } = await setup();
     const controller = new AbortController();
+
     vi.spyOn(fs, 'rmdir').mockImplementationOnce(async () => {
         controller.abort(new Error('caller canceled'));
+
         throw new Error('PRIVATE cleanup failure');
     });
     await expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toMatchObject({ name: 'InvalidAgentDefinitionError' });

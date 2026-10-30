@@ -38,19 +38,24 @@ export function useRunList(client: IApiClient, filter: Ref<RunListFilter>) {
 
     const poller = createPoller(async () => {
         loading.value = true;
+
         try {
             page.value = await client.listRuns(filter.value);
             error.value = undefined;
+
             return undefined;
         } catch (e) {
             error.value = asApiError(e);
+
             return retryDelayOf(error.value);
         } finally {
             loading.value = false;
         }
     }, RUN_LIST_POLL_MS);
 
-    watch(filter, () => { void poller.refresh(); }, { deep: true });
+    watch(filter, () => {
+        void poller.refresh();
+    }, { deep: true });
     poller.start();
     onScopeDispose(() => poller.stop());
 
@@ -74,14 +79,18 @@ export function useRunCounts(client: IApiClient, statuses: readonly RunStatusLit
     const poller = createPoller(async () => {
         try {
             const pages = await Promise.all(statuses.map((status) => client.listRuns({ status: [status], limit: 1 })));
+
             counts.value = Object.fromEntries(statuses.map((status, i) => [status, pages[i]!.meta.total]));
             error.value = undefined;
+
             return undefined;
         } catch (e) {
             error.value = asApiError(e);
+
             return retryDelayOf(error.value);
         }
     }, RUN_COUNTS_POLL_MS);
+
     poller.start();
     onScopeDispose(() => poller.stop());
 
@@ -95,14 +104,18 @@ export function useRunActivity(client: IApiClient) {
     const poller = createPoller(async () => {
         try {
             const page = await client.listRuns({ limit: ACTIVITY_LIMIT, offset: 0 });
+
             activity.value = summarizeActivity(page.data, Date.now(), ACTIVITY_LIMIT);
             error.value = undefined;
+
             return undefined;
         } catch (e) {
             error.value = asApiError(e);
+
             return retryDelayOf(error.value);
         }
     }, RUN_COUNTS_POLL_MS);
+
     poller.start();
     onScopeDispose(() => poller.stop());
 
@@ -134,42 +147,65 @@ export function useRunDetail(client: IApiClient, runId: Ref<string>, deps: RunDe
 
     const load = async (id: string) => {
         const current = ++generation;
+
         close();
         error.value = undefined;
+
         try {
             const { steps, ...run } = await client.getRun(id);
-            if (current !== generation) return;
+
+            if (current !== generation) {
+                return;
+            }
+
             state.value = {
                 run,
                 steps: [...steps].sort((a, b) => a.index - b.index),
                 live: {},
             };
         } catch (e) {
-            if (current === generation) error.value = asApiError(e);
+            if (current === generation) {
+                error.value = asApiError(e);
+            }
+
             return;
         }
-        if (isSettled(state.value.run)) return;
+
+        if (isSettled(state.value.run)) {
+            return;
+        }
+
         live.value = true;
         stream = open({
             client,
             runId: id,
             after: lastStepIndex(state.value.steps),
             onEvent: (event) => {
-                if (current !== generation || !state.value) return;
+                if (current !== generation || !state.value) {
+                    return;
+                }
+
                 state.value = mergeRunEvent(state.value, event);
             },
             onSettled: () => {
-                if (current === generation) live.value = false;
+                if (current === generation) {
+                    live.value = false;
+                }
             },
             onError: (e) => {
-                if (current !== generation) return;
+                if (current !== generation) {
+                    return;
+                }
+
                 live.value = false;
                 error.value = e;
             },
         });
     };
 
-    watch(runId, (id) => { void load(id); }, { immediate: true });
+    watch(runId, (id) => {
+        void load(id);
+    }, { immediate: true });
     onScopeDispose(() => {
         generation++;
         close();

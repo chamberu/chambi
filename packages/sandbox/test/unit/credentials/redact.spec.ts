@@ -16,6 +16,7 @@ describe('createRedactor', () => {
         const T = 1_000_000;
         const clock = new ControllableClock(new Date(T));
         const redactor = createRedactor({ clock });
+
         redactor.add('ghs_expiring_token', new Date(T + 1000));
         clock.advance(1000 + REDACT_GRACE_MS - 1);
         expect(redactor.redact('ghs_expiring_token')).toBe(REDACTED);
@@ -27,9 +28,12 @@ describe('createRedactor', () => {
 
     it('answers the spans it redacts, a secret inside a longer one covered by it', () => {
         const redactor = createRedactor({ clock: new ControllableClock(new Date(1_000_000)) });
+
         redactor.add('token');
         redactor.add('ghs_token_long');
+
         const text = 'a ghs_token_long b token c';
+
         expect(redactor.redactedSpans(text)).toEqual([{ start: 2, end: 16 }, { start: 19, end: 24 }]);
         expect(redactor.redact(text)).toBe(`a ${REDACTED} b ${REDACTED} c`);
         expect(redactor.redactedSpans('nothing here')).toEqual([]);
@@ -38,6 +42,7 @@ describe('createRedactor', () => {
     it('keeps a secret without expiry', () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const redactor = createRedactor({ clock });
+
         redactor.add('ghs_static_token');
         clock.advance(100 * REDACT_GRACE_MS);
         expect(redactor.redact('ghs_static_token')).toBe(REDACTED);
@@ -47,6 +52,7 @@ describe('createRedactor', () => {
         const T = 1_000_000;
         const clock = new ControllableClock(new Date(T));
         const redactor = createRedactor({ clock });
+
         redactor.add('ghs_twice_token', new Date(T + 1000));
         redactor.add('ghs_twice_token', new Date(T + 5000));
         clock.advance(1000 + REDACT_GRACE_MS);
@@ -59,6 +65,7 @@ describe('createRedactor', () => {
 
     it('replaces every issued secret in text', () => {
         const redactor = createRedactor();
+
         redactor.add('ghs_secret1');
         redactor.add('glpat-two');
         expect(redactor.redact('a ghs_secret1 b ghs_secret1 glpat-two')).toBe(`a ${REDACTED} b ${REDACTED} ${REDACTED}`);
@@ -67,6 +74,7 @@ describe('createRedactor', () => {
 
     it('replaces the longer of two overlapping secrets whole', () => {
         const redactor = createRedactor();
+
         redactor.add('abcd');
         redactor.add('abcdef');
         expect(redactor.redact('xabcdefx')).toBe(`x${REDACTED}x`);
@@ -74,6 +82,7 @@ describe('createRedactor', () => {
 
     it('never treats a short value as a secret', () => {
         const redactor = createRedactor();
+
         redactor.add('abc');
         redactor.add('');
         expect(redactor.redact('abc')).toBe('abc');
@@ -81,27 +90,38 @@ describe('createRedactor', () => {
 
     it('replaces secrets in bytes and keeps bytes without one as they are', () => {
         const redactor = createRedactor();
+
         redactor.add('ghs_secret1');
+
         const bytes = new Uint8Array([0xFF, ...new TextEncoder().encode('xghs_secret1y'), 0x00]);
         const redacted = redactor.redactBytes(bytes);
+
         expect(Array.from(redacted)).toEqual([0xFF, ...new TextEncoder().encode(`x${REDACTED}y`), 0x00]);
+
         const clean = new Uint8Array([1, 2, 3]);
+
         expect(redactor.redactBytes(clean)).toBe(clean);
     });
 
     it('rebuilds an error whose message holds a secret as a SandboxError without its cause', () => {
         const redactor = createRedactor();
+
         redactor.add('ghs_secret1');
+
         const error = redactor.redactError(new SandboxError('bad ghs_secret1', { cause: new Error('ghs_secret1') }));
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toBe(`bad ${REDACTED}`);
         expect((error as Error).cause).toBeUndefined();
+
         const clean = new ValidationError('fine');
+
         expect(redactor.redactError(clean)).toBe(clean);
     });
 
     it('redacts a non-error value as text', () => {
         const redactor = createRedactor();
+
         redactor.add('ghs_secret1');
         expect(redactor.redactError('oops ghs_secret1')).toBeInstanceOf(SandboxError);
     });

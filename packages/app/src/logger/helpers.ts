@@ -12,7 +12,7 @@ import type { SerializedError } from './types.ts';
  * which may hold request bodies or secrets.
  */
 export function serializeError(error: unknown): SerializedError {
-    if (!(error instanceof Error)) {
+    if (!(Error.isError(error))) {
         return { message: String(error) };
     }
 
@@ -40,6 +40,7 @@ export function toLine(
     error?: SerializedError,
 ): string {
     const tail = error ? { error } : {};
+
     try {
         return JSON.stringify({
             ...head,

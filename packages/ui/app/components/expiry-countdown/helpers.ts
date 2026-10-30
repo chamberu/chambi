@@ -13,5 +13,6 @@ export function formatCountdown(ms: number): string {
     const minutes = Math.floor((total % 3600) / 60);
     const seconds = total % 60;
     const pad = (value: number) => String(value).padStart(2, '0');
+
     return `${days ? `${days}d ` : ''}${days || hours ? `${pad(hours)}:` : ''}${pad(minutes)}:${pad(seconds)}`;
 }

@@ -30,18 +30,31 @@ async function readRecord(dir: string): Promise<ParsedRecord | undefined> {
  */
 export async function listRecords(root: string): Promise<Array<{ id: string; record: ParsedRecord }>> {
     let names: string[];
+
     try {
         names = await readdir(root);
     } catch (error) {
-        if (errnoCode(error) === 'ENOENT') return [];
+        if (errnoCode(error) === 'ENOENT') {
+            return [];
+        }
+
         throw new SandboxError(`cannot list the workspaces (${errnoCode(error) ?? 'unknown error'}).`, { cause: error });
     }
+
     const records: Array<{ id: string; record: ParsedRecord }> = [];
+
     for (const name of names.sort()) {
-        if (!WORKSPACE_ID_PATTERN.test(name)) continue;
+        if (!WORKSPACE_ID_PATTERN.test(name)) {
+            continue;
+        }
+
         const record = await readRecord(join(root, name));
-        if (record) records.push({ id: name, record });
+
+        if (record) {
+            records.push({ id: name, record });
+        }
     }
+
     return records;
 }
 
@@ -65,16 +78,28 @@ export async function collectExpired(
     let count = 0;
     const failures: SandboxError[] = [];
     const isSettled = createSettledCheck(options.isSettled);
+
     for (const { id: name, record } of records) {
-        if (record.deployment !== options.deployment) continue;
+        if (record.deployment !== options.deployment) {
+            continue;
+        }
+
         const dir = join(root, name);
+
         if (record.info.expiresAt.getTime() > now) {
             const answer = await isSettled(record.runId);
-            if (answer instanceof SandboxError) failures.push(answer);
-            if (answer !== true) continue;
+
+            if (answer instanceof SandboxError) {
+                failures.push(answer);
+            }
+
+            if (answer !== true) {
+                continue;
+            }
         }
 
         const workspace = live.get(name);
+
         try {
             if (workspace) {
                 await workspace.dispose();
@@ -89,10 +114,16 @@ export async function collectExpired(
             failures.push(error instanceof SandboxError ?
                 error :
                 new SandboxError(`cannot remove workspace ${name} (${errnoCode(error) ?? 'unknown error'}).`, { cause: error }));
+
             continue;
         }
+
         count++;
     }
-    if (failures.length > 0) throw collectionError(count, failures);
+
+    if (failures.length > 0) {
+        throw collectionError(count, failures);
+    }
+
     return count;
 }

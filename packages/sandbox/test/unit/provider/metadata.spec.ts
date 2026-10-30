@@ -44,9 +44,9 @@ describe('repoKey', () => {
 describe('workspaceLabels', () => {
     it('names the run, the workspace and the deployment, and the repo key with a repo', () => {
         expect(workspaceLabels({
-            id: 'w', 
-            runId: 'r', 
-            deployment: 'prod', 
+            id: 'w',
+            runId: 'r',
+            deployment: 'prod',
         })).toEqual({
             'app.kubernetes.io/managed-by': 'chamvi',
             'app.kubernetes.io/component': 'sandbox',
@@ -77,13 +77,14 @@ describe('workspaceMetadata and readWorkspaceInfo', () => {
     it('round-trips the info through labels and metadata', () => {
         const values = {
             ...workspaceLabels({
-                id: 'w', 
-                runId: 'r', 
-                deployment: 'default', 
-                repo, 
+                id: 'w',
+                runId: 'r',
+                deployment: 'default',
+                repo,
             }),
             ...workspaceMetadata(info),
         };
+
         expect(workspaceMetadata(info)).toEqual({
             'chamvi.dev/created-at': '1000',
             'chamvi.dev/expires-at': '9000',
@@ -103,12 +104,13 @@ describe('workspaceMetadata and readWorkspaceInfo', () => {
         };
         const values = {
             ...workspaceLabels({
-                id: 'w', 
-                runId: 'r', 
-                deployment: 'default', 
+                id: 'w',
+                runId: 'r',
+                deployment: 'default',
             }),
             ...workspaceMetadata(bare),
         };
+
         expect(Object.keys(workspaceMetadata(bare)).sort()).toEqual(['chamvi.dev/created-at', 'chamvi.dev/expires-at']);
         expect(readWorkspaceInfo(values, 'k8s')).toEqual(bare);
     });
@@ -121,14 +123,15 @@ describe('workspaceMetadata and readWorkspaceInfo', () => {
     ])('is undefined when %s is %j', (key, value) => {
         const values: Record<string, string | undefined> = {
             ...workspaceLabels({
-                id: 'w', 
-                runId: 'r', 
-                deployment: 'default', 
-                repo, 
+                id: 'w',
+                runId: 'r',
+                deployment: 'default',
+                repo,
             }),
             ...workspaceMetadata(info),
             [key]: value,
         };
+
         expect(readWorkspaceInfo(values, 'docker')).toBeUndefined();
     });
 });
@@ -138,8 +141,10 @@ describe('createSettledCheck', () => {
         const asked: string[] = [];
         const check = createSettledCheck(async (runId) => {
             asked.push(runId);
+
             return runId === 'done';
         });
+
         expect(await check('done')).toBe(true);
         expect(await check('done')).toBe(true);
         expect(await check('live')).toBe(false);
@@ -148,7 +153,10 @@ describe('createSettledCheck', () => {
     });
 
     it('turns a rejection into a SandboxError naming the run', async () => {
-        const answer = await createSettledCheck(async () => { throw new Error('store down'); })('r1');
+        const answer = await createSettledCheck(async () => {
+            throw new Error('store down');
+        })('r1');
+
         expect(answer).toBeInstanceOf(SandboxError);
         expect((answer as Error).message).toBe('cannot tell whether run r1 settled: store down');
     });

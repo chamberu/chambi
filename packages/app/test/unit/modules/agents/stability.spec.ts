@@ -26,15 +26,18 @@ const hooks: { afterHash?: (dir: string) => Promise<void> } = {};
 
 vi.mock('../../../../src/loader/module.ts', async (importOriginal) => {
     const original = await importOriginal<typeof LoaderModule>();
+
     return {
         ...original,
         hashAgentFolder: async (dir: string) => {
             const hash = await original.hashAgentFolder(dir);
             const hook = hooks.afterHash;
+
             if (hook) {
                 hooks.afterHash = undefined;
                 await hook(dir);
             }
+
             return hash;
         },
     };
@@ -57,10 +60,13 @@ afterEach(async () => {
 describe('a folder edited right after its stable poll', () => {
     it('is registered only once a poll saw the new content stable, cancelling once', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const setup = buildAgentsDirHarness({ root: root.path });
+
         harnesses.push(setup.harness);
         await setup.harness.setup();
         await setup.watch();
+
         const dir = join(root.path, 'greeter');
 
         await writeFile(join(dir, 'agent.ts'), agentFile('v2'));
@@ -70,7 +76,9 @@ describe('a folder edited right after its stable poll', () => {
             await writeFile(join(dir, 'agent.ts'), 'import { text } from \'./prompt.ts\';\nexport default { name: \'greeter\', definition: { model: \'test/model\', instructions: text } };\n');
             await writeFile(join(dir, 'prompt.ts'), 'export const text = \'v3\';\n');
         };
+
         const runId = await queueRun(setup.store, setup.clock, 'greeter');
+
         await setup.poll();
 
         expect(setup.engine().getAgent('greeter')?.definition.instructions).toBe('v1');

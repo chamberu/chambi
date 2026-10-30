@@ -35,44 +35,68 @@ export function createPoller(
     let unsubscribe: (() => void) | undefined;
 
     const cancelTimer = () => {
-        if (timer !== undefined) clear(timer);
+        if (timer !== undefined) {
+            clear(timer);
+        }
+
         timer = undefined;
     };
 
     const tick = (): Promise<void> => {
         cancelTimer();
         deferred = false;
-        if (inflight) return inflight;
+
+        if (inflight) {
+            return inflight;
+        }
+
         inflight = (async () => {
             let delay = intervalMs;
+
             try {
                 const next = await run();
-                if (typeof next === 'number' && next > delay) delay = next;
+
+                if (typeof next === 'number' && next > delay) {
+                    delay = next;
+                }
             } catch {
                 // the next tick tries again
             } finally {
                 inflight = undefined;
-                if (active) timer = set(due, delay);
+
+                if (active) {
+                    timer = set(due, delay);
+                }
             }
         })();
+
         return inflight;
     };
 
     function due(): void {
         timer = undefined;
+
         if (visibility?.hidden()) {
             deferred = true;
+
             return;
         }
+
         void tick();
     }
 
     return {
         start() {
-            if (active) return;
+            if (active) {
+                return;
+            }
+
             active = true;
             unsubscribe = visibility?.onChange(() => {
-                if (!active || !deferred || visibility.hidden()) return;
+                if (!active || !deferred || visibility.hidden()) {
+                    return;
+                }
+
                 deferred = false;
                 void tick();
             });
@@ -86,7 +110,10 @@ export function createPoller(
             unsubscribe = undefined;
         },
         async refresh() {
-            if (inflight) await inflight;
+            if (inflight) {
+                await inflight;
+            }
+
             await tick();
         },
     };

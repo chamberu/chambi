@@ -31,6 +31,7 @@ function hangingModel() {
     const hang = (signal?: AbortSignal) => new Promise<never>((_resolve, reject) => {
         signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
     });
+
     return new MockLanguageModelV4({
         doGenerate: async (options) => hang(options.abortSignal),
         doStream: async (options) => hang(options.abortSignal),
@@ -53,6 +54,7 @@ function setup(skills?: SkillInput[]) {
         clock,
         skills,
     });
+
     return {
         clock,
         store,
@@ -72,11 +74,13 @@ async function abortWhileRunning(ctx: ReturnType<typeof setup>) {
         signal: controller.signal,
     }).then((r) => {
         result = r;
+
         return r;
     });
 
     await vi.waitFor(async () => {
         const { data } = await ctx.store.runs.find({ agent: 'sweep' });
+
         expect(data[0]?.status).toBe('running');
     });
     controller.abort();
@@ -85,6 +89,7 @@ async function abortWhileRunning(ctx: ReturnType<typeof setup>) {
         ctx.clock.advance(DRAIN_MS);
         expect(result).toBeDefined();
     });
+
     return job;
 }
 
@@ -106,6 +111,7 @@ describe('runJob with a signal', () => {
             signal: controller.signal,
         });
         const signal = await entered.promise;
+
         controller.abort();
         expect(signal.aborted).toBe(true);
         release.resolve();
@@ -120,6 +126,7 @@ describe('runJob with a signal', () => {
             prepare: async () => {
                 entered.resolve();
                 await release.promise;
+
                 throw failure;
             },
         }).input]);
@@ -130,6 +137,7 @@ describe('runJob with a signal', () => {
             signal: controller.signal,
         });
         const rejection = expect(job).rejects.toBe(failure);
+
         await entered.promise;
         controller.abort();
         release.resolve();
@@ -142,7 +150,9 @@ describe('runJob with a signal', () => {
         const result = await abortWhileRunning(ctx);
 
         expect(result).toMatchObject({ status: 'interrupted', exitCode: 0 });
+
         const run = await ctx.store.runs.findOne(result.runId as string);
+
         expect(run?.status).toBe('interrupted');
     });
 
@@ -151,9 +161,13 @@ describe('runJob with a signal', () => {
         const getRun = vi.spyOn(ctx.engine, 'getRun');
 
         await abortWhileRunning(ctx);
+
         const calls = getRun.mock.calls.length;
+
         ctx.clock.advance(10 * POLL_MS);
-        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+        });
 
         expect(getRun.mock.calls.length).toBe(calls);
     });
@@ -163,6 +177,7 @@ describe('runJob with a signal', () => {
         const listRuns = vi.spyOn(ctx.store.runs, 'find');
         const start = vi.spyOn(ctx.engine, 'start');
         const controller = new AbortController();
+
         controller.abort();
 
         const result = await runJob({
@@ -175,7 +190,9 @@ describe('runJob with a signal', () => {
         expect(start).not.toHaveBeenCalled();
         expect(listRuns).not.toHaveBeenCalled();
         listRuns.mockRestore();
+
         const { total } = await ctx.store.runs.find({});
+
         expect(total).toBe(0);
     });
 
@@ -183,11 +200,15 @@ describe('runJob with a signal', () => {
         const ctx = setup();
         const controller = new AbortController();
         const dispatch = ctx.engine.dispatch.bind(ctx.engine);
+
         vi.spyOn(ctx.engine, 'dispatch').mockImplementation(async (envelope) => {
             const answer = await dispatch(envelope);
+
             controller.abort();
+
             return answer;
         });
+
         const start = vi.spyOn(ctx.engine, 'start');
 
         const result = await runJob({
@@ -205,10 +226,12 @@ describe('runJob with a signal', () => {
         const ctx = setup();
         const controller = new AbortController();
         const start = ctx.engine.start.bind(ctx.engine);
+
         vi.spyOn(ctx.engine, 'start').mockImplementation(async (options) => {
             controller.abort();
             await start(options);
         });
+
         const tick = vi.spyOn(ctx.engine, 'tick');
         let result: RunJobResult | undefined;
         const job = runJob({
@@ -219,6 +242,7 @@ describe('runJob with a signal', () => {
             signal: controller.signal,
         }).then((r) => {
             result = r;
+
             return r;
         });
 

@@ -22,10 +22,14 @@ async function pausedGate(overrides: TestAppOverrides = {}, agent = 'gate') {
     const ctx = createRunTestApp(overrides);
     const response = await call(ctx.app, 'POST', `/agents/${agent}/runs`, { token: ADMIN_TOKEN });
     const { runId } = await response.json() as { runId: string };
+
     await ctx.engine.start();
     await ctx.engine.idle();
+
     const run = await ctx.store.runs.findOne(runId);
+
     expect(run?.status).toBe('waiting');
+
     return {
         ...ctx,
         runId,
@@ -47,6 +51,7 @@ describe('POST /runs/:id/approve', () => {
             token: approver,
             body: { approvalId: waiting.approvalId, approved: true },
         });
+
         expect(response.status).toBe(202);
         expect(await response.json()).toEqual({ runId, status: 'queued' });
         await engine.idle();
@@ -56,6 +61,7 @@ describe('POST /runs/:id/approve', () => {
             steps: Array<{ kind: string; output: unknown }>;
         };
         const wait = detail.steps.find((step) => step.kind === 'wait');
+
         expect(wait?.output).toEqual({
             approvalId: waiting.approvalId,
             approved: true,
@@ -75,14 +81,17 @@ describe('POST /runs/:id/approve', () => {
         const response = await call(app, 'POST', `/runs/${runId}/approve`, {
             token: ADMIN_TOKEN,
             body: {
-                approvalId: waiting.approvalId, 
-                approved: false, 
-                reason: 'not now', 
+                approvalId: waiting.approvalId,
+                approved: false,
+                reason: 'not now',
             },
         });
+
         expect(response.status).toBe(202);
         await engine.idle();
+
         const steps = await store.steps.find(runId);
+
         expect(steps.find((step) => step.kind === 'wait')?.output).toMatchObject({ approved: false, reason: 'not now' });
         expect((await store.runs.findOne(runId))?.status).toBe('completed');
         await engine.drain();
@@ -99,6 +108,7 @@ describe('POST /runs/:id/approve', () => {
             token: ADMIN_TOKEN,
             body: { approvalId: 'other', approved: true },
         });
+
         expect(response.status).toBe(409);
         expect((await response.json()).code).toBe('invalid_run_state');
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');
@@ -113,9 +123,12 @@ describe('POST /runs/:id/approve', () => {
             waiting,
         } = await pausedGate();
         const body = { approvalId: waiting.approvalId, approved: true };
+
         expect((await call(app, 'POST', `/runs/${runId}/approve`, { token: ADMIN_TOKEN, body })).status).toBe(202);
         await engine.idle();
+
         const again = await call(app, 'POST', `/runs/${runId}/approve`, { token: ADMIN_TOKEN, body });
+
         expect(again.status).toBe(409);
         expect((await again.json()).code).toBe('invalid_run_state');
         await engine.drain();
@@ -127,17 +140,19 @@ describe('POST /runs/:id/approve', () => {
             token: tokenFor('run:read'),
             body: { approvalId: 'a', approved: true },
         });
+
         expect(response.status).toBe(404);
         await engine.drain();
     });
 
     it('401 without credentials', async () => {
         const {
-            app, 
-            engine, 
-            runId, 
+            app,
+            engine,
+            runId,
         } = await pausedGate();
         const response = await call(app, 'POST', `/runs/${runId}/approve`, { body: { approvalId: 'a', approved: true } });
+
         expect(response.status).toBe(401);
         await engine.drain();
     });
@@ -154,6 +169,7 @@ describe('POST /runs/:id/approve', () => {
             token: tokenFor('agent:gate:run', 'run:read'),
             body: { approvalId: waiting.approvalId, approved: true },
         });
+
         expect(response.status).toBe(403);
         expect((await response.json()).message).toBe('Missing permission "agent:gate:approve".');
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');
@@ -162,28 +178,29 @@ describe('POST /runs/:id/approve', () => {
 
     it('authorizes before reading the body', async () => {
         const {
-            app, 
-            engine, 
-            runId, 
+            app,
+            engine,
+            runId,
         } = await pausedGate({ bodyLimit: 1024 });
         const response = await call(app, 'POST', `/runs/${runId}/approve`, {
             token: tokenFor('run:read'),
             body: { approvalId: 'a'.repeat(4096), approved: true },
         });
+
         expect(response.status).toBe(403);
         await engine.drain();
     });
 
     it.each([
         [{ approved: true }],
-        [{ approvalId: 'a\u0000b', approved: true }],
+        [{ approvalId: 'a\0b', approved: true }],
         [{ approvalId: '', approved: true }],
         [{ approvalId: 'a'.repeat(256), approved: true }],
         [{ approvalId: 'a', approved: 'yes' }],
         [{
-            approvalId: 'a', 
-            approved: true, 
-            reason: 'r'.repeat(1_001), 
+            approvalId: 'a',
+            approved: true,
+            reason: 'r'.repeat(1_001),
         }],
     ])('400 for body %#', async (body) => {
         const {
@@ -193,6 +210,7 @@ describe('POST /runs/:id/approve', () => {
             runId,
         } = await pausedGate();
         const response = await call(app, 'POST', `/runs/${runId}/approve`, { token: ADMIN_TOKEN, body });
+
         expect(response.status).toBe(400);
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         await engine.drain();
@@ -207,27 +225,36 @@ describe('POST /runs/:id/approve', () => {
             waiting,
         } = await pausedGate({}, 'choose');
         const before = await call(app, 'GET', `/runs/${runId}`, { token: ADMIN_TOKEN });
+
         expect((await before.json()).waiting.options).toEqual([{ id: 'a', label: 'A' }, {
-            id: 'b', 
-            label: 'B', 
-            detail: 'diff', 
+            id: 'b',
+            label: 'B',
+            detail: 'diff',
         }]);
+
         const response = await call(app, 'POST', `/runs/${runId}/approve`, {
             token: ADMIN_TOKEN,
             body: {
-                approvalId: waiting.approvalId, 
-                approved: true, 
-                selected: ['b'], 
+                approvalId: waiting.approvalId,
+                approved: true,
+                selected: ['b'],
             },
         });
+
         expect(response.status).toBe(202);
         await engine.idle();
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('completed');
+
         const detail = await (await call(app, 'GET', `/runs/${runId}`, { token: ADMIN_TOKEN })).json();
         const wait = detail.steps.find((s: { kind: string }) => s.kind === 'wait');
+
         expect(wait.output.selected).toEqual(['b']);
+
         const tool = detail.steps.find((s: { kind: string; name?: string }) => s.kind === 'tool' && s.name === 'pick');
+
         expect(tool.output).toBe('picked b');
         await engine.drain();
     });
@@ -239,16 +266,17 @@ describe('POST /runs/:id/approve', () => {
         ['a selection on a plain wait point', 'gate', { approved: true, selected: ['a'] }],
     ])('400 for %s, the run still waiting', async (_, agent, answer) => {
         const {
-            app, 
-            engine, 
+            app,
+            engine,
             store,
-            runId, 
+            runId,
             waiting,
         } = await pausedGate({}, agent);
         const response = await call(app, 'POST', `/runs/${runId}/approve`, {
             token: ADMIN_TOKEN,
             body: { approvalId: waiting.approvalId, ...answer },
         });
+
         expect(response.status).toBe(400);
         expect((await response.json()).code).toBe('validation_error');
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');
@@ -263,22 +291,25 @@ describe('POST /runs/:id/approve', () => {
         ['an item that is no string', [1]],
     ])('400 from the body for selected as %s', async (_, selected) => {
         const {
-            app, 
-            engine, 
+            app,
+            engine,
             store,
-            runId, 
+            runId,
             waiting,
         } = await pausedGate({}, 'choose');
         const response = await call(app, 'POST', `/runs/${runId}/approve`, {
             token: ADMIN_TOKEN,
             body: {
-                approvalId: waiting.approvalId, 
-                approved: true, 
-                selected, 
+                approvalId: waiting.approvalId,
+                approved: true,
+                selected,
             },
         });
+
         expect(response.status).toBe(400);
+
         const json = await response.json();
+
         expect(json.code).toBe('validation_error');
         expect(JSON.stringify(json.issues)).toContain('selected');
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');

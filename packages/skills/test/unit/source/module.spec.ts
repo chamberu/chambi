@@ -23,12 +23,14 @@ import {
 
 vi.mock('skills', async (original) => {
     const actual = await original<typeof sdk>();
+
     return {
         ...actual,
         cloneRepo: vi.fn(actual.cloneRepo),
         installSkillForAgent: vi.fn(actual.installSkillForAgent),
     };
 });
+
 const fixtures: GitFixture[] = [];
 const roots: string[] = [];
 async function setup(files: Record<string, string> = {}) {
@@ -37,14 +39,19 @@ async function setup(files: Record<string, string> = {}) {
         'skills/design/SKILL.md': '---\nname: design\ndescription: Design\n---\nDESIGN\n',
         ...files,
     });
+
     fixtures.push(fixture);
+
     const root = await fs.mkdtemp(join(tmpdir(), 'chamvi-source-'));
+
     roots.push(root);
+
     const approved = ['audit', 'design'].map((name) => ({
         name,
         version: '1.0.0',
         hash: hashSkillBundle(join(fixture.path, 'skills', name)),
     }));
+
     return {
         root,
         fixture,
@@ -68,9 +75,12 @@ it('constructs without I/O and snapshots configuration and approved headers befo
     const { root, options } = await setup();
     const mkdir = vi.spyOn(fs, 'mkdir');
     const source = skills.gitSkills(options);
+
     expect(mkdir).not.toHaveBeenCalled();
     expect(sdk.cloneRepo).not.toHaveBeenCalled();
+
     const expected = structuredClone(options.approved);
+
     options.source = 'ext::sh -c wrong';
     options.revision = 'main';
     options.directory = join(root, 'wrong');
@@ -79,7 +89,9 @@ it('constructs without I/O and snapshots configuration and approved headers befo
     expect(source.skills).toEqual(expected);
     expect(Object.isFrozen(source.skills)).toBe(true);
     expect(Object.isFrozen(source.skills[0])).toBe(true);
+
     const result = await source.load({ signal: new AbortController().signal });
+
     expect(result.map(({
         name,
         version,
@@ -103,6 +115,7 @@ it('prepares arbitrary UTF-8 source files as verified passive references', async
     const { options } = await setup(Object.fromEntries(Object.entries(references).map(([path, content]) => [`skills/audit/${path}`, content])));
     const source = skills.gitSkills(options);
     const result = await source.load({ signal: new AbortController().signal });
+
     expect(result[0]?.references).toEqual(references);
     expect(result[0]?.hash).toBe(options.approved[0]?.hash);
 });
@@ -129,11 +142,13 @@ it.each([
     },
 ])('rejects invalid factory configuration synchronously: %j', async (invalid) => {
     const { options } = await setup();
+
     expect(() => skills.gitSkills({ ...options, ...invalid } as never)).toThrow(InvalidAgentDefinitionError);
     expect(sdk.cloneRepo).not.toHaveBeenCalled();
 });
 it('rejects duplicate approved names synchronously', async () => {
     const { options } = await setup();
+
     expect(() => skills.gitSkills({ ...options, approved: [options.approved[0]!, options.approved[0]!] })).toThrow(InvalidAgentDefinitionError);
 });
 it('retains staged verified snapshots and publishes only after cleanup succeeds', async () => {
@@ -141,24 +156,33 @@ it('retains staged verified snapshots and publishes only after cleanup succeeds'
     const cleanup = fs.rmdir.bind(fs);
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
+
     vi.spyOn(fs, 'rmdir').mockImplementation(async (...args) => {
         entered.resolve();
         await release.promise;
         await fs.writeFile(join(options.directory, 'audit/SKILL.md'), 'CHANGED AFTER VERIFICATION');
+
         return cleanup(...args);
     });
+
     let settled = false;
-    const pending = skills.gitSkills(options).load({ signal: new AbortController().signal }).finally(() => { settled = true; });
+    const pending = skills.gitSkills(options).load({ signal: new AbortController().signal }).finally(() => {
+        settled = true;
+    });
+
     await entered.promise;
     expect(settled).toBe(false);
     release.resolve();
+
     const result = await pending;
+
     expect(result[0]!.body).toBe('AUDIT\n');
     expect(Object.isFrozen(result)).toBe(true);
     expect(await fs.readdir(root)).toEqual(['corpus']);
 });
 it('preserves an existing corpus when one grouped pin fails', async () => {
     const { root, options } = await setup();
+
     await skills.gitSkills(options).load({ signal: new AbortController().signal });
     options.approved[1]!.hash = '0'.repeat(64);
     await expect(skills.gitSkills(options).load({ signal: new AbortController().signal })).rejects.toThrow(InvalidAgentDefinitionError);
@@ -167,12 +191,14 @@ it('preserves an existing corpus when one grouped pin fails', async () => {
 });
 it('does not publish retained snapshots when cleanup fails', async () => {
     const { options } = await setup();
+
     vi.spyOn(fs, 'rmdir').mockRejectedValueOnce(new Error('cleanup failed'));
     await expect(skills.gitSkills(options).load({ signal: new AbortController().signal })).rejects.toThrow(InvalidAgentDefinitionError);
 });
 it('cancels before clone without creating output', async () => {
     const { root, options } = await setup();
     const controller = new AbortController();
+
     controller.abort();
     await expect(skills.gitSkills(options).load({ signal: controller.signal })).rejects.toBe(controller.signal.reason);
     expect(sdk.cloneRepo).not.toHaveBeenCalled();
@@ -184,17 +210,23 @@ it('joins a noncancelable clone before cleanup and skips copying after cancellat
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     let checkout = '';
+
     vi.mocked(sdk.cloneRepo).mockImplementationOnce(async (...args) => {
         checkout = await clone(...args);
         entered.resolve();
         await release.promise;
+
         return checkout;
     });
+
     const controller = new AbortController();
     const reason = new Error('cancel source');
     let settled = false;
-    const pending = skills.gitSkills(options).load({ signal: controller.signal }).finally(() => { settled = true; });
+    const pending = skills.gitSkills(options).load({ signal: controller.signal }).finally(() => {
+        settled = true;
+    });
     const rejected = expect(pending).rejects.toBe(reason);
+
     await entered.promise;
     controller.abort(reason);
     expect(settled).toBe(false);

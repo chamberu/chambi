@@ -13,9 +13,15 @@ import { seedRun } from '../../utils/conversation.ts';
 
 describePostgres('conversation audit binding persistence', () => {
     let dataSource: DataSource;
-    afterEach(async () => { if (dataSource?.isInitialized) await dataSource.destroy(); });
+
+    afterEach(async () => {
+        if (dataSource?.isInitialized) {
+            await dataSource.destroy();
+        }
+    });
     it('round trips Run binding and real Checkpoint provenance', async () => {
         dataSource = await createTestDataSource();
+
         const store = createDatabaseStore({ dataSource });
         const now = new Date();
         const identity = {
@@ -28,6 +34,7 @@ describePostgres('conversation audit binding persistence', () => {
         const resolved = await store.conversations.resolve(identity);
         const scope = { ...resolved, generation: 7 };
         const conversation = { scope, text: 'accepted unicode 🐈' };
+
         await store.runs.insert({
             id: 'run',
             agent: 'helper',
@@ -46,10 +53,12 @@ describePostgres('conversation audit binding persistence', () => {
             updatedAt: now,
         });
         expect((await store.runs.findOne('run'))?.conversation).toEqual(conversation);
+
         const provenance = {
             scopeId: scope.id,
             generation: scope.generation,
         };
+
         await store.checkpoints.save({
             runId: 'run',
             stepIndex: 0,
@@ -64,8 +73,11 @@ describePostgres('conversation audit binding persistence', () => {
 
     it('updates and clears checkpoint provenance only when replacing the latest checkpoint', async () => {
         dataSource = await createTestDataSource();
+
         const store = createDatabaseStore({ dataSource });
+
         await seedRun(dataSource, 'run');
+
         const scope = await store.conversations.resolve({
             agent: 'helper',
             channel: 'chat',
@@ -79,15 +91,20 @@ describePostgres('conversation audit binding persistence', () => {
             messages: [],
             createdAt: new Date(),
         };
+
         await store.checkpoints.save(checkpoint);
+
         const conversation = { scopeId: scope.id, generation: 1 };
+
         await store.checkpoints.save({
             ...checkpoint,
             stepIndex: 1,
             conversation,
         });
         expect((await store.checkpoints.findOne('run'))?.conversation).toEqual(conversation);
+
         const replaced = { ...conversation, generation: 2 };
+
         await store.checkpoints.save({
             ...checkpoint,
             stepIndex: 1,

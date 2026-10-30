@@ -90,10 +90,12 @@ describe('bin dev', () => {
  */
 async function untilRestart(cli: CliProcess, times: number, change: (i: number) => Promise<void>, timeoutMs = 20_000): Promise<void> {
     const until = Date.now() + timeoutMs;
+
     for (let i = 0; count(cli.stdout() + cli.stderr(), LISTENING) < times; i++) {
         if (Date.now() > until) {
             throw new Error(`no restart within ${timeoutMs}ms:\n${cli.stdout()}${cli.stderr()}`);
         }
+
         await change(i);
         await cli.waitForOutput((output) => count(output, LISTENING) >= times, 2_000).catch(() => {});
     }
@@ -101,15 +103,20 @@ async function untilRestart(cli: CliProcess, times: number, change: (i: number) 
 
 async function waitForDown(url: string, timeoutMs: number): Promise<void> {
     const until = Date.now() + timeoutMs;
+
     for (;;) {
         try {
             await fetch(url);
         } catch {
             return;
         }
+
         if (Date.now() > until) {
             throw new Error(`${url} still answers ${timeoutMs}ms after the CLI died`);
         }
-        await new Promise((resolve) => { setTimeout(resolve, 200); });
+
+        await new Promise((resolve) => {
+            setTimeout(resolve, 200);
+        });
     }
 }

@@ -27,30 +27,39 @@ class GatedRepository extends MemoryAgentRevisionRepository {
 
     override async save(...args: Parameters<MemoryAgentRevisionRepository['save']>) {
         await this.pass();
+
         return super.save(...args);
     }
 
     override async delete(...args: Parameters<MemoryAgentRevisionRepository['delete']>) {
         await this.pass();
+
         return super.delete(...args);
     }
 
     arm(): Promise<void> {
         const gate = Promise.withResolvers<void>();
+
         this.gate = gate.promise;
         this.open = () => {
             this.gate = undefined;
             gate.resolve();
         };
+
         const entered = Promise.withResolvers<void>();
+
         this.entered = entered.resolve;
+
         return entered.promise;
     }
 
     open: () => void = () => {};
 
     protected async pass(): Promise<void> {
-        if (!this.gate) return;
+        if (!this.gate) {
+            return;
+        }
+
         this.entered?.();
         await this.gate;
     }
@@ -78,14 +87,18 @@ describe('registry races', () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const store = { ...createMemoryStore({ clock }), agentRevisions: new GatedRepository() };
         const engine = createEngine(store, clock);
+
         await engine.putAgent(agent('old code'), { revision: 'h1' });
         await engine.start();
 
         const entered = store.agentRevisions.arm();
         const replacing = engine.putAgent(agent('new code'), { revision: 'h2' });
+
         await entered;
         clock.advance(1);
+
         const { runId } = await dispatch(engine);
+
         await engine.idle();
         store.agentRevisions.open();
         await replacing;
@@ -93,6 +106,7 @@ describe('registry races', () => {
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.output).not.toBe('old code');
         engine.stop();
     });
@@ -102,14 +116,18 @@ describe('registry races', () => {
         const store = { ...createMemoryStore({ clock }), agentRevisions: new GatedRepository() };
         const a = createEngine(store, clock, { owner: 'a' });
         const b = createEngine(store, clock, { owner: 'b' });
+
         await a.putAgent(agent('old code'), { revision: 'h1' });
         await b.putAgent(agent('old code'), { revision: 'h1' });
 
         const entered = store.agentRevisions.arm();
         const replacing = a.putAgent(agent('new code'), { revision: 'h2' });
+
         await entered;
         clock.advance(1);
+
         const { runId } = await dispatch(b);
+
         store.agentRevisions.open();
         await replacing;
         expect((await store.runs.findOne(runId))?.status).toBe('queued');
@@ -126,11 +144,14 @@ describe('registry races', () => {
         const store = createMemoryStore({ clock });
         const a = createEngine(store, clock, { owner: 'a' });
         const b = createEngine(store, clock, { owner: 'b' });
+
         await a.putAgent(agent('v1'), { revision: 'h1' });
         await b.putAgent(agent('v1'), { revision: 'h1' });
         await a.removeAgent('triage');
         clock.advance(10);
+
         const { runId } = await dispatch(b);
+
         await b.removeAgent('triage');
 
         expect((await store.runs.findOne(runId))?.status).toBe('cancelled');
@@ -140,10 +161,12 @@ describe('registry races', () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const store = { ...createMemoryStore({ clock }), agentRevisions: new GatedRepository() };
         const engine = createEngine(store, clock);
+
         await engine.putAgent(agent('v1'), { revision: 'h1' });
 
         const entered = store.agentRevisions.arm();
         const removing = engine.removeAgent('triage');
+
         await entered;
         await expect(dispatch(engine)).rejects.toThrow();
         store.agentRevisions.open();
@@ -156,10 +179,12 @@ describe('registry races', () => {
         const store = createMemoryStore({ clock });
         const a = createEngine(store, clock, { owner: 'a' });
         const b = createEngine(store, clock, { owner: 'b' });
+
         await a.putAgent(agent('v1'), { revision: 'h1' });
         await b.putAgent(agent('v1'), { revision: 'h1' });
         await b.putAgent(agent('v2'), { revision: 'h2' });
         clock.advance(10);
+
         const { runId } = await dispatch(b);
 
         await a.removeAgent('triage');

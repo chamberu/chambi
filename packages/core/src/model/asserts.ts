@@ -30,16 +30,21 @@ export function toLanguageModel(
     if (ref === undefined) {
         throw new InvalidAgentDefinitionError(noModelMessage(agent));
     }
-    if (typeof ref !== 'string') return ref;
+
+    if (typeof ref !== 'string') {
+        return ref;
+    }
+
     if (!models) {
         throw new InvalidAgentDefinitionError(
             `Agent "${agent}" uses the model string "${ref}", but the engine has no model resolver (EngineOptions.models); pass a LanguageModel object.`,
         );
     }
+
     try {
         return models.resolve(ref);
     } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = Error.isError(error) ? error.message : String(error);
         throw new InvalidAgentDefinitionError(`Model "${ref}" could not be resolved: ${message}`);
     }
 }

@@ -15,8 +15,11 @@ import { TRIGGER_KEY_MAX_LENGTH } from './constants.ts';
  * every envelope with it; intakes call it to refuse a key before the run.
  */
 export function assertTriggerKey(name: string, value: unknown): asserts value is string | undefined {
-    if (value === undefined) return;
-    if (typeof value !== 'string' || value.length > TRIGGER_KEY_MAX_LENGTH || value.includes('\u0000')) {
+    if (value === undefined) {
+        return;
+    }
+
+    if (typeof value !== 'string' || value.length > TRIGGER_KEY_MAX_LENGTH || value.includes('\0')) {
         throw new ValidationError(`The ${name} must be a string of at most ${TRIGGER_KEY_MAX_LENGTH} characters without NUL.`);
     }
 }

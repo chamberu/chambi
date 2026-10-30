@@ -17,6 +17,7 @@ const STEP_1: ModelMessage[] = [USER, assistant()];
 
 function setup() {
     const fixture = createGithubFixture();
+
     fixture.fake.issues.set('octo/demo#5', {
         number: 5,
         title: 'Crash',
@@ -24,8 +25,10 @@ function setup() {
         state_reason: null,
         labels: [],
     });
+
     const ctx = toolContext();
     const wrap = (store = createMemoryStore()): ToolSet => wrapToolsForRun(fixture.gh.writeTools(), ctx, store.effects);
+
     return {
         ...fixture,
         ctx,
@@ -48,6 +51,7 @@ const posts = (fake: ReturnType<typeof setup>['fake']) => fake.requests.filter(
 describe('write tools', () => {
     it('offers the write tools only', () => {
         const { gh } = createGithubFixture();
+
         expect(Object.keys(gh.writeTools()).sort()).toEqual([
             'github_add_labels',
             'github_close_issue',
@@ -66,6 +70,7 @@ describe('write tools', () => {
         } = setup();
         const result = await comment(wrap(), ctx, 'Thanks!', STEP_1);
         const marker = effectMarker('run-1:github_create_comment:octo/demo#5:1');
+
         expect(marker).toBe('<!-- chamvi:effect=run-1:github_create_comment:octo/demo#5:1 -->');
         expect((posts(fake)[0]?.body as { body: string }).body).toBe(`Thanks!\n\n${marker}`);
         expect(result).toEqual({
@@ -83,6 +88,7 @@ describe('write tools', () => {
         const first = await comment(wrap(), ctx, 'Labelled as a bug.', STEP_1);
         // a recovery redoes the step: a fresh effect store and a regenerated body
         const second = await comment(wrap(), ctx, 'This looks like a bug, labelled.', STEP_1);
+
         expect(posts(fake)).toHaveLength(1);
         expect(second).toEqual(first);
     });
@@ -93,6 +99,7 @@ describe('write tools', () => {
             ctx,
             wrap,
         } = setup();
+
         fake.comments.set('octo/demo#5', [{
             id: 1,
             body: `copied ${effectMarker('run-1:github_create_comment:octo/demo#5:1')}`,
@@ -101,7 +108,9 @@ describe('write tools', () => {
             created_at: START.toISOString(),
             updated_at: START.toISOString(),
         }]);
+
         const result = await comment(wrap(), ctx, 'Thanks!', STEP_1);
+
         expect(posts(fake)).toHaveLength(1);
         expect(result.id).not.toBe(1);
     });
@@ -113,9 +122,12 @@ describe('write tools', () => {
             wrap,
         } = setup();
         const tools = wrap();
+
         await comment(tools, ctx, 'First.', STEP_1);
         await comment(tools, ctx, 'Second.', [...STEP_1, assistant()]);
+
         const bodies = posts(fake).map((r) => (r.body as { body: string }).body);
+
         expect(bodies).toHaveLength(2);
         expect(bodies[1]).toContain('octo/demo#5:2 -->');
     });
@@ -127,6 +139,7 @@ describe('write tools', () => {
             wrap,
         } = setup();
         const tools = wrap();
+
         // the approval path: the messages already hold the requesting assistant message
         await comment(tools, ctx, 'Approved.', [...STEP_1, assistant('c-7')], 'c-7');
         expect((posts(fake)[0]?.body as { body: string }).body).toContain('octo/demo#5:1 -->');
@@ -143,8 +156,9 @@ describe('write tools', () => {
             wrap,
         } = setup();
         const tools = wrap();
-        const first = await comment(tools, ctx, 'One.', STEP_1, 'call-1');
+        const first = await comment(tools, ctx, 'One.', STEP_1);
         const second = await comment(tools, ctx, 'Two.', STEP_1, 'call-2');
+
         expect(posts(fake)).toHaveLength(1);
         expect(second).toEqual(first);
     });
@@ -156,12 +170,13 @@ describe('write tools', () => {
             wrap,
         } = setup();
         const tools = wrap();
-        const first = await comment(tools, ctx, 'One.', STEP_1, 'call-1');
+        const first = await comment(tools, ctx, 'One.', STEP_1);
         const second = await callTool<{ id: number; url: string }>(tools, 'github_create_comment', {
             repo: 'Octo/Demo',
             number: 5,
             body: 'Two.',
         }, ctx, { messages: STEP_1, toolCallId: 'call-2' });
+
         expect(second).toEqual(first);
         expect(fake.requests.filter((r) => r.method === 'POST' && r.path.toLowerCase() === '/repos/octo/demo/issues/5/comments')).toHaveLength(1);
         expect((posts(fake)[0]?.body as { body: string }).body).toContain(':github_create_comment:octo/demo#5:1 -->');
@@ -173,8 +188,11 @@ describe('write tools', () => {
             ctx,
             wrap,
         } = setup();
+
         await comment(wrap(), ctx, 'Thanks!', STEP_1);
+
         const list = fake.requests.find((r) => r.method === 'GET' && r.path === '/repos/octo/demo/issues/5/comments');
+
         expect(list?.query).toMatchObject({
             since: new Date(START.getTime() - 3_600_000).toISOString(),
             per_page: '100',
@@ -189,13 +207,16 @@ describe('write tools', () => {
         } = setup();
         const tools = wrap();
         const input = {
-            repo: 'octo/demo', 
-            number: 5, 
-            labels: ['bug', 'p1'], 
+            repo: 'octo/demo',
+            number: 5,
+            labels: ['bug', 'p1'],
         };
+
         expect(await callTool(tools, 'github_add_labels', input, ctx)).toEqual({ labels: ['bug', 'p1'] });
         expect(await callTool(tools, 'github_add_labels', input, ctx)).toEqual({ labels: ['bug', 'p1'] });
+
         const sent = fake.requests.filter((r) => r.method === 'POST' && r.path === '/repos/octo/demo/issues/5/labels');
+
         expect(sent).toHaveLength(1);
         expect(sent[0]?.body).toEqual({ labels: ['bug', 'p1'] });
     });
@@ -207,25 +228,29 @@ describe('write tools', () => {
             wrap,
         } = setup();
         const result = await callTool(wrap(), 'github_close_issue', {
-            repo: 'octo/demo', 
-            number: 5, 
-            reason: 'not_planned', 
+            repo: 'octo/demo',
+            number: 5,
+            reason: 'not_planned',
         }, ctx);
+
         expect(result).toEqual({
-            number: 5, 
-            state: 'closed', 
-            stateReason: 'not_planned', 
+            number: 5,
+            state: 'closed',
+            stateReason: 'not_planned',
         });
+
         const patches = fake.requests.filter((r) => r.method === 'PATCH');
+
         expect(patches).toHaveLength(1);
         expect(patches[0]?.body).toEqual({ state: 'closed', state_reason: 'not_planned' });
 
         // a lost record: the issue is already closed, nothing is patched again
         const again = await callTool(wrap(), 'github_close_issue', {
-            repo: 'octo/demo', 
-            number: 5, 
-            reason: 'not_planned', 
+            repo: 'octo/demo',
+            number: 5,
+            reason: 'not_planned',
         }, ctx);
+
         expect(again).toEqual(result);
         expect(fake.requests.filter((r) => r.method === 'PATCH')).toHaveLength(1);
     });
@@ -233,20 +258,21 @@ describe('write tools', () => {
     it('rejects bad input as tool errors', async () => {
         const { ctx, wrap } = setup();
         const tools = wrap();
+
         await expect(callTool(tools, 'github_add_labels', {
-            repo: 'octo/demo', 
-            number: 5, 
-            labels: [], 
+            repo: 'octo/demo',
+            number: 5,
+            labels: [],
         }, ctx)).rejects.toThrow(/labels/);
         await expect(callTool(tools, 'github_create_comment', {
-            repo: 'octo/demo', 
-            number: 5, 
-            body: '', 
+            repo: 'octo/demo',
+            number: 5,
+            body: '',
         }, ctx)).rejects.toThrow(/body/);
         await expect(callTool(tools, 'github_close_issue', {
-            repo: 'octo/demo', 
-            number: 5, 
-            reason: 'duplicate', 
+            repo: 'octo/demo',
+            number: 5,
+            reason: 'duplicate',
         }, ctx)).rejects.toThrow(/reason/);
     });
 
@@ -254,7 +280,9 @@ describe('write tools', () => {
         function cron() {
             const fixture = createGithubFixture();
             const ctx = toolContext({ channel: 'cron' });
+
             fixture.fake.installations.set('tada5hi/agents-dev', 77);
+
             const wrap = (store = createMemoryStore()): ToolSet => wrapToolsForRun(fixture.gh.writeTools(), ctx, store.effects);
             const create = (tools: ToolSet) => callTool<{ number: number; url: string }>(tools, 'github_create_issue', {
                 repo: 'tada5hi/agents-dev',
@@ -262,28 +290,32 @@ describe('write tools', () => {
                 body: 'Open issues: 3',
                 labels: ['report'],
             }, ctx);
+
             return {
-                ...fixture, 
-                ctx, 
-                wrap, 
-                create, 
+                ...fixture,
+                ctx,
+                wrap,
+                create,
             };
         }
         const issuePosts = (fake: ReturnType<typeof setup>['fake']) => fake.requests.filter((r) => r.method === 'POST' && r.path === '/repos/tada5hi/agents-dev/issues');
 
         it('embeds the marker and acts as the repository installation', async () => {
             const {
-                fake, 
-                wrap, 
-                create, 
+                fake,
+                wrap,
+                create,
             } = cron();
             const result = await create(wrap());
+
             expect(result).toEqual({ number: 1, url: 'https://github.com/tada5hi/agents-dev/issues/1' });
+
             const body = issuePosts(fake)[0]!.body as {
-                title: string; 
-                body: string; 
-                labels: string[] 
+                title: string;
+                body: string;
+                labels: string[]
             };
+
             expect(body).toMatchObject({ title: 'Daily digest', labels: ['report'] });
             expect(body.body).toMatch(/^Open issues: 3\n\n<!-- chamvi:effect=run-1:github_create_issue:[0-9a-f]{64} -->$/);
             expect(fake.tokenInstallations).toEqual([77]);
@@ -291,27 +323,30 @@ describe('write tools', () => {
 
         it('finds its issue after a lost record', async () => {
             const {
-                fake, 
-                wrap, 
-                create, 
+                fake,
+                wrap,
+                create,
             } = cron();
             const first = await create(wrap());
             const second = await create(wrap());
+
             expect(second).toEqual(first);
             expect(issuePosts(fake)).toHaveLength(1);
+
             const list = fake.requests.find((r) => r.method === 'GET' && r.path === '/repos/tada5hi/agents-dev/issues');
+
             expect(list?.query).toMatchObject({
-                state: 'all', 
-                creator: 'chamvi-test[bot]', 
-                since: new Date(START.getTime() - 3_600_000).toISOString(), 
+                state: 'all',
+                creator: 'chamvi-test[bot]',
+                since: new Date(START.getTime() - 3_600_000).toISOString(),
             });
         });
 
         it('treats an empty labels list as no labels', async () => {
             const {
-                fake, 
-                wrap, 
-                ctx, 
+                fake,
+                wrap,
+                ctx,
             } = cron();
             const result = await callTool<{ number: number }>(wrap(), 'github_create_issue', {
                 repo: 'tada5hi/agents-dev',
@@ -319,16 +354,18 @@ describe('write tools', () => {
                 body: 'Open issues: 3',
                 labels: [],
             }, ctx);
+
             expect(result.number).toBe(1);
             expect(issuePosts(fake)[0]!.body).not.toHaveProperty('labels');
         });
 
         it('refuses a missing title', async () => {
             const { wrap, ctx } = cron();
+
             await expect(callTool(wrap(), 'github_create_issue', {
-                repo: 'tada5hi/agents-dev', 
-                title: '', 
-                body: 'x', 
+                repo: 'tada5hi/agents-dev',
+                title: '',
+                body: 'x',
             }, ctx)).rejects.toMatchObject({ code: 'validation_error' });
         });
     });

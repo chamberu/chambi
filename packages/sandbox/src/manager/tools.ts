@@ -41,19 +41,21 @@ export function createWorkspaceTools(manager: IWorkspaceManager, options: { imag
             description: 'A branch, tag or commit to check out (needs repo). Default: the default branch.',
         },
     };
+
     if (options.image) {
         properties.image = {
             type: 'string',
             minLength: 1,
             description: 'The container image, e.g. "python:3.13" or "rust:1"; the operator allows only some. It needs sh, git and GNU coreutils. ' +
-                'Default: the operator\'s image, which installs toolchains with mise (e.g. mise use -g node@22).',
+                'Default: the operator\'s image, which installs toolchains with mise (e.g. mise use -g node@24).',
         };
     }
+
     return {
         create_workspace: defineTool<{
-            repo?: string; 
-            ref?: string; 
-            image?: string 
+            repo?: string;
+            ref?: string;
+            image?: string
         }, WorkspaceToolResult>({
             description: 'Create a disposable workspace for this run, mounted at /workspace: a checkout of a git repository at a ref with its history (a branch tracks origin, the default branch is fetched as origin/<defaultBranch>), or an empty git repository without one. ' +
                 'Calling it again with the same repository returns the same workspace (reused: true). Pass the returned workspace id to the other tools when the run holds several.',
@@ -71,6 +73,7 @@ export function createWorkspaceTools(manager: IWorkspaceManager, options: { imag
                 });
                 const instructions = options.repositoryInstructions && workspace.info.repo ?
                     await readRepositoryInstructions(workspace, undefined, { signal: context.run.signal }) : null;
+
                 return toToolResult(workspace, reused, instructions);
             },
         }),
@@ -89,7 +92,9 @@ export function createWorkspaceTools(manager: IWorkspaceManager, options: { imag
                 const id = optionalString(body.workspace, 'workspace');
                 const { runId } = context.run;
                 const workspace = await manager.get(runId, id);
+
                 await manager.release(runId, workspace.id);
+
                 return { workspace: workspace.id, disposed: true };
             },
         }),
@@ -119,6 +124,7 @@ export function createWorkspaceTools(manager: IWorkspaceManager, options: { imag
                         body.paths as string[] | undefined,
                         { signal: context.run.signal },
                     );
+
                     return redactToolResult(workspace, instructions);
                 },
             }),

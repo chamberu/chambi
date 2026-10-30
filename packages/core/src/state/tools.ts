@@ -21,6 +21,7 @@ import type { StateSchema } from './types.ts';
  */
 export function createStateTools<S extends StateSchema>(schema: S): ToolSet {
     const tools: ToolSet = {};
+
     for (const coll of Object.keys(schema) as Array<keyof S & string>) {
         const doc = docJsonSchema(schema[coll] as StateSchema[string]);
 
@@ -48,6 +49,7 @@ export function createStateTools<S extends StateSchema>(schema: S): ToolSet {
             }),
             execute: async (input, { context }) => {
                 await context.state.collection(coll).upsert(input.id, input.doc as never);
+
                 return { ok: true, id: input.id };
             },
         });
@@ -63,9 +65,11 @@ export function createStateTools<S extends StateSchema>(schema: S): ToolSet {
             }),
             execute: async (input, { context }) => {
                 await context.state.collection(coll).remove(input.id);
+
                 return { ok: true, id: input.id };
             },
         });
     }
+
     return tools;
 }

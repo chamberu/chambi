@@ -29,7 +29,10 @@ import { createFakeProvider } from '../../utils/provider.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const engine of engines) engine.stop();
+    for (const engine of engines) {
+        engine.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -53,10 +56,14 @@ function setup(script: MockResponse[], tools: AgentDefinition['tools']) {
             tools,
         })],
         clock,
-        onError: (error) => { errors.push(error); },
+        onError: (error) => {
+            errors.push(error);
+        },
     });
+
     engines.push(engine);
     manager.attach(engine);
+
     return {
         engine,
         store,
@@ -74,7 +81,9 @@ async function run(engine: Engine, store: ReturnType<typeof createMemoryStore>) 
         channel: 'http',
         payload: {},
     });
+
     await engine.idle();
+
     return { runId, run: await store.runs.findOne(runId) };
 }
 
@@ -95,9 +104,12 @@ describe('sandbox context', () => {
             provider,
             manager,
         } = setup([call('create_workspace'), text('done')], (ctx) => injectSandboxContext(ctx).tools());
+
         provideSandboxContext(engine, manager);
         await engine.start();
+
         const { runId, run: done } = await run(engine, store);
+
         expect(done?.status).toBe('completed');
         expect(provider.created).toHaveLength(1);
         expect(provider.created[0]?.runId).toBe(runId);
@@ -109,6 +121,7 @@ describe('sandbox context', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 seen.push(injectSandboxContext(context));
+
                 return 'ok';
             },
         });
@@ -117,6 +130,7 @@ describe('sandbox context', () => {
             store,
             manager,
         } = setup([call('use'), text('done')], { use });
+
         provideSandboxContext(engine, manager);
         await engine.start();
         expect((await run(engine, store)).run?.status).toBe('completed');
@@ -131,8 +145,11 @@ describe('sandbox context', () => {
             model,
             errors,
         } = setup([text('done')], (ctx) => injectSandboxContext(ctx).tools());
+
         await engine.start();
+
         const { run: failed } = await run(engine, store);
+
         expect(failed?.status).toBe('failed');
         expect(failed?.error?.code).toBe('context_not_provided');
         expect(failed?.error?.message).toContain('"sandbox"');
@@ -142,6 +159,7 @@ describe('sandbox context', () => {
 
     it('a second provide throws', () => {
         const { engine, manager } = setup([], {});
+
         provideSandboxContext(engine, manager);
         expect(() => provideSandboxContext(engine, manager)).toThrow(InvalidAgentDefinitionError);
     });

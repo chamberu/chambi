@@ -15,6 +15,7 @@ import type { MeView } from './types.ts';
 export function registerMeRoutes(app: App, ctx: HttpContext): void {
     app.get('/me', defineCoreHandler(async (event): Promise<MeView> => {
         const invoker = toInvoker(await authenticate(event, ctx));
+
         return { ...invoker, permissions: [...invoker.permissions] };
     }));
 }

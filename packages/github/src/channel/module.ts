@@ -26,8 +26,10 @@ import type { GithubChannel, GithubChannelOptions } from './types.ts';
 export function githubChannel(options: GithubChannelOptions): GithubChannel {
     const resolved = resolveOptions(options);
     const { name } = resolved;
+
     // the app's tools then act as the delivery's installation for runs of this channel
     registerChannelName(resolved.app, name);
+
     return {
         name,
         in: (input, ctx) => receiveDelivery(input, ctx, resolved),

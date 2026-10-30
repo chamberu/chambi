@@ -88,9 +88,11 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
         if (disposed) {
             throw new SandboxError('workspace disposed');
         }
+
         if (gone) {
             throw new SandboxError(goneMessage());
         }
+
         if (clock.now().getTime() >= info.expiresAt.getTime()) {
             throw new SandboxError('workspace expired');
         }
@@ -101,15 +103,22 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
         if (requested !== undefined && (typeof requested !== 'number' || !Number.isFinite(requested) || requested <= 0)) {
             throw new ValidationError('timeoutMs must be a positive number.');
         }
+
         const remaining = info.expiresAt.getTime() - clock.now().getTime();
+
         return Math.max(1, Math.min(requested ?? EXEC_TIMEOUT_MS, EXEC_TIMEOUT_MAX_MS, remaining));
     };
 
     /** `transport.alive`, bounded by ALIVE_PROBE_TIMEOUT_MS; anything but a plain `false` reads as alive. */
     const probeAlive = (): Promise<boolean> => {
         const { alive } = transport;
-        if (!alive) return Promise.resolve(true);
+
+        if (!alive) {
+            return Promise.resolve(true);
+        }
+
         const controller = new AbortController();
+
         return new Promise<boolean>((resolve) => {
             const timer = clock.setTimeout(() => {
                 controller.abort();
@@ -119,14 +128,19 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
                 timer.clear();
                 resolve(value);
             };
-            Promise.resolve()
-                .then(() => alive.call(transport, controller.signal))
+
+            Promise.try(async () => {
+                await Promise.resolve();
+
+                return alive.call(transport, controller.signal);
+            })
                 .then((value) => answer(value !== false), () => answer(true));
         });
     };
 
     const run = (argv: readonly string[], options: RunInput): Promise<RunResult> => {
         const { signal, timeoutMs } = options;
+
         if (signal?.aborted) {
             return Promise.reject(new SandboxError('exec aborted'));
         }
@@ -150,17 +164,23 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
             const timer = clock.setTimeout(() => guard.abort(), timeoutMs + EXEC_GRACE_MS);
 
             const finish = (): boolean => {
-                if (settled) return false;
+                if (settled) {
+                    return false;
+                }
+
                 settled = true;
                 timer.clear();
                 drain?.clear();
                 combined.removeEventListener('abort', onAbort);
+
                 return true;
             };
             /** The output collected so far (also after a guard or a drain). */
             const result = (exitCode: number, timedOut?: boolean): RunResult => {
                 filter.flush();
+
                 const durationMs = (exitedAt ?? clock.now().getTime()) - started;
+
                 return {
                     exitCode,
                     stdout: stdout.bytes(),
@@ -175,43 +195,68 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
             const interrupted = (): boolean => {
                 if (disposal.signal.aborted) {
                     reject(new SandboxError('workspace disposed'));
+
                     return true;
                 }
+
                 if (signal?.aborted) {
                     reject(new SandboxError('exec aborted'));
+
                     return true;
                 }
+
                 if (guard.signal.aborted) {
                     resolve(result(137, true));
+
                     return true;
                 }
+
                 return false;
             };
             function onAbort() {
-                if (finish()) interrupted();
+                if (finish()) {
+                    interrupted();
+                }
             }
             combined.addEventListener('abort', onAbort, { once: true });
 
             const filter = createExitMarkerFilter(marker, stderr, (value) => {
-                if (settled) return;
-                exitedAt = clock.now().getTime();
-                if (value === EXIT_MARKER_CWD) {
-                    if (!finish()) return;
-                    detach.abort();
-                    reject(new SandboxError(`cwd ${options.cwd} is no directory in the workspace.`));
+                if (settled) {
                     return;
                 }
-                if (!/^\d{1,3}$/.test(value)) return;
+
+                exitedAt = clock.now().getTime();
+
+                if (value === EXIT_MARKER_CWD) {
+                    if (!finish()) {
+                        return;
+                    }
+
+                    detach.abort();
+                    reject(new SandboxError(`cwd ${options.cwd} is no directory in the workspace.`));
+
+                    return;
+                }
+
+                if (!/^\d{1,3}$/.test(value)) {
+                    return;
+                }
+
                 const exitCode = Number(value);
+
                 // a background job may hold the output open: return after the drain
                 drain = clock.setTimeout(() => {
-                    if (!finish()) return;
+                    if (!finish()) {
+                        return;
+                    }
+
                     detach.abort();
                     resolve(result(exitCode));
                 }, EXIT_DRAIN_MS);
             });
 
             let pending: Promise<TransportExecResult>;
+
             try {
                 pending = transport.exec(wrapExec(wrapTimeout(argv, timeoutMs), options.cwd, marker), {
                     stdin: options.stdin,
@@ -224,15 +269,24 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
             }
 
             pending.then(({ exitCode, closed }) => {
-                if (!finish() || interrupted()) return;
-                if (closed && exitedAt === undefined) {
-                    reject(new SandboxError('exec failed: the connection closed before the command reported its exit, so its output may be cut.'));
+                if (!finish() || interrupted()) {
                     return;
                 }
+
+                if (closed && exitedAt === undefined) {
+                    reject(new SandboxError('exec failed: the connection closed before the command reported its exit, so its output may be cut.'));
+
+                    return;
+                }
+
                 resolve(result(exitCode));
             }, (error: unknown) => {
-                if (!finish() || interrupted()) return;
+                if (!finish() || interrupted()) {
+                    return;
+                }
+
                 const failure = toSandboxError(error, 'exec failed');
+
                 probeAlive().then((alive) => {
                     if (disposed) {
                         reject(new SandboxError('workspace disposed'));
@@ -250,10 +304,13 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
     /** The bytes of the workspace file `path` (at most FILE_MAX_BYTES) and its absolute path. */
     const readRaw = async (path: string): Promise<{ file: string; bytes: Uint8Array }> => {
         assertUsable();
+
         const relative = resolveWorkspacePath(path);
+
         if (relative === '.') {
             throw new SandboxError(`${WORKSPACE_ROOT} is no file.`);
         }
+
         const file = absoluteWorkspacePath(relative);
 
         // one byte past the limit tells an oversized file apart
@@ -262,19 +319,25 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
             timeoutMs: timeoutOf(undefined),
             maxOutputBytes: FILE_MAX_BYTES + 1,
         });
+
         if (result.timedOut) {
             throw new SandboxError(`cannot read ${file}: timed out.`);
         }
+
         if (result.exitCode !== 0) {
             const stderr = stderrMessage(result.stderr);
+
             if (stderr.endsWith('No such file or directory')) {
                 throw new SandboxError(`file not found: ${file}`);
             }
+
             throw new SandboxError(`cannot read ${file}: cat exited with ${result.exitCode}${stderr ? `: ${stderr}` : ''}`);
         }
+
         if (result.stdoutTruncated || result.stdout.length > FILE_MAX_BYTES) {
             throw new SandboxError(`${file} is larger than the ${FILE_MAX_BYTES} bytes a file may have.`);
         }
+
         return { file, bytes: result.stdout };
     };
 
@@ -289,10 +352,13 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
         async exec(argv: readonly string[], options: ExecOptions = {}): Promise<ExecResult> {
             assertUsable();
             assertArgv(argv);
+
             const cwd = absoluteWorkspacePath(options.cwd === undefined ? '.' : resolveWorkspacePath(options.cwd));
+
             if (options.stdin !== undefined && typeof options.stdin !== 'string') {
                 throw new ValidationError('stdin must be a string.');
             }
+
             const timeoutMs = timeoutOf(options.timeoutMs);
 
             const result = await run(argv, {
@@ -302,6 +368,7 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
                 maxOutputBytes: OUTPUT_MAX_BYTES,
                 signal: options.signal,
             });
+
             return {
                 exitCode: result.exitCode,
                 stdout: decodeOutput(result.stdout, result.stdoutTruncated),
@@ -315,6 +382,7 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
 
         async readFile(path: string): Promise<string> {
             const { file, bytes } = await readRaw(path);
+
             return decodeUtf8File(bytes, file);
         },
 
@@ -324,14 +392,19 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
 
         async writeFile(path: string, content: string | Uint8Array): Promise<void> {
             assertUsable();
+
             const relative = resolveWorkspacePath(path);
+
             if (relative === '.') {
                 throw new ValidationError('path must name a file, not the workspace root.');
             }
+
             if (typeof content !== 'string' && !(content instanceof Uint8Array)) {
                 throw new ValidationError('content must be a string or bytes.');
             }
+
             const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content;
+
             if (bytes.length > FILE_MAX_BYTES) {
                 throw new ValidationError(`content has ${bytes.length} bytes, more than the ${FILE_MAX_BYTES} a file may have.`);
             }
@@ -344,26 +417,36 @@ export function createRemoteWorkspace(input: RemoteWorkspaceInput): IWorkspace {
                 timeoutMs: timeoutOf(undefined),
                 maxOutputBytes: OUTPUT_MAX_BYTES,
             });
+
             if (result.timedOut) {
                 throw new SandboxError(`cannot write ${file}: timed out.`);
             }
-            if (result.exitCode !== 0) {
-                const stderr = stderrMessage(result.stderr);
-                throw new SandboxError(`cannot write ${file}: exited with ${result.exitCode}${stderr ? `: ${stderr}` : ''}`);
+
+            if (result.exitCode === 0) {
+                return;
             }
+
+            const stderr = stderrMessage(result.stderr);
+            throw new SandboxError(`cannot write ${file}: exited with ${result.exitCode}${stderr ? `: ${stderr}` : ''}`);
         },
 
         dispose(): Promise<void> {
             // settles every in-flight exec before the container goes
             disposed = true;
             disposal.abort();
-            removing ??= Promise.resolve()
-                .then(() => transport.remove())
+            removing ??= Promise.try(async () => {
+                // Register the shared disposal promise before invoking the transport.
+                await Promise.resolve();
+
+                return transport.remove();
+            })
                 .catch((error: unknown) => {
                     // a later dispose tries the removal again
                     removing = undefined;
+
                     throw toSandboxError(error, `cannot remove workspace ${id}`);
                 });
+
             return removing;
         },
     };

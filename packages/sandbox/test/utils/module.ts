@@ -45,5 +45,6 @@ export async function rejectionOf(promise: Promise<unknown>): Promise<Error & { 
     } catch (error) {
         return error as Error;
     }
+
     throw new Error('expected a rejection');
 }

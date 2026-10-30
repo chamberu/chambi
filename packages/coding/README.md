@@ -36,7 +36,7 @@
 npm install @chamvi/coding @chamvi/sandbox @chamvi/core ai --save
 ```
 
-ESM only, Node.js `>=22`. `@chamvi/core`, `@chamvi/sandbox` and `ai` are peer dependencies. Add a sandbox provider: `@chamvi/sandbox-docker` or `@chamvi/sandbox-k8s` (or `@chamvi/sandbox-local` for development).
+ESM only, Node.js `>=24.3.0`. `@chamvi/core`, `@chamvi/sandbox` and `ai` are peer dependencies. Add a sandbox provider: `@chamvi/sandbox-docker` or `@chamvi/sandbox-k8s` (or `@chamvi/sandbox-local` for development).
 
 ## Usage
 
@@ -57,10 +57,17 @@ export function createCodingAgent(model: LanguageModel, workspaces: IWorkspaceMa
         hooks: {
             // every shell command waits for a human
             async beforeToolExecution({ toolName, input }, ctx) {
-                if (toolName !== 'bash') return input;
+                if (toolName !== 'bash') {
+                    return input;
+                }
+
                 const { command } = input as { command: string };
                 const decision = await approve(ctx, { title: 'Run a shell command?', body: command });
-                if (!decision.approved) throw new ToolDeniedError(`Command refused: ${decision.reason ?? 'denied'}`);
+
+                if (!decision.approved) {
+                    throw new ToolDeniedError(`Command refused: ${decision.reason ?? 'denied'}`);
+                }
+
                 return input;
             },
         },

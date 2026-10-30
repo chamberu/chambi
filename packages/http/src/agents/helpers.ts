@@ -42,6 +42,7 @@ const KV_LIST_QUERY_SCHEMA = defineSchema({
  */
 export function summarizeAgent(agent: Agent, basePath: string, hookChannels: ReadonlySet<string> = new Set()): AgentSummary {
     const { definition } = agent;
+
     return {
         name: agent.name,
         channels: (definition.channels ?? []).map((subscription) => (hookChannels.has(subscription.channel) ?
@@ -76,13 +77,22 @@ function nextFire(expression: string, timezone: string | undefined, now: Date): 
  */
 export function listSchedules(agents: Iterable<Agent>, now: Date): ScheduleSummary[] {
     const schedules: ScheduleSummary[] = [];
+
     for (const agent of agents) {
         for (const subscription of agent.definition.channels ?? []) {
             const { expression } = subscription.options;
-            if (typeof expression !== 'string') continue;
+
+            if (typeof expression !== 'string') {
+                continue;
+            }
+
             const timezone = typeof subscription.options.timezone === 'string' ? subscription.options.timezone : undefined;
             const nextAt = nextFire(expression, timezone, now);
-            if (nextAt === undefined) continue;
+
+            if (nextAt === undefined) {
+                continue;
+            }
+
             schedules.push({
                 agent: agent.name,
                 channel: subscription.channel,
@@ -94,19 +104,25 @@ export function listSchedules(agents: Iterable<Agent>, now: Date): ScheduleSumma
             });
         }
     }
+
     return schedules;
 }
 
 /** The agent by name, else 404. */
 export function requireAgent(agents: HttpAgents, name: string): Agent {
     const agent = agents.get(name);
-    if (!agent) throw new NotFoundError({ message: `Agent "${name}" was not found.` });
+
+    if (!agent) {
+        throw new NotFoundError({ message: `Agent "${name}" was not found.` });
+    }
+
     return agent;
 }
 
 /** 404 when the agent declares state collections and this is none of them. */
 export function assertCollection(agent: Agent, collection: string): void {
     const declared = agent.definition.state;
+
     if (declared && !Object.hasOwn(declared, collection)) {
         throw new NotFoundError({ message: `Agent "${agent.name}" declares no state collection "${collection}".` });
     }
@@ -114,7 +130,9 @@ export function assertCollection(agent: Agent, collection: string): void {
 
 export function createKvContainer(): Container<KvBody> {
     const container = new Container<KvBody>();
+
     container.mount('value', isDefined());
+
     return container;
 }
 
@@ -127,15 +145,18 @@ function filterValue(value: unknown): unknown {
     if (typeof value === 'string' && value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
         return value.slice(1, -1);
     }
+
     return value;
 }
 
 /** A KV list query: `page[limit]` (default 50, at most 100) and `page[offset]`, no filter, no sort. */
 export function parseKvListQuery(searchParams: URLSearchParams): { limit: number; offset: number } {
     const decoded = decodeQuery(searchParams, KV_LIST_QUERY_SCHEMA);
+
     if (decoded.filters.length > 0) {
         throw new BadRequestError({ message: 'The kv listing takes no filter.' });
     }
+
     return { limit: decoded.limit ?? DEFAULT_PAGE_LIMIT, offset: decoded.offset ?? 0 };
 }
 
@@ -143,22 +164,28 @@ export function parseKvListQuery(searchParams: URLSearchParams): { limit: number
 export function parseCollectionQuery(searchParams: URLSearchParams): { where: Record<string, unknown>; limit: number } {
     const decoded = decodeQuery(searchParams, COLLECTION_QUERY_SCHEMA);
     const where: Record<string, unknown> = {};
+
     for (const filter of decoded.filters) {
         if (filter.operator !== 'eq') {
             throw new BadRequestError({ message: 'Only top-level equality filters are supported.' });
         }
+
         if (filter.field === 'id') {
             // `id` on the wire is the store id, which `where` cannot match
             throw new BadRequestError({ message: 'filter[id] is not supported: id is the store id, not a document field.' });
         }
+
         if (Object.hasOwn(where, filter.field)) {
             throw new BadRequestError({ message: `filter[${filter.field}] may be given once.` });
         }
+
         where[filter.field] = filterValue(filter.value);
     }
+
     if (decoded.offset !== undefined && decoded.offset > 0) {
         throw new BadRequestError({ message: 'page[offset] is not supported for state collections.' });
     }
+
     return { where, limit: decoded.limit ?? DEFAULT_PAGE_LIMIT };
 }
 

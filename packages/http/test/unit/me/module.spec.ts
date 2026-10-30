@@ -18,6 +18,7 @@ describe('GET /me', () => {
     it('answers the principal\'s own id, kind and permissions', async () => {
         const { app } = createTestApp();
         const response = await call(app, 'GET', '/me', { token: READER_TOKEN });
+
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({
             id: 'reader',
@@ -29,17 +30,19 @@ describe('GET /me', () => {
     it('needs no permission', async () => {
         const { app } = createTestApp();
         const response = await call(app, 'GET', '/me', { token: tokenFor() });
+
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({
-            id: 'p:', 
-            kind: 'token', 
-            permissions: [], 
+            id: 'p:',
+            kind: 'token',
+            permissions: [],
         });
     });
 
     it('401 without credentials', async () => {
         const { app } = createTestApp();
         const response = await call(app, 'GET', '/me');
+
         expect(response.status).toBe(401);
         expect(response.headers.get('www-authenticate')).toBe('Bearer');
     });

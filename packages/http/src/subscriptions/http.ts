@@ -19,6 +19,7 @@ import type { HttpSubscriber } from './types.ts';
 export const http: HttpSubscriber = {
     on: (options = {}) => {
         assertConcurrencyMaxRuns(options.concurrencyMaxRuns, 'http.on() concurrencyMaxRuns');
+
         return {
             channel: HTTP_CHANNEL_NAME,
             id: 'http',

@@ -99,7 +99,9 @@ async function build(options: { agents?: Agent[]; modules?: IModule[] } = {}) {
             ...(options.modules ?? []),
         ],
     });
+
     harnesses.push(harness);
+
     return {
         harness,
         url: (path: string) => `http://127.0.0.1:${port}${path}`,
@@ -112,15 +114,18 @@ async function rejectionOf(promise: Promise<unknown>): Promise<Error> {
     } catch (error) {
         return error as Error;
     }
+
     throw new Error('expected a rejection');
 }
 
 describe('channels', () => {
     it('the built-in modules register the agent, cron, http, mcp and webhook channels', async () => {
         const { harness } = await build();
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
+
         expect(engine.listChannels().map((channel) => channel.name).sort()).toEqual(['agent', 'cron', 'http', 'mcp', 'webhook']);
     });
 
@@ -131,24 +136,29 @@ describe('channels', () => {
         };
         const quiet: IChannel = { name: 'quiet', out: async () => undefined };
         const { harness, url } = await build({ modules: [contributing('echo', echo, quiet)] });
+
         await harness.setup();
 
         const engine = harness.container.resolve(AppToken.ENGINE);
+
         expect(engine.getChannel('echo')).toBe(echo);
         expect(engine.getChannel('quiet')).toBe(quiet);
 
         // unauthenticated: the channel checks its own credentials
         const served = await fetch(url('/channels/echo/a/b'), { method: 'POST' });
+
         expect(served.status).toBe(200);
         expect(await served.text()).toBe('POST /a/b');
 
         // out only: not mounted
         const unserved = await fetch(url('/channels/quiet'), { method: 'POST' });
+
         expect(unserved.status).toBe(404);
     });
 
     it('the webhook channel authenticates with the app\'s authenticators', async () => {
         const { harness, url } = await build();
+
         await harness.setup();
 
         const post = (headers: Record<string, string>) => fetch(url('/channels/webhook/triage/hook'), {
@@ -160,15 +170,19 @@ describe('channels', () => {
         expect((await post({})).status).toBe(401);
 
         const accepted = await post({ authorization: `Bearer ${TOKEN}` });
+
         expect(accepted.status).toBe(202);
+
         const { runId } = await accepted.json() as { runId: string };
         const run = await harness.container.resolve(AppToken.ENGINE).getRun(runId);
+
         expect(run?.trigger).toMatchObject({ channel: 'webhook', payload: { hello: 'world' } });
     });
 
     it('engine.start() starts the contributed channels and the teardown stops them', async () => {
         const events: string[] = [];
         const { harness } = await build({ modules: [contributing('spy', spyChannel('spy', events))] });
+
         await harness.setup();
         expect(events).toEqual(['spy start']);
 
@@ -186,6 +200,7 @@ describe('channels', () => {
         });
 
         const error = await rejectionOf(harness.setup());
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toContain('"twin"');
         expect(events).toEqual([]);
@@ -197,14 +212,15 @@ describe('channels', () => {
             model: textModel(),
             instructions: 'triage',
             channels: [{
-                channel: 'slack', 
-                id: 'slack', 
-                options: {}, 
+                channel: 'slack',
+                id: 'slack',
+                options: {},
             }],
         });
         const { harness } = await build({ agents: [agent] });
 
         const error = await rejectionOf(harness.setup());
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toContain('slack');
     });
@@ -225,6 +241,7 @@ describe('channels', () => {
                 contributing('spy', spyChannel('spy', events)),
             ],
         });
+
         apps.push(app);
 
         const result = await app.runJob({ env: {}, agent: 'sweep' });

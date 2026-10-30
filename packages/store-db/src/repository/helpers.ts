@@ -56,8 +56,10 @@ export function toRunValues(patch: Partial<Run>): QueryDeepPartialEntity<RunEnti
 
     for (const key of Object.keys(patch)) {
         const value = patch[key as keyof Run];
+
         if (key === 'conversation') {
             const { conversation } = patch;
+
             values.conversationScopeId = conversation?.scope.id ?? null;
             values.conversationGeneration = conversation?.scope.generation ?? null;
             values.conversationAgent = conversation?.scope.identity.agent ?? null;
@@ -68,6 +70,7 @@ export function toRunValues(patch: Partial<Run>): QueryDeepPartialEntity<RunEnti
             values.conversationText = conversation?.text ?? null;
         } else if (key === 'claim') {
             const claim = value as Run['claim'];
+
             values.claimOwner = claim ? claim.owner : null;
             values.claimExpiresAt = claim ? claim.expiresAt : null;
         } else if (RUN_PROPERTIES.has(key)) {
@@ -130,6 +133,7 @@ export function toEntity<T extends ObjectLiteral>(
 ): T {
     const metadata = dataSource.getMetadata(target);
     const entity = metadata.create() as T;
+
     for (const column of metadata.columns) {
         column.setEntityValue(entity, dataSource.driver.prepareHydratedValue(row[column.databaseName], column));
     }
@@ -143,6 +147,7 @@ function reviveTrigger(trigger: Record<string, unknown>): TriggerEnvelope {
         ...trigger,
         receivedAt: new Date(trigger.receivedAt as string),
     });
+
     if (Array.isArray(trigger.attachments)) {
         output.attachments = (trigger.attachments as Record<string, unknown>[]).map((attachment) => ({
             ...attachment,
@@ -158,6 +163,7 @@ function reviveWaiting(waiting: Record<string, unknown>): WaitPoint {
         ...waiting,
         expiresAt: new Date(waiting.expiresAt as string),
     } as WaitPoint;
+
     if (typeof waiting.notifiedAt === 'string') {
         output.notifiedAt = new Date(waiting.notifiedAt);
     }
@@ -193,17 +199,42 @@ export function toRun(entity: RunEntity): Run {
             text: entity.conversationText!,
         };
     }
-    if (entity.concurrencyKey !== null) run.concurrencyKey = entity.concurrencyKey;
-    if (entity.address !== null) run.address = entity.address;
-    if (entity.output !== null) run.output = entity.output;
-    if (entity.error !== null) run.error = entity.error;
-    if (entity.waiting !== null) run.waiting = reviveWaiting(entity.waiting);
+
+    if (entity.concurrencyKey !== null) {
+        run.concurrencyKey = entity.concurrencyKey;
+    }
+
+    if (entity.address !== null) {
+        run.address = entity.address;
+    }
+
+    if (entity.output !== null) {
+        run.output = entity.output;
+    }
+
+    if (entity.error !== null) {
+        run.error = entity.error;
+    }
+
+    if (entity.waiting !== null) {
+        run.waiting = reviveWaiting(entity.waiting);
+    }
+
     if (entity.claimOwner !== null) {
         run.claim = { owner: entity.claimOwner, expiresAt: entity.claimExpiresAt as Date };
     }
-    if (entity.cancelRequested !== null) run.cancelRequested = entity.cancelRequested;
-    if (entity.startedAt !== null) run.startedAt = entity.startedAt;
-    if (entity.finishedAt !== null) run.finishedAt = entity.finishedAt;
+
+    if (entity.cancelRequested !== null) {
+        run.cancelRequested = entity.cancelRequested;
+    }
+
+    if (entity.startedAt !== null) {
+        run.startedAt = entity.startedAt;
+    }
+
+    if (entity.finishedAt !== null) {
+        run.finishedAt = entity.finishedAt;
+    }
 
     return run;
 }
@@ -217,10 +248,22 @@ export function toStep(entity: StepEntity): Step {
         startedAt: entity.startedAt,
         finishedAt: entity.finishedAt,
     };
-    if (entity.name !== null) step.name = entity.name;
-    if (entity.input !== null) step.input = entity.input;
-    if (entity.output !== null) step.output = entity.output;
-    if (entity.error !== null) step.error = entity.error;
+
+    if (entity.name !== null) {
+        step.name = entity.name;
+    }
+
+    if (entity.input !== null) {
+        step.input = entity.input;
+    }
+
+    if (entity.output !== null) {
+        step.output = entity.output;
+    }
+
+    if (entity.error !== null) {
+        step.error = entity.error;
+    }
 
     return step;
 }
@@ -233,13 +276,17 @@ export function toCheckpoint(entity: CheckpointEntity): Checkpoint {
         messages: entity.messages,
         createdAt: entity.createdAt,
     };
+
     if (entity.conversationScopeId !== null) {
         checkpoint.conversation = {
             scopeId: entity.conversationScopeId,
             generation: entity.conversationGeneration!,
         };
     }
-    if (entity.finishReason !== null) checkpoint.finishReason = entity.finishReason;
+
+    if (entity.finishReason !== null) {
+        checkpoint.finishReason = entity.finishReason;
+    }
 
     return checkpoint;
 }
@@ -270,7 +317,10 @@ export function toArtifact(entity: ArtifactEntity): Artifact {
         size: entity.size,
         createdAt: entity.createdAt,
     };
-    if (entity.filename !== null) artifact.filename = entity.filename;
+
+    if (entity.filename !== null) {
+        artifact.filename = entity.filename;
+    }
 
     return artifact;
 }

@@ -5,9 +5,14 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { OutputInterface, ToolSet } from 'ai';
+import type {
+    AssistantModelMessage,
+    OutputInterface,
+    SystemModelMessage,
+    ToolSet,
+    UserModelMessage,
+} from 'ai';
 import type { ChannelSubscription } from '../channel/types.ts';
-import type { AssistantModelMessage, SystemModelMessage, UserModelMessage } from '../message/types.ts';
 import type { ModelRef } from '../model/types.ts';
 import type { Budget, RunContext } from '../run/types.ts';
 import type { StateSchema } from '../state/types.ts';

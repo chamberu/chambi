@@ -55,6 +55,7 @@ export function makeSet(
 ): Extract<ConversationNoteOperation, { kind: 'set' }> {
     const toolCallId = options.toolCallId ?? `call-${key}`;
     const stepIndex = options.stepIndex ?? 0;
+
     return {
         id: `${runId}:${stepIndex}:${toolCallId}:0`,
         inputHash: options.inputHash ?? `hash:set:${key}:${text}`,
@@ -95,12 +96,19 @@ export async function completeTurn(
     limits: ResolvedConversationLimits = LIMITS,
 ): Promise<void> {
     const begun = await store.beginTurn(scope, runId, text, limits);
-    if (begun.kind !== 'ready') throw new TypeError(`turn ${runId} did not begin (${begun.kind})`);
+
+    if (begun.kind !== 'ready') {
+        throw new TypeError(`turn ${runId} did not begin (${begun.kind})`);
+    }
+
     const ids: string[] = [];
+
     for (const [n, reply] of replies.entries()) {
         const item = makeEmit(clock, runId, n, reply);
+
         await store.prepareEmit(scope, item);
         ids.push(item.id);
     }
+
     await store.endTurn(scope, runId, ids);
 }

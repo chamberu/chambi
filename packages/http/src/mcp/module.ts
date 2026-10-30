@@ -25,7 +25,9 @@ import type { McpEndpointOptions, McpRequestExtra } from './types.ts';
 
 function withoutTransferEncoding(input: Headers): Headers {
     const headers = new Headers(input);
+
     headers.delete('transfer-encoding');
+
     return headers;
 }
 
@@ -37,12 +39,19 @@ function withoutTransferEncoding(input: Headers): Headers {
  */
 export function createMcpEndpoint(ctx: HttpContext, options: McpEndpointOptions): McpHttpHandler {
     const runTools = createRunToolSource(ctx, options);
+
     return createMcpHandler(({ authInfo }) => {
         const extra = readRequestExtra(authInfo?.extra);
+
         // the route always passes them; a request without them cannot reach here
-        if (!extra) throw new UnauthorizedError({ message: 'Authentication required.' });
+        if (!extra) {
+            throw new UnauthorizedError({ message: 'Authentication required.' });
+        }
+
         const server = new McpServer({ name: options.name, version: options.version });
+
         registerTools(server, ctx, runTools(), extra, options);
+
         return server;
     }, { maxRequestBodySize: ctx.bodyLimit });
 }
@@ -61,8 +70,13 @@ export function registerMcpRoutes(app: App, ctx: HttpContext, options: McpOption
     app.use('/mcp', defineCoreHandler(async (event) => {
         const principal = await authenticate(event, ctx);
         const refused = refuseWhenClosed(event, ctx);
-        if (refused) return refused;
+
+        if (refused) {
+            return refused;
+        }
+
         assertContentLength(event, ctx.bodyLimit);
+
         // read here, bounded and drained like REST bodies; the SDK gets the bytes
         const request = event.request.method === 'POST' ?
             new Request(event.request.url, {
@@ -74,6 +88,7 @@ export function registerMcpRoutes(app: App, ctx: HttpContext, options: McpOption
             event.request;
         // event.request.signal is the only signal that follows the HTTP request
         const extra: McpRequestExtra = { principal, signal: AbortSignal.any([event.request.signal, closing.signal]) };
+
         return handler.fetch(request, {
             authInfo: {
                 token: '',

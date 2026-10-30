@@ -22,9 +22,11 @@ async function buildImage(docker: Docker): Promise<void> {
         { context: IMAGE_CONTEXT, src: ['Dockerfile'] },
         { t: IMAGE },
     );
+
     await new Promise<void>((resolve, reject) => {
         docker.modem.followProgress(stream, (err: Error | null, output: Array<{ error?: string }>) => {
             const failed = output.find((event) => typeof event.error === 'string');
+
             if (err) {
                 reject(err);
             } else if (failed) {
@@ -41,6 +43,7 @@ async function removeTestContainers(docker: Docker): Promise<void> {
         all: true,
         filters: { label: ['app.kubernetes.io/managed-by=chamvi', 'app.kubernetes.io/component=sandbox'] },
     });
+
     await Promise.all(containers
         .filter((container) => (container.Labels['chamvi.dev/run'] || '').startsWith('test-'))
         .map((container) => docker.getContainer(container.Id).remove({ force: true, v: true }).catch(() => undefined)));
@@ -48,6 +51,7 @@ async function removeTestContainers(docker: Docker): Promise<void> {
 
 export default async function setup(project: TestProject) {
     const docker = new Docker();
+
     try {
         await docker.ping();
     } catch (e) {
@@ -55,15 +59,18 @@ export default async function setup(project: TestProject) {
             throw e;
         }
 
-        const message = e instanceof Error ? e.message : String(e);
+        const message = Error.isError(e) ? e.message : String(e);
+
         // eslint-disable-next-line no-console
         console.warn(`[@chamvi/sandbox-docker] Docker is not available, skipping the Docker tests: ${message}. Start Docker to run them.`);
+
         return undefined;
     }
 
     await buildImage(docker);
 
     const context: DockerContext = { image: IMAGE, cacheVolume: CACHE_VOLUME };
+
     project.provide('docker', context);
 
     return async () => {

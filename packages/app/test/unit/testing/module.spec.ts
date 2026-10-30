@@ -44,6 +44,7 @@ afterEach(async () => {
 
 function modules(extra: IModule[] = []): IModule[] {
     const clock = new ControllableClock(new Date('2026-10-22T00:00:00Z'));
+
     return [
         configModule({ clock, logger: createRecordingLogger(clock) }),
         storeModule(),
@@ -60,7 +61,9 @@ async function start(mode?: AppMode, check?: boolean) {
         agents: [triage()],
         modules: modules(),
     });
+
     harnesses.push(harness);
+
     return harness;
 }
 
@@ -78,6 +81,7 @@ describe('module harness', () => {
         const harness = await start();
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.status).toBe('completed');
@@ -87,6 +91,7 @@ describe('module harness', () => {
         const harness = await start('job');
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.status).toBe('queued');
@@ -96,6 +101,7 @@ describe('module harness', () => {
         const harness = await start('start', true);
         const engine = harness.container.resolve(AppToken.ENGINE);
         const { runId } = await dispatch(engine);
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.status).toBe('queued');
@@ -114,11 +120,13 @@ describe('module harness', () => {
                     dependencies: [ModuleName.CONFIG],
                     async setup(container: IContainer) {
                         expect(container.resolve(AppToken.CONTEXT)).toBeDefined();
+
                         throw failure;
                     },
                 },
             ],
         });
+
         harnesses.push(harness);
 
         const error = await rejectionOf(harness.setup());

@@ -37,22 +37,26 @@ function subscription(concurrencyMaxRuns?: number | false): ChannelSubscription 
 describe('agent concurrency configuration', () => {
     it.each([undefined, false, 1, 4] as const)('keeps an agent cap of %s', (concurrencyMaxRuns) => {
         const agent = defineAgent({ ...definition(), concurrencyMaxRuns });
+
         expect(agent.definition.concurrencyMaxRuns).toBe(concurrencyMaxRuns);
     });
 
     it.each([undefined, false, 1, 4] as const)('accepts a subscription cap of %s', (concurrencyMaxRuns) => {
         const agent = defineAgent({ ...definition(), channels: [subscription(concurrencyMaxRuns)] });
+
         expect(agent.definition.channels?.[0]?.concurrencyMaxRuns).toBe(concurrencyMaxRuns);
     });
 
     it.each(invalid)('rejects an invalid agent cap %s', (value) => {
         const create = () => defineAgent({ ...definition(), concurrencyMaxRuns: value as number });
+
         expect(create).toThrow(InvalidAgentDefinitionError);
         expect(create).toThrow(/concurrencyMaxRuns/);
     });
 
     it.each(invalid)('rejects an invalid subscription cap %s', (value) => {
         const create = () => defineAgent({ ...definition(), channels: [subscription(value as number)] });
+
         expect(create).toThrow(InvalidAgentDefinitionError);
         expect(create).toThrow(/concurrencyMaxRuns/);
     });
@@ -63,9 +67,11 @@ describe('agent concurrency configuration', () => {
             const store = new Proxy(createMemoryStore(), {
                 get(target, key, receiver) {
                     const capability = Reflect.get(target, key, receiver);
+
                     return new Proxy(capability, {
                         get(role, method, roleReceiver) {
                             accesses.push(method);
+
                             return Reflect.get(role, method, roleReceiver);
                         },
                     });
@@ -87,6 +93,7 @@ describe('agent concurrency configuration', () => {
                 agents: [agent],
                 channels,
             });
+
             expect(create).toThrow(InvalidAgentDefinitionError);
             expect(create).toThrow(/concurrencyMaxRuns/);
 
@@ -95,6 +102,7 @@ describe('agent concurrency configuration', () => {
                 agents: [],
                 channels,
             });
+
             expect(() => engine.checkAgent(agent)).toThrow(InvalidAgentDefinitionError);
             expect(() => engine.checkAgent(agent)).toThrow(/concurrencyMaxRuns/);
             await expect(engine.putAgent(agent, { revision: 'new' })).rejects.toThrow(InvalidAgentDefinitionError);

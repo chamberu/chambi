@@ -27,13 +27,16 @@ function stateClient() {
         listAgents: async () => ({ data: [agent('triage', ['duplicates', 'triaged']), agent('digest', [])], issues: [] }),
         listKv: async (name, page) => {
             kvCalls.push([name, page]);
+
             return [{ key: `${name}-k`, value: { n: 1 } }];
         },
         listDocs: async (name, collection) => {
             docCalls.push([name, collection]);
+
             return [{ id: 'd1', issue: 1 }];
         },
     });
+
     return {
         client,
         kvCalls,
@@ -46,6 +49,7 @@ describe('useAgentState', () => {
         const { client, kvCalls } = stateClient();
         const scope = effectScope();
         const state = scope.run(() => useAgentState(client, ref('triage')))!;
+
         await flush();
         expect(state.kv.value).toEqual([{ key: 'triage-k', value: { n: 1 } }]);
         expect(state.collections.value).toEqual(['duplicates', 'triaged']);
@@ -58,6 +62,7 @@ describe('useAgentState', () => {
         const { client, docCalls } = stateClient();
         const scope = effectScope();
         const state = scope.run(() => useAgentState(client, ref('triage')))!;
+
         await flush();
         expect(docCalls).toEqual([]);
         await state.loadCollection('duplicates');
@@ -71,6 +76,7 @@ describe('useAgentState', () => {
         const name = ref<string | undefined>('triage');
         const scope = effectScope();
         const state = scope.run(() => useAgentState(client, name))!;
+
         await flush();
         await state.loadCollection('duplicates');
         name.value = 'digest';
@@ -92,12 +98,15 @@ describe('useAgentState', () => {
             listAgents: async () => ({ data: [agent('triage', [])], issues: [] }),
             listKv: async (_name, page) => {
                 pages.push(page!);
+
                 const count = page!.offset === 0 ? KV_PAGE_SIZE : 1;
+
                 return Array.from({ length: count }, (_, i) => ({ key: `k${page!.offset! + i}`, value: i }));
             },
         });
         const scope = effectScope();
         const state = scope.run(() => useAgentState(client, ref('triage')))!;
+
         await flush();
         expect(state.moreKv.value).toBe(true);
         await state.loadMoreKv();
@@ -110,11 +119,16 @@ describe('useAgentState', () => {
     it('a 403 sets error without throwing', async () => {
         const client = fakeClient({
             listAgents: async () => ({ data: [agent('triage', ['c'])], issues: [] }),
-            listKv: async () => { throw apiError(403, 'forbidden'); },
-            listDocs: async () => { throw apiError(403, 'forbidden'); },
+            listKv: async () => {
+                throw apiError(403, 'forbidden');
+            },
+            listDocs: async () => {
+                throw apiError(403, 'forbidden');
+            },
         });
         const scope = effectScope();
         const state = scope.run(() => useAgentState(client, ref('triage')))!;
+
         await flush();
         expect(state.error.value?.status).toBe(403);
         await state.loadCollection('c');

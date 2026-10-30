@@ -30,16 +30,16 @@ export type FakeOpenclaw = {
 };
 
 type Replay = {
-    body: string; 
-    runId: string; 
-    expiresAt: number 
+    body: string;
+    runId: string;
+    expiresAt: number
 };
 
 type Next =    | {
-    kind: 'fail'; 
-    status: number; 
-    headers: Record<string, string>; 
-    body: string 
+    kind: 'fail';
+    status: number;
+    headers: Record<string, string>;
+    body: string
 } |
     { kind: 'lose' } |
     { kind: 'hang' };
@@ -59,9 +59,9 @@ function json(status: number, body: unknown): Response {
  * body. Never touches the network.
  */
 export function createFakeOpenclaw(input: {
-    token: string; 
-    hooksPath?: string; 
-    clock?: IClock 
+    token: string;
+    hooksPath?: string;
+    clock?: IClock
 }): FakeOpenclaw {
     const hooksPath = input.hooksPath ?? '/hooks';
     const now = () => input.clock?.now().getTime() ?? 0;
@@ -91,26 +91,46 @@ export function createFakeOpenclaw(input: {
 
     function admit(request: FakeOpenclawRequest, text: string): Response {
         const url = new URL(request.url);
-        if (url.pathname !== `${hooksPath}/agent`) return json(404, { error: 'Not Found' });
-        if (request.method !== 'POST') return json(405, { error: 'Method Not Allowed' });
-        if (request.headers.authorization !== `Bearer ${input.token}`) return json(401, { error: 'Unauthorized' });
+
+        if (url.pathname !== `${hooksPath}/agent`) {
+            return json(404, { error: 'Not Found' });
+        }
+
+        if (request.method !== 'POST') {
+            return json(405, { error: 'Method Not Allowed' });
+        }
+
+        if (request.headers.authorization !== `Bearer ${input.token}`) {
+            return json(401, { error: 'Unauthorized' });
+        }
+
         const body = request.body as Partial<OpenclawHookBody> | undefined;
+
         if (typeof body?.message !== 'string' || body.message.trim().length === 0) {
             return json(400, { error: 'message required' });
         }
+
         const { channel, to } = body;
-        if (!channel || !to || channel === 'last') return json(400, { error: 'invalid delivery' });
+
+        if (!channel || !to || channel === 'last') {
+            return json(400, { error: 'invalid delivery' });
+        }
 
         const key = request.headers['idempotency-key']?.trim();
         const usable = key && key.length <= IDEMPOTENCY_KEY_MAX_LENGTH ? key : undefined;
+
         if (usable) {
             const replay = replays.get(usable);
+
             if (replay && replay.expiresAt > now() && replay.body === text) {
                 return json(200, { ok: true, runId: replay.runId });
             }
         }
+
         const runId = `oc-run-${++runs}`;
+
         fake.dispatched.push(body as OpenclawHookBody);
+
         if (usable) {
             replays.set(usable, {
                 body: text,
@@ -118,43 +138,59 @@ export function createFakeOpenclaw(input: {
                 expiresAt: now() + REPLAY_TTL_MS,
             });
         }
+
         return json(200, { ok: true, runId });
     }
 
     fake.fetch = async (resource, init) => {
         const request = new Request(resource as RequestInfo, init);
         const { signal } = request;
-        if (signal.aborted) throw signal.reason;
+
+        if (signal.aborted) {
+            throw signal.reason;
+        }
+
         const text = await request.text();
         let body: unknown;
+
         try {
             body = text ? JSON.parse(text) : undefined;
         } catch {
             body = undefined;
         }
+
         const recorded: FakeOpenclawRequest = {
             url: request.url,
             method: request.method,
             headers: Object.fromEntries(request.headers),
             body,
         };
+
         fake.requests.push(recorded);
 
         const next = queue.shift();
+
         if (next?.kind === 'hang') {
             return new Promise<Response>((_resolve, reject) => {
                 signal.addEventListener('abort', () => reject(signal.reason), { once: true });
             });
         }
+
         if (next?.kind === 'fail') {
             const message = (body as { message?: string } | undefined)?.message ?? '';
+
             return new Response(next.body.replaceAll('$MESSAGE', message), {
                 status: next.status,
                 headers: next.headers,
             });
         }
+
         const response = admit(recorded, text);
-        if (next?.kind === 'lose') throw new TypeError('fetch failed', { cause: new Error('other side closed') });
+
+        if (next?.kind === 'lose') {
+            throw new TypeError('fetch failed', { cause: new Error('other side closed') });
+        }
+
         return response;
     };
 

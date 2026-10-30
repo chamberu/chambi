@@ -26,12 +26,19 @@ export class MemoryLockRepository implements ILockRepository {
     async acquire(key: string, owner: string, ttlMs: number): Promise<boolean> {
         const now = this.now();
         const existing = this.locks.get(key);
-        if (existing && existing.expiresAt > now) return false;
+
+        if (existing && existing.expiresAt > now) {
+            return false;
+        }
+
         this.locks.set(key, { owner, expiresAt: now + ttlMs });
+
         return true;
     }
 
     async release(key: string, owner: string): Promise<void> {
-        if (this.locks.get(key)?.owner === owner) this.locks.delete(key);
+        if (this.locks.get(key)?.owner === owner) {
+            this.locks.delete(key);
+        }
     }
 }

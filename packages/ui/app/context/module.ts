@@ -11,6 +11,10 @@ import type { AppContext } from './types.ts';
 
 export function useAppContext(): AppContext {
     const context = inject(APP_CONTEXT);
-    if (!context) throw new Error('The chamvi app context is not provided.');
+
+    if (!context) {
+        throw new Error('The chamvi app context is not provided.');
+    }
+
     return context;
 }

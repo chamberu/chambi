@@ -29,18 +29,24 @@ export class DatabaseStateRepository implements IStateRepository {
 
     async findOne(agent: string, key: string): Promise<unknown> {
         const entity = await this.kv.findOneBy({ agent, key });
+
         return entity ? entity.value : undefined;
     }
 
     async findOneOrFail(agent: string, key: string): Promise<unknown> {
         const result = await this.findOne(agent, key);
-        if (result === undefined) throw new RepositoryNotFoundError('state');
+
+        if (result === undefined) {
+            throw new RepositoryNotFoundError('state');
+        }
+
         return result;
     }
 
     async set(agent: string, key: string, value: unknown): Promise<void> {
         if (value === undefined) {
             await this.kv.delete({ agent, key });
+
             return;
         }
 
@@ -63,12 +69,17 @@ export class DatabaseStateRepository implements IStateRepository {
             skip: q.offset,
             take: q.limit,
         });
+
         return entities.map((entity) => ({ key: entity.key, value: entity.value }));
     }
 
     async findOrFail(agent: string, q: StateFindOptions = {}): Promise<Array<{ key: string; value: unknown }>> {
         const result = await this.find(agent, q);
-        if (result.length === 0) throw new RepositoryNotFoundError('state');
+
+        if (result.length === 0) {
+            throw new RepositoryNotFoundError('state');
+        }
+
         return result;
     }
 
@@ -85,6 +96,7 @@ export class DatabaseStateRepository implements IStateRepository {
         const query = this.docs.createQueryBuilder('d')
             .where({ agent, collection: coll })
             .orderBy('d.id', 'ASC');
+
         if (q.where && Object.keys(q.where).length > 0) {
             // Containment with the defined values (an empty object still
             // restricts to object documents); a key whose value is undefined
@@ -92,6 +104,7 @@ export class DatabaseStateRepository implements IStateRepository {
             // column's transformer sanitizes the containment value.
             const defined: Record<string, unknown> = {};
             let i = 0;
+
             for (const [key, value] of Object.entries(q.where)) {
                 if (value === undefined) {
                     // raw: TypeORM has no operator for jsonb key existence (?)
@@ -101,19 +114,26 @@ export class DatabaseStateRepository implements IStateRepository {
                     defined[key] = value;
                 }
             }
+
             query.andWhere({ doc: JsonContains(defined) });
         }
+
         if (q.limit !== undefined) {
             query.limit(q.limit);
         }
 
         const entities = await query.getMany();
+
         return entities.map((entity) => ({ id: entity.id, doc: entity.doc }));
     }
 
     async findDocumentsOrFail(agent: string, coll: string, q: StateDocumentFindOptions = {}): Promise<Array<{ id: string; doc: unknown }>> {
         const result = await this.findDocuments(agent, coll, q);
-        if (result.length === 0) throw new RepositoryNotFoundError('documents');
+
+        if (result.length === 0) {
+            throw new RepositoryNotFoundError('documents');
+        }
+
         return result;
     }
 

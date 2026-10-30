@@ -44,8 +44,10 @@ export function assertConversationIdentity(identity: unknown): asserts identity 
     if (!isObject(identity)) {
         throw new ValidationError('The conversation identity must be an object.');
     }
+
     for (const field of IDENTITY_FIELDS) {
         const value = identity[field];
+
         if (
             typeof value !== 'string' ||
             value.trim().length === 0 ||
@@ -67,6 +69,7 @@ export function assertConversationIdentity(identity: unknown): asserts identity 
  */
 export function identityId(identity: ConversationIdentity): string {
     assertConversationIdentity(identity);
+
     return stableHash({
         agent: identity.agent,
         channel: identity.channel,
@@ -85,9 +88,11 @@ export function assertConversationText(text: unknown, maxBytes: number): asserts
     if (typeof text !== 'string' || text.length === 0) {
         throw new ValidationError('The conversation text must be a non-empty string.');
     }
-    if (text.includes('\u0000') || LONE_SURROGATE.test(text)) {
+
+    if (text.includes('\0') || LONE_SURROGATE.test(text)) {
         throw new ValidationError('The conversation text must be well-formed Unicode without NUL.');
     }
+
     if (Buffer.byteLength(text, 'utf8') > maxBytes) {
         throw new ValidationError(`The conversation text must be at most ${maxBytes} UTF-8 bytes.`);
     }
@@ -111,16 +116,18 @@ export function assertConversationScope(scope: unknown): asserts scope is Conver
     if (!isObject(scope)) {
         throw new ValidationError('The conversation scope must be an object.');
     }
+
     if (typeof scope.id !== 'string' || !SCOPE_ID_PATTERN.test(scope.id)) {
         throw new ValidationError('The conversation scope id must be a sha256 hex digest.');
     }
+
     if (!Number.isSafeInteger(scope.generation) || (scope.generation as number) < 0) {
         throw new ValidationError('The conversation generation must be a non-negative integer.');
     }
 }
 
 export function assertRunId(runId: unknown): asserts runId is string {
-    if (typeof runId !== 'string' || runId.length === 0 || runId.includes('\u0000') || LONE_SURROGATE.test(runId)) {
+    if (typeof runId !== 'string' || runId.length === 0 || runId.includes('\0') || LONE_SURROGATE.test(runId)) {
         throw new ValidationError('The run id must be a non-empty, well-formed Unicode string without NUL.');
     }
 }
@@ -136,7 +143,7 @@ export function assertPage(query: unknown): asserts query is { limit: number; of
 }
 
 function isShortString(value: unknown): value is string {
-    return typeof value === 'string' && value.length > 0 && value.length <= 1024 && !value.includes('\u0000') && !LONE_SURROGATE.test(value);
+    return typeof value === 'string' && value.length > 0 && value.length <= 1024 && !value.includes('\0') && !LONE_SURROGATE.test(value);
 }
 
 /** Refuses an emit that is no pending assistant item of well-formed strings. */
@@ -144,22 +151,30 @@ export function assertEmitItem(item: unknown): asserts item is ConversationItem 
     if (!isObject(item)) {
         throw new ValidationError('The conversation item must be an object.');
     }
+
     if (!isShortString(item.id) || !isShortString(item.runId)) {
         throw new ValidationError('The conversation item needs an id and a run id.');
     }
+
     if (item.role !== 'assistant' || item.status !== 'pending') {
         throw new ValidationError('A prepared conversation item must be a pending assistant item.');
     }
+
     assertConversationText(item.text, CONVERSATION_LIMITS_MAX.maxItemBytes);
+
     if (item.effectKey !== undefined && !isShortString(item.effectKey)) {
         throw new ValidationError('The conversation item effect key must be a non-empty string.');
     }
-    if (item.target !== undefined) {
-        const { target } = item;
-        if (!isObject(target) || !isShortString(target.channel) || typeof target.address !== 'string' ||
-            target.address.includes('\u0000') || LONE_SURROGATE.test(target.address)) {
-            throw new ValidationError('The conversation item target needs a channel and an address.');
-        }
+
+    if (item.target === undefined) {
+        return;
+    }
+
+    const { target } = item;
+
+    if (!isObject(target) || !isShortString(target.channel) || typeof target.address !== 'string' ||
+        target.address.includes('\0') || LONE_SURROGATE.test(target.address)) {
+        throw new ValidationError('The conversation item target needs a channel and an address.');
     }
 }
 
@@ -178,10 +193,13 @@ export function assertNoteOperationShape(operation: unknown): asserts operation 
     if (!isObject(operation)) {
         throw new ValidationError('The note operation must be an object.');
     }
+
     if (!isShortString(operation.id) || !isShortString(operation.inputHash)) {
         throw new ValidationError('The note operation needs an id and an input hash.');
     }
+
     const { source } = operation;
+
     if (
         !isObject(source) ||
         !isShortString(source.runId) ||
@@ -190,6 +208,7 @@ export function assertNoteOperationShape(operation: unknown): asserts operation 
     ) {
         throw new ValidationError('The note operation needs its run, tool call and step.');
     }
+
     if (operation.kind !== 'set' && operation.kind !== 'remove') {
         throw new ValidationError('The note operation kind must be set or remove.');
     }
@@ -198,6 +217,7 @@ export function assertNoteOperationShape(operation: unknown): asserts operation 
 /** Key, text and expiry of a fresh operation; never echoes a value. */
 export function assertNoteOperationContent(operation: ConversationNoteOperation, now: Date): void {
     const { key } = operation;
+
     if (
         typeof key !== 'string' ||
         key.trim().length === 0 ||
@@ -209,16 +229,25 @@ export function assertNoteOperationContent(operation: ConversationNoteOperation,
             'characters without control characters.',
         );
     }
-    if (operation.kind !== 'set') return;
+
+    if (operation.kind !== 'set') {
+        return;
+    }
+
     assertConversationText(operation.text, CONVERSATION_NOTE_TEXT_MAX_BYTES);
+
     const { expiresAt } = operation;
-    if (expiresAt !== undefined) {
-        if (!(expiresAt instanceof Date) || Number.isNaN(expiresAt.getTime())) {
-            throw new ValidationError('The note expiry must be a valid date.');
-        }
-        if (expiresAt.getTime() <= now.getTime()) {
-            throw new ValidationError('The note expiry must lie in the future.');
-        }
+
+    if (!(expiresAt !== undefined)) {
+        return;
+    }
+
+    if (!(expiresAt instanceof Date) || Number.isNaN(expiresAt.getTime())) {
+        throw new ValidationError('The note expiry must be a valid date.');
+    }
+
+    if (expiresAt.getTime() <= now.getTime()) {
+        throw new ValidationError('The note expiry must lie in the future.');
     }
 }
 
@@ -239,32 +268,47 @@ export function buildSnapshotContent(
 ): Pick<ConversationSnapshot, 'messages' | 'itemIds' | 'noteKeys' | 'omitted'> {
     const chosen: ConversationItem[] = [];
     let historyBytes = 0;
+
     for (let i = items.length - 1; i >= 0 && chosen.length < limits.maxItems; i--) {
         const item = items[i]!;
         const bytes = utf8Bytes(item.text);
-        if (historyBytes + bytes > limits.maxHistoryBytes) continue;
+
+        if (historyBytes + bytes > limits.maxHistoryBytes) {
+            continue;
+        }
+
         historyBytes += bytes;
         chosen.push(item);
     }
+
     chosen.reverse();
 
     const byRecency = [...notes].sort((a, b) => (b.updatedAt.getTime() - a.updatedAt.getTime()) ||
         compareCodePoints(a.key, b.key));
     const picked: ConversationNote[] = [];
     let notesBytes = 0;
+
     for (const note of byRecency) {
         const bytes = utf8Bytes(note.key) + utf8Bytes(note.text);
-        if (notesBytes + bytes > limits.maxNotesBytes) continue;
+
+        if (notesBytes + bytes > limits.maxNotesBytes) {
+            continue;
+        }
+
         notesBytes += bytes;
         picked.push(note);
     }
+
     picked.sort((a, b) => compareCodePoints(a.key, b.key));
 
     const messages: ModelMessage[] = [];
+
     if (picked.length > 0) {
         const lines = picked.map((note) => `- ${note.key}: ${note.text}`);
+
         messages.push({ role: 'user', content: [NOTES_HEADING, ...lines].join('\n') });
     }
+
     for (const item of chosen) {
         messages.push({ role: item.role, content: item.text });
     }

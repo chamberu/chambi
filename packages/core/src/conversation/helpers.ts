@@ -25,7 +25,10 @@ const LIMIT_KEYS = Object.keys(DEFAULT_CONVERSATION_LIMITS) as (keyof ResolvedCo
  * InvalidAgentDefinitionError naming the key.
  */
 export function normalizeConversationLimits(input?: ConversationLimits): ResolvedConversationLimits {
-    if (input === undefined) return { ...DEFAULT_CONVERSATION_LIMITS };
+    if (input === undefined) {
+        return { ...DEFAULT_CONVERSATION_LIMITS };
+    }
+
     if (!isObject(input)) {
         throw new InvalidAgentDefinitionError('The conversation limits must be an object.');
     }
@@ -37,23 +40,32 @@ export function normalizeConversationLimits(input?: ConversationLimits): Resolve
     }
 
     const out = { ...DEFAULT_CONVERSATION_LIMITS } as Record<keyof ResolvedConversationLimits, number>;
+
     for (const key of LIMIT_KEYS) {
         const value: unknown = input[key];
-        if (value === undefined) continue;
+
+        if (value === undefined) {
+            continue;
+        }
+
         const max = CONVERSATION_LIMITS_MAX[key];
+
         if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > max) {
             throw new InvalidAgentDefinitionError(
                 `The conversation limit ${key} must be an integer from 1 to ${max}.`,
             );
         }
+
         out[key] = value as number;
     }
+
     return out;
 }
 
 /** The concurrency key every run of one conversation generation shares: `conversation:<id>:<generation>`. */
 export function conversationConcurrencyKey(scope: ConversationScope): string {
     assertConversationScope(scope);
+
     return `conversation:${scope.id}:${scope.generation}`;
 }
 

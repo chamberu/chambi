@@ -16,7 +16,9 @@ import type { Agent, ChannelSubscription, EngineOptions } from '@chamvi/core';
 import { ControllableClock } from './clock.ts';
 import { MockLanguageModelV4 } from 'ai/test';
 
-export const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+export const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 export function concurrencyHarness() {
     const clock = new ControllableClock(new Date(1_000_000));
@@ -75,6 +77,7 @@ export function concurrencyHarness() {
                             releases.set(ctx.run.runId, resolve);
                             ctx.run.signal.addEventListener('abort', () => resolve(), { once: true });
                         });
+
                         return 'released';
                     },
                 }),
@@ -89,14 +92,19 @@ export function concurrencyHarness() {
             channels: [{ name: 'input' }],
             owner: `replica-${engines.length}`,
             concurrencyMaxRuns: 20,
-            onError: (error) => { errors.push(error); },
+            onError: (error) => {
+                errors.push(error);
+            },
             ...options,
         });
+
         engines.push(instance);
+
         return instance;
     }
     async function dispatch(instance: Engine, trigger = 'a', extra = {}) {
         clock.advance(1);
+
         return instance.dispatch({
             agent: 'worker',
             channel: 'input',
@@ -106,15 +114,23 @@ export function concurrencyHarness() {
         });
     }
     async function settle() {
-        for (let i = 0; i < 20; i++) await flush();
+        for (let i = 0; i < 20; i++) {
+            await flush();
+        }
     }
     async function close() {
         const drains = engines.map((instance) => instance.drain({ timeoutMs: 1 }));
+
         await settle();
         clock.advance(1);
-        for (const release of releases.values()) release();
+
+        for (const release of releases.values()) {
+            release();
+        }
+
         await Promise.all(drains);
     }
+
     return {
         clock,
         store,

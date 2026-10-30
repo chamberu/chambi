@@ -19,20 +19,26 @@ export function selectSkillProvider(inputs: readonly SkillInput[], selected?: IS
     if (!Array.isArray(inputs)) {
         throw new InvalidAgentDefinitionError('Skill inputs must be an array of self-describing runtime values.');
     }
+
     let provider = selected;
+
     for (const input of inputs) {
         if (!isObject(input) || !isSkillRuntimeProvider(input.runtime)) {
             throw new InvalidAgentDefinitionError('Skill inputs require a valid runtime provider; use the optional package factory or adapter.');
         }
+
         if (provider && provider.protocol !== input.runtime.protocol) {
             throw new InvalidAgentDefinitionError(`Incompatible skill runtime protocol "${input.runtime.protocol}"; expected "${provider.protocol}". Use compatible skill package versions.`);
         }
+
         provider ??= input.runtime;
     }
+
     return provider;
 }
 
 export function snapshotSkillInputs(inputs: readonly SkillInput[] = [], tools: ToolSet = {}): readonly SkillInput[] {
     const provider = selectSkillProvider(inputs);
+
     return provider ? provider.snapshot(inputs, tools) : Object.freeze([]);
 }

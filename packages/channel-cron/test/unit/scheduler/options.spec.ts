@@ -48,6 +48,7 @@ function setup() {
         lockTtlMs: 600_000,
         onError,
     }, agent, subscription);
+
     return {
         store,
         lock,
@@ -76,6 +77,7 @@ describe('buildComponentOptions', () => {
         await options.run({ scheduledAt: T });
 
         const { data } = await store.runs.find({ agent: 'sweep' });
+
         expect(data).toHaveLength(1);
         expect(data[0]?.trigger.channel).toBe('cron');
         expect(data[0]?.trigger.idempotencyKey).toMatch(/@2026-03-01T08:00:00\.000Z$/);

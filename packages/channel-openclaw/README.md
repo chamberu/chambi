@@ -35,7 +35,7 @@
 npm install @chamvi/channel-openclaw @chamvi/core --save
 ```
 
-ESM only, Node.js `>=22`. `@chamvi/core` is a peer dependency; the channel uses the global `fetch` and has no runtime dependencies.
+ESM only, Node.js `>=24.3.0`. `@chamvi/core` is a peer dependency; the channel uses the global `fetch` and has no runtime dependencies.
 
 chamvi and OpenClaw talk **"MCP in, hooks out"**: OpenClaw starts and reads runs through the app's MCP endpoint (`@chamvi/http`), and chamvi pushes messages to OpenClaw's hooks endpoint through this channel. The channel is out only: it has no `in` and no subscriptions.
 
@@ -75,6 +75,7 @@ export function createApprovalEngine(
         OPENCLAW_TO,
         APP_URL,
     } = process.env;
+
     if (!OPENCLAW_URL || !OPENCLAW_HOOKS_TOKEN || !OPENCLAW_CHANNEL || !OPENCLAW_TO || !APP_URL) {
         throw new Error('Set OPENCLAW_URL, OPENCLAW_HOOKS_TOKEN, OPENCLAW_CHANNEL, OPENCLAW_TO and APP_URL.');
     }
@@ -99,6 +100,7 @@ export function createApprovalEngine(
                 body: 'The current release goes out now.',
                 address: OPENCLAW_TO,
             });
+
             return approved ? `deployed to ${env}` : 'the owner said no';
         },
     });

@@ -32,15 +32,20 @@ type App = ReturnType<typeof createRunTestApp>['app'];
 
 async function start(app: App, agent = 'echo'): Promise<string> {
     const response = await call(app, 'POST', `/agents/${agent}/runs`, { token: ADMIN_TOKEN });
+
     return (await response.json() as { runId: string }).runId;
 }
 
 /** Opens a stream of `runId` and reads its snapshot. */
 async function open(app: App, runId: string, signal?: AbortSignal): Promise<SseReader> {
     const response = await call(app, 'GET', `/runs/${runId}/stream`, { token: READER_TOKEN, signal });
+
     expect(response.status).toBe(200);
+
     const reader = new SseReader(response);
+
     await reader.next(1);
+
     return reader;
 }
 
@@ -54,8 +59,11 @@ async function streamStatus(app: App, runId: string): Promise<Response> {
  */
 async function expectExactlyOneFreeSlot(app: App, runId: string): Promise<void> {
     const controller = new AbortController();
+
     await open(app, runId, controller.signal);
+
     const refused = await streamStatus(app, runId);
+
     expect(refused.status).toBe(503);
     await refused.body?.cancel();
     controller.abort();
@@ -63,9 +71,13 @@ async function expectExactlyOneFreeSlot(app: App, runId: string): Promise<void> 
 
 async function until(check: () => boolean | Promise<boolean>): Promise<void> {
     for (let i = 0; i < 200; i++) {
-        if (await check()) return;
+        if (await check()) {
+            return;
+        }
+
         await flush();
     }
+
     throw new Error('condition never held');
 }
 
@@ -90,6 +102,7 @@ describe('stream.maxOpen', () => {
         const second = await open(app, runId);
 
         const refused = await streamStatus(app, runId);
+
         expect(refused.status).toBe(503);
         expect(refused.headers.get('retry-after')).toBe('5');
         expect(refused.headers.get('content-type')).toBe('application/json; charset=utf-8');
@@ -107,6 +120,7 @@ describe('stream.maxOpen', () => {
         const { app } = createRunTestApp({ stream: { maxOpen: 1 } });
         const runId = await start(app);
         const controller = new AbortController();
+
         await open(app, runId, controller.signal);
         expect((await streamStatus(app, runId)).status).toBe(503);
 
@@ -118,6 +132,7 @@ describe('stream.maxOpen', () => {
         const { app, clock } = createRunTestApp({ stream: { maxOpen: 1 } });
         const runId = await start(app);
         const reader = await open(app, runId);
+
         await reader.reader.cancel();
         clock.advance(2_000);
         await flush();
@@ -129,6 +144,7 @@ describe('stream.maxOpen', () => {
         const { app, engine } = createRunTestApp({ stream: { maxOpen: 1 } });
         const runId = await start(app);
         const reader = await open(app, runId);
+
         await engine.start();
         await engine.idle();
         await reader.rest();
@@ -142,17 +158,22 @@ describe('stream.maxOpen', () => {
     it('frees the slot of a settled run streamed at once', async () => {
         const { app, store } = createRunTestApp({ stream: { maxOpen: 1 } });
         const runId = await start(app);
+
         await store.runs.update(runId, { status: 'failed' });
+
         const reader = await open(app, runId);
+
         await reader.rest();
 
         const other = await start(app);
+
         await expectExactlyOneFreeSlot(app, other);
     });
 
     it('frees the slot when the snapshot fails', async () => {
         const ctx = createRunTestApp({ stream: { maxOpen: 1 }, onError: () => {} });
         const runId = await start(ctx.app);
+
         vi.spyOn(ctx.store.steps, 'find').mockRejectedValueOnce(new Error('store down'));
         expect((await streamStatus(ctx.app, runId)).status).toBe(500);
 
@@ -163,6 +184,7 @@ describe('stream.maxOpen', () => {
         const ctx = createRunTestApp({ stream: { maxOpen: 1 }, onError: () => {} });
         const runId = await start(ctx.app);
         const reader = await open(ctx.app, runId);
+
         vi.spyOn(ctx.store.runs, 'findOne').mockRejectedValueOnce(new Error('store down'));
         ctx.clock.advance(2_000);
         await reader.rest();
@@ -192,6 +214,7 @@ describe('stream.maxOpen', () => {
         const client = await connectMcp(app, ADMIN_TOKEN);
         // over the cap: answers at once
         const result = await callTool(client, 'run_echo', { waitSeconds: 30 });
+
         expect(result.structuredContent).toMatchObject({ status: 'queued' });
 
         await shutdown.shutdown();
@@ -207,13 +230,16 @@ describe('stream.maxOpen', () => {
             const client = await connectMcp(app, ADMIN_TOKEN);
 
             const result = await callTool(client, 'run_echo', { waitSeconds: 30 });
+
             expect(result.isError).toBeFalsy();
             expect(result.structuredContent).toEqual({
                 runId: expect.any(String),
                 status: 'queued',
                 deduplicated: false,
             });
+
             const dispatched = await store.runs.findOne(result.structuredContent!.runId as string);
+
             expect(dispatched?.status).toBe('queued');
 
             await reader.reader.cancel();
@@ -225,7 +251,9 @@ describe('stream.maxOpen', () => {
             const client = await connectMcp(setup.app, ADMIN_TOKEN);
             const subscribe = vi.spyOn(setup.engine, 'on');
             const pending = callTool(client, 'run_echo', { waitSeconds: 10 });
+
             await until(() => subscribe.mock.calls.length > 0);
+
             const [run] = (await setup.store.runs.find({ agent: 'echo' })).data;
 
             expect((await streamStatus(setup.app, run!.id)).status).toBe(503);
@@ -238,9 +266,12 @@ describe('stream.maxOpen', () => {
 
         it('free the slot when the run completes', async () => {
             const setup = createRunTestApp({ stream: { maxOpen: 1 } });
+
             await setup.engine.start();
+
             const client = await connectMcp(setup.app, ADMIN_TOKEN);
             const result = await callTool(client, 'run_echo', { waitSeconds: 5 });
+
             expect(result.structuredContent).toMatchObject({ status: 'completed' });
 
             await client.close();
@@ -254,8 +285,10 @@ describe('stream.maxOpen', () => {
             const controller = new AbortController();
             const client = await connectMcp(setup.app, ADMIN_TOKEN, { signal: controller.signal });
             const subscribe = vi.spyOn(setup.engine, 'on');
+
             void callTool(client, 'run_echo', { waitSeconds: 30 }).catch(() => undefined);
             await until(() => subscribe.mock.calls.length > 0);
+
             const [run] = (await setup.store.runs.find({ agent: 'echo' })).data;
 
             controller.abort();
@@ -263,7 +296,9 @@ describe('stream.maxOpen', () => {
                 // a stream that opens frees its slot again at once
                 const probe = new AbortController();
                 const response = await call(setup.app, 'GET', `/runs/${run!.id}/stream`, { token: READER_TOKEN, signal: probe.signal });
+
                 probe.abort();
+
                 return response.status === 200;
             });
             await expectExactlyOneFreeSlot(setup.app, run!.id);
@@ -275,15 +310,21 @@ describe('stream.maxOpen', () => {
             const client = await connectMcp(setup.app, ADMIN_TOKEN);
             const getRun = setup.store.runs.findOne.bind(setup.store.runs);
             let failed = false;
+
             vi.spyOn(setup.store.runs, 'findOne').mockImplementation(async (id) => {
                 if (!failed) {
                     failed = true;
+
                     throw new Error('store down');
                 }
+
                 return getRun(id);
             });
+
             const result = await callTool(client, 'run_echo', { waitSeconds: 5 });
+
             expect(result.isError).toBe(true);
+
             const [run] = (await setup.store.runs.find({ agent: 'echo' })).data;
 
             await expectExactlyOneFreeSlot(setup.app, run!.id);

@@ -15,7 +15,9 @@ import type {
 import { START } from './app.ts';
 
 const NO_ARTIFACTS: IRunArtifacts = {
-    put: async () => { throw new TypeError('artifacts are not used by the github tools'); },
+    put: async () => {
+        throw new TypeError('artifacts are not used by the github tools');
+    },
     get: async () => undefined,
     list: async () => [],
 };
@@ -52,6 +54,7 @@ export function toolContext(input: ToolContextInput = {}): ToolContext {
         payload,
         receivedAt: input.receivedAt ?? START,
     };
+
     return {
         // these tools reach no channel
         channels: {} as ToolContext['channels'],
@@ -80,7 +83,11 @@ export async function callTool<T = unknown>(
     options: CallInput = {},
 ): Promise<T> {
     const execute = tools[name]?.execute as ((i: unknown, o: unknown) => Promise<unknown>) | undefined;
-    if (!execute) throw new TypeError(`no tool ${name}`);
+
+    if (!execute) {
+        throw new TypeError(`no tool ${name}`);
+    }
+
     return await execute(input, {
         toolCallId: options.toolCallId ?? 'call-1',
         messages: options.messages ?? [],
@@ -90,7 +97,10 @@ export async function callTool<T = unknown>(
 
 /** An assistant message (one model step), optionally carrying a tool call. */
 export function assistant(toolCallId?: string): ModelMessage {
-    if (!toolCallId) return { role: 'assistant', content: 'thinking' };
+    if (!toolCallId) {
+        return { role: 'assistant', content: 'thinking' };
+    }
+
     return {
         role: 'assistant',
         content: [{

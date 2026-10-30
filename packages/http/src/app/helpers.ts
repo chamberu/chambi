@@ -64,9 +64,11 @@ const STATIC_ROUTE_PATH = /^(?:\/[\w.~-]+)+$/;
  */
 export function normalizeBasePath(basePath: string | undefined): string {
     const path = (basePath ?? '').replace(/\/+$/, '');
+
     if (path !== '' && !STATIC_ROUTE_PATH.test(path)) {
         throw new InvalidAgentDefinitionError(`basePath "${basePath}" must be a static path starting with "/".`);
     }
+
     return path;
 }
 
@@ -80,35 +82,48 @@ function validateRoutes(options: HttpAppOptions): HttpRoute[] {
         undefined :
         options.metrics?.metricsPath ?? DEFAULT_METRICS_PATH;
     const seen = new Set<string>();
+
     for (const route of routes) {
         if (!STATIC_ROUTE_PATH.test(route.path)) {
             throw new InvalidAgentDefinitionError(`Route path "${route.path}" must be a static path starting with "/".`);
         }
+
         // routup matches paths case-insensitively
         const path = route.path.toLowerCase();
         const segment = path.split('/')[1] ?? '';
+
         if (RESERVED_ROUTE_SEGMENTS.includes(segment) || path === metricsPath?.toLowerCase()) {
             throw new InvalidAgentDefinitionError(`Route path "${route.path}" collides with a built-in route.`);
         }
+
         const key = `${route.method} ${path}`;
+
         if (seen.has(key)) {
             throw new InvalidAgentDefinitionError(`Route "${route.method} ${route.path}" is registered twice.`);
         }
+
         seen.add(key);
+
         if (route.prefix && metricsPath !== undefined && isAtOrUnder(metricsPath.toLowerCase(), path)) {
             throw new InvalidAgentDefinitionError(`Prefix route "${route.path}" covers the metrics path.`);
         }
     }
+
     for (const prefixRoute of routes) {
-        if (!prefixRoute.prefix) continue;
+        if (!prefixRoute.prefix) {
+            continue;
+        }
+
         const prefix = prefixRoute.path.toLowerCase();
         const covered = routes.find((other) => other !== prefixRoute &&
             other.method === prefixRoute.method &&
             isAtOrUnder(other.path.toLowerCase(), prefix));
+
         if (covered) {
             throw new InvalidAgentDefinitionError(`Route "${covered.method} ${covered.path}" lies under the prefix route "${prefixRoute.path}".`);
         }
     }
+
     return routes;
 }
 
@@ -122,17 +137,25 @@ function isAtOrUnder(path: string, prefix: string): boolean {
  * engine lacks or a name given twice throws InvalidAgentDefinitionError.
  */
 export function selectAgents(engine: Engine, names?: readonly string[]): Agent[] {
-    if (names === undefined) return engine.listAgents();
+    if (names === undefined) {
+        return engine.listAgents();
+    }
+
     const seen = new Set<string>();
+
     return names.map((name) => {
         if (seen.has(name)) {
             throw new InvalidAgentDefinitionError(`Agent "${name}" is named more than once.`);
         }
+
         seen.add(name);
+
         const agent = engine.getAgent(name);
+
         if (!agent) {
             throw new InvalidAgentDefinitionError(`The engine has no agent "${name}".`);
         }
+
         return agent;
     });
 }
@@ -145,8 +168,10 @@ export function createLiveAgents(engine: Engine, names?: readonly string[]): Htt
     const served = names === undefined ? undefined : new Set(names);
     const list = (): Agent[] => {
         const agents = engine.listAgents();
+
         return served ? agents.filter((agent) => served.has(agent.name)) : agents;
     };
+
     return {
         get: (name) => (served && !served.has(name) ? undefined : engine.getAgent(name)),
         list,
@@ -157,13 +182,19 @@ export function createLiveAgents(engine: Engine, names?: readonly string[]): Htt
 /** `options.agentIssues` as a fresh array, only of the named agents when `names` is given. */
 function readAgentIssues(options: HttpAppOptions): () => AgentIssue[] {
     const read = options.agentIssues;
-    if (!read) return () => [];
+
+    if (!read) {
+        return () => [];
+    }
+
     const served = options.agents === undefined ? undefined : new Set(options.agents);
+
     return () => read().filter((issue) => !served || served.has(issue.agent));
 }
 
 export function buildContext(options: HttpAppOptions): HttpContext {
     const authenticators = Array.isArray(options.auth) ? [...options.auth] : [options.auth];
+
     if (authenticators.length === 0) {
         throw new InvalidAgentDefinitionError('The http app needs at least one authenticator.');
     }
@@ -172,11 +203,13 @@ export function buildContext(options: HttpAppOptions): HttpContext {
     selectAgents(options.engine, options.agents);
 
     const maxOpenStreams = options.stream?.maxOpen ?? DEFAULT_MAX_OPEN_STREAMS;
+
     if (!Number.isSafeInteger(maxOpenStreams) || maxOpenStreams < 1) {
         throw new InvalidAgentDefinitionError(`stream.maxOpen must be a positive integer, got ${maxOpenStreams}.`);
     }
 
     const channels = validateChannels(options.engine, options.channels);
+
     validateChannelRateLimits(options, channels);
 
     return {
@@ -204,8 +237,13 @@ export function buildContext(options: HttpAppOptions): HttpContext {
 
 function renderError(event: IAppEvent, body: ErrorBody): Response {
     const headers = new Headers(event.response.headers);
+
     headers.set('content-type', 'application/json; charset=utf-8');
-    if (body.status === 401) headers.set('www-authenticate', 'Bearer');
+
+    if (body.status === 401) {
+        headers.set('www-authenticate', 'Bearer');
+    }
+
     return new Response(JSON.stringify(body), { status: body.status, headers });
 }
 
@@ -215,7 +253,10 @@ function renderError(event: IAppEvent, body: ErrorBody): Response {
  * refusal is not reported to `onError`.
  */
 export function refuseWhenClosed(event: IAppEvent, ctx: HttpContext): Response | undefined {
-    if (!ctx.closed) return undefined;
+    if (!ctx.closed) {
+        return undefined;
+    }
+
     return renderError(event, {
         status: 503,
         code: 'service_unavailable',
@@ -228,11 +269,19 @@ export function refuseWhenClosed(event: IAppEvent, ctx: HttpContext): Response |
  * call it on every exit path), or `undefined` when all are taken.
  */
 export function acquireStreamSlot(ctx: HttpContext): (() => void) | undefined {
-    if (ctx.openStreams >= ctx.maxOpenStreams) return undefined;
+    if (ctx.openStreams >= ctx.maxOpenStreams) {
+        return undefined;
+    }
+
     ctx.openStreams++;
+
     let released = false;
+
     return () => {
-        if (released) return;
+        if (released) {
+            return;
+        }
+
         released = true;
         ctx.openStreams--;
     };
@@ -244,6 +293,7 @@ export function acquireStreamSlot(ctx: HttpContext): (() => void) | undefined {
  */
 export function refuseStreamOverCap(event: IAppEvent): Response {
     event.response.headers.set('retry-after', String(STREAM_RETRY_AFTER_SECONDS));
+
     return renderError(event, {
         status: 503,
         code: 'service_unavailable',
@@ -258,7 +308,10 @@ function withIssues(body: ErrorBody, issues: readonly Issue[] | undefined): Erro
 
 /** routup wraps what a handler throws in an AppError carrying it as `cause`. */
 function unwrap(error: unknown): unknown {
-    if (error instanceof AppError && error.cause !== undefined) return error.cause;
+    if (error instanceof AppError && error.cause !== undefined) {
+        return error.cause;
+    }
+
     return error;
 }
 
@@ -286,7 +339,11 @@ function toErrorBody(cause: unknown): ErrorBody | undefined {
 
     if (cause instanceof ChamviError) {
         const status = CORE_STATUS[cause.code];
-        if (status === undefined) return undefined;
+
+        if (status === undefined) {
+            return undefined;
+        }
+
         return withIssues({
             status,
             code: cause.code,
@@ -305,6 +362,7 @@ export function createErrorHandler(ctx: HttpContext): Handler {
     return defineErrorHandler((error, event) => {
         const cause = unwrap(error);
         let body = toErrorBody(cause);
+
         if (!body || body.status >= 500) {
             ctx.onError(cause);
             body = {

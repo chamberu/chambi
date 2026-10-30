@@ -18,6 +18,7 @@ export function createEngine(store: IStore, agents: Agent[]) {
                 // another replica carries the run on; nothing to do
                 return;
             }
+
             logger.error({ err: error, runId: run?.id }, 'chamvi');
         },
     });
@@ -29,6 +30,7 @@ export function createEngine(store: IStore, agents: Agent[]) {
 export async function explainFailure(engine: Engine, runId: string) {
     // #region run-error
     const run = await engine.getRun(runId);
+
     if (run?.status === RunStatus.FAILED) {
         switch (run.error?.code) {
             case ErrorCode.BUDGET_EXCEEDED:
@@ -41,6 +43,7 @@ export async function explainFailure(engine: Engine, runId: string) {
                 return run.error?.message;
         }
     }
+
     // #endregion run-error
     return undefined;
 }

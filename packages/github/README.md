@@ -40,7 +40,7 @@
 npm install @chamvi/github @chamvi/http @chamvi/core ai --save
 ```
 
-ESM only, Node.js `>=22`. `@chamvi/core`, [`@chamvi/http`](../http) (it serves the channel's deliveries) and `ai` are peer dependencies. GitHub is reached through [`@octokit/core`](https://www.npmjs.com/package/@octokit/core) with the pagination plugin; the App JWT, the installation tokens and the webhook signatures use `node:crypto`.
+ESM only, Node.js `>=24.3.0`. `@chamvi/core`, [`@chamvi/http`](../http) (it serves the channel's deliveries) and `ai` are peer dependencies. GitHub is reached through [`@octokit/core`](https://www.npmjs.com/package/@octokit/core) with the pagination plugin; the App JWT, the installation tokens and the webhook signatures use `node:crypto`.
 
 ## GitHub App setup
 
@@ -77,6 +77,7 @@ export async function createTriageServer(
         GITHUB_WEBHOOK_SECRET,
         CHAMVI_TOKEN,
     } = process.env;
+
     if (!GITHUB_APP_ID || !GITHUB_PRIVATE_KEY || !GITHUB_WEBHOOK_SECRET || !CHAMVI_TOKEN) {
         throw new Error('Set GITHUB_APP_ID, GITHUB_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET and CHAMVI_TOKEN.');
     }
@@ -100,12 +101,19 @@ export async function createTriageServer(
         hooks: {
             // closing waits for the owner, asked in a comment on the issue
             async beforeToolExecution({ toolName, input }, ctx) {
-                if (toolName !== 'github_close_issue') return undefined;
+                if (toolName !== 'github_close_issue') {
+                    return undefined;
+                }
+
                 const { approved } = await ctx.channels.findOneOrFail('github').approve({
                     title: 'Close this issue?',
                     body: JSON.stringify(input),
                 });
-                if (!approved) throw new ToolDeniedError('The owner keeps the issue open.');
+
+                if (!approved) {
+                    throw new ToolDeniedError('The owner keeps the issue open.');
+                }
+
                 return undefined;
             },
         },
@@ -133,6 +141,7 @@ export async function createTriageServer(
     });
 
     await engine.start();
+
     return {
         app,
         engine,

@@ -27,6 +27,7 @@ export function gitSkills(options: GitSkillsOptions): ISkillSource & SkillInput 
 
     const approved = Object.freeze(options.approved.map((pin) => {
         validateApprovedSkill({ ...pin, directory: '/' });
+
         if (!pin.version.isWellFormed()) {
             invalid();
         }
@@ -44,10 +45,12 @@ export function gitSkills(options: GitSkillsOptions): ISkillSource & SkillInput 
         requestedDirectory: directory,
         names,
     } = configuration;
+
     return defineSkillSource({
         skills: approved,
         async load({ signal }: { signal: AbortSignal }): Promise<readonly Skill[]> {
             const snapshots: Skill[] = [];
+
             await prepareSkills({
                 source,
                 revision,
@@ -56,10 +59,12 @@ export function gitSkills(options: GitSkillsOptions): ISkillSource & SkillInput 
                 signal,
                 verify: (staged) => {
                     const pin = approved.find((entry) => entry.name === staged.name)!;
+
                     snapshots.push(loadSkillBundle({ ...pin, directory: staged.path }));
                 },
             });
             signal.throwIfAborted();
+
             return Object.freeze(snapshots);
         },
     });

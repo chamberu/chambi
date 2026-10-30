@@ -50,9 +50,11 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
     if (options.root !== undefined && (typeof options.root !== 'string' || options.root.length === 0)) {
         throw new InvalidAgentDefinitionError('root must be a non-empty path.');
     }
+
     if (options.cache !== undefined && typeof options.cache !== 'boolean') {
         throw new InvalidAgentDefinitionError('cache must be a boolean.');
     }
+
     assertSandboxEnv(options.env);
     resolveLimits(options.limits);
 
@@ -71,7 +73,9 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
             clock,
             onDispose: () => live.delete(id),
         });
+
         live.set(id, workspace);
+
         return workspace;
     };
 
@@ -80,23 +84,28 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
 
         async create(input) {
             assertCreateInput(input);
+
             const deployment = assertDeployment(input.deployment);
             const limits = resolveLimits(options.limits, input.limits);
 
             const id = randomUUID();
             const dir = join(root, id);
             const info = buildWorkspaceInfo(input, LOCAL_PROVIDER_NAME, clock.now(), limits.maxLifetimeMs);
+
             try {
                 // the cache folders appear once a tool writes to them
                 await mkdir(root, { recursive: true });
                 // owner only: the record holds the create's env (tokens)
                 await mkdir(dir, { mode: 0o700 });
+
                 for (const sub of [REPO_DIR, 'home', 'tmp']) {
                     await mkdir(join(dir, sub));
                 }
+
                 await writeFile(join(dir, WORKSPACE_RECORD), JSON.stringify(toRecord(info, deployment, input.env)), { mode: 0o600 });
             } catch (error) {
                 await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+
                 throw new SandboxError(`cannot create the workspace directory (${errnoCode(error) ?? 'unknown error'}).`, { cause: error });
             }
 
@@ -112,8 +121,10 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
                 }));
             } catch (error) {
                 await workspace.dispose().catch(() => undefined);
+
                 throw error;
             }
+
             return workspace;
         },
 
@@ -121,25 +132,41 @@ export function createLocalSandbox(options: LocalSandboxOptions = {}): ISandboxP
             const deployment = assertDeployment(findOptions.deployment);
             const now = clock.now().getTime();
             const found: IWorkspace[] = [];
+
             for (const { id, record } of await listRecords(root)) {
-                if (record.runId !== runId || record.deployment !== deployment || record.info.expiresAt.getTime() <= now) continue;
-                const held = live.get(id);
-                if (held) {
-                    if (!held.disposed) found.push(held);
+                if (record.runId !== runId || record.deployment !== deployment || record.info.expiresAt.getTime() <= now) {
                     continue;
                 }
+
+                const held = live.get(id);
+
+                if (held) {
+                    if (!held.disposed) {
+                        found.push(held);
+                    }
+
+                    continue;
+                }
+
                 // a folder without its repo directory is no workspace any more
-                if (!(await stat(join(root, id, REPO_DIR)).catch(() => undefined))?.isDirectory()) continue;
+                if (!(await stat(join(root, id, REPO_DIR)).catch(() => undefined))?.isDirectory()) {
+                    continue;
+                }
+
                 const workspace = open(id, { ...record.info, provider: LOCAL_PROVIDER_NAME }, record.env);
                 const checkout = await readCheckout(workspace, findOptions.signal, clock);
+
                 if (!checkout) {
                     // a create that died before its checkout finished: left to the collection
                     live.delete(id);
+
                     continue;
                 }
+
                 Object.assign(workspace.info, checkout);
                 found.push(workspace);
             }
+
             return found;
         },
 

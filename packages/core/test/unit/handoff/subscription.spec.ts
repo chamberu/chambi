@@ -43,6 +43,7 @@ describe('handoff.on()', () => {
     it('keeps the given options and key functions', () => {
         const concurrencyKey = (p: { pr: string }) => p.pr;
         const subscription = handoff.on({ maxPerRun: 3, concurrencyKey });
+
         expect(subscription.options.maxPerRun).toBe(3);
         expect(subscription.concurrencyKey).toBe(concurrencyKey);
         expect(subscription).not.toHaveProperty('idempotencyKey');
@@ -55,6 +56,7 @@ describe('handoff.on()', () => {
 
     it('an agent subscribing without agentChannel() is refused', () => {
         const store = createMemoryStore();
+
         expect(() => new Engine({
             store,
             agents: [agent()],
@@ -69,6 +71,7 @@ describe('handoff.on()', () => {
 
     it('agentChannel() has neither in nor out', () => {
         const channel = agentChannel();
+
         expect(channel.name).toBe('agent');
         expect(channel.in).toBeUndefined();
         expect(channel.out).toBeUndefined();

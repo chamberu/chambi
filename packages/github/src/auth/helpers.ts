@@ -14,7 +14,11 @@ import { JWT_BACKDATE_SECONDS, JWT_TTL_SECONDS } from './constants.ts';
 export function normalizePrivateKey(pem: string): KeyObject {
     try {
         const key = createPrivateKey(pem.replaceAll('\\n', '\n'));
-        if (key.asymmetricKeyType !== 'rsa') throw new TypeError('not an RSA key');
+
+        if (key.asymmetricKeyType !== 'rsa') {
+            throw new TypeError('not an RSA key');
+        }
+
         return key;
     } catch {
         // never echo the key
@@ -35,5 +39,6 @@ export function createAppJwt(appId: string, key: KeyObject, now: Date): string {
         iss: appId,
     })}`;
     const signature = createSign('RSA-SHA256').update(unsigned).sign(key).toString('base64url');
+
     return `${unsigned}.${signature}`;
 }

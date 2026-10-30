@@ -40,9 +40,9 @@ const T = new Date('2026-03-01T08:00:00.000Z');
 // a channel without behaviour, so a non-cron subscription validates
 const http: IChannel = { name: 'http' };
 const httpOn: ChannelSubscription = {
-    channel: 'http', 
-    id: 'http', 
-    options: {}, 
+    channel: 'http',
+    id: 'http',
+    options: {},
 };
 
 /** A deploy tool that asks for an approval first. */
@@ -52,6 +52,7 @@ const gated = (): Partial<AgentDefinition> => ({
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 const decision = await approve(context, { title: 'Deploy?' });
+
                 return decision.approved ? 'deployed' : 'not deployed';
             },
         }),
@@ -80,6 +81,7 @@ function setup(
         channels,
         clock,
     });
+
     return {
         clock,
         store,
@@ -104,7 +106,9 @@ describe('runJob', () => {
         });
 
         expect(result).toMatchObject({ status: 'completed', exitCode: 0 });
+
         const run = await store.runs.findOne(result.runId as string);
+
         expect(run?.trigger.idempotencyKey).toMatch(/@2026-03-01T08:00:00\.000Z$/);
     });
 
@@ -115,11 +119,13 @@ describe('runJob', () => {
             agent,
             engine,
         } = setup(textModel());
+
         clock.advance(7 * 60_000);
 
         const result = await runJob({ engine, agent });
 
         const run = await store.runs.findOne(result.runId as string);
+
         expect(run?.trigger.payload).toEqual({ scheduledAt: '2026-03-01T08:07:00.000Z' });
     });
 
@@ -159,12 +165,14 @@ describe('runJob', () => {
             engine,
         } = setup(textModel());
         const subscription = agent.definition.channels?.[0] as ChannelSubscription;
+
         await fireCronSubscription({
             engine,
             agent,
             subscription,
             scheduledAt: new Date(T.getTime() - 300_000),
         });
+
         const start = vi.spyOn(engine, 'start');
         const drain = vi.spyOn(engine, 'drain');
 
@@ -196,6 +204,7 @@ describe('runJob', () => {
             scheduledAt: T,
         });
         const { runId } = tick as { runId: string };
+
         expect(await store.runs.claim(runId, 'pod-1', 60_000)).toBe(true);
         await store.runs.update(runId, { status: 'running' });
         clock.advance(15 * 60_000);
@@ -228,6 +237,7 @@ describe('runJob', () => {
             engine,
             agent,
         });
+
         expect(first.status).toBe('waiting');
         clock.advance(25 * 60 * 60_000);
 
@@ -258,6 +268,7 @@ describe('runJob', () => {
             engine,
             agent,
         });
+
         expect(first.status).toBe('waiting');
         clock.advance(300_000);
 
@@ -308,6 +319,7 @@ describe('runJob', () => {
             agent,
             pollMs: 1_000,
         });
+
         await vi.waitFor(async () => expect((await store.runs.find({ agent: 'sweep' })).total).toBe(1));
         await b.start();
         await b.idle();
@@ -327,8 +339,10 @@ describe('runJob', () => {
         const getRun = vi.spyOn(engine, 'getRun');
         // the run settles while a poll is in flight
         const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+
         getRun.mockImplementationOnce(async (id) => {
             await gate;
+
             return store.runs.findOne(id);
         });
 
@@ -337,6 +351,7 @@ describe('runJob', () => {
             agent,
             pollMs: 1_000,
         });
+
         await vi.waitFor(() => expect(getRun).toHaveBeenCalledTimes(1));
         await engine.idle();
         await expect(job).resolves.toMatchObject({ status: 'completed' });
@@ -347,6 +362,7 @@ describe('runJob', () => {
         });
 
         const calls = getRun.mock.calls.length;
+
         clock.advance(5_000);
         await new Promise((resolve) => {
             setImmediate(resolve);
@@ -360,8 +376,10 @@ describe('runJob', () => {
             engine,
         } = setup(textModel());
         const error = new Error('store down');
+
         vi.spyOn(engine, 'getRun').mockRejectedValue(error);
         vi.spyOn(engine, 'on').mockReturnValue(() => {});
+
         const drain = vi.spyOn(engine, 'drain');
 
         await expect(runJob({
@@ -389,11 +407,13 @@ describe('runJob', () => {
 
     it('requires a subscription id when the agent has several cron subscriptions', async () => {
         const several = setup(textModel(), [cron.on('*/5 * * * *'), cron.on('0 * * * *')]);
+
         await expect(runJob({ ...several })).rejects.toThrow(InvalidAgentDefinitionError);
         await expect(runJob({ ...several })).rejects.toThrow(/2 cron subscriptions/);
         await expect(runJob({ ...several, subscription: 'cron:nope' })).rejects.toThrow(InvalidAgentDefinitionError);
 
         const none = setup(textModel(), [httpOn]);
+
         await expect(runJob({ ...none })).rejects.toThrow(InvalidAgentDefinitionError);
         await expect(runJob({ ...none, subscription: 'http' })).rejects.toThrow(InvalidAgentDefinitionError);
     });
@@ -404,6 +424,7 @@ describe('runJob', () => {
         const result = await runJob({ ...several, subscription: 'cron:0 * * * *' });
 
         const run = await several.store.runs.findOne(result.runId as string);
+
         expect(run?.trigger.trigger).toBe('cron:0 * * * *');
         expect(run?.trigger.channel).toBe('cron');
     });

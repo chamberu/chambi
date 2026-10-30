@@ -75,6 +75,7 @@ describe('resolveLimits', () => {
 
     it('returns a fresh object', () => {
         const limits = resolveLimits();
+
         expect(limits).not.toBe(DEFAULT_LIMITS);
         expect(Object.isFrozen(limits)).toBe(false);
     });

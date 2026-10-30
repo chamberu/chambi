@@ -45,7 +45,10 @@ const call = (toolName: string, input: unknown = {}): MockResponse => ({
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -67,17 +70,22 @@ async function runOnce(
         clock,
         onError: () => {},
     });
+
     engines.push(engine);
     setup?.(engine);
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: 'ops',
         trigger: 'test',
         channel: 'test',
         payload: {},
     });
+
     await engine.idle();
+
     const steps = await store.steps.find(runId);
+
     return {
         runId,
         store,
@@ -98,6 +106,7 @@ describe('agent hooks', () => {
                     id: info.toolCallId === currentToolCall()?.toolCallId,
                     injected: inject(ctx, key),
                 });
+
                 return info.input;
             },
         };
@@ -111,6 +120,7 @@ describe('agent hooks', () => {
             },
             (engine) => engine.provide(key, 'hi'),
         );
+
         expect(run?.status).toBe('completed');
         expect(seen).toEqual([
             {
@@ -134,12 +144,14 @@ describe('agent hooks', () => {
             inputSchema: z.object({ n: z.number() }),
             execute: async (input) => {
                 executed.push(input);
+
                 return 'ok';
             },
         });
         const hooks: AgentHooks = {
             beforeToolExecution: ({ input }) => {
                 const { n } = input as { n: number };
+
                 return n === 1 ? { n: 2 } : { n: 'x' };
             },
         };
@@ -147,6 +159,7 @@ describe('agent hooks', () => {
             mockModel([call('count', { n: 1 }), call('count', { n: 5 }), text('done')]),
             { tools: { count }, hooks },
         );
+
         expect(run?.status).toBe('completed');
         expect(executed).toEqual([{ n: 2 }]);
         expect(tools[1]?.error).toMatchObject({ code: 'validation_error' });
@@ -159,6 +172,7 @@ describe('agent hooks', () => {
             inputSchema: z.object({}),
             execute: async () => {
                 executed.push(1);
+
                 return 'ok';
             },
         });
@@ -170,6 +184,7 @@ describe('agent hooks', () => {
                 },
             },
         });
+
         expect(run?.status).toBe('completed');
         expect(executed).toEqual([]);
         expect(tools[0]?.error).toEqual({ code: 'tool_denied', message: 'bash is not for you.' });
@@ -185,6 +200,7 @@ describe('agent hooks', () => {
                 },
             },
         });
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toMatchObject({ message: 'stop everything' });
     });
@@ -202,6 +218,7 @@ describe('agent hooks', () => {
             tools: { post },
             hooks: { beforeToolExecution: () => ({ body: 'y' }) },
         });
+
         expect(run?.status).toBe('completed');
         expect(await store.effects.findOne(`${runId}:post:${stableHash({ body: 'y' })}`)).toEqual({ result: 'y' });
         expect(await store.effects.findOne(`${runId}:post:${stableHash({ body: 'x' })}`)).toBeUndefined();
@@ -214,6 +231,7 @@ describe('agent hooks', () => {
             inputSchema: z.object({ body: z.string() }),
             execute: async ({ body }) => {
                 executions += 1;
+
                 return `secret ${body}`;
             },
         });
@@ -224,11 +242,13 @@ describe('agent hooks', () => {
                 hooks: {
                     afterToolExecution: (info) => {
                         after.push(info);
+
                         return String(info.output).replace('secret', '[redacted]');
                     },
                 },
             },
         );
+
         expect(run?.status).toBe('completed');
         expect(executions).toBe(1);
         expect(tools.map((step) => step.output)).toEqual(['[redacted] x', '[redacted] x']);
@@ -252,10 +272,12 @@ describe('agent hooks', () => {
             hooks: {
                 afterToolExecution: (info) => {
                     after.push(info);
+
                     return info.output;
                 },
             },
         });
+
         expect(run?.status).toBe('completed');
         expect(tools[0]?.error).toMatchObject({ message: 'boom' });
         expect(after).toEqual([]);
@@ -275,10 +297,12 @@ describe('agent hooks', () => {
             hooks: {
                 afterToolExecution: ({ output }) => {
                     after.push(output);
+
                     return `final ${String(output)}`;
                 },
             },
         });
+
         expect(run?.status).toBe('completed');
         expect(after).toEqual(['two']);
         expect(tools[0]?.output).toBe('final two');
@@ -290,6 +314,7 @@ describe('agent hooks', () => {
             needsApproval: true,
             execute: async () => 'ok',
         });
+
         expect(() => defineAgent({
             name: 'ops',
             instructions: 'x',
@@ -305,6 +330,7 @@ describe('agent hooks', () => {
             execute: async () => 'ok',
         });
         const { run } = await runOnce(mockModel([]), { tools: (): ToolSet => ({ gated }) });
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toMatchObject({ code: 'invalid_agent_definition' });
         expect(String((run?.error as { message: string }).message)).toContain('gated');

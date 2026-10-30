@@ -38,12 +38,17 @@ export class DatabaseCheckpointRepository implements ICheckpointRepository {
 
     async findOne(runId: string): Promise<Checkpoint | undefined> {
         const entity = await this.checkpoints.findOneBy({ runId });
+
         return entity ? toCheckpoint(entity) : undefined;
     }
 
     async findOneOrFail(runId: string): Promise<Checkpoint> {
         const result = await this.findOne(runId);
-        if (result === undefined) throw new RepositoryNotFoundError('checkpoints');
+
+        if (result === undefined) {
+            throw new RepositoryNotFoundError('checkpoints');
+        }
+
         return result;
     }
 }

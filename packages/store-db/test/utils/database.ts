@@ -24,6 +24,8 @@ export type PostgresConnection = {
 };
 
 declare module 'vitest' {
+    // Vitest's augmentation name is fixed by its public API.
+    // eslint-disable-next-line @typescript-eslint/naming-convention
     export interface ProvidedContext {
         postgres: PostgresConnection;
     }
@@ -50,6 +52,7 @@ export async function createTestDataSource(opts: TestDataSourceOptions = {}): Pr
     }
 
     const database = `chamvi_test_${randomUUID().replaceAll('-', '')}`;
+
     await createDatabase({
         options: {
             type: 'postgres',
@@ -72,6 +75,7 @@ export async function createTestDataSource(opts: TestDataSourceOptions = {}): Pr
             options: `-c TimeZone=America/New_York${opts.schema ? ` -c search_path=${opts.schema}` : ''}`,
         },
     });
+
     await dataSource.initialize();
 
     if (opts.schema) {
@@ -87,5 +91,6 @@ export async function createTestDataSource(opts: TestDataSourceOptions = {}): Pr
 
 export async function truncateRepository(dataSource: DataSource): Promise<void> {
     const tables = Object.values(TableName).map((name) => `"${name}"`).join(', ');
+
     await dataSource.query(`TRUNCATE ${tables} RESTART IDENTITY`);
 }

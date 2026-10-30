@@ -16,13 +16,17 @@ describe('README example', () => {
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = readme.matchAll(/```typescript\n([\s\S]*?)```/g).map((m) => m[1]).toArray();
+
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
     it('serves the built dashboard', async () => {
         const response = await get(app, '/ui/');
+
         expect(response.status).toBe(200);
+
         const html = await response.text();
+
         expect(html).toContain('<base href="/ui/">');
         expect(html).toContain('id="chamvi-config"');
     });

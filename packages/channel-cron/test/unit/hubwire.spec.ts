@@ -28,6 +28,7 @@ describe('hubwire scheduled component', () => {
     const start = async (component: IScheduledComponent) => {
         components.push(component);
         await component.start();
+
         return component;
     };
 
@@ -51,6 +52,7 @@ describe('hubwire scheduled component', () => {
             runOnStart: false,
             run,
         };
+
         await start(defineScheduledComponent(options));
         await start(defineScheduledComponent(options));
 
@@ -88,6 +90,7 @@ describe('hubwire scheduled component', () => {
     it('honours the timezone', async () => {
         const berlin = vi.fn<(ctx: ScheduledComponentRunContext) => Promise<void>>(async () => {});
         const utc = vi.fn<(ctx: ScheduledComponentRunContext) => Promise<void>>(async () => {});
+
         await start(defineScheduledComponent({
             name: 'berlin',
             schedule: '0 9 * * *',
@@ -112,8 +115,11 @@ describe('hubwire scheduled component', () => {
 
     it('reports a throwing lock to onError', async () => {
         const error = new Error('lock store down');
+
         lock.acquireError = error;
+
         const onError = vi.fn();
+
         await start(defineScheduledComponent({
             name: 'job',
             schedule: '* * * * *',
@@ -130,7 +136,9 @@ describe('hubwire scheduled component', () => {
 
     it('a held tick is skipped without running', async () => {
         await lock.acquire('job:2026-03-01T08:00:00.000Z', 60_000);
+
         const onSkip = vi.fn();
+
         await start(defineScheduledComponent({
             name: 'job',
             schedule: '* * * * *',

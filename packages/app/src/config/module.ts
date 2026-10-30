@@ -35,6 +35,7 @@ import type { AppConfig, ReadConfigOptions } from './types.ts';
 
 function readBasePath(env: Env): string {
     const value = envString(env, 'CHAMVI_BASE_PATH', { default: '' });
+
     if (value.length > 0 && !BASE_PATH_PATTERN.test(value)) {
         throw new InvalidAgentDefinitionError(
             'CHAMVI_BASE_PATH must be a lower-case path such as /api, without a trailing slash.',

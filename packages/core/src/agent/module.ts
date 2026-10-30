@@ -35,6 +35,7 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
     conversationKey(def);
 
     const seen = new Set<string>();
+
     for (const subscription of def.channels ?? []) {
         assertConcurrencyMaxRuns(subscription.concurrencyMaxRuns, `Agent "${def.name}" subscription "${subscription.id}" concurrencyMaxRuns`);
 
@@ -55,7 +56,10 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
     // a factory's set is only known per execution, the engine checks it there
     if (typeof def.tools !== 'function') {
         assertNoNeedsApproval(def.name, def.tools ?? {});
-        if (def.toolsContext) assertToolsContext(def.name, def.tools ?? {}, def.toolsContext);
+
+        if (def.toolsContext) {
+            assertToolsContext(def.name, def.tools ?? {}, def.toolsContext);
+        }
     }
 
     return {

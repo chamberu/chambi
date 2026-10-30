@@ -20,14 +20,18 @@ export function useSchedules(client: IApiClient) {
         try {
             schedules.value = await client.listSchedules();
             error.value = undefined;
+
             return undefined;
         } catch (e) {
             error.value = asApiError(e);
+
             return retryDelayOf(error.value);
         }
     }, SCHEDULES_POLL_MS);
+
     poller.start();
     onScopeDispose(() => poller.stop());
+
     return {
         schedules,
         error,

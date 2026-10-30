@@ -17,7 +17,7 @@ npm run typecheck
 npm run lint
 ```
 
-- **Node.js**: >= 22.0.0
+- **Node.js**: >= 24.3.0
 - **Package manager**: npm (workspaces)
 - **Build orchestration**: nx (`nx run-many`), packages built with tsdown (ESM only)
 

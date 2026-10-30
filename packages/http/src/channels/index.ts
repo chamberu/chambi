@@ -9,5 +9,3 @@ export { HTTP_CHANNEL_NAME, MCP_CHANNEL_NAME, WEBHOOK_CHANNEL_NAME } from './con
 export * from './http.ts';
 export type { WebhookChannel, WebhookChannelOptions } from './types.ts';
 export * from './webhook.ts';
-export { readRequestBody } from '../request/helpers.ts';
-export type { ReadRequestBodyOptions } from '../request/types.ts';

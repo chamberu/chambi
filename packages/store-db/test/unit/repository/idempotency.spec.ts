@@ -37,6 +37,7 @@ describePostgres('DatabaseIdempotencyRepository idempotency keys', () => {
     it('takes a scope that carries an encoded invoker (up to 1024 characters)', async () => {
         // <agent>:<source>:<kind>:<id> with a 255-character subject, every character encoded
         const scope = `${'a'.repeat(64)}:webhook:user:${encodeURIComponent('é'.repeat(150))}`;
+
         expect(scope.length).toBeLessThanOrEqual(1024);
         expect(scope.length).toBeGreaterThan(255);
 

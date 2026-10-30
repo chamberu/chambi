@@ -39,9 +39,16 @@ export function parseUrl(input: string): URL | undefined {
  * can neither be read as a git option nor leak a token through git's stderr.
  */
 export function isNormalizedRepo(repo: unknown): boolean {
-    if (typeof repo !== 'string' || hasUnsafeCharacter(repo)) return false;
-    if (!repo.startsWith('https://') && !repo.startsWith('file:///')) return false;
+    if (typeof repo !== 'string' || hasUnsafeCharacter(repo)) {
+        return false;
+    }
+
+    if (!repo.startsWith('https://') && !repo.startsWith('file:///')) {
+        return false;
+    }
+
     const url = parseUrl(repo);
+
     return !!url &&
         url.username === '' &&
         url.password === '' &&
@@ -53,7 +60,11 @@ export function isNormalizedRepo(repo: unknown): boolean {
 export function hasUnsafeCharacter(input: string): boolean {
     for (let i = 0; i < input.length; i++) {
         const code = input.charCodeAt(i);
-        if (code <= 0x20 || code === 0x7F) return true;
+
+        if (code <= 0x20 || code === 0x7F) {
+            return true;
+        }
     }
+
     return false;
 }

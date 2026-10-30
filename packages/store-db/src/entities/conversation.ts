@@ -25,18 +25,25 @@ export class ConversationEntity {
         collation: 'C',
     })
     id!: string;
+
     @Column({ type: 'text', collation: 'C' })
     agent!: string;
+
     @Column({ type: 'text', collation: 'C' })
     channel!: string;
+
     @Column({ type: 'text', collation: 'C' })
     account!: string;
+
     @Column({ type: 'text', collation: 'C' })
     chat!: string;
+
     @Column({ type: 'text', collation: 'C' })
     audience!: string;
+
     @Column({ type: 'integer' })
     generation!: number;
+
     @Column({
         name: 'active_run_id',
         type: 'varchar',
@@ -44,6 +51,7 @@ export class ConversationEntity {
         nullable: true,
     })
     activeRunId!: string | null;
+
     @Column({
         name: 'snapshot_messages',
         type: 'jsonb',
@@ -51,6 +59,7 @@ export class ConversationEntity {
         transformer: OPTIONAL_JSON_TRANSFORMER,
     })
     snapshotMessages!: ConversationSnapshot['messages'] | null;
+
     @Column({
         name: 'snapshot_item_ids',
         type: 'text',
@@ -58,6 +67,7 @@ export class ConversationEntity {
         nullable: true,
     })
     snapshotItemIds!: string[] | null;
+
     @Column({
         name: 'snapshot_note_keys',
         type: 'text',
@@ -65,18 +75,21 @@ export class ConversationEntity {
         nullable: true,
     })
     snapshotNoteKeys!: string[] | null;
+
     @Column({
         name: 'snapshot_created_at',
         type: 'timestamp with time zone',
         nullable: true,
     })
     snapshotCreatedAt!: Date | null;
+
     @Column({
         name: 'snapshot_omitted',
         type: 'integer',
         nullable: true,
     })
     snapshotOmitted!: number | null;
+
     @ManyToOne(() => RunEntity, {
         nullable: true,
         onDelete: 'NO ACTION',

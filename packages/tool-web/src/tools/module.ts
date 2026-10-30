@@ -16,5 +16,6 @@ import { webFetchTool } from './fetch.ts';
  */
 export function webTools(options: WebToolsOptions = {}): ToolSet {
     const normalized = normalizeOptions(options);
+
     return { web_fetch: webFetchTool(normalized) };
 }

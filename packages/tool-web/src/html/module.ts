@@ -12,18 +12,24 @@ import type { ConvertedPage } from './types.ts';
 /** The lower-cased `type/subtype` of a content type, else undefined. */
 export function mediaTypeOf(contentType: string | null): string | undefined {
     const type = contentType?.split(';')[0]?.trim().toLowerCase();
+
     return type || undefined;
 }
 
 export function isHtml(contentType: string | null): boolean {
     const type = mediaTypeOf(contentType);
+
     return type === 'text/html' || type === 'application/xhtml+xml';
 }
 
 /** True for a type readable as text: `text/*`, JSON, XML, scripts, a `+json`/`+xml` suffix, or none given. */
 export function isText(contentType: string | null): boolean {
     const type = mediaTypeOf(contentType);
-    if (!type) return true;
+
+    if (!type) {
+        return true;
+    }
+
     return type.startsWith('text/') ||
         TEXT_MEDIA_TYPES.has(type) ||
         type.endsWith('+json') ||
@@ -31,7 +37,10 @@ export function isText(contentType: string | null): boolean {
 }
 
 function decoderFor(label: string | undefined): TextDecoder | undefined {
-    if (!label) return undefined;
+    if (!label) {
+        return undefined;
+    }
+
     try {
         return new TextDecoder(label);
     } catch {
@@ -46,10 +55,13 @@ function decoderFor(label: string | undefined): TextDecoder | undefined {
 export function decodeBody(bytes: Uint8Array, contentType: string | null): string {
     const declared = /charset\s*=\s*"?([\w.:-]+)/i.exec(contentType ?? '')?.[1];
     let decoder = decoderFor(declared);
+
     if (!decoder && isHtml(contentType)) {
         const head = new TextDecoder('latin1').decode(bytes.subarray(0, 1024));
+
         decoder = decoderFor(/<meta[^>]+charset\s*=\s*["']?([\w.:-]+)/i.exec(head)?.[1]);
     }
+
     return (decoder ?? new TextDecoder()).decode(bytes);
 }
 
@@ -64,22 +76,25 @@ function convert(html: string, baseUrl: string, format: 'markdown' | 'text'): Co
     // emptyLinks: javascript: and data: links become their text
     const clean = { emptyLinks: true };
     let content = mdream(html, {
-        origin: baseUrl, 
-        minimal: true, 
-        format, 
-        frontmatter, 
+        origin: baseUrl,
+        minimal: true,
+        format,
+        frontmatter,
         clean,
     });
+
     if (content.replace(FRONTMATTER, '').trim() === '') {
         content = mdream(html, {
-            origin: baseUrl, 
-            format, 
-            frontmatter, 
-            clean, 
+            origin: baseUrl,
+            format,
+            frontmatter,
+            clean,
             filter: { exclude: [...PAGE_CHROME_ELEMENTS] },
         });
     }
+
     content = content.replace(FRONTMATTER, '').trim();
+
     return title === undefined ? { content } : { title, content };
 }
 

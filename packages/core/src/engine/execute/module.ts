@@ -77,14 +77,20 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         initialMessage(run.trigger, ctx.conversation ? run.conversation?.text : undefined),
     ];
     let configured: ReturnType<typeof splitInstructions>;
+
     try {
         assertTranscriptMessages(initial);
         configured = splitInstructions(agent.definition.instructions, ctx.skills?.instructions ?? []);
     } catch (error) {
-        if (!(error instanceof ValidationError || error instanceof InvalidAgentDefinitionError)) throw error;
+        if (!(error instanceof ValidationError || error instanceof InvalidAgentDefinitionError)) {
+            throw error;
+        }
+
         await ctx.finish({ status: RunStatus.FAILED, error: toRunError(error) });
+
         return;
     }
+
     const usage: Usage = { ...run.usage };
     let stepIndex = checkpoint ? checkpoint.stepIndex + 1 : 0;
     let stepSeq = (await store.steps.find(run.id)).length;
@@ -96,22 +102,30 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     // granted (or denied) on the last allowed step still runs and is answered
     const extraSteps = pending.length > 0 ? 1 : 0;
     const remainingSteps = budget.maxSteps + extraSteps - stepIndex;
+
     if (remainingSteps <= 0) {
         // the step limit was reached by an earlier execution that did not settle the run
         if (checkpoint && checkpoint.finishReason !== 'tool-calls') {
             const text = lastAssistantText(checkpoint.messages);
             const { output } = agent.definition;
+
             if (!output) {
                 await ctx.finish({ status: RunStatus.COMPLETED, output: text });
+
                 return;
             }
+
             const incomplete = incompleteOutput(checkpoint.finishReason);
+
             if (incomplete) {
                 await ctx.finish({ status: RunStatus.FAILED, error: toRunError(incomplete) });
+
                 return;
             }
+
             try {
                 const parsed: unknown = await output.parseCompleteOutput({ text }, outputContext(checkpoint, clock.now()));
+
                 await ctx.finish({ status: RunStatus.COMPLETED, output: parsed });
             } catch (error) {
                 await ctx.finish({ status: RunStatus.FAILED, error: toRunError(toValidationError(error)) });
@@ -119,15 +133,21 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         } else {
             await ctx.finish({ status: RunStatus.FAILED, error: toRunError(budgetExceeded(budget, 'steps')) });
         }
+
         return;
     }
 
     let prompt: ModelMessage[];
+
     try {
         prompt = await hydrateMessages([...configured.messages, ...initial], store.artifacts);
     } catch (error) {
-        if (!(error instanceof ArtifactNotFoundError)) throw error;
+        if (!(error instanceof ArtifactNotFoundError)) {
+            throw error;
+        }
+
         await ctx.finish({ status: RunStatus.FAILED, error: toRunError(error) });
+
         return;
     }
 
@@ -141,8 +161,12 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         trigger: run.trigger,
         signal,
     };
+
     bindRunSnapshot(runContext);
-    if (ctx.conversation) bindConversationRun(runContext, ctx.conversation.capability, run);
+
+    if (ctx.conversation) {
+        bindConversationRun(runContext, ctx.conversation.capability, run);
+    }
 
     // the calls approve() suspended in this execution, in the order they suspended
     const suspended: ApprovalRequest[] = [];
@@ -150,6 +174,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     let replaying = pending.length > 0;
     let assembled: ReturnType<typeof assembleTools>;
     let model: LanguageModel;
+
     try {
         model = toLanguageModel(ctx.model, ctx.models, agent.name);
         assembled = assembleTools(ctx, runContext, (request) => {
@@ -158,10 +183,16 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     } catch (error) {
         local.abort();
         timeout?.clear();
-        if (!(error instanceof InvalidAgentDefinitionError)) throw error;
+
+        if (!(error instanceof InvalidAgentDefinitionError)) {
+            throw error;
+        }
+
         await ctx.finish({ status: RunStatus.FAILED, error: toRunError(error) });
+
         return;
     }
+
     const {
         tools,
         activeTools,
@@ -189,10 +220,20 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
      * for writes that are owner-conditional in the store already (ctx.update).
      */
     const guarded = async (write: () => Promise<void>, { checkOwner = true } = {}): Promise<boolean> => {
-        if (abandoned) return false;
-        if (checkOwner && ctx.ownsRun && !await ctx.ownsRun()) return false;
-        if (abandoned) return false;
+        if (abandoned) {
+            return false;
+        }
+
+        if (checkOwner && ctx.ownsRun && !await ctx.ownsRun()) {
+            return false;
+        }
+
+        if (abandoned) {
+            return false;
+        }
+
         await write();
+
         return true;
     };
 
@@ -202,19 +243,26 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             runId: run.id,
             index: stepSeq,
         };
-        if (await guarded(() => store.steps.insert(full))) {
-            stepSeq++;
-            ctx.onStepAppended(full);
+
+        if (!await guarded(() => store.steps.insert(full))) {
+            return;
         }
+
+        stepSeq++;
+        ctx.onStepAppended(full);
     };
 
     const handleStepEnd = async (step: StepResult<ToolSet>) => {
         const complete = modelCallEnded;
+
         modelCallEnded = false;
+
         try {
             assertTranscriptMessages(step.response.messages);
+
             const finishedAt = clock.now();
             const tokens = stepTokens(step);
+
             await append({
                 kind: 'llm',
                 name: step.model.modelId,
@@ -231,10 +279,15 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 startedAt: stepStartedAt,
                 finishedAt,
             });
+
             // the suspended calls stay pending: no tool step, no result in the checkpoint
             const suspendedIds = new Set(suspended.map((request) => request.toolCallId));
+
             for (const part of step.content) {
-                if ((part.type === 'tool-result' || part.type === 'tool-error') && suspendedIds.has(part.toolCallId)) continue;
+                if ((part.type === 'tool-result' || part.type === 'tool-error') && suspendedIds.has(part.toolCallId)) {
+                    continue;
+                }
+
                 if (part.type === 'tool-result') {
                     await append({
                         kind: 'tool',
@@ -253,18 +306,26 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                         startedAt: stepStartedAt,
                         finishedAt,
                     });
+
                     // other tool errors go back to the model as tool-error results
-                    if (part.error instanceof FatalToolError) fatal ??= { error: part.error };
+                    if (part.error instanceof FatalToolError) {
+                        fatal ??= { error: part.error };
+                    }
                 }
             }
+
             let { messages }: { messages: ModelMessage[] } = step.response;
+
             if (suspendedIds.size > 0) {
                 messages = withoutResults(messages, suspendedIds);
+
                 const order = step.toolCalls.map((c) => c.toolCallId);
+
                 approval = suspended
                     .filter((request) => order.includes(request.toolCallId))
                     .sort((a, b) => order.indexOf(a.toolCallId) - order.indexOf(b.toolCallId))[0] ?? suspended[0];
             }
+
             responseMessages.push(...messages);
             await guarded(() => store.checkpoints.save({
                 runId: run.id,
@@ -285,6 +346,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 await ctx.update({ usage: { ...usage }, updatedAt: clock.now() });
             }, { checkOwner: false });
             stepStartedAt = clock.now();
+
             // an error part ends the step with 'error' and fails the run with that error
             if (!complete && step.finishReason === 'other') {
                 fatal ??= { error: new IncompleteResponseError('The model stream ended without a finish part.') };
@@ -308,7 +370,10 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
      */
     const runPending = async (): Promise<'paused' | 'failed' | 'done'> => {
         for (const call of pending) {
-            if (signal.aborted) return 'done';
+            if (signal.aborted) {
+                return 'done';
+            }
+
             const startedAt = clock.now();
             const result = await executePendingCall({
                 call,
@@ -318,10 +383,16 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 messages: prompt,
                 signal,
             });
-            if (suspended.length > 0) return 'paused';
+
+            if (suspended.length > 0) {
+                return 'paused';
+            }
+
             const finishedAt = clock.now();
+
             pendingWrite = (async () => {
                 const part = await toToolResultPart(call, Object.hasOwn(tools, call.toolName) ? tools[call.toolName] : undefined, result);
+
                 initial = withToolResults(initial, [part]);
                 prompt = withToolResults(prompt, [part]);
                 await guarded(() => store.checkpoints.save({
@@ -347,35 +418,45 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 });
             })();
             await pendingWrite;
+
             if ('error' in result && result.error instanceof FatalToolError) {
                 fatal ??= { error: result.error };
+
                 return 'failed';
             }
         }
+
         return 'done';
     };
 
     const onStepEnd = (step: StepResult<ToolSet>): Promise<void> => {
         pendingStepEnd = handleStepEnd(step);
+
         return pendingStepEnd;
     };
 
     if (pending.length > 0) {
         let outcome: Awaited<ReturnType<typeof runPending>>;
+
         try {
             const work = runPending();
+
             work.catch(() => {});
             outcome = await untilAborted(work, signal);
         } catch (error) {
             local.abort();
             timeout?.clear();
+
             // the write of a call that finished before the abort lands before the run settles, never after
             let settled: Promise<void>;
+
             do {
                 settled = pendingWrite;
                 await settled.catch(() => {});
             } while (settled !== pendingWrite);
+
             abandoned = true;
+
             if (ctx.signal.aborted) {
                 await ctx.finish({ status: RunStatus.CANCELLED, usage });
             } else if (timeout?.signal.aborted) {
@@ -391,12 +472,16 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                     error: toRunError(error),
                 });
             }
+
             return;
         }
+
         replaying = false;
+
         if (outcome !== 'done') {
             local.abort();
             timeout?.clear();
+
             if (outcome === 'failed' && fatal) {
                 await ctx.finish({
                     status: RunStatus.FAILED,
@@ -406,6 +491,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             } else {
                 await ctx.pause(suspended[0]!, usage);
             }
+
             return;
         }
     }
@@ -417,7 +503,10 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         () => suspended.length > 0,
     ];
     const spentTokens = run.usage.inputTokens + run.usage.outputTokens;
-    if (budget.maxTokens !== undefined) stopWhen.push(tokensExceeded(budget.maxTokens, spentTokens));
+
+    if (budget.maxTokens !== undefined) {
+        stopWhen.push(tokensExceeded(budget.maxTokens, spentTokens));
+    }
 
     const loop = new ToolLoopAgent({
         model,
@@ -451,6 +540,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         const stream = await loop.stream(options);
         // the first stream error fails the run, as a rejected generate did
         let streamError: { error: unknown } | undefined;
+
         for await (const part of stream.fullStream) {
             if (part.type === 'start-step') {
                 streamStep++;
@@ -467,10 +557,16 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 streamError ??= { error: part.error };
             }
         }
-        if (streamError) throw streamError.error;
+
+        if (streamError) {
+            throw streamError.error;
+        }
+
         const [steps, finishReason, text] = await Promise.all([stream.steps, stream.finishReason, stream.text]);
+
         // Keep normal sends alive until their journal settles; cancellation still exits via untilAborted.
         await ctx.conversation?.capability.idle(run.id);
+
         return {
             stream,
             steps,
@@ -480,21 +576,27 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     };
 
     let result: Awaited<ReturnType<typeof consume>>;
+
     try {
         const work = consume();
+
         // the agent may keep running after an abort; never leak its rejection
         work.catch(() => {});
         result = await untilAborted(work, signal);
     } catch (error) {
         // stop the model work right away; the cause is read from ctx.signal, timeout and fatal
         local.abort();
+
         // the step-end writes in flight land completely before the run settles, never after
         let settled: Promise<void>;
+
         do {
             settled = pendingStepEnd;
             await settled;
         } while (settled !== pendingStepEnd);
+
         abandoned = true;
+
         if (ctx.signal.aborted) {
             await ctx.finish({ status: RunStatus.CANCELLED, usage });
         } else if (timeout?.signal.aborted) {
@@ -510,6 +612,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 error: toRunError(fatal ? fatal.error : error),
             });
         }
+
         return;
     } finally {
         local.abort();
@@ -522,26 +625,33 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             usage,
             error: toRunError(fatal.error),
         });
+
         return;
     }
+
     if (ctx.signal.aborted) {
         await ctx.finish({ status: RunStatus.CANCELLED, usage });
+
         return;
     }
+
     if (approval) {
         await ctx.pause(approval, usage);
+
         return;
     }
 
     // the loop ended on a budget stop condition while the model still wanted tools
     const outOfSteps = result.steps.length >= remainingSteps;
     const outOfTokens = budget.maxTokens !== undefined && usage.inputTokens + usage.outputTokens >= budget.maxTokens;
+
     if (result.finishReason === 'tool-calls' && (outOfSteps || outOfTokens)) {
         await ctx.finish({
             status: RunStatus.FAILED,
             usage,
             error: toRunError(budgetExceeded(budget, outOfSteps ? 'steps' : 'tokens')),
         });
+
         return;
     }
 
@@ -552,18 +662,24 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             usage,
             output: result.text,
         });
+
         return;
     }
+
     const incomplete = incompleteOutput(result.finishReason, unansweredToolNames(result.steps.at(-1)));
+
     if (incomplete) {
         await ctx.finish({
             status: RunStatus.FAILED,
             usage,
             error: toRunError(incomplete),
         });
+
         return;
     }
+
     let output: unknown;
+
     try {
         output = await result.stream.output;
     } catch (error) {
@@ -572,8 +688,10 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             usage,
             error: toRunError(toValidationError(error)),
         });
+
         return;
     }
+
     await ctx.finish({
         status: RunStatus.COMPLETED,
         usage,

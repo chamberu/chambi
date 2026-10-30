@@ -39,7 +39,9 @@ const agent = defineAgent({
 });
 
 /** Lets already-queued microtasks (all memory store work) settle; not a sleep. */
-const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 /** Engine whose executions block until released, to observe scheduling. */
 class GatedEngine extends Engine {
@@ -60,8 +62,12 @@ class GatedEngine extends Engine {
         this.executed.push(run.id);
         this.tracker.active++;
         this.tracker.maxActive = Math.max(this.tracker.maxActive, this.tracker.active);
+
         try {
-            if (this.failWith) throw this.failWith;
+            if (this.failWith) {
+                throw this.failWith;
+            }
+
             await new Promise<void>((resolve) => {
                 this.gates.set(run.id, resolve);
             });
@@ -82,8 +88,11 @@ class GatedEngine extends Engine {
 class SlowStartRepository extends MemoryRunRepository {
     override async update(...args: Parameters<MemoryRunRepository['update']>) {
         if (args[1].status === 'running') {
-            for (let i = 0; i < 5; i++) await flush();
+            for (let i = 0; i < 5; i++) {
+                await flush();
+            }
         }
+
         return super.update(...args);
     }
 }
@@ -91,7 +100,10 @@ class SlowStartRepository extends MemoryRunRepository {
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -103,7 +115,9 @@ function make(opts: Partial<EngineOptions> & { store?: IStore } = {}) {
         onError: () => {},
         ...opts,
     });
+
     engines.push(engine);
+
     return { store, engine };
 }
 
@@ -121,8 +135,11 @@ describe('Engine.dispatch', () => {
     it('dispatch creates queued run', async () => {
         const { engine } = make();
         const { runId, deduplicated } = await engine.dispatch(env());
+
         expect(deduplicated).toBe(false);
+
         const run = await engine.getRun(runId);
+
         expect(run?.status).toBe('queued');
         expect(run?.agent).toBe('triage');
         expect(run?.trigger.id).toBeTruthy();
@@ -132,9 +149,12 @@ describe('Engine.dispatch', () => {
         const { engine } = make();
         const a = await engine.dispatch(env({ idempotencyKey: 'k' }));
         const b = await engine.dispatch(env({ idempotencyKey: 'k' }));
+
         expect(b).toEqual({ runId: a.runId, deduplicated: true });
+
         const c = await engine.dispatch(env());
         const d = await engine.dispatch(env());
+
         expect(c.runId).not.toBe(d.runId);
     });
 
@@ -143,6 +163,7 @@ describe('Engine.dispatch', () => {
         const results = await Promise.all(
             Array.from({ length: 10 }, () => engine.dispatch(env({ idempotencyKey: 'same' }))),
         );
+
         expect(new Set(results.map((r) => r.runId)).size).toBe(1);
         expect(results.filter((r) => !r.deduplicated)).toHaveLength(1);
         expect((await store.runs.find({})).total).toBe(1);
@@ -150,11 +171,15 @@ describe('Engine.dispatch', () => {
 
     it.each(['idempotencyKey', 'concurrencyKey', 'address'])('refuses a %s above TRIGGER_KEY_MAX_LENGTH or with a NUL before any store write', async (key) => {
         const { engine, store } = make();
-        for (const value of ['k'.repeat(TRIGGER_KEY_MAX_LENGTH + 1), 'a\u0000b']) {
+
+        for (const value of ['k'.repeat(TRIGGER_KEY_MAX_LENGTH + 1), 'a\0b']) {
             await expect(engine.dispatch(env({ [key]: value }))).rejects.toBeInstanceOf(ValidationError);
         }
+
         expect((await store.runs.find({})).total).toBe(0);
+
         const { deduplicated } = await engine.dispatch(env({ [key]: 'k'.repeat(TRIGGER_KEY_MAX_LENGTH) }));
+
         expect(deduplicated).toBe(false);
     });
 
@@ -164,6 +189,7 @@ describe('Engine.dispatch', () => {
             model,
             instructions: 'y',
         });
+
         expect(() => new Engine({
             store: createMemoryStore(),
             agents: [agent, other],
@@ -172,11 +198,13 @@ describe('Engine.dispatch', () => {
 
     it('a redelivery heals an idempotency key whose run was never created', async () => {
         const { engine, store } = make();
+
         vi.spyOn(store.runs, 'insert').mockRejectedValueOnce(new Error('store down'));
         await expect(engine.dispatch(env({ idempotencyKey: 'k' }))).rejects.toThrow('store down');
         expect((await store.runs.find({})).total).toBe(0);
 
         const retried = await engine.dispatch(env({ idempotencyKey: 'k' }));
+
         expect(retried.deduplicated).toBe(false);
         expect((await engine.getRun(retried.runId))?.status).toBe('queued');
         expect(await engine.dispatch(env({ idempotencyKey: 'k' }))).toEqual({ runId: retried.runId, deduplicated: true });
@@ -185,11 +213,14 @@ describe('Engine.dispatch', () => {
 
     it('concurrent healers of a lost run create it once', async () => {
         const { engine, store } = make();
+
         vi.spyOn(store.runs, 'insert').mockRejectedValueOnce(new Error('store down'));
         await expect(engine.dispatch(env({ idempotencyKey: 'k' }))).rejects.toThrow('store down');
+
         const results = await Promise.all(
             Array.from({ length: 5 }, () => engine.dispatch(env({ idempotencyKey: 'k' }))),
         );
+
         expect(new Set(results.map((r) => r.runId)).size).toBe(1);
         expect(results.filter((r) => !r.deduplicated)).toHaveLength(1);
         expect((await store.runs.find({})).total).toBe(1);
@@ -197,6 +228,7 @@ describe('Engine.dispatch', () => {
 
     it('dispatch rejects unknown agent', async () => {
         const { engine, store } = make();
+
         await expect(engine.dispatch(env({ agent: 'nope' }))).rejects.toThrow(AgentNotFoundError);
         await expect(engine.dispatch(env({ agent: 'nope' }))).rejects.toThrow('unknown agent: nope');
         expect((await store.runs.find({})).total).toBe(0);
@@ -205,12 +237,17 @@ describe('Engine.dispatch', () => {
     it('runs with the same concurrencyKey execute one at a time', async () => {
         const { engine } = make();
         const events: string[] = [];
+
         engine.on('run.updated', (e: RunEvent) => {
-            if (e.type === 'run.updated') events.push(`${e.run.id}:${e.run.status}`);
+            if (e.type === 'run.updated') {
+                events.push(`${e.run.id}:${e.run.status}`);
+            }
         });
         await engine.start();
+
         const a = await engine.dispatch(env({ concurrencyKey: 'c' }));
         const b = await engine.dispatch(env({ concurrencyKey: 'c' }));
+
         await vi.waitFor(() => expect(engine.executed).toEqual([a.runId]));
         await flush();
         expect(engine.executed).toEqual([a.runId]);
@@ -229,6 +266,7 @@ describe('Engine.dispatch', () => {
     it('does not start a run while a waiting run holds the same concurrencyKey', async () => {
         const { engine, store } = make();
         const other = await engine.dispatch(env({ concurrencyKey: 'c' }));
+
         await store.runs.update(other.runId, { status: 'waiting' });
         await engine.start();
         await engine.dispatch(env({ concurrencyKey: 'c' }));
@@ -238,9 +276,12 @@ describe('Engine.dispatch', () => {
 
     it('different concurrencyKeys run in parallel', async () => {
         const { engine } = make();
+
         await engine.start();
+
         const a = await engine.dispatch(env({ concurrencyKey: 'a' }));
         const b = await engine.dispatch(env({ concurrencyKey: 'b' }));
+
         await vi.waitFor(() => expect(engine.executed.toSorted()).toEqual([a.runId, b.runId].toSorted()));
         await engine.release(a.runId);
         await engine.release(b.runId);
@@ -249,9 +290,15 @@ describe('Engine.dispatch', () => {
 
     it('concurrencyMaxRuns is respected and starts are FIFO', async () => {
         const { engine } = make({ concurrencyMaxRuns: 2 });
+
         await engine.start();
+
         const ids: string[] = [];
-        for (let i = 0; i < 4; i++) ids.push((await engine.dispatch(env())).runId);
+
+        for (let i = 0; i < 4; i++) {
+            ids.push((await engine.dispatch(env())).runId);
+        }
+
         await vi.waitFor(() => expect(engine.executed).toEqual([ids[0], ids[1]]));
         await flush();
         expect(engine.executed).toEqual([ids[0], ids[1]]);
@@ -262,7 +309,10 @@ describe('Engine.dispatch', () => {
         await vi.waitFor(() => expect(engine.executed).toHaveLength(4));
         await engine.release(ids[3]!);
         await engine.idle();
-        for (const id of ids) expect(await statusOf(engine, id)).toBe('completed');
+
+        for (const id of ids) {
+            expect(await statusOf(engine, id)).toBe('completed');
+        }
     });
 
     it('same-key runs on two replicas sharing a store never overlap', async () => {
@@ -279,20 +329,33 @@ describe('Engine.dispatch', () => {
             owner: 'b',
             claimTtlMs: 600,
         });
+
         b.engine.tracker = a.engine.tracker;
+
         const [ra, rb] = await Promise.all([
             a.engine.dispatch(env({ concurrencyKey: 'c' })),
             b.engine.dispatch(env({ concurrencyKey: 'c' })),
         ]);
+
         await Promise.all([a.engine.start(), b.engine.start()]);
+
         const holder = (id: string) => (a.engine.gates.has(id) ? a.engine : b.engine);
+
         await vi.waitFor(() => expect(a.engine.executed.length + b.engine.executed.length).toBe(1));
-        for (let i = 0; i < 15; i++) await flush();
+
+        for (let i = 0; i < 15; i++) {
+            await flush();
+        }
+
         expect(a.engine.executed.length + b.engine.executed.length).toBe(1);
         expect(a.engine.tracker.maxActive).toBe(1);
+
         const first = a.engine.executed[0] ?? b.engine.executed[0]!;
+
         await holder(first).release(first);
+
         const second = first === ra.runId ? rb.runId : ra.runId;
+
         await vi.waitFor(() => expect(a.engine.executed.length + b.engine.executed.length).toBe(2));
         await holder(second).release(second);
         await vi.waitFor(async () => expect(await statusOf(a.engine, second)).toBe('completed'));
@@ -308,11 +371,14 @@ describe('Engine.dispatch', () => {
             claimTtlMs: 300,
         });
         const blocker = await engine.dispatch(env({ concurrencyKey: 'c' }));
+
         // running on another replica, which holds a live claim (recovery leaves it alone)
         await store.runs.claim(blocker.runId, 'elsewhere', 60_000);
         await store.runs.update(blocker.runId, { status: 'running' });
         await engine.start();
+
         const { runId } = await engine.dispatch(env({ concurrencyKey: 'c' }));
+
         await flush();
         expect(await statusOf(engine, runId)).toBe('queued');
 
@@ -328,6 +394,7 @@ describe('Engine.dispatch', () => {
         const store = createMemoryStore();
         const onError = vi.fn();
         const { engine } = make({ store, onError });
+
         vi.spyOn(store.runs, 'find').mockRejectedValueOnce(new Error('boom'));
         await engine.dispatch(env());
         await expect(engine.start()).resolves.toBeUndefined();
@@ -337,15 +404,24 @@ describe('Engine.dispatch', () => {
     it('an execute throw marks the run failed and releases the claim', async () => {
         const onError = vi.fn();
         const { engine, store } = make({ onError });
+
         engine.failWith = Object.assign(new Error('nope'), { code: 'tool_broke' });
+
         const updates: Run['status'][] = [];
+
         engine.on('run.updated', (e) => {
-            if (e.type === 'run.updated') updates.push(e.run.status);
+            if (e.type === 'run.updated') {
+                updates.push(e.run.status);
+            }
         });
         await engine.start();
+
         const { runId } = await engine.dispatch(env());
+
         await engine.idle();
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'tool_broke', message: 'nope' });
         expect(run?.claim).toBeUndefined();
@@ -356,10 +432,13 @@ describe('Engine.dispatch', () => {
     it('a throwing listener does not break the engine', async () => {
         const onError = vi.fn();
         const { engine } = make({ onError });
+
         engine.on('run.updated', () => {
             throw new Error('listener');
         });
+
         const { runId } = await engine.dispatch(env());
+
         expect(await statusOf(engine, runId)).toBe('queued');
         expect(onError).toHaveBeenCalled();
     });
@@ -368,9 +447,12 @@ describe('Engine.dispatch', () => {
         const store = createMemoryStore();
         const onError = vi.fn();
         const { engine } = make({ store, onError });
+
         vi.spyOn(store.locks, 'release').mockRejectedValueOnce(new Error('release failed'));
         await engine.start();
+
         const { runId } = await engine.dispatch(env({ concurrencyKey: 'c' }));
+
         await engine.release(runId);
         await engine.idle();
         expect(await statusOf(engine, runId)).toBe('completed');
@@ -386,6 +468,7 @@ describe('Engine.dispatch', () => {
             claimTtlMs: 300,
         });
         const list = vi.spyOn(store.runs, 'find');
+
         await engine.start();
         // a poll pass is in flight when the engine is restarted
         clock.advance(100);
@@ -396,8 +479,10 @@ describe('Engine.dispatch', () => {
         clock.advance(100);
         await flush();
         await flush();
+
         // one chain means one approval expiry check, one recovery and one scheduling pass per poll tick
         const statuses = list.mock.calls.map(([q]) => q.status?.join());
+
         expect(statuses).toEqual(['waiting', 'running,interrupted', 'queued']);
     });
 });
@@ -415,6 +500,7 @@ describe('Engine.on', () => {
             // @ts-expect-error a step.appended event carries no run
             expect(e.run).toBeUndefined();
         });
+
         await engine.dispatch(env());
         offRun();
         offStep();
@@ -434,6 +520,7 @@ describe('dispatch keeps lineage private', () => {
     it('dispatch drops a parent from the envelope', async () => {
         const { engine, store } = make();
         const { runId } = await engine.dispatch({ ...env(), parent } as never);
+
         expect((await store.runs.findOne(runId))!.trigger.parent).toBeUndefined();
     });
 
@@ -441,6 +528,7 @@ describe('dispatch keeps lineage private', () => {
         const { engine, store } = make();
         const { runId } = await createChannelContext(engine, { name: 'http' }).dispatch({ ...env(), parent } as never);
         const run = await store.runs.findOne(runId);
+
         expect(run!.trigger.parent).toBeUndefined();
         expect(run!.trigger.channel).toBe('http');
     });

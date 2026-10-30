@@ -35,19 +35,25 @@ export function fakeSkillRuntime(options: {
         protocol: options.protocol ?? 'test/runtime-v1',
         snapshot(inputs: readonly SkillInput[]) {
             calls.snapshots++;
+
             return Object.freeze(inputs.map((input) => Object.freeze({ ...input })));
         },
         create() {
             calls.creates++;
+
             return {
-                checkAgent(agent, inputs) { calls.checks++; options.check?.(agent, inputs); },
+                checkAgent(agent, inputs) {
+                    calls.checks++; options.check?.(agent, inputs);
+                },
                 async prepare(agents, { signal }) {
                     calls.prepares++;
                     await options.prepare?.(signal);
+
                     return {
                         commit() {
                             calls.commits++;
                             options.commit?.();
+
                             return Object.freeze(agents.map((agent) => Object.freeze({ agent, contribution })));
                         },
                     };
@@ -55,6 +61,7 @@ export function fakeSkillRuntime(options: {
             };
         },
     };
+
     return {
         input: Object.freeze({ runtime }),
         runtime,

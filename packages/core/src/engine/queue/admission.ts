@@ -23,26 +23,52 @@ export async function admitRun(
     start: (candidate: Run) => Promise<Run | undefined>,
     mayStart?: (candidate: Run) => boolean,
 ): Promise<Run | undefined> {
-    if (!hasCaps(opts.getAgent(run.agent))) return start(run);
+    if (!hasCaps(opts.getAgent(run.agent))) {
+        return start(run);
+    }
+
     const key = `admission:${run.agent}`;
     const owner = randomUUID();
-    if (!await opts.store.locks.acquire(key, owner, opts.claimTtlMs)) return undefined;
+
+    if (!await opts.store.locks.acquire(key, owner, opts.claimTtlMs)) {
+        return undefined;
+    }
+
     try {
         const candidate = await opts.store.runs.findOne(run.id);
-        if (!candidate || candidate.status !== RunStatus.QUEUED || (mayStart && !mayStart(candidate))) return undefined;
+
+        if (!candidate || candidate.status !== RunStatus.QUEUED || (mayStart && !mayStart(candidate))) {
+            return undefined;
+        }
+
         const agent = opts.getAgent(candidate.agent);
-        if (!agent && !candidate.cancelRequested) return undefined;
+
+        if (!agent && !candidate.cancelRequested) {
+            return undefined;
+        }
+
         if (!candidate.cancelRequested && agent) {
             const agentCap = agent.definition.concurrencyMaxRuns;
             const subscriptionCap = agent.definition.channels
                 ?.find((subscription) => subscription.id === candidate.trigger.trigger)?.concurrencyMaxRuns;
+
             if (typeof agentCap === 'number' || typeof subscriptionCap === 'number') {
                 const { data: running } = await opts.store.runs.find({ agent: candidate.agent, status: [RunStatus.RUNNING] });
-                if (typeof agentCap === 'number' && running.length >= agentCap) return undefined;
-                if (typeof subscriptionCap === 'number' &&
-                    running.filter((active) => active.trigger.trigger === candidate.trigger.trigger).length >= subscriptionCap) return undefined;
+
+                if (typeof agentCap === 'number' && running.length >= agentCap) {
+                    return undefined;
+                }
+
+                if (typeof subscriptionCap === 'number') {
+                    const subscriptionRuns = running.filter((active) => active.trigger.trigger === candidate.trigger.trigger);
+
+                    if (subscriptionRuns.length >= subscriptionCap) {
+                        return undefined;
+                    }
+                }
             }
         }
+
         return await start(candidate);
     } finally {
         try {

@@ -39,6 +39,7 @@ function releaseGraph(): Map<string, string[]> {
     const names = new Set(packages.map((pkg) => pkg.name));
 
     const graph = new Map<string, string[]>();
+
     for (const pkg of packages) {
         const edges = Object.keys({
             ...pkg.dependencies,
@@ -46,8 +47,10 @@ function releaseGraph(): Map<string, string[]> {
             ...pkg.optionalDependencies,
             ...(workspace?.updatePeerDependencies ? pkg.peerDependencies : {}),
         });
+
         graph.set(pkg.name, edges.filter((name) => names.has(name)));
     }
+
     return graph;
 }
 
@@ -56,33 +59,42 @@ function findCycles(graph: Map<string, string[]>): string[] {
     const done = new Set<string>();
     const visit = (name: string, path: string[]) => {
         const index = path.indexOf(name);
+
         if (index !== -1) {
             cycles.add([...path.slice(index), name].join(' -> '));
+
             return;
         }
+
         if (done.has(name)) {
             return;
         }
+
         for (const next of graph.get(name) ?? []) {
             visit(next, [...path, name]);
         }
+
         done.add(name);
     };
+
     for (const name of graph.keys()) {
         visit(name, []);
     }
+
     return [...cycles];
 }
 
 describe('workspace dependency graph', () => {
     it('has no cycle in the graph release-please builds', () => {
         const graph = releaseGraph();
+
         expect(graph.size).toBeGreaterThan(10);
         expect(findCycles(graph)).toEqual([]);
     });
 
     it('keeps core and app independent of the optional skill runtime', () => {
         const graph = releaseGraph();
+
         expect(graph.get('@chamvi/core')).not.toContain('@chamvi/skills');
         expect(graph.get('@chamvi/app')).not.toContain('@chamvi/skills');
         expect(graph.get('@chamvi/skills')).toContain('@chamvi/core');
@@ -90,15 +102,21 @@ describe('workspace dependency graph', () => {
 
     it('holds the channel packages and not the ones they replaced', () => {
         const graph = releaseGraph();
+
         expect(graph.keys().toArray()).toEqual(expect.arrayContaining([
             '@chamvi/channel-cron',
             '@chamvi/channel-openclaw',
             '@chamvi/github',
         ]));
+
         for (const name of ['@chamvi/scheduler', '@chamvi/notify-github', '@chamvi/notify-openclaw']) {
             expect(graph.has(name)).toBe(false);
-            for (const edges of graph.values()) expect(edges).not.toContain(name);
+
+            for (const edges of graph.values()) {
+                expect(edges).not.toContain(name);
+            }
         }
+
         expect(graph.get('@chamvi/app')).toContain('@chamvi/channel-cron');
     });
 });

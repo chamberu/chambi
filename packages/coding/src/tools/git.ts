@@ -19,9 +19,9 @@ import {
 import type { CodingWorkspaces, GitDiffResult } from './types.ts';
 
 type GitDiffInput = {
-    staged?: boolean; 
-    path?: string; 
-    workspace?: string 
+    staged?: boolean;
+    path?: string;
+    workspace?: string
 };
 
 export function gitDiffTool(workspaces: CodingWorkspaces): Tool<GitDiffInput, GitDiffResult> {
@@ -44,13 +44,21 @@ export function gitDiffTool(workspaces: CodingWorkspaces): Tool<GitDiffInput, Gi
             const signal = signalOf(abortSignal, context);
 
             const status = await workspace.exec(['git', '--literal-pathspecs', 'status', '--short', '--', path], { signal });
+
             if (status.exitCode !== 0) {
                 throw gitFailure('git status', status);
             }
+
             const argv = ['git', '--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff'];
-            if (staged) argv.push('--staged');
+
+            if (staged) {
+                argv.push('--staged');
+            }
+
             argv.push('--', path);
+
             const diff = await workspace.exec(argv, { signal });
+
             if (diff.exitCode !== 0) {
                 throw gitFailure('git diff', diff);
             }

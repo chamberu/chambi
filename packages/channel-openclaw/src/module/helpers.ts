@@ -13,6 +13,7 @@ import { VARIABLES } from './constants.ts';
 /** The delivery target from `OPENCLAW_CHANNEL`, `OPENCLAW_TO` (required) and `OPENCLAW_ACCOUNT_ID`. */
 export function readDelivery(env: Env): OpenclawDelivery {
     const accountId = envString(env, VARIABLES['deliver.accountId']);
+
     return {
         channel: envString(env, VARIABLES['deliver.channel'], { required: true }),
         to: envString(env, VARIABLES['deliver.to'], { required: true }),

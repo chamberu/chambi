@@ -13,6 +13,7 @@ const encoder = new TextEncoder();
 describe('createOutputCollector', () => {
     it('keeps everything under the cap', () => {
         const collector = createOutputCollector(16);
+
         collector.write(encoder.encode('0123456789'));
         expect(collector.text()).toBe('0123456789');
         expect(collector.bytes()).toHaveLength(10);
@@ -21,9 +22,11 @@ describe('createOutputCollector', () => {
 
     it('caps at maxBytes and keeps counting', () => {
         const collector = createOutputCollector(100);
+
         for (let i = 0; i < 3; i++) {
             collector.write(new Uint8Array(40).fill(0x61 + i));
         }
+
         expect(collector.bytes()).toHaveLength(100);
         expect(collector.truncated).toBe(true);
         expect(collector.text()).toBe('a'.repeat(40) + 'b'.repeat(40) + 'c'.repeat(20));
@@ -31,6 +34,7 @@ describe('createOutputCollector', () => {
 
     it('is not truncated at exactly the cap', () => {
         const collector = createOutputCollector(10);
+
         collector.write(encoder.encode('0123456789'));
         expect(collector.truncated).toBe(false);
         collector.write(new Uint8Array(0));
@@ -42,6 +46,7 @@ describe('createOutputCollector', () => {
 
     it('drops a multi-byte character cut by the cap', () => {
         const collector = createOutputCollector(100);
+
         collector.write(encoder.encode(`${'a'.repeat(99)}€`));
         expect(collector.truncated).toBe(true);
         expect(collector.text()).toBe('a'.repeat(99));
@@ -50,6 +55,7 @@ describe('createOutputCollector', () => {
     it('drops a four-byte character cut anywhere by the cap', () => {
         for (const cut of [1, 2, 3]) {
             const collector = createOutputCollector(2 + cut);
+
             collector.write(encoder.encode('ab😀'));
             expect(collector.text()).toBe('ab');
         }
@@ -58,6 +64,7 @@ describe('createOutputCollector', () => {
     it('keeps multi-byte characters split across chunks', () => {
         const collector = createOutputCollector(100);
         const bytes = encoder.encode('x€y');
+
         collector.write(bytes.subarray(0, 2));
         collector.write(bytes.subarray(2));
         expect(collector.text()).toBe('x€y');
@@ -66,9 +73,11 @@ describe('createOutputCollector', () => {
     it('holds at most the cap', () => {
         const collector = createOutputCollector(65_536);
         const chunk = new Uint8Array(65_536).fill(0x61);
+
         for (let written = 0; written < 10 * 1024 * 1024; written += chunk.length) {
             collector.write(chunk);
         }
+
         expect(collector.bytes()).toHaveLength(65_536);
         expect(collector.truncated).toBe(true);
     });
@@ -76,6 +85,7 @@ describe('createOutputCollector', () => {
     it('copies the chunk instead of keeping a reference', () => {
         const collector = createOutputCollector(16);
         const chunk = encoder.encode('abc');
+
         collector.write(chunk);
         chunk.fill(0x7a);
         expect(collector.text()).toBe('abc');
@@ -84,6 +94,7 @@ describe('createOutputCollector', () => {
     it('copies a Buffer chunk, whose slice is a view', () => {
         const collector = createOutputCollector(16);
         const chunk = Buffer.from('abc');
+
         collector.write(chunk);
         chunk.fill(0x7a);
         expect(collector.text()).toBe('abc');
@@ -92,6 +103,7 @@ describe('createOutputCollector', () => {
     it('copies a Buffer chunk cut by the cap', () => {
         const collector = createOutputCollector(2);
         const chunk = Buffer.from('abc');
+
         collector.write(chunk);
         chunk.fill(0x7a);
         expect(collector.text()).toBe('ab');

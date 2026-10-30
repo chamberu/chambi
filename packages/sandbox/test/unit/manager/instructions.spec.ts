@@ -44,10 +44,15 @@ describe('workspace instruction delivery', () => {
             async create(options) {
                 fixture.workspace.info.repo = options.repo;
                 fixture.workspace.info.commit = options.repo ? 'a'.repeat(40) : undefined;
+
                 return fixture.workspace;
             },
-            async find() { return []; },
-            async collectGarbage() { return 0; },
+            async find() {
+                return [];
+            },
+            async collectGarbage() {
+                return 0;
+            },
         };
         manager = createWorkspaceManager({ provider, gcIntervalMs: 0 });
     });
@@ -59,6 +64,7 @@ describe('workspace instruction delivery', () => {
 
     it('returns root guidance and its source hash from create_workspace', async () => {
         const content = 'Run the repository tests before finishing.\n';
+
         await fixture.write({ 'AGENTS.md': content });
 
         const result = await callTool<WorkspaceResult>(manager.tools(), 'create_workspace', { repo: 'octo/demo' }, toolContext('r1'));
@@ -84,8 +90,10 @@ describe('workspace instruction delivery', () => {
 
     it('refreshes root guidance when create_workspace reuses a workspace', async () => {
         await fixture.write({ 'AGENTS.md': 'first\n' });
+
         const tools = manager.tools();
         const first = await callTool<WorkspaceResult>(tools, 'create_workspace', { repo: 'octo/demo' }, toolContext('r1'));
+
         await fixture.write({ 'AGENTS.md': 'second\n' });
 
         const second = await callTool<WorkspaceResult>(tools, 'create_workspace', { repo: 'octo/demo' }, toolContext('r1'));
@@ -99,7 +107,9 @@ describe('workspace instruction delivery', () => {
         fixture.workspace.info.repo = 'https://github.com/octo/demo.git';
         fixture.workspace.info.commit = 'b'.repeat(40);
         await fixture.write({ 'AGENTS.md': 'guidance from the adopted checkout\n' });
-        provider.create = async () => { throw new SandboxError('adoption must not create a workspace'); };
+        provider.create = async () => {
+            throw new SandboxError('adoption must not create a workspace');
+        };
         provider.find = async () => [fixture.workspace];
 
         const result = await callTool<WorkspaceResult>(manager.tools(), 'create_workspace', { repo: 'octo/demo' }, toolContext('r1'));
@@ -111,7 +121,9 @@ describe('workspace instruction delivery', () => {
 
     it('cancels explicit collection without disposing the acquired workspace', async () => {
         await manager.acquire('r1', { repo: 'octo/demo' });
+
         const controller = new AbortController();
+
         controller.abort();
 
         await expect(callTool(manager.tools(), 'read_repository_instructions', { workspace: fixture.workspace.id }, toolContext('r1', controller.signal))).rejects.toThrow(SandboxError);
@@ -151,6 +163,7 @@ describe('workspace instruction delivery', () => {
 
     it('rejects invalid explicit tool inputs', async () => {
         await manager.acquire('r1', { repo: 'octo/demo' });
+
         for (const input of [null, { workspace: 42 }, { paths: 'src' }, { paths: [42] }]) {
             await expect(callTool(manager.tools(), 'read_repository_instructions', input, toolContext('r1')))
                 .rejects.toThrow(ValidationError);
@@ -160,6 +173,7 @@ describe('workspace instruction delivery', () => {
     it('redacts issued credentials from instructions, diagnostics and workspace metadata', async () => {
         const token = 'issued_credential_12345';
         const content = `Keep ${token} private.\n@missing-${token}.md\n`;
+
         await manager.close();
         manager = createWorkspaceManager({
             provider,
@@ -214,7 +228,10 @@ describe('workspace instruction delivery', () => {
 
     it('keeps an acquired workspace when instruction inspection fails', async () => {
         const { exec } = fixture.workspace;
-        fixture.workspace.exec = async () => { throw new SandboxError('inspection transport failed'); };
+
+        fixture.workspace.exec = async () => {
+            throw new SandboxError('inspection transport failed');
+        };
 
         await expect(callTool(manager.tools(), 'create_workspace', { repo: 'octo/demo' }, toolContext('r1'))).rejects.toThrow('inspection transport failed');
 

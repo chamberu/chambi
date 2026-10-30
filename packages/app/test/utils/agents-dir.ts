@@ -37,6 +37,7 @@ export const POLL_MS = 1_000;
  */
 export function agentFile(instructions: string, model = 'test/model', name = 'greeter', channels: string[] = []): string {
     const list = channels.length > 0 ? `, channels: [${channels.join(', ')}]` : '';
+
     return `export default { name: '${name}', definition: { model: '${model}', instructions: '${instructions}'${list} } };\n`;
 }
 
@@ -46,12 +47,14 @@ export const HTTP_TRIGGER = '{ channel: \'http\', id: \'http\', options: {} }';
 /** `cron.on(expression, { timezone })`'s definition as a source expression (structural: no cron-parser check). */
 export function cronTrigger(expression: string, timezone?: string): string {
     const zone = timezone ? `, timezone: '${timezone}'` : '';
+
     return `{ channel: 'cron', id: 'cron:${expression}', options: { expression: '${expression}'${zone}, overlap: 'skip' } }`;
 }
 
 /** The `test` provider: `test/model` answers 'from folder', `test/hang` never answers. */
 export function provider() {
     const answers = Array.from({ length: 20 }, () => ({ parts: [{ type: 'text' as const, text: 'from folder' }] }));
+
     return customProvider({ languageModels: { model: mockModel(answers), hang: hangingModel() } });
 }
 
@@ -76,6 +79,7 @@ export async function queueRun(store: IStore, clock: ControllableClock, name: st
         channel: 'http',
         payload: {},
     });
+
     return runId;
 }
 

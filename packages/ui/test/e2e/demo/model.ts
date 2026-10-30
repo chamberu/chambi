@@ -34,6 +34,7 @@ function hasToolResult(prompt: LanguageModelV4Prompt): boolean {
 
 function words(id: string, text: string): LanguageModelV4StreamPart[] {
     const parts: LanguageModelV4StreamPart[] = [{ type: 'text-start', id }];
+
     for (const word of text.split(/(?<= )/)) {
         parts.push({
             type: 'text-delta',
@@ -41,7 +42,9 @@ function words(id: string, text: string): LanguageModelV4StreamPart[] {
             delta: word,
         });
     }
+
     parts.push({ type: 'text-end', id });
+
     return parts;
 }
 
@@ -56,6 +59,7 @@ export function createDemoModel(chunkDelayInMs = 120, toolName = 'deploy', input
         doStream: async ({ prompt }) => {
             const answered = hasToolResult(prompt);
             const chunks: LanguageModelV4StreamPart[] = [{ type: 'stream-start', warnings: [] }];
+
             if (answered) {
                 chunks.push(...words('t0', toolName === 'deploy' ?
                     'The deploy step answered. deployed prod, all checks green.' :
@@ -71,11 +75,13 @@ export function createDemoModel(chunkDelayInMs = 120, toolName = 'deploy', input
                     input: JSON.stringify(input),
                 });
             }
+
             chunks.push({
                 type: 'finish',
                 finishReason: { unified: answered ? 'stop' : 'tool-calls', raw: undefined },
                 usage: USAGE,
             });
+
             return { stream: simulateReadableStream({ chunks, chunkDelayInMs }) };
         },
     });

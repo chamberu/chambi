@@ -25,10 +25,18 @@ import type { CodingSetup } from '../../utils/setup.ts';
 let fixture: GitFixture;
 let s: CodingSetup;
 
-beforeAll(async () => { fixture = await createFixture(); });
-afterAll(async () => { await fixture.cleanup(); });
-beforeEach(async () => { s = await setupCoding(fixture); });
-afterEach(async () => { await s.cleanup(); });
+beforeAll(async () => {
+    fixture = await createFixture();
+});
+afterAll(async () => {
+    await fixture.cleanup();
+});
+beforeEach(async () => {
+    s = await setupCoding(fixture);
+});
+afterEach(async () => {
+    await s.cleanup();
+});
 
 describe('edit_file', () => {
     it('replaces one match', async () => {
@@ -42,6 +50,7 @@ describe('edit_file', () => {
 
     it('applies every edit of one file the model sends in one step', async () => {
         await s.call('write_file', { path: 'src/c.ts', content: 'a = 1;\nb = 2;\nc = 3;\n' });
+
         const results = await Promise.all([
             ['a = 1', 'a = 10'],
             ['b = 2', 'b = 20'],
@@ -51,6 +60,7 @@ describe('edit_file', () => {
             oldString,
             newString,
         })));
+
         expect(results).toEqual(Array.from({ length: 3 }, () => ({ path: 'src/c.ts', replacements: 1 })));
         await expect(s.workspace.readFile('src/c.ts')).resolves.toBe('a = 10;\nb = 20;\nc = 30;\n');
 
@@ -94,6 +104,7 @@ describe('edit_file', () => {
             oldString: 'export',
             newString: 'export declare',
         });
+
         await expect(edit).rejects.toThrow(ValidationError);
         await expect(edit).rejects.toThrow(/2 matches/);
         await expect(s.workspace.readFile('src/a.ts')).resolves.toBe('export const a = 1;\nexport const b = 2;\n');
@@ -137,15 +148,15 @@ describe('multi_edit', () => {
                 { oldString: 'a = 1', newString: 'a = 10' },
                 { oldString: 'a = 10', newString: 'a = 100' },
                 {
-                    oldString: 'export', 
-                    newString: 'export /* x */', 
-                    replaceAll: true, 
+                    oldString: 'export',
+                    newString: 'export /* x */',
+                    replaceAll: true,
                 },
             ],
         })).resolves.toEqual({
-            path: 'src/a.ts', 
-            edits: 3, 
-            replacements: 4, 
+            path: 'src/a.ts',
+            edits: 3,
+            replacements: 4,
         });
         await expect(s.workspace.readFile('src/a.ts')).resolves.toBe('export /* x */ const a = 100;\nexport /* x */ const b = 2;\n');
     });
@@ -158,6 +169,7 @@ describe('multi_edit', () => {
                 { oldString: 'missing', newString: 'x' },
             ],
         }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(ValidationError);
         expect((error as Error).message).toContain('edit 2');
         await expect(s.workspace.readFile('src/a.ts')).resolves.toBe('export const a = 1;\nexport const b = 2;\n');
@@ -182,9 +194,11 @@ describe('edits of a file holding an issued token', () => {
         const redact = (text: string) => text.replaceAll(SECRET, '[redacted]');
         const redactedSpans = (text: string) => {
             const spans: Array<{ start: number; end: number }> = [];
+
             for (let at = text.indexOf(SECRET); at !== -1; at = text.indexOf(SECRET, at + SECRET.length)) {
                 spans.push({ start: at, end: at + SECRET.length });
             }
+
             return spans;
         };
         const redacting: IWorkspace = Object.create(s.workspace, {
@@ -194,6 +208,7 @@ describe('edits of a file holding an issued token', () => {
             readFileRaw: { value: (path: string) => s.workspace.readFile(path) },
         });
         const tools = codingTools({ get: async () => redacting });
+
         return (name: string, input: unknown) => callTool(tools, name, input, toolContext('r1'));
     }
 
@@ -201,20 +216,24 @@ describe('edits of a file holding an issued token', () => {
         return new TextDecoder().decode(await s.workspace.readBytes(path));
     }
 
-    beforeEach(async () => { await s.workspace.writeFile('src/a.ts', FILE); });
+    beforeEach(async () => {
+        await s.workspace.writeFile('src/a.ts', FILE);
+    });
 
     it('keeps the token byte for byte when editing another line', async () => {
         const call = redactingTools();
+
         await call('edit_file', {
-            path: 'src/a.ts', 
-            oldString: 'a = 1', 
-            newString: 'a = 2', 
+            path: 'src/a.ts',
+            oldString: 'a = 1',
+            newString: 'a = 2',
         });
         expect(await bytesOf('src/a.ts')).toBe(`export const a = 2;\nconst t = '${SECRET}';\n`);
     });
 
     it('keeps the token byte for byte through multi_edit', async () => {
         const call = redactingTools();
+
         await call('multi_edit', {
             path: 'src/a.ts',
             edits: [
@@ -234,6 +253,7 @@ describe('edits of a file holding an issued token', () => {
         }).catch((e: unknown) => e);
         const right = await guess(SECRET.slice(0, 8));
         const wrong = await guess('ghs_zzzz');
+
         expect(right).toBeInstanceOf(ValidationError);
         expect((right as Error).message).toBe((wrong as Error).message.replace('ghs_zzzz', SECRET.slice(0, 8)));
 
@@ -245,6 +265,7 @@ describe('edits of a file holding an issued token', () => {
                 { oldString: 'probe', newString: SECRET },
             ],
         }).catch((e: unknown) => e);
+
         expect(probe).toBeInstanceOf(ValidationError);
         expect(await bytesOf('src/a.ts')).toBe(FILE);
     });
@@ -256,6 +277,7 @@ describe('edits of a file holding an issued token', () => {
             oldString: "t = '[redacted]'",
             newString: "t = 'other'",
         }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(ValidationError);
         expect((error as Error).message).toMatch(/redacted credential/);
         expect(await bytesOf('src/a.ts')).toBe(FILE);
@@ -271,6 +293,7 @@ describe('edits of a file holding an issued token', () => {
 
     it('keeps every token with replaceAll and a literal [redacted] in newString', async () => {
         await s.workspace.writeFile('src/a.ts', `x ${SECRET} x ${SECRET} x\n`);
+
         const call = redactingTools();
         const result = await call('edit_file', {
             path: 'src/a.ts',
@@ -278,6 +301,7 @@ describe('edits of a file holding an issued token', () => {
             newString: '[redacted]',
             replaceAll: true,
         });
+
         expect(result).toMatchObject({ replacements: 3 });
         expect(await bytesOf('src/a.ts')).toBe(`[redacted] ${SECRET} [redacted] ${SECRET} [redacted]\n`);
     });
@@ -285,10 +309,11 @@ describe('edits of a file holding an issued token', () => {
     it('leaves the file untouched and echoes no text when oldString is missing', async () => {
         const call = redactingTools();
         const error = await call('edit_file', {
-            path: 'src/a.ts', 
-            oldString: 'missing', 
-            newString: 'x', 
+            path: 'src/a.ts',
+            oldString: 'missing',
+            newString: 'x',
         }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(ValidationError);
         expect((error as Error).message).not.toContain(SECRET);
         expect(await bytesOf('src/a.ts')).toBe(FILE);

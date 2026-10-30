@@ -23,6 +23,7 @@ function grantsGlobal(scope: unknown): boolean {
 export function authup(options: AuthupOptions): Authenticator {
     return async (request) => {
         let data;
+
         try {
             data = await verifyRequest(request, {
                 tokenVerifier: options.verifier,
@@ -31,7 +32,11 @@ export function authup(options: AuthupOptions): Authenticator {
         } catch (cause) {
             throw new UnauthorizedError({ message: 'The access token is invalid.', cause });
         }
-        if (!data) return undefined;
+
+        if (!data) {
+            return undefined;
+        }
+
         if (typeof data.sub !== 'string' || data.sub.length === 0) {
             throw new UnauthorizedError({ message: 'The access token names no subject.' });
         }

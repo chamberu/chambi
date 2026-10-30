@@ -5,6 +5,9 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { IContainer } from 'eldin';
+import type { IModule } from 'orkos';
+
 export {
     APP_ERROR_CODE,
     AUTHENTICATOR_ORDER,
@@ -13,3 +16,6 @@ export {
 } from './constants.ts';
 export { runHooks, throwIfStopped } from './helpers.ts';
 export type * from './types.ts';
+
+/** The container and module contracts a module factory is written against (eldin, orkos). */
+export type { IContainer, IModule };

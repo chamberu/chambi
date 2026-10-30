@@ -4,7 +4,7 @@
 npm install @chamvi/core ai
 ```
 
-- **Runtime:** Node.js 22 or newer. The package is ESM only.
+- **Runtime:** Node.js 24.3.0 or newer. The package is ESM only.
 - **AI SDK:** `ai@^7` (the Vercel AI SDK) is a peer dependency. Install the provider package of your model as well, for example `@ai-sdk/anthropic` or `@ai-sdk/openai`.
 - **Schemas:** tool input schemas are whatever the AI SDK accepts. The examples in these docs use [zod](https://zod.dev). State collections take any [Standard Schema](https://standardschema.dev).
 
@@ -63,7 +63,7 @@ npm install @chamvi/app @chamvi/cli ai @ai-sdk/anthropic typeorm pg
 npm install --save-dev tsdown   # only for chamvi build
 ```
 
-`@chamvi/app` re-exports `@chamvi/core`, so the repository imports one package; the CLI needs Node.js 22.18 or newer. See [Apps & Modules](/guide/app).
+`@chamvi/app` re-exports `@chamvi/core`, so the repository imports one package; the CLI needs Node.js 24.3.0 or newer. See [Apps & Modules](/guide/app).
 
 ## Packages
 

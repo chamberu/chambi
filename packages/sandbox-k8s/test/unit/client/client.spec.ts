@@ -60,19 +60,26 @@ function setup(script: ExecScript = ({ status }) => status({ status: 'Success' }
     const core = {
         async createNamespacedPod(param: unknown) {
             calls.create!.push(param);
+
             return { metadata: { name: 'p' } } as V1Pod;
         },
         async readNamespacedPod(param: unknown) {
             calls.read!.push(param);
+
             return { metadata: { name: 'p' }, status: { phase: 'Running' } } as V1Pod;
         },
         async deleteNamespacedPod(param: unknown) {
             calls.delete!.push(param);
-            if (deleteError) throw deleteError;
+
+            if (deleteError) {
+                throw deleteError;
+            }
+
             return {} as V1Pod;
         },
         async listNamespacedPod(param: unknown) {
             calls.list!.push(param);
+
             return { items: [{ metadata: { name: 'a' } }, { metadata: { name: 'b' } }] };
         },
     };
@@ -96,8 +103,13 @@ function setup(script: ExecScript = ({ status }) => status({ status: 'Success' }
                 stdin,
                 tty,
             });
-            if (connectError) throw connectError;
+
+            if (connectError) {
+                throw connectError;
+            }
+
             const socket = new FakeSocket(protocol);
+
             sockets.push(socket);
             setImmediate(() => script({
                 stdout: stdout!,
@@ -108,6 +120,7 @@ function setup(script: ExecScript = ({ status }) => status({ status: 'Success' }
                 },
                 socket,
             }));
+
             return socket;
         },
     };
@@ -117,6 +130,7 @@ function setup(script: ExecScript = ({ status }) => status({ status: 'Success' }
         exec: exec as never,
         namespace: 'agents',
     });
+
     return {
         calls,
         client,
@@ -139,12 +153,14 @@ function sink() {
             callback();
         },
     });
+
     return { writable, text: () => Buffer.concat(chunks).toString('utf8') };
 }
 
 function execInput(stdin?: string, signal: AbortSignal = new AbortController().signal) {
     const stdout = sink();
     const stderr = sink();
+
     return {
         stdout,
         stderr,
@@ -170,6 +186,7 @@ describe('pod client: api calls', () => {
         expect(calls.read).toEqual([{ name: 'p', namespace: 'agents' }]);
 
         const pods = await client.list('a=b');
+
         expect(pods.map((pod) => pod.metadata?.name)).toEqual(['a', 'b']);
         expect(calls.list).toEqual([{ namespace: 'agents', labelSelector: 'a=b' }]);
     });
@@ -180,6 +197,7 @@ describe('pod client: api calls', () => {
             client,
             failDelete,
         } = setup();
+
         await client.delete('p');
         expect(calls.delete).toEqual([{
             name: 'p',
@@ -194,9 +212,11 @@ describe('pod client: api calls', () => {
     it('turns other api errors into SandboxError', async () => {
         const { client, failDelete } = setup();
         const error = new ApiException(500, 'boom', '{"kind":"Status","message":"etcd unavailable"}', {});
+
         failDelete(error);
 
         const thrown = await client.delete('p').catch((e: unknown) => e);
+
         expect(thrown).toBeInstanceOf(SandboxError);
         expect((thrown as SandboxError).message).toContain('etcd unavailable');
         expect((thrown as SandboxError).cause).toBe(error);
@@ -241,6 +261,7 @@ describe('pod client: exec', () => {
             message: 'command terminated with non-zero exit code',
             details: { causes: [{ reason: 'ExitCode', message: '3' }] },
         }));
+
         await expect(client.exec('p', execInput().input)).resolves.toEqual({ exitCode: 3 });
     });
 
@@ -256,30 +277,37 @@ describe('pod client: exec', () => {
             message: 'command terminated with non-zero exit code',
             details: { causes },
         }));
+
         await expect(client.exec('p', execInput().input)).rejects.toBeInstanceOf(SandboxError);
     });
 
     it('turns any other failure into SandboxError', async () => {
         const { client } = setup(({ status }) => status({ status: 'Failure', message: 'container not found' }));
         const error = await client.exec('p', execInput().input).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toContain('container not found');
     });
 
     it('fails a socket closed without a status', async () => {
         const { client } = setup(({ socket }) => socket.close());
+
         await expect(client.exec('p', execInput().input)).rejects.toBeInstanceOf(SandboxError);
     });
 
     it('fails a socket error', async () => {
         const { client } = setup(({ socket }) => socket.emit('error', new Error('reset')));
+
         await expect(client.exec('p', execInput().input)).rejects.toThrow(/reset/);
     });
 
     it('fails a connection that cannot open', async () => {
         const { client, failConnect } = setup();
+
         failConnect(new Error('Unexpected server response: 403'));
+
         const error = await client.exec('p', execInput().input).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toContain('403');
     });
@@ -291,8 +319,11 @@ describe('pod client: exec', () => {
             error: { value: new Error('Unexpected server response: 403') },
         });
         const { client, failConnect } = setup();
+
         failConnect(event);
+
         const error = await client.exec('p', execInput().input).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toBe('cannot exec in pod p: Unexpected server response: 403');
     });
@@ -301,14 +332,20 @@ describe('pod client: exec', () => {
         const { client, execs } = setup(() => {
             // never answers
         });
+
         client.exec('p', execInput('hé').input).catch(() => undefined);
         await flush();
 
         const stdin = execs[0]!.stdin!;
         const chunks: Buffer[] = [];
         let ended = false;
-        stdin.on('data', (chunk: Buffer) => { chunks.push(chunk); });
-        stdin.on('end', () => { ended = true; });
+
+        stdin.on('data', (chunk: Buffer) => {
+            chunks.push(chunk);
+        });
+        stdin.on('end', () => {
+            ended = true;
+        });
         await flush();
 
         expect(Buffer.concat(chunks).toString('utf8')).toBe('hé');
@@ -319,14 +356,20 @@ describe('pod client: exec', () => {
         const { client, execs } = setup(() => {
             // never answers
         }, 'v4.channel.k8s.io');
+
         client.exec('p', execInput('hé').input).catch(() => undefined);
         await flush();
 
         const stdin = execs[0]!.stdin!;
         const chunks: Buffer[] = [];
         let ended = false;
-        stdin.on('data', (chunk: Buffer) => { chunks.push(chunk); });
-        stdin.on('end', () => { ended = true; });
+
+        stdin.on('data', (chunk: Buffer) => {
+            chunks.push(chunk);
+        });
+        stdin.on('end', () => {
+            ended = true;
+        });
         await flush();
 
         expect(Buffer.concat(chunks).toString('utf8')).toBe('hé');
@@ -339,6 +382,7 @@ describe('pod client: exec', () => {
         });
         const controller = new AbortController();
         const running = client.exec('p', execInput(undefined, controller.signal).input);
+
         await flush();
 
         controller.abort();
@@ -348,6 +392,7 @@ describe('pod client: exec', () => {
 
     it('does not connect for an aborted signal', async () => {
         const { client, execs } = setup();
+
         await expect(client.exec('p', execInput(undefined, AbortSignal.abort()).input)).rejects.toThrow(/aborted/);
         expect(execs).toHaveLength(0);
     });
@@ -356,6 +401,7 @@ describe('pod client: exec', () => {
 describe('createPodClient', () => {
     it('builds the api clients from the kube config', async () => {
         const kubeConfig = new KubeConfig();
+
         kubeConfig.loadFromOptions({
             clusters: [{
                 name: 'c',
@@ -371,7 +417,9 @@ describe('createPodClient', () => {
             }],
             currentContext: 'x',
         });
+
         const client = createPodClient({ kubeConfig, namespace: 'agents' });
+
         expect(Object.keys(client).sort()).toEqual(['create', 'delete', 'exec', 'list', 'read']);
         await expect(client.read('p')).rejects.toBeInstanceOf(SandboxError);
     });

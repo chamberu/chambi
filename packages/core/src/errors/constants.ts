@@ -27,4 +27,5 @@ export const ErrorCode = {
     VALIDATION: 'validation_error',
 } as const;
 
+// eslint-disable-next-line @tada5hi/type-declaration-location -- Keep the enum-like value and its same-name type contract together.
 export type ErrorCode = typeof ErrorCode[keyof typeof ErrorCode];

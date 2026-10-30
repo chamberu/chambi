@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 /** A fresh temp folder; `remove()` deletes it. */
 export async function createTempDir(): Promise<{ path: string; remove: () => Promise<void> }> {
     const path = await mkdtemp(join(tmpdir(), 'chamvi-loader-'));
+
     return { path, remove: () => rm(path, { recursive: true, force: true }) };
 }
 
@@ -24,6 +25,7 @@ export async function createTempDir(): Promise<{ path: string; remove: () => Pro
 export async function writeTree(root: string, files: Record<string, string>): Promise<void> {
     for (const [path, content] of Object.entries(files)) {
         const target = join(root, path);
+
         await mkdir(dirname(target), { recursive: true });
         await writeFile(target, content);
     }

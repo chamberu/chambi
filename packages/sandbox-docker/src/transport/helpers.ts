@@ -9,7 +9,7 @@ import type { Duplex } from 'node:stream';
 
 /** An error naming the abort, for the remote workspace to map by its precedence. */
 export function abortError(signal: AbortSignal): Error {
-    return signal.reason instanceof Error ? signal.reason : new Error('exec aborted');
+    return Error.isError(signal.reason) ? signal.reason : new Error('exec aborted');
 }
 
 /** Socket errors of a connection the daemon closed, e.g. after a command exited with stdin still queued. */
@@ -35,18 +35,25 @@ export function streamEnded(stream: Duplex, signal: AbortSignal): Promise<'ended
         }
         function onError(error: Error & { code?: string }) {
             cleanup();
-            if (error.code !== undefined && CLOSED_CONNECTION_CODES.has(error.code)) resolve('closed');
-            else reject(error);
+
+            if (error.code !== undefined && CLOSED_CONNECTION_CODES.has(error.code)) {
+                resolve('closed');
+            } else {
+                reject(error);
+            }
         }
         function onAbort() {
             cleanup();
             stream.destroy();
             reject(abortError(signal));
         }
+
         if (signal.aborted) {
             onAbort();
+
             return;
         }
+
         signal.addEventListener('abort', onAbort, { once: true });
         stream.on('end', onEnd);
         stream.on('close', onEnd);

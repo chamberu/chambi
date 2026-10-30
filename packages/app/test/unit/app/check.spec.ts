@@ -55,13 +55,21 @@ function recordingRepository(store: ReturnType<typeof createMemoryStore>): { sto
     const record = <T extends object>(target: T): T => new Proxy(target, {
         get(valueTarget, key, receiver) {
             const value: unknown = Reflect.get(valueTarget, key, receiver);
-            if (typeof value !== 'function' || typeof key !== 'string') return value;
+
+            if (typeof value !== 'function' || typeof key !== 'string') {
+                return value;
+            }
+
             return (...args: unknown[]) => {
-                if (!/^(find|read)/.test(key)) writes.push(key);
+                if (!/^(find|read)/.test(key)) {
+                    writes.push(key);
+                }
+
                 return (value as (...a: unknown[]) => unknown).apply(valueTarget, args);
             };
         },
     });
+
     return {
         store: {
             runs: record(store.runs),
@@ -80,7 +88,7 @@ function recordingRepository(store: ReturnType<typeof createMemoryStore>): { sto
 }
 
 function build(options: {
-    agents?: Agent[]; 
+    agents?: Agent[];
     store?: IStore;
     clock?: ControllableClock;
     modules?: IModule[];
@@ -93,7 +101,9 @@ function build(options: {
         models: { test: provider() },
         modules: [configModule({ clock, logger }), storeModule({ store }), ...options.modules ?? []],
     });
+
     apps.push(app);
+
     return {
         app,
         clock,
@@ -104,6 +114,7 @@ function build(options: {
 
 async function envFor(extra: Record<string, string> = {}) {
     const port = await freePort();
+
     return {
         port,
         env: {
@@ -149,6 +160,7 @@ async function parkWaiting(store: IStore, clock: ControllableClock, id: string, 
         createdAt: now,
         updatedAt: now,
     };
+
     await store.runs.insert(run);
 }
 
@@ -167,6 +179,7 @@ describe('App.check', () => {
         await expect(app.check({ env })).resolves.toEqual({ issues: [] } satisfies AppCheckResult);
 
         const server = await listenOn(port);
+
         await closeServer(server);
         expect((await store.runs.findOne(runId))?.status).toBe('queued');
     });
@@ -174,21 +187,27 @@ describe('App.check', () => {
     it('writes nothing to the store', async () => {
         const clock = new ControllableClock(START);
         const memory = createMemoryStore({ clock });
+
         await writeTree(dir.path, { 'triage/agent.ts': agentFile('v2', 'test/model', 'triage') });
+
         const stale = {
-            agent: 'triage', 
-            hash: 'c'.repeat(64), 
-            changedAt: START, 
+            agent: 'triage',
+            hash: 'c'.repeat(64),
+            changedAt: START,
         };
         const orphan = {
-            agent: 'gone', 
-            hash: 'd'.repeat(64), 
-            changedAt: START, 
+            agent: 'gone',
+            hash: 'd'.repeat(64),
+            changedAt: START,
         };
+
         await memory.agentRevisions.save(stale);
         await memory.agentRevisions.save(orphan);
+
         const queued = await queueRun(memory, clock, 'triage');
+
         await parkWaiting(memory, clock, 'waiting-run', 'triage');
+
         const { store, writes } = recordingRepository(memory);
         const { app } = build({ store, clock });
         const { env } = await envFor({ CHAMVI_AGENTS_DIR: dir.path });
@@ -204,20 +223,24 @@ describe('App.check', () => {
 
     it('reports a broken folder as an issue', async () => {
         await writeTree(dir.path, { 'triage/agent.ts': 'export default 42;\n' });
+
         const { app } = build();
         const { env } = await envFor({ CHAMVI_AGENTS_DIR: dir.path });
 
         const { issues } = await app.check({ env });
+
         expect(issues).toHaveLength(1);
         expect(issues[0]?.message).toMatch(/^triage\/agent\.ts: /);
     });
 
     it('reports a folder subscribing to a channel no module contributes', async () => {
         await writeTree(dir.path, { 'triage/agent.ts': agentFile('v1', 'test/model', 'triage', ['{ channel: \'github\', id: \'github:issues\', options: {} }']) });
+
         const { app } = build();
         const { env } = await envFor({ CHAMVI_AGENTS_DIR: dir.path });
 
         const { issues } = await app.check({ env });
+
         expect(issues).toHaveLength(1);
         expect(issues[0]?.message).toContain('unknown channel "github".');
     });
@@ -228,15 +251,16 @@ describe('App.check', () => {
             model: textModel(),
             instructions: 'x',
             channels: [{
-                channel: 'github', 
-                id: 'github:issues', 
-                options: {}, 
+                channel: 'github',
+                id: 'github:issues',
+                options: {},
             }],
         });
         const { app } = build({ agents: [lonely] });
         const { env } = await envFor();
 
         const error = await rejectionOf(app.check({ env }));
+
         expect(error.code).toBe('invalid_agent_definition');
     });
 
@@ -255,6 +279,7 @@ describe('App.check', () => {
         const { env } = await envFor();
 
         const error = await rejectionOf(app.check({ env }));
+
         expect(error.code).toBe('invalid_agent_definition');
         expect(error.message).toContain('0 0 * * 1/2');
     });
@@ -262,9 +287,11 @@ describe('App.check', () => {
     it('rejects without CHAMVI_TOKENS outside dev', async () => {
         const { app } = build({ agents: [triage] });
         const { env } = await envFor();
+
         delete (env as Record<string, string | undefined>).CHAMVI_TOKENS;
 
         const error = await rejectionOf(app.check({ env }));
+
         expect(error.code).toBe('invalid_agent_definition');
         expect(error.message).toContain('No authenticator');
     });
@@ -280,6 +307,7 @@ describe('App.check', () => {
         const { env } = await envFor();
 
         const error = await rejectionOf(app.check({ env }));
+
         expect(error.code).toBe('invalid_agent_definition');
     });
 
@@ -291,10 +319,18 @@ describe('App.check', () => {
                 container.registerMany(AppToken.LIFECYCLE_HOOKS, {
                     useValue: {
                         name: 'probe',
-                        engineCreated: () => { phases.push('engineCreated'); },
-                        started: () => { phases.push('started'); },
-                        stopping: () => { phases.push('stopping'); },
-                        drained: () => { phases.push('drained'); },
+                        engineCreated: () => {
+                            phases.push('engineCreated');
+                        },
+                        started: () => {
+                            phases.push('started');
+                        },
+                        stopping: () => {
+                            phases.push('stopping');
+                        },
+                        drained: () => {
+                            phases.push('drained');
+                        },
                     },
                 });
             },
@@ -311,6 +347,7 @@ describe('App.check', () => {
         const { env } = await envFor({ CHAMVI_READINESS_DELAY_MS: '60000' });
 
         const started = Date.now();
+
         await app.check({ env });
         expect(Date.now() - started).toBeLessThan(5_000);
     });
@@ -320,7 +357,9 @@ describe('App.check', () => {
         const { env } = await envFor();
 
         await app.check({ env });
+
         const error = await rejectionOf(app.start({ env }));
+
         expect(error.code).toBe(APP_ERROR_CODE.IN_USE);
     });
 });

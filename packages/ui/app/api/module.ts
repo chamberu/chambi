@@ -52,35 +52,58 @@ export function createApiClient(options: ApiClientOptions): IApiClient {
 
     async function send(target: string, init: RequestOptions, retried = false): Promise<Response> {
         const headers = new Headers(init.headers);
-        if (!headers.has('accept')) headers.set('accept', 'application/json');
+
+        if (!headers.has('accept')) {
+            headers.set('accept', 'application/json');
+        }
+
         const token = init.token ?? await options.token();
-        if (token) headers.set('authorization', `Bearer ${token}`);
+
+        if (token) {
+            headers.set('authorization', `Bearer ${token}`);
+        }
+
         let body: string | undefined;
+
         if (init.body !== undefined) {
             headers.set('content-type', 'application/json');
             body = JSON.stringify(init.body);
         }
+
         const response = await doFetch(`${options.apiBase}${target}`, {
             method: init.method ?? 'GET',
             headers,
             body,
             signal: init.signal,
         });
-        if (response.ok) return response;
+
+        if (response.ok) {
+            return response;
+        }
 
         if (response.status === 401 && init.token === undefined) {
-            if (!retried && options.refresh && await options.refresh()) return send(target, init, true);
+            if (!retried && options.refresh && await options.refresh()) {
+                return send(target, init, true);
+            }
+
             const error = await toApiError(response);
+
             options.onUnauthorized?.();
+
             throw error;
         }
+
         throw await toApiError(response);
     }
 
     async function request<T>(target: string, init: RequestOptions = {}): Promise<T> {
         const response = await send(target, init);
         const text = await response.text();
-        if (!text) return undefined as T;
+
+        if (!text) {
+            return undefined as T;
+        }
+
         try {
             return JSON.parse(text) as T;
         } catch {
@@ -92,6 +115,7 @@ export function createApiClient(options: ApiClientOptions): IApiClient {
         me: (token) => request<MeWire>('/me', token === undefined ? {} : { token }),
         listAgents: async () => {
             const body = await request('/agents');
+
             return {
                 data: dataOf<AgentWire>(body),
                 issues: isObject(body) && Array.isArray(body.issues) ? body.issues as AgentIssueWire[] : [],
@@ -100,8 +124,12 @@ export function createApiClient(options: ApiClientOptions): IApiClient {
         listSchedules: async () => dataOf<ScheduleWire>(await request('/schedules')),
         listRuns: (filter) => request<RunPage>(withQuery('/runs', runListQuery(filter))),
         getRun: (id) => request<RunDetail>(path('runs', id)),
-        cancelRun: async (id) => { await request(`${path('runs', id)}/cancel`, { method: 'POST' }); },
-        approve: async (id, body) => { await request(`${path('runs', id)}/approve`, { method: 'POST', body }); },
+        cancelRun: async (id) => {
+            await request(`${path('runs', id)}/cancel`, { method: 'POST' });
+        },
+        approve: async (id, body) => {
+            await request(`${path('runs', id)}/approve`, { method: 'POST', body });
+        },
         listKv: async (agent, page) => dataOf<KvEntry>(await request(withQuery(`${path('agents', agent)}/state/kv`, pageQuery(new URLSearchParams(), page)))),
         listDocs: async (agent, collection, page) => dataOf<DocEntry>(await request(withQuery(
             `${path('agents', agent)}/state/collections${path(collection)}`,

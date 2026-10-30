@@ -39,13 +39,20 @@ const REFERENCES = [
 
 describePostgres('relational integrity', () => {
     let ds: DataSource;
-    afterEach(async () => { if (ds?.isInitialized) await ds.destroy(); });
+
+    afterEach(async () => {
+        if (ds?.isInitialized) {
+            await ds.destroy();
+        }
+    });
 
     it('rejects dangling run and scope references and preserves referenced parents', async () => {
         ds = await createTestDataSource();
+
         const conversations = new DatabaseConversationRepository({ dataSource: ds });
         const store = createDatabaseStore({ dataSource: ds });
         const scope = await conversations.resolve(IDENTITY);
+
         await seedRun(ds, 'run', { conversation: { scope, text: 'input' } });
         await conversations.beginTurn(scope, 'run', 'input', DEFAULT_CONVERSATION_LIMITS);
         await conversations.applyNote(scope, {
@@ -60,7 +67,9 @@ describePostgres('relational integrity', () => {
                 stepIndex: 0,
             },
         });
+
         const now = new Date();
+
         await store.checkpoints.save({
             runId: 'run',
             stepIndex: 0,
@@ -75,10 +84,13 @@ describePostgres('relational integrity', () => {
             startedAt: now,
             finishedAt: now,
         });
+
         const runner = ds.createQueryRunner();
+
         try {
             for (const [table, column, parent] of REFERENCES) {
                 const metadata = await runner.getTable(table);
+
                 expect(metadata?.foreignKeys).toEqual(expect.arrayContaining([expect.objectContaining({
                     columnNames: [column],
                     referencedTableName: parent,
@@ -88,10 +100,12 @@ describePostgres('relational integrity', () => {
                 await expect(ds.query(`UPDATE "${table}" SET "${column}" = $1`, ['missing']))
                     .rejects.toMatchObject({ driverError: { code: '23503' } });
             }
+
             expect((await runner.getTable('chamvi_checkpoints'))?.findColumnByName('conversation_snapshot_run_id')).toBeUndefined();
         } finally {
             await runner.release();
         }
+
         await expect(ds.query('DELETE FROM chamvi_runs WHERE id = $1', ['run']))
             .rejects.toMatchObject({ driverError: { code: '23503' } });
         await conversations.endTurn(scope, 'run', []);
@@ -103,9 +117,11 @@ describePostgres('relational integrity', () => {
 
     it('loads related runs and conversations through normal TypeORM relations', async () => {
         ds = await createTestDataSource();
+
         const conversations = new DatabaseConversationRepository({ dataSource: ds });
         const store = createDatabaseStore({ dataSource: ds });
         const scope = await conversations.resolve(IDENTITY);
+
         await seedRun(ds, 'run', { conversation: { scope, text: 'input' } });
         await conversations.beginTurn(scope, 'run', 'input', DEFAULT_CONVERSATION_LIMITS);
         await conversations.applyNote(scope, {
@@ -127,9 +143,12 @@ describePostgres('relational integrity', () => {
             createdAt: new Date(),
             conversation: { scopeId: scope.id, generation: scope.generation },
         });
+
         const checkpoint = await ds.getRepository(CheckpointEntity).findOneOrFail({ where: { runId: 'run' }, relations: { run: true, conversation: true } });
+
         expect(checkpoint.run?.id).toBe('run');
         expect(checkpoint.conversation?.id).toBe(scope.id);
+
         const operation = await ds.getRepository(ConversationOperationEntity).findOneOrFail({
             where: {
                 scopeId: scope.id,
@@ -138,13 +157,20 @@ describePostgres('relational integrity', () => {
             },
             relations: { run: true, conversation: true },
         });
+
         expect(operation.run?.id).toBe('run');
         expect(operation.conversation?.id).toBe(scope.id);
+
         const run = await ds.getRepository(RunEntity).findOneOrFail({ where: { id: 'run' }, relations: { conversation: true } });
+
         expect(run.conversation?.id).toBe(scope.id);
+
         const conversation = await ds.getRepository(ConversationEntity).findOneOrFail({ where: { id: scope.id }, relations: { activeRun: true } });
+
         expect(conversation.activeRun?.id).toBe('run');
+
         const now = new Date();
+
         await store.steps.insert({
             runId: 'run',
             index: 0,
@@ -152,20 +178,37 @@ describePostgres('relational integrity', () => {
             startedAt: now,
             finishedAt: now,
         });
+
         // These IDs reserve runs before runs.insert; every other local run/scope ID must be queryable.
         const reservations = new Set([`${TableName.ARTIFACTS}.runId`, `${TableName.IDEMPOTENCY_KEYS}.runId`]);
+
         for (const metadata of ds.entityMetadatas) {
             for (const column of metadata.columns) {
                 let parent: string | undefined;
-                if (/runId$/i.test(column.propertyName)) parent = TableName.RUNS;
-                else if (/scopeId$/i.test(column.propertyName)) parent = TableName.CONVERSATIONS;
-                if (!parent || reservations.has(`${metadata.tableName}.${column.propertyName}`)) continue;
+
+                if (/runId$/i.test(column.propertyName)) {
+                    parent = TableName.RUNS;
+                } else if (/scopeId$/i.test(column.propertyName)) {
+                    parent = TableName.CONVERSATIONS;
+                }
+
+                if (!parent || reservations.has(`${metadata.tableName}.${column.propertyName}`)) {
+                    continue;
+                }
+
                 const relation = metadata.relations.find((entry) => entry.joinColumns.includes(column));
+
                 expect(relation, `${metadata.name}.${column.propertyName} needs an owning TypeORM relation`).toBeDefined();
-                if (!relation) continue;
+
+                if (!relation) {
+                    continue;
+                }
+
                 expect(relation.inverseEntityMetadata.tableName).toBe(parent);
+
                 const entity = await ds.getRepository(metadata.target).createQueryBuilder('entity')
                     .leftJoinAndSelect(`entity.${relation.propertyName}`, 'parent').getOne();
+
                 expect(entity?.[relation.propertyName]).toMatchObject({ id: entity?.[column.propertyName] });
             }
         }
@@ -173,8 +216,10 @@ describePostgres('relational integrity', () => {
 
     it('refuses an unknown run without inserting input or taking ownership', async () => {
         ds = await createTestDataSource();
+
         const store = new DatabaseConversationRepository({ dataSource: ds });
         const scope = await store.resolve(IDENTITY);
+
         await expect(store.beginTurn(scope, 'missing', 'input', DEFAULT_CONVERSATION_LIMITS))
             .rejects.toMatchObject({ driverError: { code: '23503' } });
         expect(await store.activeRun(scope)).toBeUndefined();

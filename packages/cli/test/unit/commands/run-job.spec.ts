@@ -72,7 +72,9 @@ describe('run-job', () => {
 
     it('a run interrupted by a signal exits 0', async () => {
         globalThis.chamviHangStreaming = undefined;
+
         const job = runJob(['hang', '--entry', fixture('hang')]);
+
         await vi.waitFor(() => expect(globalThis.chamviHangStreaming).toBe(true));
 
         fake.signals.emit('SIGTERM');
@@ -85,6 +87,7 @@ describe('run-job', () => {
 
     it('a failed run exits 1 also when a signal arrives during the teardown', async () => {
         globalThis.chamviFailingDrained = () => fake.signals.emit('SIGTERM');
+
         try {
             await runJob(['fail', '--entry', fixture('failing')]);
         } finally {

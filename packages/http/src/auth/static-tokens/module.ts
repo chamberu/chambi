@@ -19,11 +19,13 @@ import type { StaticTokensOptions } from './types.ts';
  */
 export function staticTokens(options: StaticTokensOptions): Authenticator {
     const { tokens } = options;
+
     if (!Array.isArray(tokens) || tokens.length === 0) {
         throw new InvalidAgentDefinitionError('staticTokens() needs a non-empty array of tokens.');
     }
 
     const principals = new Map<string, Principal>();
+
     for (const {
         value,
         id,
@@ -32,16 +34,20 @@ export function staticTokens(options: StaticTokensOptions): Authenticator {
         if (typeof id !== 'string' || id.length === 0) {
             throw new InvalidAgentDefinitionError('Every static token needs a non-empty id.');
         }
+
         if (typeof value !== 'string' || value.length < STATIC_TOKEN_MIN_LENGTH) {
             throw new InvalidAgentDefinitionError(
                 `The static token of "${id}" must have at least ${STATIC_TOKEN_MIN_LENGTH} characters.`,
             );
         }
+
         const digest = hashToken(value);
+
         if (principals.has(digest)) {
             // a later entry would silently take over the earlier one's grants
             throw new InvalidAgentDefinitionError(`The static token of "${id}" is given more than once.`);
         }
+
         principals.set(digest, {
             id,
             kind: 'token',
@@ -51,8 +57,13 @@ export function staticTokens(options: StaticTokensOptions): Authenticator {
 
     return async (request) => {
         const token = readBearerToken(request);
-        if (token === undefined) return undefined;
+
+        if (token === undefined) {
+            return undefined;
+        }
+
         const principal = principals.get(hashToken(token));
+
         return principal ? { ...principal, permissions: [...principal.permissions] } : undefined;
     };
 }

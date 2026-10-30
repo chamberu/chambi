@@ -12,5 +12,6 @@ import type { HomeFrontmatter } from './types';
 
 export function useHome<K extends keyof HomeFrontmatter>(key: K): ComputedRef<HomeFrontmatter[K]> {
     const { frontmatter } = useData();
+
     return computed(() => (frontmatter.value as HomeFrontmatter)[key]);
 }

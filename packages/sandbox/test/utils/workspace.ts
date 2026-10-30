@@ -43,8 +43,12 @@ export function createScriptedWorkspace(
         files,
         disposed: false,
         async exec(argv, options = {}) {
-            if (workspace.disposed) throw new SandboxError('workspace disposed');
+            if (workspace.disposed) {
+                throw new SandboxError('workspace disposed');
+            }
+
             calls.push({ argv: [...argv], options });
+
             return {
                 exitCode: 0,
                 stdout: '',
@@ -57,21 +61,32 @@ export function createScriptedWorkspace(
             };
         },
         async readFile(path) {
-            if (workspace.disposed) throw new SandboxError('workspace disposed');
+            if (workspace.disposed) {
+                throw new SandboxError('workspace disposed');
+            }
+
             const content = files.get(path);
-            if (content === undefined) throw new SandboxError(`file not found: ${path}`);
+
+            if (content === undefined) {
+                throw new SandboxError(`file not found: ${path}`);
+            }
+
             return content;
         },
         async readBytes(path) {
             return new TextEncoder().encode(await workspace.readFile(path));
         },
         async writeFile(path, content) {
-            if (workspace.disposed) throw new SandboxError('workspace disposed');
+            if (workspace.disposed) {
+                throw new SandboxError('workspace disposed');
+            }
+
             files.set(path, typeof content === 'string' ? content : new TextDecoder().decode(content));
         },
         async dispose() {
             workspace.disposed = true;
         },
     };
+
     return workspace;
 }

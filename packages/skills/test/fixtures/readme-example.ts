@@ -12,6 +12,7 @@ export async function prepareCatalog(options: Omit<PrepareSkillsOptions, 'verify
             }
         },
     });
+
     return loadSkillBundles(prepared.map((skill) => ({
         name: skill.name,
         directory: skill.path,

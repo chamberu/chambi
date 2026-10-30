@@ -19,20 +19,22 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf
 
 function unreachableKubeConfig(): KubeConfig {
     const kubeConfig = new KubeConfig();
+
     kubeConfig.loadFromOptions({
         clusters: [{
-            name: 'readme', 
-            server: 'https://127.0.0.1:1', 
-            skipTLSVerify: true, 
+            name: 'readme',
+            server: 'https://127.0.0.1:1',
+            skipTLSVerify: true,
         }],
         users: [{ name: 'readme', token: 'readme-token' }],
         contexts: [{
-            name: 'readme', 
-            cluster: 'readme', 
-            user: 'readme', 
+            name: 'readme',
+            cluster: 'readme',
+            user: 'readme',
         }],
         currentContext: 'readme',
     });
+
     return kubeConfig;
 }
 
@@ -40,6 +42,7 @@ describe('README example', () => {
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = readme.matchAll(/```typescript\n([\s\S]*?)```/g).map((m) => m[1]).toArray();
+
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 

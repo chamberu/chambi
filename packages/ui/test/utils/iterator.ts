@@ -13,12 +13,18 @@ export function withoutIteratorHelpers<T>(fn: () => T): T {
     const proto = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]())) as Record<string, unknown>;
     const names = ['toArray', 'map', 'filter', 'reduce', 'forEach', 'some', 'every', 'find', 'take', 'drop', 'flatMap'];
     const saved = names.map((name) => [name, Object.getOwnPropertyDescriptor(proto, name)] as const);
-    for (const name of names) delete proto[name];
+
+    for (const name of names) {
+        delete proto[name];
+    }
+
     try {
         return fn();
     } finally {
         for (const [name, descriptor] of saved) {
-            if (descriptor) Object.defineProperty(proto, name, descriptor);
+            if (descriptor) {
+                Object.defineProperty(proto, name, descriptor);
+            }
         }
     }
 }

@@ -13,7 +13,9 @@ import { EXEC_SCRIPT } from '../../../src/remote/constants.ts';
 /** The PATH a script leaves for the command it runs, through the host's /bin/sh. */
 function pathAfter(script: string, path: string): string {
     const result = spawnSync('/bin/sh', ['-c', `${script}\nprintf %s "$PATH"`], { env: { PATH: path }, encoding: 'utf8' });
+
     expect(result.stderr).toBe('');
+
     return result.stdout;
 }
 
@@ -32,6 +34,7 @@ describe('the PATH guard of chamvi\'s own commands', () => {
             env: { PATH: '/cache/mise/shims:/usr/bin:/bin' },
             encoding: 'utf8',
         });
+
         expect(result.stdout).toBe('/usr/bin:/bin');
         expect(result.stderr).toBe('M:0\n');
         expect(result.status).toBe(0);

@@ -66,22 +66,29 @@ export function webFetchTool(options: WebToolsOptionsNormalized): Tool<WebFetchI
             const offset = optionalInteger(body.offset, 'offset', 0) ?? 0;
 
             const page = await getPage(url, options, signalOf(abortSignal, context));
+
             if (!isText(page.contentType)) {
                 throw requestError(`${page.url.href} is ${mediaTypeOf(page.contentType)}, not text; web_fetch reads text only.`);
             }
+
             let text = decodeBody(page.bytes, page.contentType);
             const { truncated } = page;
             let title: string | undefined;
+
             if (format !== 'raw' && isHtml(page.contentType)) {
                 const converted = format === 'text' ? htmlToText(text, page.url.href) : htmlToMarkdown(text, page.url.href);
+
                 ({ title } = converted);
                 text = converted.content;
             }
+
             if (offset > 0 && offset >= text.length) {
                 throw new ValidationError(`offset ${offset} is past the end (${text.length} characters).`);
             }
+
             const content = cutText(text, offset, WEB_FETCH_MAX_CHARS);
             const next = offset + content.length;
+
             return {
                 url: page.url.href,
                 status: page.status,

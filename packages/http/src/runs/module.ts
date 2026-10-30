@@ -73,16 +73,20 @@ export function registerRunRoutes(app: App, ctx: HttpContext): void {
             ...(body.attachments?.length ? { attachments: body.attachments } : {}),
             invoker: toInvoker(principal),
         });
+
         event.response.status = 202;
+
         return result;
     }));
 
     app.get('/runs', defineCoreHandler(async (event) => {
         const principal = await authenticate(event, ctx);
         const query = parseRunListQuery(event.searchParams, ctx.agents.names());
+
         assertCanListRuns(principal, query.agent);
 
         const { data, total } = await ctx.store.runs.find(query);
+
         return {
             data: data.map(serializeRun),
             meta: {
@@ -95,16 +99,19 @@ export function registerRunRoutes(app: App, ctx: HttpContext): void {
 
     app.get('/runs/:id', defineCoreHandler(async (event) => {
         const run = await readableRun(event, ctx, param(event, 'id'));
+
         return { ...serializeRun(run), steps: (await ctx.store.steps.find(run.id)).map(serializeStep) };
     }));
 
     app.get('/runs/:id/stream', defineCoreHandler(async (event) => {
         const run = await readableRun(event, ctx, param(event, 'id'));
+
         return streamRun(event, ctx, run.id);
     }));
 
     app.get('/runs/:id/artifacts', defineCoreHandler(async (event) => {
         const run = await readableRun(event, ctx, param(event, 'id'));
+
         return { data: await ctx.store.artifacts.find(run.id) };
     }));
 
@@ -113,21 +120,28 @@ export function registerRunRoutes(app: App, ctx: HttpContext): void {
         const { artifact, data } = await loadRunArtifact(ctx, run, param(event, 'artifactId'));
         // from the response headers, so CORS and RateLimit-* survive
         const headers = new Headers(event.response.headers);
+
         headers.set('content-type', artifact.mediaType);
         headers.set('content-length', String(data.byteLength));
         headers.set('content-disposition', contentDisposition(artifact.filename));
         // a stored text/html or image/svg+xml must never render as a page of this origin
         headers.set('x-content-type-options', 'nosniff');
         headers.set('cache-control', 'private, no-store');
+
         return new Response(toBody(data), { status: 200, headers });
     }));
 
     app.post('/runs/:id/cancel', defineCoreHandler(async (event) => {
         await authorize(event, ctx, Permission.RUN_CANCEL);
+
         const id = param(event, 'id');
+
         await ctx.engine.cancel(id);
+
         const run = await ctx.engine.getRun(id);
+
         event.response.status = 202;
+
         return { runId: id, status: run?.status };
     }));
 
@@ -136,6 +150,7 @@ export function registerRunRoutes(app: App, ctx: HttpContext): void {
         const principal = await authenticate(event, ctx);
         const run = await loadApprovableRun(ctx, principal, param(event, 'id'));
         const body = await validateBody(approveContainer, await readJsonBody(event, ctx.bodyLimit), { required: true });
+
         await ctx.engine.approve(run.id, {
             approvalId: body.approvalId,
             approved: body.approved,
@@ -144,6 +159,7 @@ export function registerRunRoutes(app: App, ctx: HttpContext): void {
             approver: toInvoker(principal),
         });
         event.response.status = 202;
+
         return { runId: run.id, status: 'queued' };
     }));
 }

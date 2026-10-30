@@ -25,7 +25,10 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -57,15 +60,21 @@ function make(model: LanguageModel, opts: {
         agents: [agent],
         onError: () => {},
     });
+
     engines.push(engine);
+
     return { store, engine };
 }
 
 async function runOnce(model: LanguageModel, opts: Parameters<typeof make>[1] = {}) {
     const { engine, store } = make(model, opts);
+
     await engine.start();
+
     const { runId } = await engine.dispatch(env);
+
     await engine.idle();
+
     return store.runs.findOne(runId);
 }
 
@@ -111,6 +120,7 @@ function cutModel(t: string) {
 describe('structured output', () => {
     it('stores the parsed object as the run output', async () => {
         const run = await runOnce(mockModel([text('{"label":"bug"}')]));
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toEqual({ label: 'bug' });
     });
@@ -133,12 +143,14 @@ describe('structured output', () => {
                 }),
             }),
         });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toEqual({ label: 'feature' });
     });
 
     it('fails with a validation error on invalid JSON', async () => {
         const run = await runOnce(mockModel([text('not json')]));
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('validation_error');
         expect(run?.error?.message).toMatch(/could not parse/);
@@ -148,6 +160,7 @@ describe('structured output', () => {
 
     it('fails with a validation error on a schema mismatch', async () => {
         const run = await runOnce(mockModel([text('{"label":"other"}')]));
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('validation_error');
         expect(run?.error?.message).toMatch(/did not match schema/);
@@ -157,6 +170,7 @@ describe('structured output', () => {
 
     it('plain agents keep the text output', async () => {
         const run = await runOnce(mockModel([text('{"label":"bug"}')]), { output: undefined });
+
         expect(run?.output).toBe('{"label":"bug"}');
     });
 
@@ -167,6 +181,7 @@ describe('structured output', () => {
         const model = mockModel([]);
         const { engine, store } = make(model, { maxSteps: 2 });
         const { runId } = await engine.dispatch(env);
+
         await store.checkpoints.save({
             runId,
             stepIndex: 1,
@@ -179,10 +194,17 @@ describe('structured output', () => {
         });
         await engine.start();
         await engine.idle();
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe(status);
-        if (status === 'completed') expect(run?.output).toEqual({ label: 'bug' });
-        else expect(run?.error?.code).toBe('validation_error');
+
+        if (status === 'completed') {
+            expect(run?.output).toEqual({ label: 'bug' });
+        } else {
+            expect(run?.error?.code).toBe('validation_error');
+        }
+
         expect(model.doStreamCalls).toHaveLength(0);
     });
 
@@ -197,6 +219,7 @@ describe('structured output', () => {
             // no execute: the AI SDK ends the loop on the call
             tools: () => ({ handoff: tool({ inputSchema: z.object({ to: z.string() }) }) }),
         });
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('incomplete_response');
         expect(run?.error?.message).toMatch(/"handoff"/);
@@ -214,12 +237,14 @@ describe('structured output', () => {
             tools: () => ({ handoff: tool({ inputSchema: z.object({ to: z.string() }) }) }),
             output: undefined,
         });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('handing off');
     });
 
     it('fails saying the answer was cut off on finish reason length', async () => {
         const run = await runOnce(cutModel('{"label":"bu'));
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('incomplete_response');
         expect(run?.error?.message).toMatch(/cut off/);
@@ -228,6 +253,7 @@ describe('structured output', () => {
 
     it('keeps the cut text of a plain agent on finish reason length', async () => {
         const run = await runOnce(cutModel('{"label":"bu'), { output: undefined });
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('{"label":"bu');
     });
@@ -236,6 +262,7 @@ describe('structured output', () => {
         const model = mockModel([]);
         const { engine, store } = make(model, { maxSteps: 1 });
         const { runId } = await engine.dispatch(env);
+
         await store.checkpoints.save({
             runId,
             stepIndex: 0,
@@ -248,7 +275,9 @@ describe('structured output', () => {
         });
         await engine.start();
         await engine.idle();
+
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('incomplete_response');
         expect(model.doStreamCalls).toHaveLength(0);
@@ -257,6 +286,7 @@ describe('structured output', () => {
     it('bounds the answer quoted in a validation error', async () => {
         const answer = 'x'.repeat(5000);
         const run = await runOnce(mockModel([text(answer)]));
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('validation_error');
         expect(run?.error?.message).toMatch(/could not parse/);
@@ -270,6 +300,7 @@ describe('structured output', () => {
             ...output,
             parsePartialOutput: async (options) => {
                 partialParses++;
+
                 return output.parsePartialOutput(options);
             },
         };
@@ -309,14 +340,18 @@ describe('structured output', () => {
         });
         const { engine, store } = make(model, { output: counted });
         const deltas: RunDelta[] = [];
+
         engine.on('run.delta', (e) => {
             deltas.push(e.delta);
         });
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toEqual({ label: 'bug' });
         expect(partialParses).toBe(0);

@@ -26,6 +26,7 @@ export function createEngine(agents: Agent[]) {
         // tools reach it with ctx.channels.findOneOrFail('openclaw')
         channels: [openclaw],
     });
+
     // #endregion channel
     return engine;
 }
@@ -38,8 +39,13 @@ export const deploy = defineTool({
         const openclaw = context.channels.findOneOrFail('openclaw');
         // without an address both go to deliver.to (the channel's defaultAddress)
         const { approved } = await openclaw.approve({ title: `Deploy to ${env}?` });
-        if (!approved) return 'the owner said no';
+
+        if (!approved) {
+            return 'the owner said no';
+        }
+
         await openclaw.emit({ body: `Deployed to ${env}.` });
+
         return `deployed to ${env}`;
     },
 });

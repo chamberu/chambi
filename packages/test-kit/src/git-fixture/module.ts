@@ -36,10 +36,12 @@ const run = promisify(execFile);
 export async function createGitFixture(files: Record<string, string>): Promise<GitFixture> {
     for (const name of Object.keys(files)) {
         const normalized = normalize(name);
+
         if (name === '' || isAbsolute(name) || normalized === '.' || normalized === '..' || normalized.startsWith('../')) {
             throw new ValidationError(`fixture file ${JSON.stringify(name)} must be a path inside the repository.`);
         }
     }
+
     const path = await mkdtemp(join(tmpdir(), 'chamvi-git-fixture-'));
     const env = {
         PATH: process.env.PATH ?? '',
@@ -62,19 +64,23 @@ export async function createGitFixture(files: Record<string, string>): Promise<G
     };
     const git = async (...args: string[]) => {
         const { stdout } = await run('git', args, { cwd: path, env });
+
         return stdout;
     };
 
     try {
         for (const [name, content] of Object.entries(files)) {
             const file = join(path, name);
+
             await mkdir(dirname(file), { recursive: true });
             await writeFile(file, content);
         }
+
         await git('-c', 'init.defaultBranch=main', 'init', '-q', '.');
         await git('add', '--all');
         await git('-c', 'commit.gpgsign=false', 'commit', '-q', '--allow-empty', '-m', 'fixture');
         await git('-c', 'tag.gpgsign=false', 'tag', 'v1');
+
         const commit = (await git('rev-parse', 'HEAD')).trim();
 
         return {
@@ -86,6 +92,7 @@ export async function createGitFixture(files: Record<string, string>): Promise<G
         };
     } catch (error) {
         await rm(path, { recursive: true, force: true });
+
         throw error;
     }
 }

@@ -28,6 +28,7 @@ const agent = defineAgent({
 
 function build() {
     const clock = new ControllableClock();
+
     return createApp({ agents: [agent], modules: [configModule({ clock, logger: createRecordingLogger(clock) })] });
 }
 
@@ -47,13 +48,18 @@ describePostgres('App.migrate on Postgres', () => {
         await build().migrate({ env: { DATABASE_URL: url } });
 
         const check = new DataSource({ type: 'postgres', url });
+
         await check.initialize();
+
         try {
             const rows = await check.query('SELECT to_regclass(\'public.chamvi_runs\') AS name') as Array<{ name: string | null }>;
+
             expect(rows[0]?.name).toBe('chamvi_runs');
+
             const sessions = await check.query(
                 'SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()',
             ) as Array<{ n: number }>;
+
             expect(sessions[0]?.n).toBe(0);
         } finally {
             await check.destroy();

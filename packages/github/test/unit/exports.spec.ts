@@ -43,7 +43,9 @@ describe('public api', () => {
 
     it('exports the request error code and the repository pattern', () => {
         expect(pkg.GITHUB_REQUEST_ERROR_CODE).toBe('github_request');
+
         const repo = new RegExp(pkg.REPO_PATTERN);
+
         expect(repo.test('octo/demo')).toBe(true);
         expect(repo.test('a/../b')).toBe(false);
         expect(repo.test('../x')).toBe(false);

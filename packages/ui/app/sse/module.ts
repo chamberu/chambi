@@ -32,6 +32,7 @@ function toRunStreamEvent(event: SseEvent): RunStreamEvent | undefined {
                 kind: 'text' | 'reasoning';
                 text: string
             };
+
             return {
                 type: 'delta',
                 step: delta.step,
@@ -60,37 +61,71 @@ export function openRunStream(options: RunStreamOptions): IRunStream {
 
     void (async () => {
         let attempt = 0;
+
         while (!signal.aborted) {
             let settled = false;
             let delay: number | undefined;
+
             try {
                 const response = await options.client.streamRun(options.runId, { lastEventId: lastStep, signal });
-                if (!response.body) throw new ApiError(response.status, 'empty_stream', 'The stream has no body.');
+
+                if (!response.body) {
+                    throw new ApiError(response.status, 'empty_stream', 'The stream has no body.');
+                }
+
                 for await (const event of parseEventStream(response.body)) {
-                    if (signal.aborted) return;
+                    if (signal.aborted) {
+                        return;
+                    }
+
                     const runEvent = toRunStreamEvent(event);
-                    if (!runEvent) continue;
+
+                    if (!runEvent) {
+                        continue;
+                    }
+
                     attempt = 0;
-                    if (runEvent.type === 'step') lastStep = Math.max(lastStep ?? -1, (runEvent.step as StepWire).index);
-                    if (runEvent.type === 'run') settled = SETTLED_RUN_STATUSES.includes(runEvent.run.status);
+
+                    if (runEvent.type === 'step') {
+                        lastStep = Math.max(lastStep ?? -1, (runEvent.step as StepWire).index);
+                    }
+
+                    if (runEvent.type === 'run') {
+                        settled = SETTLED_RUN_STATUSES.includes(runEvent.run.status);
+                    }
+
                     options.onEvent(runEvent);
                 }
             } catch (error) {
-                if (signal.aborted) return;
+                if (signal.aborted) {
+                    return;
+                }
+
                 if (error instanceof ApiError) {
                     if (FATAL_STREAM_STATUSES.includes(error.status)) {
                         options.onError?.(error);
+
                         return;
                     }
-                    if ((error.status === 503 || error.status === 429) && error.retryAfter !== undefined) delay = error.retryAfter * 1000;
+
+                    if ((error.status === 503 || error.status === 429) && error.retryAfter !== undefined) {
+                        delay = error.retryAfter * 1000;
+                    }
                 }
+
                 settled = false;
             }
-            if (signal.aborted) return;
-            if (settled) {
-                options.onSettled?.();
+
+            if (signal.aborted) {
                 return;
             }
+
+            if (settled) {
+                options.onSettled?.();
+
+                return;
+            }
+
             delay ??= RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)]!;
             attempt++;
             await wait(delay, signal);

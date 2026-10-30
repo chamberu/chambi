@@ -25,7 +25,10 @@ import { mockModel } from '../../utils/mock-model.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
     vi.restoreAllMocks();
 });
@@ -50,11 +53,15 @@ function make(model: LanguageModel, tools?: () => ToolSet) {
         agents: [agent],
         onError: () => {},
     });
+
     engines.push(engine);
+
     const deltas: RunDelta[] = [];
+
     engine.on('run.delta', (e) => {
         deltas.push(e.delta);
     });
+
     return {
         store,
         engine,
@@ -105,10 +112,15 @@ function chunkModel(chunks: LanguageModelV4StreamPart[]) {
 /** A model that streams `turns[n]` as is on call n (stream-start added, no finish). */
 function rawModel(turns: LanguageModelV4StreamPart[][]) {
     let turn = 0;
+
     return new MockLanguageModelV4({
         doStream: async () => {
             const chunks = turns[turn++];
-            if (!chunks) throw new Error('mock script exhausted');
+
+            if (!chunks) {
+                throw new Error('mock script exhausted');
+            }
+
             return { stream: simulateReadableStream({ chunks: [{ type: 'stream-start', warnings: [] }, ...chunks] }) };
         },
     });
@@ -147,8 +159,11 @@ describe('streaming', () => {
             store,
             deltas,
         } = make(model, lookup);
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         expect((await store.runs.findOne(runId))?.status).toBe('completed');
@@ -166,8 +181,10 @@ describe('streaming', () => {
                 text: 'lo',
             },
         ]);
+
         const llm = (await store.steps.find(runId)).filter((s) => s.kind === 'llm');
         const stored = llm.at(-1)?.output as { text: string };
+
         expect(deltas.map((d) => d.text).join('')).toBe(stored.text);
         expect((await store.checkpoints.findOne(runId))?.stepIndex).toBe(1);
     });
@@ -194,8 +211,11 @@ describe('streaming', () => {
             store,
             deltas,
         } = make(model);
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         expect((await store.runs.findOne(runId))?.output).toBe('answer');
@@ -211,6 +231,7 @@ describe('streaming', () => {
         const model = new MockLanguageModelV4({
             doStream: async (options) => {
                 calls.push(options);
+
                 const stream = new ReadableStream<LanguageModelV4StreamPart>({
                     start(controller) {
                         controller.enqueue({ type: 'stream-start', warnings: [] });
@@ -225,6 +246,7 @@ describe('streaming', () => {
                         };
                     },
                 });
+
                 return { stream };
             },
         });
@@ -233,8 +255,11 @@ describe('streaming', () => {
             store,
             deltas,
         } = make(model);
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await vi.waitFor(() => expect(push).toBeDefined());
         push?.({
             type: 'text-delta',
@@ -251,7 +276,9 @@ describe('streaming', () => {
             delta: 'late',
         });
         await engine.idle();
-        await new Promise<void>((resolve) => { setImmediate(resolve); });
+        await new Promise<void>((resolve) => {
+            setImmediate(resolve);
+        });
 
         expect(deltas.map((d) => d.text)).toEqual(['early']);
         expect(calls[0]?.abortSignal?.aborted).toBe(true);
@@ -268,11 +295,15 @@ describe('streaming', () => {
             { type: 'error', error: new Error('boom') },
         ]);
         const { engine, store } = make(model);
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'boom' });
     });
@@ -288,14 +319,20 @@ describe('streaming', () => {
             { type: 'error', error: new Error('boom') },
         ]]);
         const { engine, store } = make(model);
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'boom' });
+
         const steps = await store.steps.find(runId);
+
         expect(steps.map((step) => step.kind)).toEqual(['llm']);
         expect(steps[0]?.output).toMatchObject({ text: 'partial', finishReason: 'error' });
         expect(await store.checkpoints.findOne(runId)).toMatchObject({ stepIndex: 0, finishReason: 'error' });
@@ -310,11 +347,15 @@ describe('streaming', () => {
             }],
         }]);
         const { engine, store } = make(model, lookup);
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'mock script exhausted' });
         expect((await store.checkpoints.findOne(runId))?.stepIndex).toBe(0);
@@ -324,11 +365,15 @@ describe('streaming', () => {
         // onError is passed untyped to streamText; a dependency bump that stops forwarding it fails here
         const log = vi.spyOn(console, 'error').mockImplementation(() => {});
         const { engine, store } = make(mockModel([]));
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'mock script exhausted' });
         expect(log).not.toHaveBeenCalled();
@@ -337,11 +382,15 @@ describe('streaming', () => {
     it('fails a run whose model stream ends without a finish part after text', async () => {
         const model = rawModel([textChunks('partial')]);
         const { engine, store } = make(model);
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('incomplete_response');
         expect(run?.error?.message).toMatch(/without a finish/);
@@ -364,15 +413,20 @@ describe('streaming', () => {
                 inputSchema: z.object({ q: z.number() }),
                 execute: async () => {
                     executed++;
+
                     return 'found';
                 },
             }),
         }));
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error?.code).toBe('incomplete_response');
         expect(executed).toBe(0);
@@ -385,11 +439,15 @@ describe('streaming', () => {
     ])('completes a run whose model reports finish reason other %s', async (_, raw) => {
         const model = rawModel([[...textChunks('answer'), finishChunk('other', raw)]]);
         const { engine, store } = make(model);
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('answer');
     });
@@ -400,6 +458,7 @@ describe('streaming', () => {
         const model = new MockLanguageModelV4({
             doStream: async (options) => {
                 calls.push(options);
+
                 const stream = new ReadableStream<LanguageModelV4StreamPart>({
                     start(controller) {
                         controller.enqueue({ type: 'stream-start', warnings: [] });
@@ -413,6 +472,7 @@ describe('streaming', () => {
                         };
                     },
                 });
+
                 return { stream };
             },
         });
@@ -429,12 +489,15 @@ describe('streaming', () => {
                 throw new Error('sink failed');
             },
         });
+
         engines.push(engine);
         engine.on('run.delta', () => {
             throw new Error('listener failed');
         });
         await engine.start();
+
         const { runId } = await engine.dispatch(env);
+
         await vi.waitFor(() => expect(push).toBeDefined());
         push?.({
             type: 'text-delta',
@@ -444,6 +507,7 @@ describe('streaming', () => {
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('failed');
         expect(run?.error).toEqual({ code: 'Error', message: 'sink failed' });
         expect(calls[0]?.abortSignal?.aborted).toBe(true);

@@ -25,6 +25,7 @@ describe('migrate', () => {
 
     it('without DATABASE_URL exits 2 naming it', async () => {
         const fake = createFakeProcess();
+
         await runCli(['migrate', '--entry', entry], fake.context({ env: {} }));
         expect(fake.exitCodes).toEqual([2]);
         expect(fake.stderr.join('')).toContain('DATABASE_URL');
@@ -33,6 +34,7 @@ describe('migrate', () => {
     it('installs no signal handlers', async () => {
         const fake = createFakeProcess();
         const done = runCli(['migrate', '--entry', entry], fake.context({ env: {} }));
+
         expect(fake.signals.listenerCount('SIGTERM')).toBe(0);
         await done;
     });

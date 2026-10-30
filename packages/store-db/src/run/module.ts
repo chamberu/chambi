@@ -55,17 +55,23 @@ export class DatabaseRunRepository implements IRunRepository {
             .returning(['id'])
             .updateEntity(false)
             .execute();
+
         return result.raw.length === 1;
     }
 
     async findOne(id: string): Promise<Run | undefined> {
         const entity = await this.runs.findOneBy({ id });
+
         return entity ? toRun(entity) : undefined;
     }
 
     async findOneOrFail(id: string): Promise<Run> {
         const result = await this.findOne(id);
-        if (result === undefined) throw new RunNotFoundError(id);
+
+        if (result === undefined) {
+            throw new RunNotFoundError(id);
+        }
+
         return result;
     }
 
@@ -75,9 +81,11 @@ export class DatabaseRunRepository implements IRunRepository {
         opts: { expectStatus?: RunStatusLiteral[]; expectOwner?: string } = {},
     ): Promise<Run> {
         const where: FindOptionsWhere<RunEntity> = { id };
+
         if (opts.expectStatus) {
             where.status = In(opts.expectStatus);
         }
+
         if (opts.expectOwner !== undefined) {
             where.claimOwner = opts.expectOwner;
         }
@@ -89,11 +97,13 @@ export class DatabaseRunRepository implements IRunRepository {
             .returning('*')
             .updateEntity(false)
             .execute();
+
         if (result.raw.length === 1) {
             return toRun(toEntity(this.dataSource, RunEntity, result.raw[0]));
         }
 
         const current = await this.runs.findOneBy({ id });
+
         if (!current) {
             throw new RunNotFoundError(id);
         }
@@ -103,6 +113,7 @@ export class DatabaseRunRepository implements IRunRepository {
                 `Run "${id}" is "${current.status}", expected one of: ${opts.expectStatus.join(', ')}.`,
             );
         }
+
         if (opts.expectOwner !== undefined && current.claimOwner !== opts.expectOwner) {
             throw new InvalidRunStateError(
                 `Run "${id}" is not claimed by "${opts.expectOwner}" (claim: ${current.claimOwner ?? 'none'}).`,
@@ -114,12 +125,15 @@ export class DatabaseRunRepository implements IRunRepository {
 
     async find(q: RunFindOptions): Promise<{ data: Run[]; total: number }> {
         const where: FindOptionsWhere<RunEntity> = {};
+
         if (q.agent !== undefined) {
             where.agent = q.agent;
         }
+
         if (q.status !== undefined) {
             where.status = In(q.status);
         }
+
         if (q.concurrencyKey !== undefined) {
             where.concurrencyKey = q.concurrencyKey;
         }
@@ -136,12 +150,17 @@ export class DatabaseRunRepository implements IRunRepository {
             skip: q.offset,
             take: q.limit,
         });
+
         return { data: entities.map((entity) => toRun(entity)), total };
     }
 
     async findOrFail(q: RunFindOptions): Promise<{ data: Run[]; total: number }> {
         const result = await this.find(q);
-        if (result.data.length === 0) throw new RepositoryNotFoundError('runs');
+
+        if (result.data.length === 0) {
+            throw new RepositoryNotFoundError('runs');
+        }
+
         return result;
     }
 
@@ -155,6 +174,7 @@ export class DatabaseRunRepository implements IRunRepository {
                 { id, claimExpiresAt: LessThanOrEqual(now) },
             ])
             .execute();
+
         return result.affected === 1;
     }
 
@@ -169,6 +189,7 @@ export class DatabaseRunRepository implements IRunRepository {
                 claimExpiresAt: MoreThan(now),
             })
             .execute();
+
         return result.affected === 1;
     }
 }

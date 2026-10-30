@@ -24,9 +24,11 @@ export function isCronChannel(channel: unknown): boolean {
 /** Refuses options hubwire would refuse later, so a bad channel fails when built. */
 export function assertCronChannelOptions(options: CronChannelOptions): void {
     const { lockTtlMs, owner } = options;
+
     if (lockTtlMs !== undefined && (!Number.isSafeInteger(lockTtlMs) || lockTtlMs <= 0)) {
         throw new InvalidAgentDefinitionError(`cronChannel: lockTtlMs must be a positive integer, got ${String(lockTtlMs)}.`);
     }
+
     if (owner !== undefined && (typeof owner !== 'string' || owner.length === 0)) {
         throw new InvalidAgentDefinitionError('cronChannel: owner must be a non-empty string.');
     }

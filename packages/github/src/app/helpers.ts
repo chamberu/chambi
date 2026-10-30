@@ -17,25 +17,38 @@ export const PaginatedOctokit = Octokit.plugin(paginateRest);
 /** The webhook secrets as a non-empty list of non-empty strings. */
 export function normalizeSecrets(input: string | readonly string[]): string[] {
     const secrets = typeof input === 'string' ? [input] : [...input];
-    if (secrets.length === 0 || secrets.some((secret) => typeof secret !== 'string' || secret.length === 0)) {
+
+    const hasInvalidSecret = secrets.length !== 0 &&
+        secrets.some((secret) => typeof secret !== 'string' || secret.length === 0);
+
+    if (secrets.length === 0 || hasInvalidSecret) {
         throw new InvalidAgentDefinitionError('webhookSecret must be a non-empty string or a non-empty list of them.');
     }
+
     return secrets;
 }
 
 /** The App id as a non-empty string. */
 export function normalizeAppId(input: string | number): string {
     const appId = String(input).trim();
-    if (appId.length === 0) throw new InvalidAgentDefinitionError('appId must not be empty.');
+
+    if (appId.length === 0) {
+        throw new InvalidAgentDefinitionError('appId must not be empty.');
+    }
+
     return appId;
 }
 
 /** A positive integer installation id or `undefined`. */
 export function normalizeInstallationId(input: number | undefined): number | undefined {
-    if (input === undefined) return undefined;
+    if (input === undefined) {
+        return undefined;
+    }
+
     if (!Number.isSafeInteger(input) || input < 1) {
         throw new InvalidAgentDefinitionError(`installationId must be a positive integer, got ${input}.`);
     }
+
     return input;
 }
 
@@ -48,10 +61,14 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * login and silently disable the self-sender guard, so it is refused.
  */
 export function normalizeSlug(input: string | undefined): string | undefined {
-    if (input === undefined) return undefined;
+    if (input === undefined) {
+        return undefined;
+    }
+
     if (typeof input !== 'string' || !SLUG_PATTERN.test(input)) {
         throw new InvalidAgentDefinitionError(`slug must be the App's slug as in its URL (lower case letters, digits and "-"), got ${JSON.stringify(input)}.`);
     }
+
     return input;
 }
 
@@ -67,16 +84,22 @@ export function isSameLogin(a: unknown, b: string): boolean {
  * is GitHub's API (`DEFAULT_GITHUB_API_URL`), as Octokit treats it.
  */
 export function normalizeBaseUrl(input: string | undefined): string {
-    if (input === undefined || input === '') return DEFAULT_GITHUB_API_URL;
+    if (input === undefined || input === '') {
+        return DEFAULT_GITHUB_API_URL;
+    }
+
     let url: URL | undefined;
+
     try {
         url = new URL(input);
     } catch {
         url = undefined;
     }
+
     if (!url || url.protocol !== 'https:' || url.search !== '' || url.hash !== '' || input.includes('?') || input.includes('#')) {
         throw new InvalidAgentDefinitionError(`baseUrl must be an absolute https URL without query, e.g. https://ghe.example.com/api/v3, got ${JSON.stringify(input)}.`);
     }
+
     return input.replace(/\/+$/, '');
 }
 
@@ -86,10 +109,12 @@ const CHANNEL_NAMES = new WeakMap<object, Set<string>>();
 /** Records that the channel `name` takes the deliveries of `app` (githubChannel() calls it). */
 export function registerChannelName(app: object, name: string): void {
     let names = CHANNEL_NAMES.get(app);
+
     if (!names) {
         names = new Set();
         CHANNEL_NAMES.set(app, names);
     }
+
     names.add(name);
 }
 
@@ -107,11 +132,15 @@ export function toInstallation(item: unknown): GithubInstallation {
     const data = isObject(item) ? item : {};
     const account = isObject(data.account) ? data.account : {};
     const permissions: GithubPermissions = {};
+
     if (isObject(data.permissions)) {
         for (const [name, level] of Object.entries(data.permissions)) {
-            if (level === 'read' || level === 'write') permissions[name] = level;
+            if (level === 'read' || level === 'write') {
+                permissions[name] = level;
+            }
         }
     }
+
     return {
         id: Number(data.id),
         account: stringOf(account.login) ?? stringOf(account.slug) ?? '',

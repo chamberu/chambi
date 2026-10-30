@@ -28,12 +28,16 @@ export class ConversationNoteEntity {
         collation: 'C',
     })
     scopeId!: string;
+
     @PrimaryColumn({ type: 'integer' })
     generation!: number;
+
     @PrimaryColumn({ type: 'text', collation: 'C' })
     key!: string;
+
     @Column({ type: 'text' })
     text!: string;
+
     @Column({
         name: 'run_id',
         type: 'varchar',
@@ -41,20 +45,26 @@ export class ConversationNoteEntity {
         collation: 'C',
     })
     runId!: string;
+
     @Column({ name: 'tool_call_id', type: 'text' })
     toolCallId!: string;
+
     @Column({ name: 'step_index', type: 'integer' })
     stepIndex!: number;
+
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
+
     @Column({ name: 'updated_at', type: 'timestamp with time zone' })
     updatedAt!: Date;
+
     @Column({
         name: 'expires_at',
         type: 'timestamp with time zone',
         nullable: true,
     })
     expiresAt!: Date | null;
+
     @ManyToOne(() => ConversationEntity, {
         nullable: false,
         onDelete: 'NO ACTION',

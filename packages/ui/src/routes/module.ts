@@ -29,17 +29,21 @@ import type { BuildFile, UiRoutesOptions } from './types.ts';
 
 function assertAuthup(authup: UiAuthupConfig): void {
     let url: URL;
+
     try {
         url = new URL(authup.url);
     } catch {
         throw new InvalidAgentDefinitionError('uiRoutes: auth.authup.url must be an absolute http(s) URL.');
     }
+
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
         throw new InvalidAgentDefinitionError('uiRoutes: auth.authup.url must be an absolute http(s) URL.');
     }
+
     if (typeof authup.clientId !== 'string' || authup.clientId.length === 0) {
         throw new InvalidAgentDefinitionError('uiRoutes: auth.authup.clientId must be a non-empty string.');
     }
+
     if (authup.realmId !== undefined && (typeof authup.realmId !== 'string' || authup.realmId.length === 0)) {
         throw new InvalidAgentDefinitionError('uiRoutes: auth.authup.realmId must be a non-empty string.');
     }
@@ -55,18 +59,26 @@ function assertAuthup(authup: UiAuthupConfig): void {
  */
 export function uiRoutes(options: UiRoutesOptions = {}): HttpRoute[] {
     const basePath = options.basePath ?? DEFAULT_UI_BASE_PATH;
+
     if (typeof basePath !== 'string' || !UI_BASE_PATH_PATTERN.test(basePath)) {
         throw new InvalidAgentDefinitionError('uiRoutes: basePath must be a lower-case path like /ui, without a trailing slash.');
     }
+
     const tokens = options.auth?.tokens ?? true;
     const authup = options.auth?.authup;
-    if (authup) assertAuthup(authup);
+
+    if (authup) {
+        assertAuthup(authup);
+    }
+
     if (!tokens && !authup) {
         throw new InvalidAgentDefinitionError('uiRoutes: auth.tokens false needs auth.authup, else nobody can sign in.');
     }
+
     if (options.root !== undefined && (typeof options.root !== 'string' || options.root.length === 0)) {
         throw new InvalidAgentDefinitionError('uiRoutes: root must be a non-empty path.');
     }
+
     const root = options.root ?? defaultRoot();
 
     // a missing build is read again at most every BUILD_RETRY_MS (the
@@ -75,17 +87,26 @@ export function uiRoutes(options: UiRoutesOptions = {}): HttpRoute[] {
     let build: Promise<Map<string, BuildFile>> | undefined;
     let failedAt: number | undefined;
     const load = (clock: IClock): Promise<Map<string, BuildFile>> | undefined => {
-        if (failedAt !== undefined && clock.now().getTime() - failedAt < BUILD_RETRY_MS) return undefined;
+        if (failedAt !== undefined && clock.now().getTime() - failedAt < BUILD_RETRY_MS) {
+            return undefined;
+        }
+
         build ??= loadBuild(root).then((files) => {
-            if (!files.has('index.html')) throw new Error('index.html missing');
+            if (!files.has('index.html')) {
+                throw new Error('index.html missing');
+            }
+
             failedAt = undefined;
+
             return files;
         }).catch(() => {
             // not memoized for good: the build may land later (e.g. a volume mounted after start)
             build = undefined;
             failedAt = clock.now().getTime();
+
             throw new InvalidAgentDefinitionError(`uiRoutes: no dashboard build in ${root}; build @chamvi/ui first.`);
         });
+
         return build;
     };
 
@@ -97,15 +118,18 @@ export function uiRoutes(options: UiRoutesOptions = {}): HttpRoute[] {
     }>();
     const view = (apiBase: string) => {
         let entry = rendered.get(apiBase);
+
         if (!entry) {
             const config: UiConfig = {
                 apiBase,
                 uiBase: `${apiBase}${basePath}`,
                 auth: { tokens, ...(authup ? { authup: { ...authup } } : {}) },
             };
+
             entry = { config, headers: { ...SECURITY_HEADERS, 'content-security-policy': buildCsp(config) } };
             rendered.set(apiBase, entry);
         }
+
         return entry;
     };
 
@@ -126,9 +150,13 @@ export function uiRoutes(options: UiRoutesOptions = {}): HttpRoute[] {
                     message: 'Not Found',
                 },
             });
-            if (key === undefined) return notFound();
+
+            if (key === undefined) {
+                return notFound();
+            }
 
             const loading = load(ctx.clock);
+
             if (!loading) {
                 return {
                     status: 500,
@@ -140,9 +168,12 @@ export function uiRoutes(options: UiRoutesOptions = {}): HttpRoute[] {
                     },
                 };
             }
+
             const files = await loading;
+
             if (key === '' || key === 'index.html' || (!files.has(key) && !isFileLike(key))) {
                 entry.index ??= new TextEncoder().encode(renderIndex(new TextDecoder().decode(files.get('index.html')!.bytes), entry.config));
+
                 return {
                     status: 200,
                     headers: {
@@ -155,7 +186,11 @@ export function uiRoutes(options: UiRoutesOptions = {}): HttpRoute[] {
             }
 
             const file = files.get(key);
-            if (!file) return notFound();
+
+            if (!file) {
+                return notFound();
+            }
+
             return {
                 status: 200,
                 headers: {

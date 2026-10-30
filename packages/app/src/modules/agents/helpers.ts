@@ -40,6 +40,8 @@ export async function resolveAgentsRoot(dir: string | undefined, cwd: string): P
     if (dir !== undefined) {
         return resolve(cwd, dir);
     }
+
     const fallback = resolve(cwd, DEFAULT_AGENTS_DIR);
+
     return await isDirectory(fallback) ? fallback : undefined;
 }

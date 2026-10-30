@@ -24,10 +24,11 @@ function setup(overrides: Partial<GithubAppOptions> = {}) {
         fetch: fake.fetch,
         ...overrides,
     });
+
     return {
-        clock, 
-        fake, 
-        gh, 
+        clock,
+        fake,
+        gh,
     };
 }
 
@@ -39,20 +40,24 @@ function lastToken(fake: ReturnType<typeof createFakeGithub>): string | null | u
 describe('installation tokens', () => {
     it('exchanges a JWT for an installation token and reuses it', async () => {
         const { fake, gh } = setup();
+
         await (await gh.octokit(42)).request('GET /rate_limit');
         await (await gh.octokit(42)).request('GET /rate_limit');
         expect(fake.tokensIssued).toBe(1);
+
         const calls = fake.requests.filter((r) => r.path === '/rate_limit');
+
         expect(calls.map((r) => r.authorization)).toEqual(['token ghs_1', 'token ghs_1']);
         expect(fake.requests[0]).toMatchObject({ method: 'POST', path: '/app/installations/42/access_tokens' });
     });
 
     it('refreshes 5 minutes before expiry', async () => {
         const {
-            clock, 
-            fake, 
-            gh, 
+            clock,
+            fake,
+            gh,
         } = setup();
+
         await (await gh.octokit(42)).request('GET /rate_limit');
         clock.advance(54 * 60_000);
         await (await gh.octokit(42)).request('GET /rate_limit');
@@ -65,10 +70,11 @@ describe('installation tokens', () => {
 
     it('does not reuse an expired token hours later', async () => {
         const {
-            clock, 
-            fake, 
-            gh, 
+            clock,
+            fake,
+            gh,
         } = setup();
+
         await (await gh.octokit(42)).request('GET /rate_limit');
         clock.advance(5 * 3_600_000);
         await (await gh.octokit(42)).request('GET /rate_limit');
@@ -77,12 +83,14 @@ describe('installation tokens', () => {
 
     it('shares one exchange between concurrent callers', async () => {
         const { fake, gh } = setup();
+
         await Promise.all(Array.from({ length: 5 }, () => gh.octokit(42)));
         expect(fake.tokensIssued).toBe(1);
     });
 
     it('does not cache a failed exchange', async () => {
         const { fake, gh } = setup();
+
         fake.failNext('POST', '/app/installations/42/access_tokens', 500);
         await expect(gh.octokit(42)).rejects.toThrow();
         await (await gh.octokit(42)).request('GET /rate_limit');
@@ -92,8 +100,11 @@ describe('installation tokens', () => {
 
     it('keeps the token out of a failed exchange error', async () => {
         const { fake, gh } = setup();
+
         fake.failNext('POST', '/app/installations/42/access_tokens', 500);
+
         const error = await gh.octokit(42).catch((e: unknown) => e);
+
         // a JWT starts with the base64url of '{"'
         for (const text of [String(error), JSON.stringify(error)]) {
             expect(text).not.toContain('eyJ');
@@ -103,6 +114,7 @@ describe('installation tokens', () => {
 
     it('keeps tokens per installation', async () => {
         const { fake, gh } = setup();
+
         await gh.octokit(1);
         await gh.octokit(2);
         await gh.octokit(1);
@@ -112,12 +124,15 @@ describe('installation tokens', () => {
 
     it('signs the JWT with iat backdated 60 s and exp 540 s ahead', async () => {
         const { fake, gh } = setup();
+
         await gh.octokit(42);
+
         const now = START.getTime() / 1000;
+
         expect(fake.jwtClaims).toEqual([{
-            iat: now - 60, 
-            exp: now + 540, 
-            iss: '123', 
+            iat: now - 60,
+            exp: now + 540,
+            iss: '123',
         }]);
     });
 });
@@ -125,6 +140,7 @@ describe('installation tokens', () => {
 describe('botLogin', () => {
     it('reads the slug once', async () => {
         const { fake, gh } = setup();
+
         expect(await gh.botLogin()).toBe('chamvi-test[bot]');
         expect(await gh.botLogin()).toBe('chamvi-test[bot]');
         expect(fake.requests.filter((r) => r.path === '/app')).toHaveLength(1);
@@ -132,12 +148,14 @@ describe('botLogin', () => {
 
     it('shares one lookup between concurrent callers', async () => {
         const { fake, gh } = setup();
+
         await Promise.all([gh.botLogin(), gh.botLogin(), gh.botLogin()]);
         expect(fake.requests.filter((r) => r.path === '/app')).toHaveLength(1);
     });
 
     it('does not cache a failed lookup', async () => {
         const { fake, gh } = setup();
+
         fake.failNext('GET', '/app', 500);
         await expect(gh.botLogin()).rejects.toThrow();
         expect(await gh.botLogin()).toBe('chamvi-test[bot]');
@@ -145,6 +163,7 @@ describe('botLogin', () => {
 
     it('uses the configured slug without a request', async () => {
         const { fake, gh } = setup({ slug: 'x' });
+
         expect(await gh.botLogin()).toBe('x[bot]');
         expect(fake.requests).toHaveLength(0);
     });
@@ -156,16 +175,21 @@ function stallingFetch(fake: ReturnType<typeof createFakeGithub>, stalls = 1) {
     const fetch: typeof globalThis.fetch = (input, init) => {
         if (state.stalled < stalls) {
             state.stalled++;
+
             return new Promise<Response>((_resolve, reject) => {
                 init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
             });
         }
+
         return fake.fetch(input, init);
     };
+
     return { fetch, state };
 }
 
-const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 describe('app-authenticated requests', () => {
     it('time out a stalled token exchange for every waiter, and the next caller retries', async () => {
@@ -173,12 +197,13 @@ describe('app-authenticated requests', () => {
         const fake = createFakeGithub({ appId: '123', clock });
         const { fetch, state } = stallingFetch(fake);
         const { gh } = setup({
-            clock, 
-            fetch, 
-            privateKey: fake.privateKey, 
+            clock,
+            fetch,
+            privateKey: fake.privateKey,
         });
         const first = gh.octokit(42);
         const second = gh.octokit(42);
+
         await flush();
         expect(state.stalled).toBe(1);
         clock.advance(APP_REQUEST_TIMEOUT_MS);
@@ -193,11 +218,12 @@ describe('app-authenticated requests', () => {
         const fake = createFakeGithub({ appId: '123', clock });
         const { fetch } = stallingFetch(fake);
         const { gh } = setup({
-            clock, 
-            fetch, 
-            privateKey: fake.privateKey, 
+            clock,
+            fetch,
+            privateKey: fake.privateKey,
         });
         const login = gh.botLogin();
+
         await flush();
         clock.advance(APP_REQUEST_TIMEOUT_MS);
         await expect(login).rejects.toThrow(/did not answer/);

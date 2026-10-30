@@ -31,6 +31,7 @@ function event(overrides: Partial<GithubEvent> = {}): GithubEvent {
 describe('github.on', () => {
     it('builds a subscription of the github channel', () => {
         const subscription = github.on(['issues.opened', 'pull_request']);
+
         expect(subscription.channel).toBe('github');
         expect(subscription.id).toBe('github:issues.opened,pull_request');
         expect(subscription.options.events).toEqual(['issues.opened', 'pull_request']);
@@ -40,6 +41,7 @@ describe('github.on', () => {
 
     it('takes one event as a string', () => {
         const subscription = github.on('issues.opened');
+
         expect(subscription.id).toBe('github:issues.opened');
         expect(subscription.options.events).toEqual(['issues.opened']);
     });
@@ -51,12 +53,14 @@ describe('github.on', () => {
     it('copies the events', () => {
         const events = ['issues'];
         const subscription = github.on(events);
+
         events.push('pull_request');
         expect(subscription.options.events).toEqual(['issues']);
     });
 
     it('accepts event names with digits (Projects v2)', () => {
         const subscription = github.on(['projects_v2_item.created', 'projects_v2']);
+
         expect(subscription.options.events).toEqual(['projects_v2_item.created', 'projects_v2']);
     });
 
@@ -78,6 +82,7 @@ describe('github.on', () => {
 
     it('keeps the given idempotency key function', () => {
         const subscription = github.on('issues', { idempotencyKey: (e) => `issue:${e.payload.issue?.number}` });
+
         expect(subscription.idempotencyKey?.(event())).toBe('issue:5');
     });
 
@@ -85,6 +90,7 @@ describe('github.on', () => {
         const { gh } = createGithubFixture();
         const enterprise = githubChannel({ app: gh, name: 'github-ent' });
         const subscription = enterprise.on('issues.opened');
+
         expect(subscription.channel).toBe('github-ent');
         expect(subscription.id).toBe('github:issues.opened');
     });
@@ -93,7 +99,9 @@ describe('github.on', () => {
 describe('github.to', () => {
     it('builds the address of an issue or pull request', () => {
         expect(github.to({ repo: 'octo/demo', number: 5 })).toBe('octo/demo#5');
+
         const { gh } = createGithubFixture();
+
         expect(githubChannel({ app: gh }).to({ repo: 'octo/demo', number: 7 })).toBe('octo/demo#7');
     });
 
@@ -110,6 +118,7 @@ describe('github.to', () => {
 describe('matchesGithubSubscription', () => {
     it('matches name and action', () => {
         const opened = github.on('issues.opened');
+
         expect(matchesGithubSubscription(opened, 'github', event())).toBe(true);
         expect(matchesGithubSubscription(opened, 'github', event({ action: 'closed' }))).toBe(false);
         expect(matchesGithubSubscription(opened, 'github', event({ name: 'issue_comment', action: 'opened' }))).toBe(false);
@@ -118,23 +127,26 @@ describe('matchesGithubSubscription', () => {
 
     it('matches any action of a bare event name', () => {
         const issues = github.on('issues');
+
         expect(matchesGithubSubscription(issues, 'github', event({ action: 'closed' }))).toBe(true);
         expect(matchesGithubSubscription(issues, 'github', event({ name: 'ping', action: undefined }))).toBe(false);
     });
 
     it('matches any of several events', () => {
         const subscription = github.on(['issues.opened', 'pull_request']);
+
         expect(matchesGithubSubscription(subscription, 'github', event({ name: 'pull_request', action: 'synchronize' }))).toBe(true);
     });
 
     it('never matches a subscription of another channel', () => {
         const forged = { ...github.on('issues'), channel: 'webhook' };
+
         expect(matchesGithubSubscription(forged, 'github', event())).toBe(false);
         expect(matchesGithubSubscription(github.on('issues'), 'github-ent', event())).toBe(false);
         expect(matchesGithubSubscription({
-            channel: 'github', 
-            id: 'x', 
-            options: {}, 
+            channel: 'github',
+            id: 'x',
+            options: {},
         }, 'github', event())).toBe(false);
     });
 
@@ -143,9 +155,11 @@ describe('matchesGithubSubscription', () => {
         const subscription = github.on('issues.opened', {
             filter: (e) => {
                 seen.push(e);
+
                 return e.payload.issue?.number === 5;
             },
         });
+
         expect(matchesGithubSubscription(subscription, 'github', event({ action: 'closed' }))).toBe(false);
         expect(seen).toHaveLength(0);
         expect(matchesGithubSubscription(subscription, 'github', event())).toBe(true);
@@ -159,6 +173,7 @@ describe('matchesGithubSubscription', () => {
                 throw new TypeError('bad filter');
             },
         });
+
         expect(() => matchesGithubSubscription(subscription, 'github', event())).toThrow('bad filter');
     });
 });
@@ -179,7 +194,9 @@ describe('default concurrency key', () => {
 
     it('is the subscription default, and a given concurrencyKey wins', () => {
         expect(github.on('issues').concurrencyKey?.(event())).toBe('o/r#5');
+
         const own = github.on('issues', { concurrencyKey: () => 'mine' });
+
         expect(own.concurrencyKey?.(event())).toBe('mine');
     });
 });
@@ -191,6 +208,7 @@ describe('agents', () => {
             model: textModel(),
             instructions: 'Triage.',
         };
+
         expect(() => defineAgent({
             ...base,
             channels: [

@@ -26,7 +26,10 @@ const router = useRouter();
 // the status filter and page live in the query, next to ?tab=runs
 const read = (): RunListFilter => ({ ...filterFromQuery(route.query), agent: props.agent.name });
 const filter = shallowRef<RunListFilter>(read());
-watch(() => [route.query, props.agent.name], () => { filter.value = read(); });
+
+watch(() => [route.query, props.agent.name], () => {
+    filter.value = read();
+});
 
 const { page, loading } = useRunList(client, filter);
 
@@ -37,11 +40,13 @@ function update(next: Partial<RunListFilter>): void {
         offset: 0,
         ...next,
     });
+
     void router.replace({ query: { ...query, tab: 'runs' } });
 }
 
 function toggleStatus(status: RunStatusLiteral): void {
     const current = filter.value.status ?? [];
+
     update({ status: current.includes(status) ? current.filter((s) => s !== status) : [...current, status] });
 }
 

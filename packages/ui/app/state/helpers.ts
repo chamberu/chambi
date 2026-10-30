@@ -19,10 +19,14 @@ export function inlineJson(value: unknown): string {
 /** `id` plus the first top-level fields of the documents, in first-seen order. */
 export function docColumns(docs: readonly DocEntry[], max = 6): string[] {
     const fields: string[] = [];
+
     for (const doc of docs) {
         for (const key of Object.keys(doc)) {
-            if (key !== 'id' && !fields.includes(key)) fields.push(key);
+            if (key !== 'id' && !fields.includes(key)) {
+                fields.push(key);
+            }
         }
     }
+
     return ['id', ...fields.slice(0, max)];
 }

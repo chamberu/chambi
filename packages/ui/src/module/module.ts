@@ -21,6 +21,7 @@ export class UiModule implements IModule {
 
     constructor(input: UiModuleOptions = {}) {
         const { env, ...options } = input;
+
         this.options = {
             ...options,
             auth: options.auth ?? readAuth(env ?? process.env),

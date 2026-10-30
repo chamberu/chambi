@@ -15,6 +15,7 @@ it('drops private conversation binding at runtime through the shared REST/SSE/MC
         trigger: {},
         conversation: { scope: { identity: { chat: 'private' } }, text: 'private' },
     } as Run;
+
     expect(serializeRun(run)).not.toHaveProperty('conversation');
     expect(run).toHaveProperty('conversation');
 });

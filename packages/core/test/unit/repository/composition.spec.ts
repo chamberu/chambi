@@ -49,6 +49,7 @@ describe('memory store composition', () => {
             createdAt: clock.now(),
             updatedAt: clock.now(),
         };
+
         await store.runs.insert(run);
         expect(await store.runs.claim('run', 'first', 10)).toBe(true);
         expect(await store.idempotency.claim('scope', 'key', 'first', 10)).toEqual({ created: true, runId: 'first' });
@@ -72,6 +73,7 @@ describe('memory store composition', () => {
             chat: 'chat',
             audience: 'direct',
         });
+
         expect(await store.conversations.beginTurn(scope, 'run', 'hello', DEFAULT_CONVERSATION_LIMITS)).toMatchObject({
             kind: 'ready',
             snapshot: { createdAt: clock.now() },

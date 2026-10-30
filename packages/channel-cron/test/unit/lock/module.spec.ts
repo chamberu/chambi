@@ -14,6 +14,7 @@ import { ControllableClock } from '@chamvi/test-kit';
 const setup = () => {
     const clock = new ControllableClock(new Date('2026-03-01T08:00:00.000Z'));
     const store = createMemoryStore({ clock });
+
     return { clock, store };
 };
 
@@ -53,6 +54,7 @@ describe('createRepositoryScheduleLock', () => {
         const store: ILockRepository = {
             async acquire(key, owner, ttlMs) {
                 calls.push([key, owner, ttlMs]);
+
                 return true;
             },
             release: () => Promise.resolve(),

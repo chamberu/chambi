@@ -11,5 +11,6 @@ import { expect, it } from 'vitest';
 it('keeps the typed consumer fixture in the README', async () => {
     const example = await fs.readFile(new URL('../fixtures/readme-example.ts', import.meta.url), 'utf8');
     const readme = await fs.readFile(new URL('../../README.md', import.meta.url), 'utf8');
+
     expect(readme).toContain(example);
 });

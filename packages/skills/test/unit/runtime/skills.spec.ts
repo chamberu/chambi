@@ -44,20 +44,29 @@ const engine = (skills: ConstructorParameters<typeof Engine>[0]['skills'] = [], 
     skills,
     model: mockModel([]),
 });
-const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 describe('first class skills', () => {
     it('publishes frozen system arrays and keeps an empty catalog contribution empty', async () => {
         const ready = skill();
+
         for (const globals of [[], [ready]]) {
             const runtime = ready.runtime.create(globals);
             const configured = agent();
+
             runtime.checkAgent(configured, []);
+
             const preparation = await runtime.prepare([configured], { signal: new AbortController().signal });
             const { instructions } = preparation.commit()[0]!.contribution;
+
             expect(instructions).toEqual(globals.length ? [{ role: 'system', content: expect.stringContaining('approved_skills') }] : []);
             expect(Object.isFrozen(instructions)).toBe(true);
-            if (Array.isArray(instructions) && instructions.length) expect(Object.isFrozen(instructions[0])).toBe(true);
+
+            if (Array.isArray(instructions) && instructions.length) {
+                expect(Object.isFrozen(instructions[0])).toBe(true);
+            }
         }
     });
 
@@ -76,22 +85,29 @@ describe('first class skills', () => {
                 ],
             })],
         });
+
         try {
             await e.start();
+
             const { runId } = await e.dispatch({
                 agent: 'test',
                 channel: 'test',
                 trigger: 'test',
                 payload: {},
             });
+
             await e.idle();
             expect((await e.getRun(runId))?.status).toBe('completed');
+
             const { prompt } = (model.doStreamCalls[0]!);
+
             expect(prompt.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'system', 'user']);
             expect(prompt[3]?.content).toContain('approved_skills');
             expect(JSON.stringify(prompt)).not.toContain('SECRET BODY');
             expect(JSON.stringify(await e.store.checkpoints.findOne(runId))).not.toContain('approved_skills');
-        } finally { await e.stop(); }
+        } finally {
+            await e.stop();
+        }
     });
     it('keeps string instructions and catalog metadata in distinct leading system blocks', async () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
@@ -101,21 +117,26 @@ describe('first class skills', () => {
             skills: [skill()],
             agents: [agent()],
         });
+
         try {
             await e.start();
+
             const { runId } = await e.dispatch({
                 agent: 'test',
                 channel: 'test',
                 trigger: 'test',
                 payload: {},
             });
+
             await e.idle();
             expect((await e.getRun(runId))?.status).toBe('completed');
             expect(model.doStreamCalls[0]?.prompt.slice(0, 2)).toEqual([
                 { role: 'system', content: 'role' },
                 { role: 'system', content: expect.stringContaining('approved_skills') },
             ]);
-        } finally { await e.stop(); }
+        } finally {
+            await e.stop();
+        }
     });
 
     it('deduplicates exact headers and rejects per-agent conflicts and effective limit synchronously', () => {
@@ -161,20 +182,25 @@ describe('first class skills', () => {
             skills: [ready, defineSkillSource(source)],
             agents: [agent()],
         });
+
         ready.references['references/a.md'] = 'changed';
         ready.body = 'changed';
         source.skills[0]!.name = 'tampered';
         await e.prepare();
         expect(source.load).toHaveBeenCalledOnce();
         await e.start();
+
         const run = await e.dispatch({
             agent: 'test',
             channel: 'test',
             trigger: 'test',
             payload: {},
         });
+
         await e.idle();
+
         const steps = (await e.store.steps.find(run.runId)).filter((step) => step.kind === 'tool');
+
         expect(steps[0]?.output).toMatchObject({ content: 'reference' });
         expect(steps[1]?.output).toMatchObject({ content: 'SECRET BODY' });
         await e.stop();
@@ -183,6 +209,7 @@ describe('first class skills', () => {
         for (const results of [[], [skill('extra')], [skill(), skill('extra')]]) {
             const load = vi.fn(async () => results);
             const e = engine([defineSkillSource({ skills: [skill()], load })]);
+
             await expect(e.prepare()).rejects.toThrow(/skill/i);
             await expect(e.prepare()).rejects.toThrow(/skill/i);
             expect(load).toHaveBeenCalledTimes(2);
@@ -192,6 +219,7 @@ describe('first class skills', () => {
         const load = vi.fn(async () => [skill()]);
         const shared = agent([defineSkillSource({ skills: [skill()], load })]);
         const a = engine([], [shared]); const b = engine([], [shared]);
+
         await Promise.all([a.prepare(), a.prepare(), b.prepare()]);
         expect(load).toHaveBeenCalledTimes(2);
         expect(shared.definition.instructions).toBe('role');
@@ -200,7 +228,14 @@ describe('first class skills', () => {
     it('gates queued execution and channels on verification and coalesces start', async () => {
         const deferred = Promise.withResolvers<readonly Skill[]>();
         const entered = Promise.withResolvers<void>();
-        const source = defineSkillSource({ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } });
+        const source = defineSkillSource({
+            skills: [skill()],
+            load: async () => {
+                entered.resolve();
+
+                return deferred.promise;
+            },
+        });
         const model = mockModel([{
             parts: [{
                 type: 'tool-call',
@@ -227,13 +262,16 @@ describe('first class skills', () => {
             payload: {},
         });
         const starts = [e.start(), e.start()];
+
         await entered.promise;
         expect(start).not.toHaveBeenCalled();
         expect(model.doStreamCalls).toHaveLength(0);
         deferred.resolve([skill()]);
         await Promise.all(starts); await e.idle();
         expect(start).toHaveBeenCalledOnce();
+
         const instructions = JSON.stringify(model.doStreamCalls[0]?.prompt);
+
         expect(instructions).toContain('approved_skills');
         expect(instructions).not.toContain('SECRET BODY');
         expect(instructions).toContain('\\\\u003c');
@@ -244,12 +282,21 @@ describe('first class skills', () => {
         const deferred = Promise.withResolvers<readonly Skill[]>();
         const entered = Promise.withResolvers<void>();
         let signal: AbortSignal | undefined;
-        const load = vi.fn(async (options: { signal: AbortSignal }) => { signal = options.signal; entered.resolve(); return deferred.promise; });
+        const load = vi.fn(async (options: { signal: AbortSignal }) => {
+            signal = options.signal; entered.resolve();
+
+            return deferred.promise;
+        });
         const e = engine([defineSkillSource({ skills: [skill()], load })]);
         const starting = e.start().catch((error: unknown) => error);
+
         await entered.promise;
+
         let stopped = false;
-        const stopping = e.stop().then(() => { stopped = true; });
+        const stopping = e.stop().then(() => {
+            stopped = true;
+        });
+
         await flush();
         expect(signal?.aborted).toBe(true); expect(stopped).toBe(false);
         deferred.resolve([skill()]);
@@ -266,12 +313,21 @@ describe('first class skills', () => {
             model: mockModel([]),
             channels: [{
                 name: 'late',
-                start: async () => { entered.resolve(); await deferred.promise; },
+                start: async () => {
+                    entered.resolve(); await deferred.promise;
+                },
                 stop,
             }],
         });
-        const starting = e.start().catch((error: unknown) => error); await entered.promise;
-        let stopped = false; const stopping = e.stop().then(() => { stopped = true; }); await flush(); expect(stopped).toBe(false);
+        const starting = e.start().catch((error: unknown) => error);
+
+        await entered.promise;
+
+        let stopped = false; const stopping = e.stop().then(() => {
+            stopped = true;
+        });
+
+        await flush(); expect(stopped).toBe(false);
         deferred.resolve(); await starting; await stopping; expect(stop).toHaveBeenCalledOnce();
     });
     it('failed replacement prepares before revision writes or cancellation', async () => {
@@ -283,6 +339,7 @@ describe('first class skills', () => {
             payload: {},
         });
         const candidate = agent([defineSkillSource({ skills: [skill()], load: async () => [] })]);
+
         await expect(e.putAgent(candidate, { revision: 'new' })).rejects.toThrow(/skill/i);
         expect(e.getAgent('test')).toBe(old);
         expect(await e.store.agentRevisions.findOne('test')).toBeUndefined();
@@ -298,8 +355,14 @@ describe('first class skills', () => {
                 name: 'one',
                 start: async () => {},
                 stop,
-            }, { name: 'two', start: async () => { throw new Error('channel failed'); } }],
+            }, {
+                name: 'two',
+                start: async () => {
+                    throw new Error('channel failed');
+                },
+            }],
         });
+
         await expect(e.start()).rejects.toThrow('channel failed'); expect(stop).toHaveBeenCalledOnce(); await e.stop();
     });
     it('rejects static and factory load_skill collisions', async () => {
@@ -308,6 +371,7 @@ describe('first class skills', () => {
             instructions: '',
             tools: { load_skill: defineTool({ inputSchema: jsonSchema({ type: 'object' }), execute: async () => null }) },
         })])).toThrow(/load_skill/);
+
         const model = mockModel([{ parts: [{ type: 'text', text: 'must not run' }] }]);
         const e = new Engine({
             store: createMemoryStore(),
@@ -325,14 +389,26 @@ describe('first class skills', () => {
             trigger: 'test',
             payload: {},
         });
+
         await e.start(); await e.idle(); expect((await e.getRun(run.runId))?.status).toBe('failed'); expect(model.doStreamCalls).toHaveLength(0); await e.stop();
     });
     it('a concurrent start caller can cancel the shared attempt with its original reason', async () => {
         const deferred = Promise.withResolvers<readonly Skill[]>(); const entered = Promise.withResolvers<void>();
-        const e = engine([defineSkillSource({ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } })]);
-        const one = e.start().catch((error: unknown) => error); await entered.promise;
+        const e = engine([defineSkillSource({
+            skills: [skill()],
+            load: async () => {
+                entered.resolve();
+
+                return deferred.promise;
+            },
+        })]);
+        const one = e.start().catch((error: unknown) => error);
+
+        await entered.promise;
+
         const controller = new AbortController(); const reason = new Error('caller cancelled');
         const two = e.start({ signal: controller.signal }).catch((error: unknown) => error);
+
         controller.abort(reason); deferred.resolve([skill()]);
         expect(await one).toBe(reason); expect(await two).toBe(reason); await e.stop();
     });
@@ -344,6 +420,7 @@ describe('first class skills', () => {
             skills: [defineSkillSource({ skills: [skill()], load: async () => [skill('common', 'different content')] })],
         });
         const e = engine([], [a, b]);
+
         await expect(e.prepare()).rejects.toThrow(/conflicting content/i);
         await e.stop();
     });
@@ -354,6 +431,7 @@ describe('first class skills', () => {
             instructions: '',
             skills: [source],
         })]);
+
         await Promise.all([e.prepare(), e.start()]);
         await e.stop();
         await e.putAgent(agent([source]));
@@ -364,9 +442,22 @@ describe('first class skills', () => {
     it('stop joins standalone candidate preparation even when its provider ignores abort', async () => {
         const entered = Promise.withResolvers<void>(); const deferred = Promise.withResolvers<readonly Skill[]>();
         const e = engine();
-        const candidate = agent([defineSkillSource({ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } })]);
+        const candidate = agent([defineSkillSource({
+            skills: [skill()],
+            load: async () => {
+                entered.resolve();
+
+                return deferred.promise;
+            },
+        })]);
         const preparing = e.prepare({ agents: [candidate] }).catch((error: unknown) => error);
-        await entered.promise; let stopped = false; const stopping = e.stop().then(() => { stopped = true; });
+
+        await entered.promise;
+
+        let stopped = false; const stopping = e.stop().then(() => {
+            stopped = true;
+        });
+
         await flush(); expect(stopped).toBe(false); deferred.resolve([skill()]); await stopping;
         expect(await preparing).toBeInstanceOf(Error);
     });
@@ -374,10 +465,15 @@ describe('first class skills', () => {
         const store = createMemoryStore();
         const entered = Promise.withResolvers<void>(); const deferred = Promise.withResolvers<void>();
         const original = store.agentRevisions.findOne.bind(store.agentRevisions); let hold = false;
+
         store.agentRevisions.findOne = async (name) => {
-            if (hold) { hold = false; entered.resolve(); await deferred.promise; }
+            if (hold) {
+                hold = false; entered.resolve(); await deferred.promise;
+            }
+
             return original(name);
         };
+
         const model = mockModel([{
             parts: [{
                 type: 'tool-call',
@@ -390,14 +486,18 @@ describe('first class skills', () => {
             agents: [],
             model,
         });
+
         await e.putAgent(agent([skill('common', 'OLD')]), { revision: 'same' }); await e.start();
         hold = true;
+
         const run = await e.dispatch({
             agent: 'test',
             channel: 'test',
             trigger: 'test',
             payload: {},
-        }); await entered.promise;
+        });
+
+        await entered.promise;
         await e.putAgent(agent([defineSkill({ ...skill('common', 'NEW'), hash: 'b'.repeat(64) })]), { revision: 'same' }); deferred.resolve(); await e.idle();
         expect((await store.steps.find(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'OLD' }); await e.stop();
     });
@@ -425,21 +525,32 @@ describe('first class skills', () => {
                 skills: [skill('private')],
             })],
         });
-        await e.start(); const run = await e.dispatch({
+
+        await e.start();
+
+        const run = await e.dispatch({
             agent: 'test',
             channel: 'test',
             trigger: 'test',
             payload: {},
-        }); await e.idle();
+        });
+
+        await e.idle();
+
         const calls = (await e.store.steps.find(run.runId)).filter((step) => step.kind === 'tool');
+
         expect(calls[0]?.error).toMatchObject({ message: 'Unknown approved skill.' }); expect(calls[1]?.output).toMatchObject({ name: 'common' });
         expect(JSON.stringify(model.doStreamCalls[0]?.tools)).not.toContain('private'); await e.stop();
     });
     it('runs load_skill through hooks and durable approval replay with a new prepared snapshot', async () => {
         const store = createMemoryStore(); const before: string[] = []; const after: unknown[] = [];
         const hooks = {
-            beforeToolExecution: async (call: { toolName: string }, ctx: Parameters<typeof approve>[0]) => { before.push(call.toolName); await approve(ctx, { title: 'Read approved content?' }); },
-            afterToolExecution: (call: { output: unknown }) => { after.push(call.output); },
+            beforeToolExecution: async (call: { toolName: string }, ctx: Parameters<typeof approve>[0]) => {
+                before.push(call.toolName); await approve(ctx, { title: 'Read approved content?' });
+            },
+            afterToolExecution: (call: { output: unknown }) => {
+                after.push(call.output);
+            },
         };
         const first = mockModel([{
             parts: [{
@@ -458,13 +569,22 @@ describe('first class skills', () => {
                 hooks,
             })],
         });
-        await a.start(); const run = await a.dispatch({
+
+        await a.start();
+
+        const run = await a.dispatch({
             agent: 'test',
             channel: 'test',
             trigger: 'test',
             payload: {},
-        }); await a.idle();
-        const waiting = await a.getRun(run.runId); expect(waiting?.status).toBe('waiting'); await a.stop();
+        });
+
+        await a.idle();
+
+        const waiting = await a.getRun(run.runId);
+
+        expect(waiting?.status).toBe('waiting'); await a.stop();
+
         const second = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
         const b = new Engine({
             store,
@@ -476,6 +596,7 @@ describe('first class skills', () => {
                 hooks,
             })],
         });
+
         await b.start(); await b.approve(run.runId, { approvalId: waiting!.waiting!.approvalId, approved: true }); await b.idle();
         expect((await b.getRun(run.runId))?.status).toBe('completed'); expect(before).toEqual(['load_skill', 'load_skill']);
         expect(after).toMatchObject([{ content: 'NEW' }]);
@@ -499,12 +620,17 @@ describe('first class skills', () => {
                 toolPolicy: () => false,
             })],
         });
-        await e.start(); const run = await e.dispatch({
+
+        await e.start();
+
+        const run = await e.dispatch({
             agent: 'test',
             channel: 'test',
             trigger: 'test',
             payload: {},
-        }); await e.idle();
+        });
+
+        await e.idle();
         expect((await e.store.steps.find(run.runId)).find((step) => step.kind === 'tool')?.error).toMatchObject({ code: 'tool_not_allowed' }); await e.stop();
     });
     it('rejects conflicting ready snapshots synchronously and rejects malformed UTF-8 strings', () => {
@@ -517,6 +643,7 @@ describe('first class skills', () => {
     it.each(['body', 'reference'])('rejects NUL-bearing custom skill %s content', (part) => {
         expect(() => {
             const value = part === 'body' ? skill('common', 'text\0binary') : defineSkill({ ...skill(), references: { 'scripts/check.sh': 'text\0binary' } });
+
             agent([value]);
         }).toThrow(/skill/i);
     });
@@ -528,17 +655,37 @@ describe('first class skills', () => {
             model,
             agents: [agent()],
             channels: [{ name: 'test', start }],
-            skills: [defineSkillSource({ skills: [skill()], load: async () => { throw error; } })],
+            skills: [defineSkillSource({
+                skills: [skill()],
+                load: async () => {
+                    throw error;
+                },
+            })],
         });
+
         await expect(e.start()).rejects.toBe(error);
         expect(reads).not.toHaveBeenCalled(); expect(start).not.toHaveBeenCalled(); expect(model.doStreamCalls).toHaveLength(0);
         await e.stop();
     });
     it('drain joins canceled preparation before it completes', async () => {
         const entered = Promise.withResolvers<void>(); const deferred = Promise.withResolvers<readonly Skill[]>();
-        const e = engine([defineSkillSource({ skills: [skill()], load: async () => { entered.resolve(); return deferred.promise; } })]);
-        const preparing = e.prepare().catch((error: unknown) => error); await entered.promise;
-        let drained = false; const draining = e.drain().then(() => { drained = true; }); await flush(); expect(drained).toBe(false);
+        const e = engine([defineSkillSource({
+            skills: [skill()],
+            load: async () => {
+                entered.resolve();
+
+                return deferred.promise;
+            },
+        })]);
+        const preparing = e.prepare().catch((error: unknown) => error);
+
+        await entered.promise;
+
+        let drained = false; const draining = e.drain().then(() => {
+            drained = true;
+        });
+
+        await flush(); expect(drained).toBe(false);
         deferred.resolve([skill()]); await preparing; await draining;
         expect(e.isDraining).toBe(true);
     });
@@ -547,6 +694,7 @@ describe('first class skills', () => {
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const listRuns = store.runs.find.bind(store.runs);
+
         store.runs.find = async (options) => {
             if (options?.status?.length === 1 && options.status[0] === 'queued') {
                 entered.resolve();
@@ -555,6 +703,7 @@ describe('first class skills', () => {
 
             return listRuns(options);
         };
+
         const controller = new AbortController();
         const reason = new Error('startup canceled during pump');
         const stop = vi.fn();
@@ -569,11 +718,14 @@ describe('first class skills', () => {
         });
         const starting = e.start({ signal: controller.signal });
         const outcome = starting.catch((error: unknown) => error);
+
         await entered.promise;
         controller.abort(reason);
         release.resolve();
+
         const result = await outcome;
         const stoppedByStartup = stop.mock.calls.length;
+
         await e.stop();
         expect(result).toBe(reason);
         expect(stoppedByStartup).toBe(1);
@@ -584,6 +736,7 @@ describe('first class skills', () => {
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
         const listRuns = store.runs.find.bind(store.runs);
+
         store.runs.find = async (options) => {
             if (options?.status?.length === 1 && options.status[0] === 'queued') {
                 entered.resolve();
@@ -592,6 +745,7 @@ describe('first class skills', () => {
 
             return listRuns(options);
         };
+
         const model = mockModel([{ parts: [{ type: 'text', text: 'must remain queued' }] }]);
         const e = new Engine({
             store,
@@ -607,10 +761,13 @@ describe('first class skills', () => {
         const controller = new AbortController();
         const reason = new Error('startup canceled before admission');
         const outcome = e.start({ signal: controller.signal }).catch((error: unknown) => error);
+
         await entered.promise;
         controller.abort(reason);
         release.resolve();
+
         const result = await outcome;
+
         await e.stop();
         await e.idle();
         expect(result).toBe(reason);
@@ -623,6 +780,7 @@ describe('first class skills', () => {
         const release = Promise.withResolvers<void>();
         const claimRun = store.runs.claim.bind(store.runs);
         let hold = true;
+
         store.runs.claim = async (...args) => {
             if (hold) {
                 hold = false;
@@ -632,24 +790,34 @@ describe('first class skills', () => {
 
             return claimRun(...args);
         };
+
         const model = mockModel([{ parts: [{ type: 'text', text: 'after restart' }] }]);
         const e = new Engine({
             store,
             agents: [agent([skill()])],
             model,
         });
+
         await e.start();
+
         const run = await e.dispatch({
             agent: 'test',
             channel: 'test',
             trigger: 'test',
             payload: {},
         });
+
         await entered.promise;
+
         let stopped = false;
-        const stopping = e.stop().then(() => { stopped = true; });
+        const stopping = e.stop().then(() => {
+            stopped = true;
+        });
+
         await flush();
+
         const stoppedBeforeAdmissionSettled = stopped;
+
         release.resolve();
         await stopping;
         await e.idle();
@@ -692,25 +860,35 @@ describe('first class skills', () => {
                             signal = context.run.signal;
                             entered.resolve();
                             await release.promise;
+
                             return 'finished';
                         },
                     }),
                 },
             })],
         });
+
         await e.start();
+
         const run = await e.dispatch({
             agent: 'test',
             channel: 'test',
             trigger: 'test',
             payload: {},
         });
+
         await entered.promise;
+
         let stopped = false;
-        const stopping = e.stop().then(() => { stopped = true; });
+        const stopping = e.stop().then(() => {
+            stopped = true;
+        });
+
         await flush();
+
         const stoppedDuringExecution = stopped;
         const abortedByStop = signal?.aborted;
+
         release.resolve();
         await stopping;
         await e.idle();

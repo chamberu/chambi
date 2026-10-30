@@ -58,6 +58,7 @@ const POLL_MS = 1_000;
 
 function provider() {
     const answers = Array.from({ length: 20 }, () => ({ parts: [{ type: 'text' as const, text: 'from folder' }] }));
+
     return customProvider({ languageModels: { model: mockModel(answers), hang: hangingModel() } });
 }
 
@@ -82,6 +83,7 @@ async function queueRun(store: IStore, clock: ControllableClock, name: string): 
         channel: 'http',
         payload: {},
     });
+
     return runId;
 }
 
@@ -130,9 +132,11 @@ function build(options: {
             module,
         ],
     });
+
     harnesses.push(harness);
 
     const engine = () => harness.container.resolve(AppToken.ENGINE);
+
     return {
         harness,
         clock,
@@ -155,12 +159,14 @@ const folder = (name = 'greeter') => join(root.path, name);
 describe('agentsModule', () => {
     it('is named and depends on config and engine', () => {
         const module = agentsModule();
+
         expect(module.name).toBe(ModuleName.AGENTS);
         expect(module.dependencies).toEqual([ModuleName.CONFIG, ModuleName.ENGINE]);
     });
 
     it('loads the folder at boot before the engine starts', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
         const runId = await queueRun(store, clock, 'greeter');
@@ -170,6 +176,7 @@ describe('agentsModule', () => {
             clock,
             dir: relative(process.cwd(), root.path),
         });
+
         await harness.setup();
         await engine().idle();
 
@@ -180,26 +187,35 @@ describe('agentsModule', () => {
 
     it('a folder change while stopped cancels the old runs at boot once', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
             agent: 'greeter',
             hash: 'h1',
             changedAt: START,
         });
+
         const old = await queueRun(store, clock, 'greeter');
+
         clock.advance(1_000);
 
         const first = build({ store, clock });
+
         await first.harness.setup();
         await first.engine().idle();
         expect((await store.runs.findOne(old))?.status).toBe('cancelled');
         await first.harness.stop();
 
         clock.advance(1_000);
+
         const later = await queueRun(store, clock, 'greeter');
+
         clock.advance(1_000);
+
         const second = build({ store, clock });
+
         await second.harness.setup();
         await second.engine().idle();
 
@@ -208,17 +224,22 @@ describe('agentsModule', () => {
 
     it('a normal boot cancels nothing', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
             agent: 'greeter',
             hash: await hashAgentFolder(folder()),
             changedAt: START,
         });
+
         const runId = await queueRun(store, clock, 'greeter');
+
         clock.advance(1_000);
 
         const { harness, engine } = build({ store, clock });
+
         await harness.setup();
         await engine().idle();
 
@@ -227,24 +248,31 @@ describe('agentsModule', () => {
 
     it('an upgrade from the full-folder hash moves the marker and cancels nothing', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1'), 'greeter/README.md': '# greeter' });
+
         // the hash before README* and editor leftovers were ignored: every file but dot-entries
         const legacy = createHash('sha256');
+
         for (const [key, content] of [['README.md', '# greeter'], ['agent.ts', agentFile('v1')]] as const) {
             legacy.update(`${key}\0`);
             legacy.update(content);
             legacy.update('\0');
         }
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
             agent: 'greeter',
             hash: legacy.digest('hex'),
             changedAt: START,
         });
+
         const runId = await queueRun(store, clock, 'greeter');
+
         clock.advance(1_000);
 
         const { harness, engine } = build({ store, clock });
+
         await harness.setup();
         await engine().idle();
 
@@ -254,6 +282,7 @@ describe('agentsModule', () => {
 
     it('a code agent wins a name clash and the folder is an issue', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const code = codeAgent('greeter');
         const {
             harness,
@@ -261,6 +290,7 @@ describe('agentsModule', () => {
             issues,
             logger,
         } = build({ agents: [code] });
+
         await harness.setup();
 
         expect(engine().getAgent('greeter')).toBe(code);
@@ -283,11 +313,13 @@ describe('agentsModule', () => {
             'greeter/agent.ts': agentFile('v1', 'acme/model'),
             'other/agent.ts': agentFile('v1', 'test/model', 'other'),
         });
+
         const {
-            harness, 
-            engine, 
-            issues, 
+            harness,
+            engine,
+            issues,
         } = build();
+
         await harness.setup();
 
         expect(engine().getAgent('greeter')).toBeUndefined();
@@ -299,7 +331,9 @@ describe('agentsModule', () => {
 
     it('a broken folder is an issue at boot without its absolute path', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': 'export default {\n' });
+
         const { harness, issues } = build();
+
         await harness.setup();
 
         expect(issues()).toHaveLength(1);
@@ -310,16 +344,20 @@ describe('agentsModule', () => {
     it('a marker without a folder removes the agent\'s runs at boot', async () => {
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
             agent: 'gone',
             hash: 'h1',
             changedAt: START,
         });
+
         const runId = await queueRun(store, clock, 'gone');
+
         // any entry makes an empty listing authoritative (no unmounted volume)
         await writeFile(join(root.path, '.keep'), '');
 
         const { harness } = build({ store, clock });
+
         await harness.setup();
 
         expect((await store.runs.findOne(runId))?.status).toBe('cancelled');
@@ -329,14 +367,17 @@ describe('agentsModule', () => {
     it('an empty agents dir (an unmounted volume) removes no marker at boot', async () => {
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
             agent: 'gone',
             hash: 'h1',
             changedAt: START,
         });
+
         const runId = await queueRun(store, clock, 'gone');
 
         const { harness, logger } = build({ store, clock });
+
         await harness.setup();
 
         expect((await store.runs.findOne(runId))?.status).toBe('queued');
@@ -347,6 +388,7 @@ describe('agentsModule', () => {
     it('a marker of a code agent is left alone at boot', async () => {
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
+
         await store.agentRevisions.save({
             agent: 'triage',
             hash: 'h1',
@@ -355,9 +397,10 @@ describe('agentsModule', () => {
 
         const { harness } = build({
             store,
-            clock, 
-            agents: [codeAgent('triage')], 
+            clock,
+            agents: [codeAgent('triage')],
         });
+
         await harness.setup();
 
         expect(await store.agentRevisions.findOne('triage')).toBeDefined();
@@ -365,6 +408,7 @@ describe('agentsModule', () => {
 
     it('the watcher applies a change only once it is stable for one poll', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1', 'test/hang') });
+
         const {
             harness,
             engine,
@@ -372,8 +416,10 @@ describe('agentsModule', () => {
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
+
         const v1 = await hashAgentFolder(folder());
         const { runId } = await engine().dispatch({
             agent: 'greeter',
@@ -381,10 +427,13 @@ describe('agentsModule', () => {
             channel: 'http',
             payload: {},
         });
+
         await expect.poll(async () => (await store.runs.findOne(runId))?.status).toBe('running');
 
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
+
         const v2 = await hashAgentFolder(folder());
+
         await poll();
         expect(engine().agentRevision('greeter')).toBe(v1);
         expect((await store.runs.findOne(runId))?.status).toBe('running');
@@ -398,6 +447,7 @@ describe('agentsModule', () => {
 
     it('logs agent reloaded once with the cancelled run ids', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1', 'test/hang') });
+
         const {
             harness,
             engine,
@@ -406,23 +456,29 @@ describe('agentsModule', () => {
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
+
         const { runId } = await engine().dispatch({
             agent: 'greeter',
             trigger: 'http',
             channel: 'http',
             payload: {},
         });
+
         await expect.poll(async () => (await store.runs.findOne(runId))?.status).toBe('running');
 
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
+
         const v2 = await hashAgentFolder(folder());
+
         await poll();
         await poll();
         await engine().idle();
 
         const reloaded = logger.entries.filter((entry) => entry.msg === 'agent reloaded');
+
         expect(reloaded).toEqual([expect.objectContaining({
             level: 'info',
             agent: 'greeter',
@@ -434,6 +490,7 @@ describe('agentsModule', () => {
 
     it('logs agent removed', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1', 'test/hang'), '.keep': '' });
+
         const {
             harness,
             engine,
@@ -441,6 +498,7 @@ describe('agentsModule', () => {
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
         await rm(folder(), { recursive: true, force: true });
@@ -449,6 +507,7 @@ describe('agentsModule', () => {
         await engine().idle();
 
         const removed = logger.entries.filter((entry) => entry.msg === 'agent removed');
+
         expect(removed).toEqual([expect.objectContaining({
             level: 'info',
             agent: 'greeter',
@@ -459,19 +518,23 @@ describe('agentsModule', () => {
 
     it('a normal boot logs no reload', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const { harness, logger } = build();
+
         await harness.setup();
         expect(logger.entries.filter((entry) => entry.msg === 'agent reloaded' || entry.msg === 'agent removed')).toEqual([]);
     });
 
     it('a new folder is loaded once it is stable for one poll', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const {
             harness,
             engine,
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
 
@@ -484,6 +547,7 @@ describe('agentsModule', () => {
 
     it('a broken change keeps the old agent and records an issue; fixing it applies once', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const {
             harness,
             engine,
@@ -494,10 +558,13 @@ describe('agentsModule', () => {
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
+
         const v1 = await hashAgentFolder(folder());
         const changes: string[] = [];
+
         engine().on('agents.changed', (event) => {
             changes.push(`${event.kind}:${event.name}`);
         });
@@ -526,6 +593,7 @@ describe('agentsModule', () => {
 
     it('a removed folder removes the agent after two polls', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1'), '.keep': '' });
+
         const {
             harness,
             engine,
@@ -533,6 +601,7 @@ describe('agentsModule', () => {
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
 
@@ -547,6 +616,7 @@ describe('agentsModule', () => {
 
     it('an agents dir left empty (an unmounted volume) keeps every agent and its runs', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const {
             harness,
             engine,
@@ -555,8 +625,10 @@ describe('agentsModule', () => {
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
+
         const { runId } = await engine().dispatch({
             agent: 'greeter',
             trigger: 'http',
@@ -577,15 +649,19 @@ describe('agentsModule', () => {
 
     it('a folder back after one missing poll stays loaded', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const {
             harness,
             engine,
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
+
         const changes: string[] = [];
+
         engine().on('agents.changed', (event) => {
             changes.push(event.kind);
         });
@@ -602,6 +678,7 @@ describe('agentsModule', () => {
 
     it('stop joins a reload in flight without publishing the canceled candidate', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const {
             harness,
             engine,
@@ -610,6 +687,7 @@ describe('agentsModule', () => {
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
 
@@ -617,20 +695,28 @@ describe('agentsModule', () => {
         const entered = deferred();
         const release = deferred();
         let loaded = false;
+
         vi.stubGlobal('chamviReload', async () => {
             entered.resolve();
             await release.promise;
             loaded = true;
         });
+
         try {
             await writeFile(join(folder(), 'agent.ts'), `await globalThis.chamviReload();\n${agentFile('v2')}`);
             await poll();
             clock.advance(POLL_MS);
             await entered.promise;
+
             const current = engine();
             let stopped = false;
-            const stopping = harness.stop().then(() => { stopped = true; });
-            await new Promise<void>((resolve) => { setImmediate(resolve); });
+            const stopping = harness.stop().then(() => {
+                stopped = true;
+            });
+
+            await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+            });
             expect(stopped).toBe(false);
             expect(loaded).toBe(false);
             release.resolve();
@@ -647,15 +733,19 @@ describe('agentsModule', () => {
 
     it('stop ends the polling', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const {
             harness,
             engine,
             watch,
             poll,
         } = build();
+
         await harness.setup();
         await watch();
+
         const current = engine();
+
         await runHooks(harness.container, 'stopping');
 
         await writeTree(root.path, { 'newcomer/agent.ts': agentFile('v1', 'test/model', 'newcomer') });
@@ -666,12 +756,14 @@ describe('agentsModule', () => {
 
     it('job mode loads the folder and runs a folder agent\'s cron trigger', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1', 'test/model', 'greeter', [cronTrigger('0 9 * * *')]) });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
         const app = createApp({
             models: { test: provider() },
             modules: [configModule({ clock, logger: createRecordingLogger(clock) }), storeModule({ store })],
         });
+
         apps.push(app);
 
         const result = await app.runJob({
@@ -688,11 +780,13 @@ describe('agentsModule', () => {
 
     it('job mode starts no watcher', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const {
-            harness, 
-            engine, 
-            poll, 
+            harness,
+            engine,
+            poll,
         } = build({ mode: 'job' });
+
         await harness.setup();
         await runHooks(harness.container, 'started');
 
@@ -708,13 +802,17 @@ describe('agentsModule', () => {
             'greeter/agent.ts': agentFile('v1'),
             'broken/agent.ts': 'export default {\n',
         });
+
         const clock = new ControllableClock(START);
         const app = createApp({
             models: { test: provider() },
             modules: [configModule({ clock, logger: createRecordingLogger(clock) })],
         });
+
         apps.push(app);
+
         const port = await freePort();
+
         await app.start({
             env: {
                 HOST: '127.0.0.1',
@@ -737,6 +835,7 @@ describe('agentsModule', () => {
             dir: join(root.path, 'missing'),
             env: { DATABASE_URL: 'postgres://u:p@127.0.0.1:1/db' },
         });
+
         await harness.setup();
 
         expect(harness.container.has(AppToken.AGENT_ISSUES)).toBe(false);
@@ -746,6 +845,7 @@ describe('agentsModule', () => {
         ['missing', async () => join(root.path, 'missing')],
         ['a file', async () => {
             await writeTree(root.path, { 'file.txt': 'x' });
+
             return join(root.path, 'file.txt');
         }],
     ])('a dir that is %s is an InvalidAgentDefinitionError naming the variable only', async (_label, make) => {
@@ -760,6 +860,7 @@ describe('agentsModule', () => {
 
     it('without CHAMVI_AGENTS_DIR it does nothing for an app with code agents', async () => {
         const { harness, engine } = build({ agents: [codeAgent('triage')], env: { CHAMVI_AGENTS_DIR: '' } });
+
         await harness.setup();
 
         expect(engine().listAgents().map((agent) => agent.name)).toEqual(['triage']);
@@ -769,12 +870,14 @@ describe('agentsModule', () => {
     it('without CHAMVI_AGENTS_DIR, ./agents and code agents it starts empty and warns', async () => {
         const cwd = await createTempDir();
         const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd.path);
+
         try {
             const {
-                harness, 
-                engine, 
-                logger, 
+                harness,
+                engine,
+                logger,
             } = build({ env: { CHAMVI_AGENTS_DIR: '' } });
+
             await harness.setup();
 
             expect(engine().listAgents()).toEqual([]);
@@ -788,10 +891,14 @@ describe('agentsModule', () => {
 
     it('without CHAMVI_AGENTS_DIR it loads ./agents when that is a directory', async () => {
         const cwd = await createTempDir();
+
         await writeTree(cwd.path, { 'agents/greeter/agent.ts': agentFile('v1') });
+
         const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd.path);
+
         try {
             const { harness, engine } = build({ env: { CHAMVI_AGENTS_DIR: '' } });
+
             await harness.setup();
 
             expect(engine().listAgents().map((agent) => agent.name)).toEqual(['greeter']);

@@ -9,7 +9,10 @@ import { InvalidAgentDefinitionError } from '../errors/index.ts';
 
 /** A concurrency cap is optional, explicitly disabled, or a positive safe integer. */
 export function assertConcurrencyMaxRuns(value: unknown, label: string): asserts value is number | false | undefined {
-    if (value === undefined || value === false) return;
+    if (value === undefined || value === false) {
+        return;
+    }
+
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
         throw new InvalidAgentDefinitionError(`${label} must be a positive safe integer or false.`);
     }

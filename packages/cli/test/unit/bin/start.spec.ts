@@ -74,18 +74,24 @@ describe('bin start', () => {
             headers,
             body: JSON.stringify({ payload: {} }),
         });
+
         expect(response.status).toBe(202);
+
         const { runId } = await response.json() as { runId: string };
 
         const until = Date.now() + 10_000;
+
         for (;;) {
             const run = await (await fetch(`${base}/runs/${runId}`, { headers })).json() as { status: string };
+
             if (run.status === 'running') {
                 return;
             }
+
             if (Date.now() > until) {
                 throw new Error(`run ${runId} is ${run.status}, not running`);
             }
+
             await new Promise((resolve) => {
                 setTimeout(resolve, 50);
             });
@@ -97,7 +103,9 @@ describe('bin start', () => {
         await waitForOk(`http://127.0.0.1:${port}/readyz`);
 
         cli.child.kill('SIGTERM');
+
         const started = Date.now();
+
         expect(await cli.exited(10_000)).toEqual({ code: 0, signal: null });
         expect(Date.now() - started).toBeLessThan(10_000);
         expect(count(cli.stderr(), 'received SIGTERM, stopping')).toBe(1);
@@ -111,7 +119,9 @@ describe('bin start', () => {
         cli.child.kill('SIGTERM');
         await cli.waitForOutput((output) => output.includes('received SIGTERM, stopping'));
         // a repeat within SIGNAL_REPEAT_MS is the same signal delivered twice
-        await new Promise((resolve) => { setTimeout(resolve, SIGNAL_REPEAT_MS + 100); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, SIGNAL_REPEAT_MS + 100);
+        });
         cli.child.kill('SIGTERM');
         expect(await cli.exited(5_000)).toEqual({ code: 1, signal: null });
     });
@@ -123,7 +133,9 @@ describe('bin start', () => {
 
         cli.child.kill('SIGINT');
         cli.child.kill('SIGINT');
+
         const started = Date.now();
+
         expect(await cli.exited(10_000)).toEqual({ code: 0, signal: null });
         expect(Date.now() - started).toBeGreaterThanOrEqual(900);
         expect(cli.stderr()).not.toContain('forced exit');
@@ -140,7 +152,9 @@ describe('bin start', () => {
         await startHangingRun();
 
         cli.child.kill('SIGTERM');
+
         const started = Date.now();
+
         expect(await cli.exited(10_000)).toEqual({ code: 1, signal: null });
         expect(Date.now() - started).toBeGreaterThanOrEqual(400);
         expect(cli.stderr()).toContain('forced exit');

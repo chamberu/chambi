@@ -40,19 +40,24 @@ export function createUiTestApp(options: Partial<Omit<HttpAppOptions, 'engine' |
             }],
         })],
         metrics: false,
-        onError: (error) => { errors.push(error); },
+        onError: (error) => {
+            errors.push(error);
+        },
         ...options,
     });
+
     return {
-        app, 
-        errors, 
-        clock, 
+        app,
+        errors,
+        clock,
     };
 }
 
 /** A GET with a socket address (the rate limiter keys by it). */
 export function get(app: App, path: string): Promise<Response> {
     const request = new Request(`http://test${path}`);
+
     (request as Request & { ip?: string }).ip = '10.0.0.1';
+
     return app.fetch(request);
 }

@@ -24,11 +24,15 @@ export async function getPage(input: string, options: WebToolsOptionsNormalized,
         timeout.abort(requestError(`The request did not finish within ${options.timeoutMs}ms.`));
     }, options.timeoutMs);
     const combined = AbortSignal.any([signal, timeout.signal]);
+
     try {
         let url = parseWebUrl(input);
+
         for (let hop = 0; ; hop++) {
             await checkUrl(url, options, combined);
+
             let response: Response & { data?: ReadableStream<Uint8Array> };
+
             try {
                 response = await options.client.get(url.href, {
                     redirect: 'manual',
@@ -36,30 +40,47 @@ export async function getPage(input: string, options: WebToolsOptionsNormalized,
                     signal: combined,
                 });
             } catch (error) {
-                if (timeout.signal.aborted) throw timeout.signal.reason;
-                if (signal.aborted) throw error;
+                if (timeout.signal.aborted) {
+                    throw timeout.signal.reason;
+                }
+
+                if (signal.aborted) {
+                    throw error;
+                }
+
                 if (isHttpResponseError(error)) {
                     await error.response?.body?.cancel().catch(() => undefined);
+
                     throw requestError(`${url.href} answered ${error.status ?? error.response?.status}.`);
                 }
+
                 throw requestError(`Fetching ${url.href} failed: ${messageOf(error)}`);
             }
+
             const location = response.headers.get('location');
+
             if (response.status >= 300 && response.status < 400 && location) {
                 await response.body?.cancel().catch(() => undefined);
+
                 if (hop >= WEB_MAX_REDIRECTS) {
                     throw requestError(`${input} redirected more than ${WEB_MAX_REDIRECTS} times.`);
                 }
+
                 let target: URL;
+
                 try {
                     target = new URL(location, url);
                 } catch {
                     throw requestError(`${url.href} redirected to an invalid location.`);
                 }
+
                 url = parseWebUrl(target);
+
                 continue;
             }
+
             const { bytes, truncated } = await readCapped(response.data ?? response.body, options.maxBytes);
+
             return {
                 url,
                 status: response.status,
@@ -69,7 +90,10 @@ export async function getPage(input: string, options: WebToolsOptionsNormalized,
             };
         }
     } catch (error) {
-        if (timeout.signal.aborted && !signal.aborted) throw timeout.signal.reason;
+        if (timeout.signal.aborted && !signal.aborted) {
+            throw timeout.signal.reason;
+        }
+
         throw error;
     } finally {
         timer.clear();

@@ -10,7 +10,10 @@ import type { IApiClient, MeWire } from '../../app/api/types.ts';
 
 /** A client whose every method throws unless the test overrides it. */
 export function fakeClient(overrides: Partial<IApiClient> = {}): IApiClient {
-    const missing = (name: string) => () => { throw new Error(`${name} not faked`); };
+    const missing = (name: string) => () => {
+        throw new Error(`${name} not faked`);
+    };
+
     return {
         me: missing('me'),
         listAgents: missing('listAgents'),
@@ -40,7 +43,10 @@ export function apiError(status: number, code = `http_${status}`): ApiError {
 /** me() accepting exactly these tokens. */
 export function meFor(...tokens: string[]): IApiClient['me'] {
     return async (token) => {
-        if (token && tokens.includes(token)) return ME;
+        if (token && tokens.includes(token)) {
+            return ME;
+        }
+
         throw apiError(401, 'unauthorized');
     };
 }

@@ -53,11 +53,13 @@ describe('decodeQuery', () => {
         'filter[status]=',
     ])('rejects %s with issues', (query) => {
         let error: unknown;
+
         try {
             decode(query);
         } catch (e) {
             error = e;
         }
+
         expect(error).toBeInstanceOf(BadRequestError);
         expect((error as BadRequestError).issues.length).toBeGreaterThan(0);
     });

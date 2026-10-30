@@ -19,11 +19,14 @@ function echoApp() {
     const { engine } = createTestApp();
     const ctx = buildContext({ engine, auth: testAuth });
     const app = new App();
+
     app.post('/echo', defineCoreHandler(async (event) => {
         const body = await readJsonBody(event, 16);
+
         return { body: body === undefined ? '<none>' : body };
     }));
     app.use(createErrorHandler(ctx));
+
     return app;
 }
 
@@ -40,7 +43,10 @@ function post(app: App, body: BodyInit | undefined, headers: Record<string, stri
 function streamOf(sizes: number[]): ReadableStream<Uint8Array> {
     return new ReadableStream({
         start(controller) {
-            for (const size of sizes) controller.enqueue(new Uint8Array(size).fill(0x20));
+            for (const size of sizes) {
+                controller.enqueue(new Uint8Array(size).fill(0x20));
+            }
+
             controller.close();
         },
     });
@@ -49,38 +55,45 @@ function streamOf(sizes: number[]): ReadableStream<Uint8Array> {
 describe('readJsonBody', () => {
     it('drains a refused body up to the limit again, keeping the connection', async () => {
         const response = await post(echoApp(), streamOf([10, 10, 10]), { 'content-type': 'application/json' });
+
         expect(response.status).toBe(413);
         expect(response.headers.get('connection')).toBeNull();
     });
 
     it('closes the connection after a refused body longer than twice the limit', async () => {
         const response = await post(echoApp(), streamOf([10, 10, 10, 10]), { 'content-type': 'application/json' });
+
         expect(response.status).toBe(413);
         expect(response.headers.get('connection')).toBe('close');
 
         const unsupported = await post(echoApp(), streamOf([10, 10, 10]), { 'content-type': 'text/plain' });
+
         expect(unsupported.status).toBe(415);
         expect(unsupported.headers.get('connection')).toBe('close');
     });
 
     it('parses a JSON body', async () => {
         const response = await post(echoApp(), '{"a":1}', { 'content-type': 'application/json' });
+
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ body: { a: 1 } });
     });
 
     it('reads an empty body as undefined', async () => {
         const response = await post(echoApp(), undefined);
+
         expect(await response.json()).toEqual({ body: '<none>' });
     });
 
     it('accepts a +json media type', async () => {
         const response = await post(echoApp(), '{"a":1}', { 'content-type': 'application/vnd.api+json; charset=utf-8' });
+
         expect(response.status).toBe(200);
     });
 
     it('rejects another media type with 415', async () => {
         const response = await post(echoApp(), '{"a":1}', { 'content-type': 'text/plain' });
+
         expect(response.status).toBe(415);
     });
 
@@ -94,6 +107,7 @@ describe('readJsonBody', () => {
             },
         });
         const response = await post(echoApp(), stream, { 'content-type': 'text/plain' });
+
         expect(response.status).toBe(415);
         expect(response.headers.get('connection')).toBe('close');
         // the refused chunk, 17 bytes of drain (limit 16), and one chunk pulled ahead
@@ -102,18 +116,21 @@ describe('readJsonBody', () => {
 
     it('reads an empty body of another media type as undefined', async () => {
         const response = await post(echoApp(), '', { 'content-type': 'text/plain' });
+
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ body: '<none>' });
     });
 
     it('rejects invalid JSON with 400', async () => {
         const response = await post(echoApp(), '{', { 'content-type': 'application/json' });
+
         expect(response.status).toBe(400);
         expect(await response.json()).toMatchObject({ message: 'The request body is not valid JSON.' });
     });
 
     it('rejects a body over the limit with 413', async () => {
         const response = await post(echoApp(), '{"a":"123456789"}', { 'content-type': 'application/json' });
+
         expect(response.status).toBe(413);
     });
 
@@ -122,11 +139,16 @@ describe('readJsonBody', () => {
         const stream = new ReadableStream<Uint8Array>({
             pull(controller) {
                 const chunk = chunks.shift();
-                if (chunk === undefined) controller.close();
-                else controller.enqueue(new TextEncoder().encode(chunk));
+
+                if (chunk === undefined) {
+                    controller.close();
+                } else {
+                    controller.enqueue(new TextEncoder().encode(chunk));
+                }
             },
         });
         const response = await post(echoApp(), stream, { 'content-type': 'application/json' });
+
         expect(response.status).toBe(413);
     });
 });
@@ -134,12 +156,15 @@ describe('readJsonBody', () => {
 describe('validateBody', () => {
     const container = () => {
         const c = new Container<{ a?: unknown }>();
+
         c.mount('a', { optional: true }, isDefined());
+
         return c;
     };
 
     it.each([[[1]], ['str'], [null], [5]])('rejects %j', async (body) => {
         const promise = validateBody(container(), body);
+
         await expect(promise).rejects.toBeInstanceOf(BadRequestError);
         await expect(promise).rejects.toThrow('The request body must be a JSON object.');
     });
@@ -160,8 +185,11 @@ describe('validateBody', () => {
 describe('validatePayload', () => {
     it('rejects an invalid payload with issues', async () => {
         const promise = validatePayload(z.object({ n: z.number() }), { n: 'x' });
+
         await expect(promise).rejects.toBeInstanceOf(BadRequestError);
+
         const error = await promise.catch((e: unknown) => e) as BadRequestError;
+
         expect(error.message).toMatch(/^Invalid payload: n: /);
         expect(error.issues[0]).toMatchObject({ path: ['n'] });
     });
@@ -172,6 +200,7 @@ describe('validatePayload', () => {
 
     it('passes the payload through without a schema', async () => {
         const payload = [1, 2];
+
         expect(await validatePayload(undefined, payload)).toBe(payload);
     });
 });

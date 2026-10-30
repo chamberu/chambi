@@ -65,6 +65,10 @@ export function createUiRouter(config: UiConfig, guards: NavigationGuard[] = [],
             { path: '/:rest(.*)*', redirect: { name: RouteName.AGENTS } },
         ],
     });
-    for (const guard of guards) router.beforeEach(guard);
+
+    for (const guard of guards) {
+        router.beforeEach(guard);
+    }
+
     return router;
 }

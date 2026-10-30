@@ -22,6 +22,7 @@ import type {
 export function toolResult(value: object): CallToolResult {
     // Dates and other toJSON values become what the wire carries
     const structured = JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+
     return {
         content: [{ type: 'text', text: JSON.stringify(structured) }],
         structuredContent: structured,
@@ -44,14 +45,19 @@ export async function runTool(ctx: HttpContext, fn: () => Promise<CallToolResult
         if ((isHTTPError(error) && error.status < 500) || error instanceof ChamviError) {
             return toolError(error.message);
         }
+
         ctx.onError(error);
+
         return toolError('Internal Server Error');
     }
 }
 
 /** The principal and request signal the route put on `authInfo.extra`. */
 export function readRequestExtra(extra: Record<string, unknown> | undefined): McpRequestExtra | undefined {
-    if (!isObject(extra) || !isObject(extra.principal) || !(extra.signal instanceof AbortSignal)) return undefined;
+    if (!isObject(extra) || !isObject(extra.principal) || !(extra.signal instanceof AbortSignal)) {
+        return undefined;
+    }
+
     return extra as unknown as McpRequestExtra;
 }
 
@@ -78,49 +84,75 @@ export function waitForRun(ctx: HttpContext, runId: string, opts: WaitForRunOpti
         const { signal } = opts;
 
         function stop(): boolean {
-            if (done) return false;
+            if (done) {
+                return false;
+            }
+
             done = true;
             unsubscribe?.();
             poll?.clear();
             timeout?.clear();
             signal?.removeEventListener('abort', settleLatest);
+
             return true;
         }
 
         function settle(run: Run | undefined): void {
-            if (run) resolve(run);
-            else reject(new RunNotFoundError(runId));
+            if (run) {
+                resolve(run);
+            } else {
+                reject(new RunNotFoundError(runId));
+            }
         }
 
         /** Timeout or abort: answer with whatever the store holds now. */
         function settleLatest(): void {
-            if (!stop()) return;
+            if (!stop()) {
+                return;
+            }
+
             ctx.store.runs.findOne(runId).then(settle, reject);
         }
 
         async function check(): Promise<void> {
             try {
                 const run = await ctx.store.runs.findOne(runId);
-                if (done) return;
+
+                if (done) {
+                    return;
+                }
+
                 if (!run || WAIT_OVER.has(run.status)) {
                     stop();
                     settle(run);
+
                     return;
                 }
-                poll = ctx.clock.setTimeout(() => { void check(); }, opts.pollMs);
+
+                poll = ctx.clock.setTimeout(() => {
+                    void check();
+                }, opts.pollMs);
             } catch (error) {
-                if (stop()) reject(error);
+                if (stop()) {
+                    reject(error);
+                }
             }
         }
 
         if (signal?.aborted) {
             settleLatest();
+
             return;
         }
 
         unsubscribe = ctx.engine.on('run.updated', (e) => {
-            if (e.run.id !== runId || !WAIT_OVER.has(e.run.status)) return;
-            if (stop()) resolve(e.run);
+            if (e.run.id !== runId || !WAIT_OVER.has(e.run.status)) {
+                return;
+            }
+
+            if (stop()) {
+                resolve(e.run);
+            }
         });
         signal?.addEventListener('abort', settleLatest, { once: true });
         timeout = ctx.clock.setTimeout(settleLatest, opts.timeoutMs);
@@ -135,8 +167,15 @@ export function toRunToolResult(run: Run, deduplicated: boolean): RunToolResult 
         status: run.status,
         deduplicated,
     };
-    if (run.output !== undefined) result.output = run.output;
-    if (run.error !== undefined) result.error = run.error;
+
+    if (run.output !== undefined) {
+        result.output = run.output;
+    }
+
+    if (run.error !== undefined) {
+        result.error = run.error;
+    }
+
     if (run.waiting) {
         result.waiting = {
             toolName: run.waiting.toolName,
@@ -147,6 +186,7 @@ export function toRunToolResult(run: Run, deduplicated: boolean): RunToolResult 
             expiresAt: run.waiting.expiresAt.toISOString(),
         };
     }
+
     return result;
 }
 
@@ -160,9 +200,16 @@ const JSON_SCHEMA_DATA_KEYWORDS = new Set(['const', 'default', 'enum', 'examples
  * `pointer`, so a schema nested there still resolves its own definitions.
  */
 function rebaseRefs(node: unknown, pointer: string): unknown {
-    if (Array.isArray(node)) return node.map((item) => rebaseRefs(item, pointer));
-    if (!isObject(node)) return node;
+    if (Array.isArray(node)) {
+        return node.map((item) => rebaseRefs(item, pointer));
+    }
+
+    if (!isObject(node)) {
+        return node;
+    }
+
     const out: Record<string, unknown> = {};
+
     for (const [key, value] of Object.entries(node)) {
         if (key === '$ref' && typeof value === 'string' && value.startsWith('#')) {
             out[key] = `${pointer}${value.slice(1)}`;
@@ -172,6 +219,7 @@ function rebaseRefs(node: unknown, pointer: string): unknown {
             out[key] = rebaseRefs(value, pointer);
         }
     }
+
     return out;
 }
 
@@ -184,10 +232,16 @@ function rebaseRefs(node: unknown, pointer: string): unknown {
  */
 export function toJsonSchema(schema: StandardSchemaV1 | undefined, pointer = '#'): Record<string, unknown> {
     const converter = (schema as JsonSchemaCarrier | undefined)?.['~standard'].jsonSchema;
-    if (!converter) return {};
+
+    if (!converter) {
+        return {};
+    }
+
     try {
         const jsonSchema = { ...converter.input({ target: 'draft-07' }) };
+
         delete jsonSchema.$schema;
+
         return rebaseRefs(jsonSchema, pointer) as Record<string, unknown>;
     } catch {
         return {};

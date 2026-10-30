@@ -35,26 +35,30 @@ type TsdownBuild = (config: Record<string, unknown>) => Promise<unknown>;
 
 /** Whether the error is the import of tsdown itself failing to resolve (not a module tsdown imports). */
 function isTsdownMissing(error: unknown): boolean {
-    if (!(error instanceof Error)) {
+    if (!(Error.isError(error))) {
         return false;
     }
 
     const { code } = error as { code?: unknown };
+
     return code === MODULE_NOT_FOUND_CODE && error.message.includes(`'${TSDOWN_PACKAGE}'`);
 }
 
 async function importTsdown(context: CliContext): Promise<TsdownBuild> {
     let exports: unknown;
+
     try {
         exports = await context.importModule(TSDOWN_PACKAGE);
     } catch (error) {
         if (isTsdownMissing(error)) {
             throw createUsageError(`chamvi build needs ${TSDOWN_PACKAGE}: npm install --save-dev ${TSDOWN_PACKAGE}`);
         }
+
         throw error;
     }
 
     const build = isRecord(exports) ? exports.build : undefined;
+
     if (typeof build !== 'function') {
         throw createUsageError(`${TSDOWN_PACKAGE} exports no build(): install tsdown ^0.23.1.`);
     }
@@ -65,6 +69,7 @@ async function importTsdown(context: CliContext): Promise<TsdownBuild> {
 /** Whether `child` is `parent` or inside it. */
 function isWithin(child: string, parent: string): boolean {
     const relative = path.relative(parent, child);
+
     return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
@@ -76,21 +81,26 @@ function isWithin(child: string, parent: string): boolean {
 async function assertOutDir(cwd: string, outDir: string, entry: string): Promise<void> {
     const dir = path.resolve(cwd, outDir);
     const refuse = (reason: string) => createUsageError(`--out-dir ${outDir} ${reason}; chamvi build empties it first, so pick another folder.`);
+
     if (isWithin(cwd, dir)) {
         throw refuse('is the project folder or above it');
     }
+
     if (isWithin(entry, dir)) {
         throw refuse('holds the entry');
     }
 
     let items: Dirent[];
+
     try {
         items = await readdir(dir, { withFileTypes: true });
     } catch {
         // missing: tsdown creates it
         return;
     }
+
     const foreign = items.some((item) => !item.isFile() || !BUILD_OUTPUT_PATTERN.test(item.name));
+
     if (foreign) {
         throw refuse('holds files the build did not write');
     }
@@ -98,7 +108,7 @@ async function assertOutDir(cwd: string, outDir: string, entry: string): Promise
 
 /**
  * `chamvi build`: bundles the source entry with tsdown into
- * `<out-dir>/index.mjs` (ESM, node22, source map); dependencies and peer
+ * `<out-dir>/index.mjs` (ESM, node24, source map); dependencies and peer
  * dependencies of the app's package.json stay external, the app's own
  * modules are inlined (C2).
  */
@@ -111,16 +121,21 @@ export function createBuildCommand(context: CliContext): CommandDef<typeof BUILD
         args: BUILD_ARGS,
         async run({ args }) {
             assertKnownArgs(args, BUILD_ARGS);
+
             const entry = await resolveEntry({
                 cwd: context.cwd,
                 entry: args.entry,
                 kind: 'source',
             });
+
             if (entry === undefined) {
                 throw createUsageError(`${SOURCE_ENTRY} not found: nothing to build (without an entry, \`chamvi start\` runs the default app) or pass --entry <path>.`);
             }
+
             const outDir = args['out-dir'] || BUILD_OUT_DIR;
+
             await assertOutDir(context.cwd, outDir, entry);
+
             const build = await importTsdown(context);
 
             await build({
@@ -129,7 +144,7 @@ export function createBuildCommand(context: CliContext): CommandDef<typeof BUILD
                 entry: { index: path.relative(context.cwd, entry) },
                 format: 'esm',
                 platform: 'node',
-                target: 'node22',
+                target: 'node24',
                 outDir,
                 fixedExtension: true,
                 sourcemap: true,

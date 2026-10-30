@@ -89,6 +89,7 @@ describe('decodeBody', () => {
 
     it('reads a meta charset of an html page without one in the header', () => {
         const bytes = new Uint8Array([...new TextEncoder().encode('<meta charset="iso-8859-1"><p>'), 0xE9]);
+
         expect(decodeBody(bytes, 'text/html')).toBe('<meta charset="iso-8859-1"><p>é');
     });
 

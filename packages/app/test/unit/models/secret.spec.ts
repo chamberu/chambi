@@ -48,11 +48,13 @@ describe('readSecret', () => {
 
     it('never reads { env } from process.env', async () => {
         process.env.CHAMVI_SECRET_SPEC_ONLY = 'from-process';
+
         const promise = readSecret({ env: 'CHAMVI_SECRET_SPEC_ONLY' }, {
             env: {},
             cwd,
             field: 'providers.a.apiKey',
         });
+
         await expect(promise).rejects.toThrow(InvalidAgentDefinitionError);
         await expect(promise).rejects.toThrow(/providers\.a\.apiKey/);
         await expect(promise).rejects.toThrow(/CHAMVI_SECRET_SPEC_ONLY/);
@@ -105,6 +107,7 @@ describe('readSecret', () => {
             cwd,
             field: 'providers.a.apiKey',
         });
+
         await expect(promise).rejects.toThrow(InvalidAgentDefinitionError);
         await expect(promise).rejects.toThrow(/providers\.a\.apiKey/);
         await expect(promise).rejects.toThrow(/missing-key/);

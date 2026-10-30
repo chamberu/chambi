@@ -46,10 +46,12 @@ describe('loadAgents', () => {
         expect(agents.map((a) => a.agent.name)).toEqual(['alpha', 'beta']);
         expect(agents.map((a) => a.dir)).toEqual([join(root.path, 'alpha'), join(root.path, 'beta')]);
         expect(issues.map((i) => i.agent)).toEqual(['Bad_Name', 'broken', 'empty']);
+
         for (const issue of issues) {
             expect(issue.message).not.toContain(root.path);
             expect(issue.message.length).toBeGreaterThan(0);
         }
+
         expect(issues[1]?.message).toMatch(/^broken\/agent\.ts: /);
     });
 

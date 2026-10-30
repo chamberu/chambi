@@ -26,6 +26,7 @@ export function assertSchedulable(agent: Agent, channel: string = CRON_CHANNEL_N
     for (const subscription of cronSubscriptionsOf(agent, channel)) {
         try {
             const { expression, timezone } = readCronOptions(agent, subscription);
+
             defineScheduledComponent({
                 name: `cron:${agent.name}:${subscription.id}`,
                 schedule: expression,
@@ -63,9 +64,11 @@ export function createScheduler(opts: SchedulerOptions): IScheduler {
 
     type Scheduled = ReturnType<typeof buildAgentComponents>;
     const byAgent = new Map<string, Scheduled>();
+
     for (const agent of engine.listAgents()) {
         // a folder agent (one with a revision) never fails the scheduler: it was checked before it was registered
         const folder = engine.agentRevision(agent.name) !== undefined;
+
         byAgent.set(agent.name, buildAgentComponents(ctx, agent, channel, folder ? ctx.onError : undefined));
     }
 
@@ -80,22 +83,42 @@ export function createScheduler(opts: SchedulerOptions): IScheduler {
                 .then(() => component.settled())
                 .catch((error: unknown) => ctx.onError(error, { agent, subscription }))
                 .finally(() => pending.delete(settle));
+
             pending.add(settle);
         }
     };
 
     const onChange = (change: AgentChange) => {
-        if (stopped) return;
+        if (stopped) {
+            return;
+        }
+
         const previous = byAgent.get(change.name);
+
         byAgent.delete(change.name);
-        if (previous) retire(change.name, previous);
-        if (change.kind === 'removed') return;
+
+        if (previous) {
+            retire(change.name, previous);
+        }
+
+        if (change.kind === 'removed') {
+            return;
+        }
 
         const agent = engine.getAgent(change.name);
-        if (!agent) return;
+
+        if (!agent) {
+            return;
+        }
+
         const scheduled = buildAgentComponents(ctx, agent, channel, ctx.onError);
+
         byAgent.set(agent.name, scheduled);
-        if (!started) return;
+
+        if (!started) {
+            return;
+        }
+
         for (const { subscription, component } of scheduled) {
             component.start().catch((error: unknown) => ctx.onError(error, { agent: agent.name, subscription }));
         }
@@ -106,7 +129,10 @@ export function createScheduler(opts: SchedulerOptions): IScheduler {
 
     return {
         async start() {
-            if (started || stopped) return;
+            if (started || stopped) {
+                return;
+            }
+
             started = true;
             await Promise.all(all().map((c) => c.start()));
         },
@@ -115,7 +141,9 @@ export function createScheduler(opts: SchedulerOptions): IScheduler {
                 stopped = true;
                 unsubscribe();
             }
+
             const components = all();
+
             await Promise.all(components.map((c) => c.stop()));
             await Promise.all([...components.map((c) => c.settled()), ...pending]);
         },

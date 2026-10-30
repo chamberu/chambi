@@ -5,22 +5,28 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { ModelMessage, SystemModelMessage } from 'ai';
 import { isObject } from 'smob';
 import type { AgentInstruction, AgentInstructions } from '../agent/types.ts';
 import { InvalidAgentDefinitionError, ValidationError } from '../errors/index.ts';
-import type { ModelMessage, SystemModelMessage } from './types.ts';
 
 /** Validate the configuration boundary; native SDK validation owns role-specific content. */
 export function assertInstructions(value: unknown): asserts value is AgentInstructions {
-    if (typeof value === 'string') return;
-    if (!Array.isArray(value) || Array.from(value).some((message) => !(isObject(message) &&
-        (message.role === 'system' || message.role === 'user' || message.role === 'assistant')))) {
+    if (typeof value === 'string') {
+        return;
+    }
+
+    const validMessages = Array.isArray(value) && Array.from(value).every((message) => isObject(message) &&
+        (message.role === 'system' || message.role === 'user' || message.role === 'assistant'));
+
+    if (!validMessages) {
         throw new InvalidAgentDefinitionError('Agent instructions must be a string or an array of system, user or assistant messages.');
     }
 }
 
 export function normalizeInstructions(value: AgentInstructions): readonly AgentInstruction[] {
     assertInstructions(value);
+
     return typeof value === 'string' ? [{ role: 'system', content: value }] : value;
 }
 
@@ -28,18 +34,25 @@ export function normalizeInstructions(value: AgentInstructions): readonly AgentI
 export function splitInstructions(...values: AgentInstructions[]): { instructions: SystemModelMessage[]; messages: AgentInstruction[] } {
     const instructions: SystemModelMessage[] = [];
     const messages: AgentInstruction[] = [];
+
     for (const value of values) {
         for (const message of normalizeInstructions(value)) {
-            if (message.role === 'system' && messages.length === 0) instructions.push(message);
-            else messages.push(message);
+            if (message.role === 'system' && messages.length === 0) {
+                instructions.push(message);
+            } else {
+                messages.push(message);
+            }
         }
     }
+
     return { instructions, messages };
 }
 
 /** SDK system-message opt-in applies only to the trusted configured prefix. */
 export function assertTranscriptMessages(messages: ModelMessage[]): void {
-    if (messages.some((message) => message.role === 'system')) {
+    const hasSystemMessages = messages.some((message) => message.role === 'system');
+
+    if (hasSystemMessages) {
         throw new ValidationError('Run transcript messages must not contain system roles.');
     }
 }

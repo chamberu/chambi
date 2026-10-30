@@ -19,6 +19,7 @@ export async function connectMcp(app: App, token: string | undefined, options: C
     const transport = new StreamableHTTPClientTransport(new URL('http://test/mcp'), {
         fetch: (url, init) => {
             const isCall = typeof init?.body === 'string' && init.body.includes('"tools/call"');
+
             return app.fetch(new Request(url, {
                 ...init,
                 ...(isCall && options.signal ? { signal: options.signal } : {}),
@@ -26,7 +27,9 @@ export async function connectMcp(app: App, token: string | undefined, options: C
         },
         ...(token ? { requestInit: { headers: { authorization: `Bearer ${token}` } } } : {}),
     });
+
     await client.connect(transport);
+
     return client;
 }
 

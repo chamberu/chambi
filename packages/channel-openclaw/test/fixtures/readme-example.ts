@@ -20,6 +20,7 @@ export function createApprovalEngine(
         OPENCLAW_TO,
         APP_URL,
     } = process.env;
+
     if (!OPENCLAW_URL || !OPENCLAW_HOOKS_TOKEN || !OPENCLAW_CHANNEL || !OPENCLAW_TO || !APP_URL) {
         throw new Error('Set OPENCLAW_URL, OPENCLAW_HOOKS_TOKEN, OPENCLAW_CHANNEL, OPENCLAW_TO and APP_URL.');
     }
@@ -44,6 +45,7 @@ export function createApprovalEngine(
                 body: 'The current release goes out now.',
                 address: OPENCLAW_TO,
             });
+
             return approved ? `deployed to ${env}` : 'the owner said no';
         },
     });

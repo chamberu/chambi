@@ -18,6 +18,7 @@ export function filterFromQuery(query: LocationQuery): RunListFilter {
     const status = (first(query.status) ?? '').split(',')
         .filter((value): value is RunStatusLiteral => (RUN_STATUSES as readonly string[]).includes(value));
     const page = Math.max(1, Number.parseInt(first(query.page) ?? '1', 10) || 1);
+
     return {
         ...(agent ? { agent } : {}),
         ...(status.length > 0 ? { status } : {}),
@@ -28,6 +29,7 @@ export function filterFromQuery(query: LocationQuery): RunListFilter {
 
 export function queryFromFilter(filter: RunListFilter): LocationQueryRaw {
     const page = Math.floor((filter.offset ?? 0) / RUN_LIST_PAGE_SIZE) + 1;
+
     return {
         ...(filter.agent ? { agent: filter.agent } : {}),
         ...(filter.status?.length ? { status: filter.status.join(',') } : {}),

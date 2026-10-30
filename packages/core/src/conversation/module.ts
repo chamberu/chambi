@@ -45,9 +45,13 @@ export class Conversations {
         if (!isObject(options) || typeof options.authorize !== 'function' || !isObject(repository)) {
             throw new InvalidAgentDefinitionError('Conversations need a repository and an authorizer.');
         }
+
         for (const method of ['resolve', 'findOne', 'beginTurn', 'activeRun', 'endTurn', 'prepareEmit', 'confirmEmit', 'pendingEmits', 'findItems', 'findNotes', 'findOneNote', 'applyNote', 'reset', 'delete', 'prune'] as const) {
-            if (typeof repository[method] !== 'function') throw new InvalidAgentDefinitionError(`The conversation repository needs ${method}().`);
+            if (typeof repository[method] !== 'function') {
+                throw new InvalidAgentDefinitionError(`The conversation repository needs ${method}().`);
+            }
         }
+
         this.repository = repository;
         this.runs = runs;
         this.effects = effects;
@@ -68,32 +72,50 @@ export class Conversations {
 
     async check(run: Run, operation: `${ConversationOperation.RECALL | ConversationOperation.NOTES}` = ConversationOperation.RECALL): Promise<void> {
         const { scope } = run.conversation!;
+
         await this.allow(operation, scope.identity, run.trigger.agent, run.trigger.invoker);
+
         const current = await this.repository.findOne(scope.identity);
-        if (!current || current.id !== scope.id || current.generation !== scope.generation) throw new InvalidRunStateError('The conversation scope is stale: it was reset or deleted.');
+
+        if (!current || current.id !== scope.id || current.generation !== scope.generation) {
+            throw new InvalidRunStateError('The conversation scope is stale: it was reset or deleted.');
+        }
     }
 
     async admit(run: Run) {
         await this.check(run);
+
         const { scope, text } = run.conversation!;
         let result = await this.repository.beginTurn(scope, run.id, text, this.limits);
+
         if (result.kind === ConversationTurnKind.BUSY && settled(await this.runs.findOne(result.runId))) {
             await this.reconcile(scope, result.runId);
             result = await this.repository.beginTurn(scope, run.id, text, this.limits);
         }
-        if (result.kind === ConversationTurnKind.STALE) throw new InvalidRunStateError('The conversation scope is stale: it was reset or deleted.');
+
+        if (result.kind === ConversationTurnKind.STALE) {
+            throw new InvalidRunStateError('The conversation scope is stale: it was reset or deleted.');
+        }
+
         return result;
     }
 
     track(runId: string, work: Promise<void>): Promise<void> {
         const pending = this.pending.get(runId) ?? new Set<Promise<void>>();
+
         this.pending.set(runId, pending);
         pending.add(work);
+
         const remove = () => {
             pending.delete(work);
-            if (pending.size === 0 && this.pending.get(runId) === pending) this.pending.delete(runId);
+
+            if (pending.size === 0 && this.pending.get(runId) === pending) {
+                this.pending.delete(runId);
+            }
         };
+
         void work.then(remove, remove);
+
         return work;
     }
 
@@ -102,7 +124,11 @@ export class Conversations {
             const pending = runId === undefined ?
                 this.pending.values().toArray().flatMap((entries) => Array.from(entries)) :
                 Array.from(this.pending.get(runId) ?? []);
-            if (pending.length === 0) return;
+
+            if (pending.length === 0) {
+                return;
+            }
+
             await Promise.allSettled(pending);
         }
     }
@@ -113,28 +139,50 @@ export class Conversations {
         await this.track(runId, (async () => {
             const pending = await this.repository.pendingEmits(scope, runId);
             const confirmed: string[] = [];
+
             for (const item of pending) {
                 const effect = item.effectKey ? await this.effects.findOne(item.effectKey) : undefined;
-                if (effect && matchesEmitReceipt(effect.result, item.target)) confirmed.push(item.id);
+
+                if (effect && matchesEmitReceipt(effect.result, item.target)) {
+                    confirmed.push(item.id);
+                }
             }
+
             await this.repository.endTurn(scope, runId, confirmed);
         })());
     }
 
     async repair(identity: ConversationIdentity): Promise<void> {
         const scope = await this.repository.findOne(identity);
-        if (!scope) return;
+
+        if (!scope) {
+            return;
+        }
+
         const owner = await this.repository.activeRun(scope);
-        if (owner && settled(await this.runs.findOne(owner))) await this.reconcile(scope, owner);
+
+        if (owner && settled(await this.runs.findOne(owner))) {
+            await this.reconcile(scope, owner);
+        }
     }
 
     async inspect(identity: ConversationIdentity, query: { limit?: number; offset?: number } = {}): Promise<ConversationInspection | undefined> {
         const page = { limit: query.limit ?? 50, offset: query.offset ?? 0 };
+
         assertPage(page);
-        if (page.limit > 100) throw new ValidationError('Conversation inspection limit must be at most 100.');
+
+        if (page.limit > 100) {
+            throw new ValidationError('Conversation inspection limit must be at most 100.');
+        }
+
         const scope = await this.repository.findOne(identity);
-        if (!scope) return undefined;
+
+        if (!scope) {
+            return undefined;
+        }
+
         const [items, notes] = await Promise.all([this.repository.findItems(scope, page), this.repository.findNotes(scope, page)]);
+
         return {
             scope,
             items,

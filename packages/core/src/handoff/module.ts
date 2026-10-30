@@ -44,37 +44,55 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
     input: HandoffInput,
 ): Promise<HandoffResult> {
     const frame = currentToolCall();
+
     if (!frame) {
         throw new InvalidRunStateError('startHandoff() runs inside a tool call, not in the tools factory.');
     }
+
     // the engine's copy, never ctx.run itself: tool code can write to that
     const run = runSnapshotOf(ctx?.run);
+
     if (!run || run.runId !== frame.runId) {
         throw new InvalidRunStateError('startHandoff() got the context of another run than the tool call it runs in.');
     }
+
     const host = inject(ctx, HANDOFF_CONTEXT);
-    if (!isObject(input)) throw new ValidationError('startHandoff() needs an input object.');
-    if (input.payload === undefined) throw new ValidationError('startHandoff() needs a payload.');
+
+    if (!isObject(input)) {
+        throw new ValidationError('startHandoff() needs an input object.');
+    }
+
+    if (input.payload === undefined) {
+        throw new ValidationError('startHandoff() needs a payload.');
+    }
+
     assertHandoffKey('idempotency key', input.idempotencyKey, false);
     assertHandoffKey('concurrency key', input.concurrencyKey, true);
     assertHandoffKey('address', input.address, true);
 
     const agent = host.getAgent(run.agent);
     const subscription = agent ? findHandoffSubscription(agent) : undefined;
+
     if (!subscription) {
         throw new ValidationError(`Agent "${run.agent}" accepts no hand-offs: add handoff.on() to its channels.`);
     }
+
     const maxPerRun = maxPerRunOf(run.agent, subscription);
     const depth = run.parent?.kind === 'handoff' ? run.parent.depth : 0;
+
     if (depth >= MAX_HANDOFF_DEPTH) {
         throw new ValidationError(`A handed-off run cannot hand off again (depth ${MAX_HANDOFF_DEPTH}).`);
     }
 
     const payload = await validatePayload(run.agent, subscription.options.schema as StandardSchemaV1 | undefined, input.payload);
     const concurrencyKey = input.concurrencyKey ?? subscription.concurrencyKey?.(payload);
+
     assertHandoffKey('concurrency key', concurrencyKey, true);
+
     const given = input.idempotencyKey ?? subscription.idempotencyKey?.(payload);
+
     assertHandoffKey('idempotency key', given, false);
+
     const { address } = input;
     const key = claimKey(given ?? `${run.runId}:${stableHash({
         payload,
@@ -91,7 +109,10 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
 
     // looked up and registered without an await in between, so identical calls share one
     const pending = host.inflight.get(effectKey);
-    if (pending) return pending;
+
+    if (pending) {
+        return pending;
+    }
 
     const dispatch = async (): Promise<HandoffResult> => {
         const { invoker } = run;
@@ -111,6 +132,7 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
             depth: depth + 1,
         });
         const value: HandoffResult = { runId: result.runId, deduplicated: result.deduplicated };
+
         // the child exists: a failing record must not fail the call (dispatch dedupes a redo)
         try {
             await host.effects.save(effectKey, value);
@@ -118,33 +140,52 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
             // eslint-disable-next-line no-console
             console.error('[chamvi] recording a hand-off failed', error);
         }
+
         return value;
     };
 
     const promise = (async (): Promise<HandoffResult> => {
         const recorded = await host.effects.findOne(effectKey);
-        if (recorded) return recorded.result as HandoffResult;
+
+        if (recorded) {
+            return recorded.result as HandoffResult;
+        }
+
         return host.serial(run.runId, async (): Promise<HandoffResult> => {
             // again behind the run's earlier calls: one of them may have recorded it meanwhile
             const again = await host.effects.findOne(effectKey);
-            if (again) return again.result as HandoffResult;
+
+            if (again) {
+                return again.result as HandoffResult;
+            }
+
             const countKey = `handoff-count:${run.runId}`;
             const stored = await host.effects.findOne(countKey);
             const { count, calls } = readCount(stored?.result);
+
             // a call that already spent its slot (its record lost) redoes the deduplicating dispatch
-            if (calls.includes(callHash)) return dispatch();
+            if (calls.includes(callHash)) {
+                return dispatch();
+            }
+
             if (count >= maxPerRun) {
                 throw new ValidationError(`Run ${run.runId} reached its ${maxPerRun} hand-offs (handoff.on({ maxPerRun })).`);
             }
+
             // counted before the dispatch: a crash in between spends the call's slot, a redo reuses it
             await host.effects.save(countKey, { count: count + 1, calls: [...calls, callHash] });
+
             return dispatch();
         });
     })();
+
     host.inflight.set(effectKey, promise);
+
     try {
         return await promise;
     } finally {
-        if (host.inflight.get(effectKey) === promise) host.inflight.delete(effectKey);
+        if (host.inflight.get(effectKey) === promise) {
+            host.inflight.delete(effectKey);
+        }
     }
 }

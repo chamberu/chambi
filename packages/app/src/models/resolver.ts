@@ -33,14 +33,18 @@ function hasOwn(record: object, key: string): boolean {
 function factoryInput(provider: ProviderSettings): Record<string, unknown> {
     const type = PROVIDER_TYPES[provider.type];
     const input: Record<string, unknown> = {};
+
     if (provider.type === 'openai-compatible') {
         input.name = provider.name;
     }
+
     if (typeof provider.apiKey !== 'undefined') {
         input.apiKey = provider.apiKey;
     }
+
     input.baseURL = provider.baseURL ?? type.defaultBaseURL;
     input.headers = { ...provider.headers };
+
     return input;
 }
 
@@ -52,7 +56,10 @@ function factoryInput(provider: ProviderSettings): Record<string, unknown> {
 type Subject = { kind: 'agent'; agent: string } | { kind: 'default' } | { kind: 'model' };
 
 function subjectOf(ref: string, subject: Subject): string {
-    if (subject.kind === 'agent') return `Agent "${subject.agent}"`;
+    if (subject.kind === 'agent') {
+        return `Agent "${subject.agent}"`;
+    }
+
     return subject.kind === 'default' ? `The default model "${ref}"` : `The model "${ref}"`;
 }
 
@@ -62,6 +69,7 @@ function checkSubject(agent: string | undefined): Subject {
 
 function splitRef(ref: string, subject: Subject): { provider: string; modelId: string } {
     const index = ref.indexOf(MODEL_SEPARATOR);
+
     if (index <= 0 || index === ref.length - 1) {
         // the AI SDK registry's former default separator; name the string to write instead
         const colon = ref.indexOf(':');
@@ -81,6 +89,7 @@ function notConfigured(ref: string, provider: string, subject: Subject): Invalid
     const set = builtin ?
         `Set ${builtin.apiKey}, or ${envName}_TYPE and ${envName}_API_KEY` :
         `Set ${envName}_TYPE and ${envName}_API_KEY`;
+
     return new InvalidAgentDefinitionError(
         `${subjectOf(ref, subject)} uses provider "${provider}", which is not configured. ${set}, or declare it in chamvi.json.`,
     );
@@ -104,20 +113,25 @@ export async function createModelResolver(
     const packages = new Map<string, Loaded>();
     const load = async (specifier: string): Promise<Loaded> => {
         const known = packages.get(specifier);
+
         if (known) {
             return known;
         }
 
         let loaded: Loaded;
+
         try {
             loaded = { exports: await importer(specifier) };
         } catch (error) {
             if (!isPackageNotFound(error, specifier)) {
                 throw error;
             }
+
             loaded = {};
         }
+
         packages.set(specifier, loaded);
+
         return loaded;
     };
 
@@ -131,12 +145,15 @@ export async function createModelResolver(
 
         const type = PROVIDER_TYPES[provider.type];
         const loaded = await load(type.package);
+
         if (!('exports' in loaded)) {
             errors.set(name, `Provider type "${provider.type}" needs package ${type.package}.`);
+
             continue;
         }
 
         const factory = isObject(loaded.exports) ? loaded.exports[type.factory] : undefined;
+
         if (typeof factory !== 'function') {
             throw new InvalidAgentDefinitionError(`${type.package} does not export ${type.factory}().`);
         }
@@ -146,16 +163,19 @@ export async function createModelResolver(
 
     const providerOf = (ref: string, subject: Subject): { instance: Provider; modelId: string } => {
         const { provider, modelId } = splitRef(ref, subject);
+
         if (hasOwn(models, provider)) {
             return { instance: models[provider] as Provider, modelId };
         }
 
         const error = errors.get(provider);
+
         if (typeof error !== 'undefined') {
             throw new InvalidAgentDefinitionError(error);
         }
 
         const instance = instances.get(provider);
+
         if (!instance) {
             throw notConfigured(ref, provider, subject);
         }
@@ -170,6 +190,7 @@ export async function createModelResolver(
         },
         resolve(ref: string): LanguageModel {
             const { instance, modelId } = providerOf(ref, { kind: 'model' });
+
             return instance.languageModel(modelId) as LanguageModel;
         },
     };

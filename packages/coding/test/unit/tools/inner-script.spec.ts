@@ -29,8 +29,12 @@ const SHELLS = ['sh', 'dash', 'bash'].filter((shell) => spawnSync(shell, ['-c', 
 
 let state: string;
 
-beforeEach(async () => { state = await mkdtemp(join(tmpdir(), 'chamvi-inner-')); });
-afterEach(async () => { await rm(state, { recursive: true, force: true }); });
+beforeEach(async () => {
+    state = await mkdtemp(join(tmpdir(), 'chamvi-inner-'));
+});
+afterEach(async () => {
+    await rm(state, { recursive: true, force: true });
+});
 
 function run(shell: string, command: string) {
     return spawnSync(shell, ['-c', INNER_SCRIPT, 'chamvi', command, '', state], { cwd: state, encoding: 'utf8' });
@@ -40,11 +44,14 @@ describe.each(SHELLS)('the inner shell under %s', (shell) => {
     it('runs the command over a torn env file and saves a whole one', async () => {
         // two parallel saves that interleaved: the file ends inside a quote
         await writeFile(join(state, 'env'), 'export KEPT="yes"\nexport TORN="ab');
+
         const result = run(shell, 'echo ran; export NEXT=1');
+
         expect(result.stdout).toBe('ran\n');
         expect(result.status).toBe(0);
 
         const saved = await readFile(join(state, 'env'), 'utf8');
+
         expect(saved).toContain('NEXT');
         expect(spawnSync('sh', ['-n', join(state, 'env')]).status).toBe(0);
         expect(run(shell, 'echo "$NEXT"').stdout).toBe('1\n');

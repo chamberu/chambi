@@ -24,6 +24,7 @@ describePostgres('postgres', () => {
 
     describeRepositoryContract(async (clock) => {
         await truncateRepository(dataSource);
+
         return createDatabaseStore({ dataSource, clock });
     });
 });

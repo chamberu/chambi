@@ -21,6 +21,7 @@ describe('stepOf', () => {
 
     it('stops at the assistant message that requested the call (approval path)', () => {
         const before = [{ role: 'user' as const, content: 'x' }, assistant()];
+
         expect(stepOf({ toolCallId: 'c-7', messages: [...before, assistant('c-7')] })).toBe(1);
         expect(stepOf({ toolCallId: 'c-7', messages: [...before, assistant('c-7'), assistant()] })).toBe(1);
         // another call id: counted as an earlier step
@@ -74,13 +75,20 @@ describe('parseRepo', () => {
         for (const repo of ['../x', '../..', './x', 'octo/..', 'octo/.', '../demo', '%2e%2e/x', 'octo/%2e%2e']) {
             expect(() => parseRepo(repo)).toThrow(ValidationError);
         }
+
         expect(parseRepo('octo/.github')).toEqual({ owner: 'octo', repo: '.github' });
     });
 
     it('agrees with the REPO_PATTERN the input schemas carry', () => {
         const pattern = new RegExp(REPO_PATTERN);
-        for (const repo of ['octo/demo', 'my-org/my.repo_1', 'octo/.github']) expect(pattern.test(repo)).toBe(true);
-        for (const repo of ['octo', 'a/b/c', 'a b/c', '../x', 'octo/..', 'octo/.', '%2e%2e/x']) expect(pattern.test(repo)).toBe(false);
+
+        for (const repo of ['octo/demo', 'my-org/my.repo_1', 'octo/.github']) {
+            expect(pattern.test(repo)).toBe(true);
+        }
+
+        for (const repo of ['octo', 'a/b/c', 'a b/c', '../x', 'octo/..', 'octo/.', '%2e%2e/x']) {
+            expect(pattern.test(repo)).toBe(false);
+        }
     });
 });
 
@@ -92,6 +100,7 @@ describe('toolError', () => {
             request: { headers: { authorization: 'token ghs_1' } },
         });
         const error = toolError(requestError);
+
         expect(error.message).toBe('GitHub 404: Not Found - https://docs.github.com/rest');
         expect(JSON.stringify(error)).not.toContain('ghs_');
         expect('request' in error).toBe(false);
@@ -99,6 +108,7 @@ describe('toolError', () => {
 
     it('passes chamvi errors through', () => {
         const validation = new ValidationError('bad');
+
         expect(toolError(validation)).toBe(validation);
     });
 });

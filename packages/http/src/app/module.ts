@@ -33,6 +33,7 @@ export function createHttpApp(options: HttpAppOptions): App {
     installPlugins(app, { ...options, basePath: ctx.basePath });
     app.use(defineCoreHandler((event) => {
         assertNoNul(event);
+
         return event.next();
     }));
     registerHealthRoutes(app, ctx);
@@ -41,7 +42,10 @@ export function createHttpApp(options: HttpAppOptions): App {
     registerRunRoutes(app, ctx);
     registerChannelRoutes(app, ctx);
     registerRoutes(app, ctx);
-    if (options.mcp !== false) registerMcpRoutes(app, ctx, options.mcp);
+
+    if (options.mcp !== false) {
+        registerMcpRoutes(app, ctx, options.mcp);
+    }
 
     app.use(defineCoreHandler(() => {
         throw new NotFoundError({ message: 'The requested route does not exist.' });
@@ -58,5 +62,6 @@ export function createHttpApp(options: HttpAppOptions): App {
             }
         }));
     });
+
     return app;
 }

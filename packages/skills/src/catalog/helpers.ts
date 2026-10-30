@@ -58,7 +58,11 @@ export function copySkillIdentity(value: unknown): SkillIdentity {
 
 export function copySkill(value: unknown): Skill {
     const identity = copySkillIdentity(value);
-    if (!isObject(value)) invalidSkill('invalid content');
+
+    if (!isObject(value)) {
+        invalidSkill('invalid content');
+    }
+
     if (typeof value.description !== 'string' || !value.description.isWellFormed() || !value.description.trim()) {
         invalidSkill('invalid description');
     }
@@ -71,7 +75,9 @@ export function copySkill(value: unknown): Skill {
         invalidSkill('invalid ignored fields');
     }
 
-    if (value.ignoredFields.some((field) => typeof field !== 'string' || !field.isWellFormed() || SKILL_CONTROL_PATTERN.test(field))) {
+    const hasInvalidIgnoredField = value.ignoredFields.some((field) => typeof field !== 'string' || !field.isWellFormed() || SKILL_CONTROL_PATTERN.test(field));
+
+    if (hasInvalidIgnoredField) {
         invalidSkill('invalid ignored fields');
     }
 
@@ -89,17 +95,22 @@ export function copySkill(value: unknown): Skill {
 
     const references: Record<string, string> = Object.create(null);
     let bytes = Buffer.byteLength(value.body);
+
     for (const path of Object.keys(value.references).sort(compareSkillPaths)) {
         if (!path.isWellFormed() || path.includes('\\') || SKILL_CONTROL_PATTERN.test(path)) {
             invalidSkill('invalid reference path');
         }
 
         const segments = path.split('/');
-        if (segments.some((part) => !part || part.startsWith('.')) || path === 'SKILL.md') {
+
+        const hasInvalidSegment = segments.some((part) => !part || part.startsWith('.'));
+
+        if (hasInvalidSegment || path === 'SKILL.md') {
             invalidSkill('invalid reference path');
         }
 
         const content = value.references[path];
+
         if (typeof content !== 'string' || !content.isWellFormed() || Buffer.byteLength(content) > 128 * 1024) {
             invalidSkill('reference exceeds 128 KiB or is not text');
         }
@@ -133,12 +144,20 @@ export function copySkillSource(input: unknown): RuntimeSkillSource {
     if (!isObject(input) || typeof input.load !== 'function' || !Array.isArray(input.skills)) {
         invalidSkill('invalid source');
     }
+
     const skills = Object.freeze(input.skills.map(copySkillIdentity));
+
     composeSkillIdentities(skills);
+
     const identity = 'sourceIdentity' in input ? input.sourceIdentity : input;
-    if (!isObject(identity)) invalidSkill('invalid source identity token');
+
+    if (!isObject(identity)) {
+        invalidSkill('invalid source identity token');
+    }
+
     // Bound loaders and structural tokens survive copies from another installed package.
     const load: ISkillSource['load'] = input.load.bind(input);
+
     return Object.freeze({
         skills,
         sourceIdentity: identity,
@@ -147,14 +166,19 @@ export function copySkillSource(input: unknown): RuntimeSkillSource {
 }
 
 export function copySkillInputs(inputs: readonly unknown[] = []): readonly RuntimeSkillInput[] {
-    if (!Array.isArray(inputs)) invalidSkill('inputs must be an array');
+    if (!Array.isArray(inputs)) {
+        invalidSkill('inputs must be an array');
+    }
+
     return Object.freeze(inputs.map((input) => isSkillSource(input) ? copySkillSource(input) : copySkill(input)));
 }
 
 export function composeSkillIdentities(skills: readonly SkillIdentity[]): readonly SkillIdentity[] {
     const names = new Map<string, SkillIdentity>();
+
     for (const skill of skills) {
         const previous = names.get(skill.name);
+
         if (previous && !sameSkill(previous, skill)) {
             invalidSkill(`conflicting identity for ${skill.name}`);
         }
@@ -181,9 +205,11 @@ export function assertSkillToolCollision(headers: readonly SkillIdentity[], tool
 
 export function assertSkillContents(skills: readonly Skill[]): void {
     const contents = new Map<string, string>();
+
     for (const skill of skills) {
         const serialized = JSON.stringify(skill);
         const previous = contents.get(skill.name);
+
         if (previous !== undefined && previous !== serialized) {
             invalidSkill(`conflicting content for ${skill.name}`);
         }
@@ -198,13 +224,17 @@ export function assertSkillResultIdentities(headers: readonly SkillIdentity[], s
     }
 
     for (const header of headers) {
-        if (skills.every((skill) => !sameSkill(header, skill))) {
+        const hasNoMatchingSkill = skills.every((skill) => !sameSkill(header, skill));
+
+        if (hasNoMatchingSkill) {
             invalidSkill('source result does not match declared skills');
         }
     }
 
     for (const skill of skills) {
-        if (headers.every((header) => !sameSkill(header, skill))) {
+        const hasNoMatchingHeader = headers.every((header) => !sameSkill(header, skill));
+
+        if (hasNoMatchingHeader) {
             invalidSkill('source result does not match declared skills');
         }
     }

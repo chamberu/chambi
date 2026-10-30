@@ -26,7 +26,9 @@ function setup() {
         clock,
         onExec: (argv) => {
             expect(argv.slice(0, 5)).toEqual(['/bin/sh', '-c', DISCOVERY_SCRIPT, 'sh', 'inspect']);
+
             const paths = argv.slice(5);
+
             return { stdout: `chamvi-instructions/1 inspect ${paths.length}\n${paths.map((path, index) => `${index} ${path === '.' ? 'dir' : 'absent'}\n`).join('')}chamvi-instructions/1 end\n` };
         },
     });
@@ -35,6 +37,7 @@ function setup() {
         clock,
         gcIntervalMs: 0,
     });
+
     return {
         provider,
         manager,
@@ -45,6 +48,7 @@ function setup() {
 describe('workspace tools', () => {
     it('offers structured Git operations without granting a bash tool', () => {
         const { tools } = setup();
+
         expect(Object.keys(tools)).toEqual(expect.arrayContaining(['git_fetch', 'git_pull', 'git_push']));
         expect(tools.bash).toBeUndefined();
     });
@@ -53,6 +57,7 @@ describe('workspace tools', () => {
         const { provider, tools } = setup();
         const result = await callTool<WorkspaceToolResult>(tools, 'create_workspace', { repo: 'octo/demo', ref: 'v1' }, toolContext('r1'));
         const [id] = provider.workspaces.keys();
+
         expect(result).toEqual({
             workspace: id,
             root: '/workspace',
@@ -76,6 +81,7 @@ describe('workspace tools', () => {
     it('create_workspace without a repo', async () => {
         const { tools } = setup();
         const result = await callTool<WorkspaceToolResult>(tools, 'create_workspace', {}, toolContext('r1'));
+
         expect(result).toMatchObject({
             root: '/workspace',
             repo: null,
@@ -85,7 +91,9 @@ describe('workspace tools', () => {
             reused: false,
             instructions: null,
         });
+
         const again = await callTool<WorkspaceToolResult>(tools, 'create_workspace', {}, toolContext('r1'));
+
         expect(again.workspace).toBe(result.workspace);
         expect(again.reused).toBe(true);
     });
@@ -93,8 +101,11 @@ describe('workspace tools', () => {
     it('create_workspace passes the run signal to create', async () => {
         const { provider, tools } = setup();
         const controller = new AbortController();
+
         await callTool(tools, 'create_workspace', {}, toolContext('r1', controller.signal));
+
         const { signal } = provider.created[0]!;
+
         expect(signal!.aborted).toBe(false);
         controller.abort();
         expect(signal!.aborted).toBe(true);
@@ -109,6 +120,7 @@ describe('workspace tools', () => {
         } = setup();
         const { workspace } = await callTool<WorkspaceToolResult>(tools, 'create_workspace', {}, toolContext('r1'));
         const result = await callTool(tools, 'dispose_workspace', { workspace }, toolContext('r1'));
+
         expect(result).toEqual({ workspace, disposed: true });
         expect(provider.disposed).toEqual([workspace]);
         await expect(manager.get('r1', workspace)).rejects.toThrow(SandboxError);
@@ -117,6 +129,7 @@ describe('workspace tools', () => {
     it('dispose_workspace without an id disposes the only workspace', async () => {
         const { provider, tools } = setup();
         const { workspace } = await callTool<WorkspaceToolResult>(tools, 'create_workspace', {}, toolContext('r1'));
+
         await expect(callTool(tools, 'dispose_workspace', {}, toolContext('r1')))
             .resolves.toEqual({ workspace, disposed: true });
         expect(provider.disposed).toEqual([workspace]);
@@ -125,6 +138,7 @@ describe('workspace tools', () => {
     it('dispose_workspace never reaches another run', async () => {
         const { provider, tools } = setup();
         const { workspace } = await callTool<WorkspaceToolResult>(tools, 'create_workspace', {}, toolContext('r1'));
+
         await expect(callTool(tools, 'dispose_workspace', { workspace }, toolContext('r2')))
             .rejects.toThrow(/not found/);
         expect(provider.disposed).toEqual([]);
@@ -132,11 +146,13 @@ describe('workspace tools', () => {
 
     function propertiesOf(tools: ToolSet): string[] {
         const schema = tools.create_workspace!.inputSchema as { jsonSchema: { properties: Record<string, unknown> } };
+
         return Object.keys(schema.jsonSchema.properties);
     }
 
     it('offers no image parameter without an allow-list', () => {
         const { tools } = setup();
+
         expect(propertiesOf(tools)).toEqual(['repo', 'ref']);
     });
 
@@ -148,6 +164,7 @@ describe('workspace tools', () => {
             gcIntervalMs: 0,
             allowImage: () => true,
         });
+
         expect(propertiesOf(manager.tools())).toContain('image');
     });
 
@@ -159,12 +176,15 @@ describe('workspace tools', () => {
             gcIntervalMs: 0,
             allowImage: () => true,
         });
+
         expect(propertiesOf(manager.tools())).toEqual(['repo', 'ref']);
     });
 
     it('are chamvi tools and not effect tools', () => {
         const { tools } = setup();
+
         expect(Object.keys(tools).sort()).toEqual(['create_workspace', 'dispose_workspace', 'git_fetch', 'git_pull', 'git_push', 'read_repository_instructions']);
+
         for (const tool of Object.values(tools)) {
             expect(tool.contextSchema).toBe(toolContextSchema);
             expect(EFFECT in tool).toBe(false);
@@ -173,6 +193,7 @@ describe('workspace tools', () => {
 
     it('rejects a non-string repo', async () => {
         const { provider, tools } = setup();
+
         await expect(callTool(tools, 'create_workspace', { repo: 42 }, toolContext('r1'))).rejects.toThrow(ValidationError);
         await expect(callTool(tools, 'create_workspace', { ref: 42 }, toolContext('r1'))).rejects.toThrow(ValidationError);
         await expect(callTool(tools, 'create_workspace', 'octo/demo', toolContext('r1'))).rejects.toThrow(ValidationError);
@@ -184,6 +205,7 @@ describe('workspace tools', () => {
         const { tools } = setup();
         const error = await callTool(tools, 'create_workspace', { repo: 'https://user:token@github.com/o/r' }, toolContext('r1'))
             .catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(ValidationError);
         expect((error as Error).message).not.toContain('token');
     });

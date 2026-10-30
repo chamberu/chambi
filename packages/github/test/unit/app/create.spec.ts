@@ -29,6 +29,7 @@ function options(overrides: Partial<GithubAppOptions> = {}): GithubAppOptions {
 describe('createGithubApp', () => {
     it('builds an app', () => {
         const gh = createGithubApp(options({ installationId: 42 }));
+
         expect(gh.appId).toBe('123');
         expect(gh.installationId).toBe(42);
     });
@@ -60,24 +61,31 @@ describe('createGithubApp', () => {
 
     it('accepts a PEM with literal \\n sequences', async () => {
         const escaped = fake.privateKey.trim().replaceAll('\n', '\\n');
+
         expect(escaped).not.toContain('\n');
+
         const gh = createGithubApp(options({ privateKey: escaped }));
         const octokit = await gh.octokit(42);
+
         await octokit.request('GET /rate_limit');
         expect(fake.tokensIssued).toBeGreaterThan(0);
     });
 
     it('accepts a PKCS#8 key', async () => {
         const pkcs8 = createPrivateKey(fake.privateKey).export({ type: 'pkcs8', format: 'pem' }).toString();
+
         expect(pkcs8).toContain('BEGIN PRIVATE KEY');
+
         const issued = fake.tokensIssued;
         const gh = createGithubApp(options({ privateKey: pkcs8 }));
+
         await (await gh.octokit(43)).request('GET /rate_limit');
         expect(fake.tokensIssued).toBe(issued + 1);
     });
 
     it('takes the bot login from a valid slug without GET /app', async () => {
         const gh = createGithubApp(options({ slug: 'chamvi-test' }));
+
         expect(await gh.botLogin()).toBe('chamvi-test[bot]');
     });
 
@@ -85,12 +93,15 @@ describe('createGithubApp', () => {
         let slug: string | undefined;
         const fetch: typeof globalThis.fetch = async (input, init) => {
             const url = new URL(input instanceof Request ? input.url : String(input));
+
             if (url.pathname === '/app') {
                 return new Response(JSON.stringify({ id: 123, ...(slug ? { slug } : {}) }), { headers: { 'content-type': 'application/json' } });
             }
+
             return fake.fetch(input, init);
         };
         const gh = createGithubApp(options({ fetch }));
+
         await expect(gh.botLogin()).rejects.toThrow(/slug/);
         slug = 'chamvi-test';
         expect(await gh.botLogin()).toBe('chamvi-test[bot]');
@@ -103,12 +114,14 @@ describe('createGithubApp', () => {
         const urls: string[] = [];
         const fetch: typeof globalThis.fetch = async (input) => {
             urls.push(input instanceof Request ? input.url : String(input));
+
             return new Response(JSON.stringify({ token: 'ghs_test', expires_at: '2026-10-20T11:00:00Z' }), {
                 status: 201,
                 headers: { 'content-type': 'application/json' },
             });
         };
         const gh = createGithubApp(options({ baseUrl, fetch }));
+
         await gh.octokit(42);
         expect(urls[0]).toBe(expected);
     });

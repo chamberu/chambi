@@ -14,9 +14,9 @@ import { createGithubTestApp, deliver } from '../../utils/app.ts';
 import { textModel } from '../../utils/model.ts';
 
 const BOT = {
-    login: 'chamvi-test[bot]', 
-    id: 6001, 
-    type: 'Bot', 
+    login: 'chamvi-test[bot]',
+    id: 6001,
+    type: 'Bot',
 };
 
 function agent(name: string, events: string[], options: GithubSubscriptionOptions = {}): Agent {
@@ -40,7 +40,9 @@ function body(action: string, sender: Record<string, unknown> = BOT, extra: Reco
 
 async function agentsOf(response: Response): Promise<string[]> {
     expect(response.status).toBe(202);
+
     const answer = await response.json() as { runs: Array<{ agent: string }> };
+
     return answer.runs.map((run) => run.agent);
 }
 
@@ -48,10 +50,11 @@ describe('the bot\'s own deliveries', () => {
     it('dispatch nothing without selfEvents', async () => {
         const { app } = createGithubTestApp({ agents: [agent('maintainer', ['pull_request'])] });
         const response = await deliver(app, {
-            event: 'pull_request', 
-            delivery: 'd-1', 
-            body: body('synchronize', BOT, { pull_request: { number: 3 } }), 
+            event: 'pull_request',
+            delivery: 'd-1',
+            body: body('synchronize', BOT, { pull_request: { number: 3 } }),
         });
+
         expect(await agentsOf(response)).toEqual([]);
     });
 
@@ -63,22 +66,27 @@ describe('the bot\'s own deliveries', () => {
             ],
         });
         const synchronize = await deliver(app, {
-            event: 'pull_request', 
-            delivery: 'd-1', 
-            body: body('synchronize', BOT, { pull_request: { number: 3 } }), 
+            event: 'pull_request',
+            delivery: 'd-1',
+            body: body('synchronize', BOT, { pull_request: { number: 3 } }),
         });
+
         expect(await agentsOf(synchronize)).toEqual(['maintainer']);
+
         const completed = await deliver(app, {
-            event: 'check_suite', 
-            delivery: 'd-2', 
-            body: body('completed'), 
+            event: 'check_suite',
+            delivery: 'd-2',
+            body: body('completed'),
         });
+
         expect(await agentsOf(completed)).toEqual(['maintainer']);
+
         const requested = await deliver(app, {
-            event: 'check_suite', 
-            delivery: 'd-3', 
-            body: body('requested'), 
+            event: 'check_suite',
+            delivery: 'd-3',
+            body: body('requested'),
         });
+
         expect(await agentsOf(requested)).toEqual([]);
     });
 
@@ -90,10 +98,11 @@ describe('the bot\'s own deliveries', () => {
             ],
         });
         const response = await deliver(app, {
-            event: 'pull_request', 
-            delivery: 'd-1', 
-            body: body('opened', { login: 'alice', type: 'User' }, { pull_request: { number: 3 } }), 
+            event: 'pull_request',
+            delivery: 'd-1',
+            body: body('opened', { login: 'alice', type: 'User' }, { pull_request: { number: 3 } }),
         });
+
         expect(await agentsOf(response)).toEqual(['maintainer', 'other']);
     });
 
@@ -114,23 +123,28 @@ describe('the bot\'s own deliveries', () => {
             delivery: 'd-1',
             body: body('opened', BOT, { pull_request: { number: 3 } }),
         });
+
         expect(bot.status).toBe(202);
+
         const { runs: [botRun] } = await bot.json() as { runs: Array<{ runId: string }> };
+
         expect((await engine.getRun(botRun!.runId))?.trigger.trigger).toBe('self');
+
         const human = await deliver(app, {
             event: 'pull_request',
             delivery: 'd-2',
             body: body('opened', { login: 'alice', type: 'User' }, { pull_request: { number: 4 } }),
         });
         const { runs: [humanRun] } = await human.json() as { runs: Array<{ runId: string }> };
+
         expect((await engine.getRun(humanRun!.runId))?.trigger.trigger).toBe('humans');
     });
 
     it('never run a self subscription filter for a human delivery', async () => {
         const {
-            app, 
-            engine, 
-            errors, 
+            app,
+            engine,
+            errors,
         } = createGithubTestApp({
             agents: [defineAgent({
                 name: 'maintainer',
@@ -153,8 +167,11 @@ describe('the bot\'s own deliveries', () => {
             delivery: 'd-1',
             body: body('opened', { login: 'alice', type: 'User' }, { pull_request: { number: 4 } }),
         });
+
         expect(human.status).toBe(202);
+
         const { runs: [humanRun] } = await human.json() as { runs: Array<{ runId: string }> };
+
         expect((await engine.getRun(humanRun!.runId))?.trigger.trigger).toBe('humans');
         expect(errors).toEqual([]);
     });
@@ -166,16 +183,18 @@ describe('the bot\'s own deliveries', () => {
             delivery: 'd-1',
             body: body('labeled', BOT, { pull_request: { number: 3 } }),
         });
+
         expect(await agentsOf(labeled)).toEqual([]);
     });
 
     it('never dispatch a bot-sent issue_comment', async () => {
         const { app } = createGithubTestApp({ agents: [agent('maintainer', ['issue_comment', 'pull_request'], { selfEvents: ['pull_request'] })] });
         const response = await deliver(app, {
-            event: 'issue_comment', 
-            delivery: 'd-1', 
-            body: body('created', BOT, { issue: { number: 3 }, comment: { body: 'hi' } }), 
+            event: 'issue_comment',
+            delivery: 'd-1',
+            body: body('created', BOT, { issue: { number: 3 }, comment: { body: 'hi' } }),
         });
+
         expect(await agentsOf(response)).toEqual([]);
     });
 

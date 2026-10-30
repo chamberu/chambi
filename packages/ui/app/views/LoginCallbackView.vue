@@ -19,9 +19,14 @@ const error = ref<string>();
 
 onMounted(async () => {
     const pick = (value: unknown) => (typeof value === 'string' ? value : undefined);
+
     try {
-        if (route.query.error) throw new Error(pick(route.query.error_description) ?? pick(route.query.error));
+        if (route.query.error) {
+            throw new Error(pick(route.query.error_description) ?? pick(route.query.error));
+        }
+
         const returnTo = await session.completeAuthup({ code: pick(route.query.code), state: pick(route.query.state) });
+
         await router.replace(returnTo);
     } catch (e) {
         error.value = e instanceof Error ? e.message : String(e);

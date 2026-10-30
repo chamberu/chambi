@@ -28,9 +28,9 @@ import { textModel } from '../../utils/model.ts';
 // a channel without behaviour, so subscriptions of another channel validate
 const other: IChannel = { name: 'http' };
 const otherOn = (id: string): ChannelSubscription => ({
-    channel: 'http', 
-    id, 
-    options: {}, 
+    channel: 'http',
+    id,
+    options: {},
 });
 const channels = () => [cronChannel(), cronChannel({ name: 'cron-eu' }), other];
 
@@ -61,7 +61,9 @@ describe('createScheduler', () => {
             onError: () => {},
             ...opts,
         });
+
         schedulers.push(scheduler);
+
         return scheduler;
     };
 
@@ -82,6 +84,7 @@ describe('createScheduler', () => {
         const agents = [agentWith([cron.on('* * * * *', { overlap: 'allow' })])];
         const a = make(store, agents, { owner: 'a' });
         const b = make(store, agents, { owner: 'b' });
+
         await a.start();
         await b.start();
 
@@ -95,6 +98,7 @@ describe('createScheduler', () => {
     it('does not fire on start', async () => {
         const store = createMemoryStore();
         const scheduler = make(store, [agentWith([cron.on('* * * * *')])]);
+
         await scheduler.start();
 
         await vi.advanceTimersByTimeAsync(29_000);
@@ -106,11 +110,13 @@ describe('createScheduler', () => {
         const store = createMemoryStore();
         const agents = [agentWith([cron.on('* * * * *')])];
         const before = make(store, agents, { owner: 'old' });
+
         await before.start();
         await vi.advanceTimersByTimeAsync(10_000);
         await before.stop();
 
         const after = make(store, agents, { owner: 'new' });
+
         await after.start();
         await vi.advanceTimersByTimeAsync(19_000);
         expect(await runs(store)).toHaveLength(0);
@@ -122,17 +128,20 @@ describe('createScheduler', () => {
     it('honours the subscription timezone', async () => {
         const store = createMemoryStore();
         const scheduler = make(store, [agentWith([cron.on('0 9 * * *', { timezone: 'Europe/Berlin' })])]);
+
         await scheduler.start();
 
         await vi.advanceTimersByTimeAsync(60_000);
 
         const [run] = await runs(store);
+
         expect(run?.trigger.payload).toEqual({ scheduledAt: '2026-03-01T08:00:00.000Z' });
     });
 
     it('ignores subscriptions of other channels', async () => {
         const store = createMemoryStore();
         const scheduler = make(store, [agentWith([otherOn('http'), cronChannel({ name: 'cron-eu' }).on('* * * * *')])]);
+
         await scheduler.start();
 
         await vi.advanceTimersByTimeAsync(120_000);
@@ -143,6 +152,7 @@ describe('createScheduler', () => {
     it('stop() unschedules', async () => {
         const store = createMemoryStore();
         const scheduler = make(store, [agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
+
         await scheduler.start();
         await scheduler.stop();
 
@@ -155,11 +165,14 @@ describe('createScheduler', () => {
         const error = new Error('lock store down');
         const store = createMemoryStore();
         const acquire = store.locks.acquire.bind(store.locks);
+
         vi.spyOn(store.locks, 'acquire')
             .mockRejectedValueOnce(error)
             .mockImplementation(acquire);
+
         const onError = vi.fn();
         const scheduler = make(store, [agentWith([cron.on('* * * * *', { overlap: 'allow' })])], { onError });
+
         await scheduler.start();
 
         await vi.advanceTimersByTimeAsync(60_000);
@@ -173,6 +186,7 @@ describe('createScheduler', () => {
     it('rejects a cron subscription hubwire cannot schedule', () => {
         const store = createMemoryStore();
         const divergent = agentWith([cron.on('0 0 * * 1/2')]);
+
         expect(() => make(store, [divergent])).toThrow(InvalidAgentDefinitionError);
         expect(() => make(store, [divergent])).toThrow(/sweep.*cron:0 0 \* \* 1\/2/);
 
@@ -181,6 +195,7 @@ describe('createScheduler', () => {
             id: 'bad',
             options: { expression: 'not a cron', overlap: 'skip' },
         }]);
+
         expect(() => make(store, [malformed])).toThrow(InvalidAgentDefinitionError);
         expect(() => make(store, [malformed])).toThrow(/sweep.*bad/);
     });
@@ -193,13 +208,15 @@ describe('createScheduler', () => {
             agents: [],
             channels: channels(),
         });
+
         await engine.putAgent(agentWith([cron.on('0 0 * * 1/2')]), { revision: 'h1' });
 
         const scheduler = createScheduler({
-            engine, 
-            channel: 'cron', 
-            onError, 
+            engine,
+            channel: 'cron',
+            onError,
         });
+
         schedulers.push(scheduler);
 
         expect(onError).toHaveBeenCalledWith(expect.any(InvalidAgentDefinitionError), {
@@ -218,6 +235,7 @@ describe('createScheduler', () => {
     it('assertSchedulable checks only the named channel', () => {
         const eu = cronChannel({ name: 'cron-eu' });
         const agent = agentWith([eu.on('0 0 * * 1/2')]);
+
         expect(() => assertSchedulable(agent)).not.toThrow();
         expect(() => assertSchedulable(agent, 'cron-eu')).toThrow(InvalidAgentDefinitionError);
     });
@@ -243,7 +261,9 @@ describe('createScheduler', () => {
                 onError: () => {},
                 ...opts,
             });
+
             schedulers.push(scheduler);
+
             return {
                 store,
                 engine,
@@ -254,9 +274,10 @@ describe('createScheduler', () => {
         it('schedules an agent added after start', async () => {
             const {
                 store,
-                engine, 
-                scheduler, 
+                engine,
+                scheduler,
             } = live([another()]);
+
             await scheduler.start();
 
             await engine.putAgent(agentWith([cron.on('* * * * *', { overlap: 'allow' })]));
@@ -268,9 +289,10 @@ describe('createScheduler', () => {
         it('starts an agent added before start only once started', async () => {
             const {
                 store,
-                engine, 
-                scheduler, 
+                engine,
+                scheduler,
             } = live([another()]);
+
             await engine.putAgent(agentWith([cron.on('* * * * *', { overlap: 'allow' })]));
 
             await vi.advanceTimersByTimeAsync(60_000);
@@ -284,9 +306,10 @@ describe('createScheduler', () => {
         it('a replaced agent fires on its new expression only', async () => {
             const {
                 store,
-                engine, 
-                scheduler, 
+                engine,
+                scheduler,
             } = live([agentWith([cron.on('* * * * *', { overlap: 'allow' })])]);
+
             await scheduler.start();
 
             await engine.putAgent(agentWith([cron.on('0 9 * * *', { timezone: 'UTC' })]));
@@ -294,7 +317,9 @@ describe('createScheduler', () => {
             expect(await runs(store)).toHaveLength(0);
 
             await vi.advanceTimersByTimeAsync(3_600_000);
+
             const fired = await runs(store);
+
             expect(fired.map((run) => run.trigger.trigger)).toEqual(['cron:0 9 * * *']);
         });
 
@@ -302,9 +327,10 @@ describe('createScheduler', () => {
             const onError = vi.fn();
             const {
                 store,
-                engine, 
-                scheduler, 
+                engine,
+                scheduler,
             } = live([agentWith([cron.on('* * * * *', { overlap: 'allow' })]), another()], { onError });
+
             await scheduler.start();
 
             await engine.removeAgent('sweep');
@@ -318,9 +344,10 @@ describe('createScheduler', () => {
             const onError = vi.fn();
             const {
                 store,
-                engine, 
-                scheduler, 
+                engine,
+                scheduler,
             } = live([agentWith([cron.on('* * * * *', { overlap: 'allow' })])], { onError });
+
             await scheduler.start();
 
             await engine.putAgent(agentWith([cron.on('0 0 * * 1/2')]));
@@ -337,9 +364,10 @@ describe('createScheduler', () => {
         it('stop() ends the subscription', async () => {
             const {
                 store,
-                engine, 
-                scheduler, 
+                engine,
+                scheduler,
             } = live([another()]);
+
             await scheduler.start();
             await scheduler.stop();
 
@@ -354,6 +382,7 @@ describe('createScheduler', () => {
     it('rejects an invalid lockTtlMs', () => {
         const store = createMemoryStore();
         const agents = [agentWith([cron.on('* * * * *')])];
+
         expect(() => make(store, agents, { lockTtlMs: 0 })).toThrow(InvalidAgentDefinitionError);
     });
 });

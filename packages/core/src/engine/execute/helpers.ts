@@ -40,7 +40,7 @@ import { hasToolContext } from '../../tool/helpers.ts';
 import type { ToolContext } from '../../tool/types.ts';
 import type { TriggerEnvelope } from '../../trigger/types.ts';
 import { MAX_ERROR_CAUSE_LENGTH } from './constants.ts';
-import type { ApprovalRequest, ExecuteContext } from './types.ts';
+import type { ApprovalRequest, ExecuteContext, PendingToolCall } from './types.ts';
 
 export function renderTrigger(envelope: TriggerEnvelope): string {
     const json = JSON.stringify({
@@ -48,6 +48,7 @@ export function renderTrigger(envelope: TriggerEnvelope): string {
         trigger: envelope.trigger,
         payload: envelope.payload,
     }, null, 2);
+
     return `\`\`\`json\n${json}\n\`\`\``;
 }
 
@@ -57,7 +58,11 @@ export function renderTrigger(envelope: TriggerEnvelope): string {
  */
 export function initialMessage(envelope: TriggerEnvelope, acceptedText?: string): ModelMessage {
     const text = acceptedText ?? renderTrigger(envelope);
-    if (!envelope.attachments?.length) return { role: 'user', content: text };
+
+    if (!envelope.attachments?.length) {
+        return { role: 'user', content: text };
+    }
+
     return {
         role: 'user',
         content: [{ type: 'text', text }, ...envelope.attachments.map(toFilePart)],
@@ -70,15 +75,28 @@ export function initialMessage(envelope: TriggerEnvelope, acceptedText?: string)
  */
 function causeIssues(error: unknown): unknown[] {
     let cause = error;
-    while (TypeValidationError.isInstance(cause)) cause = cause.cause;
-    if (Array.isArray(cause)) return cause;
-    if (isObject(cause) && Array.isArray(cause.issues)) return cause.issues;
+
+    while (TypeValidationError.isInstance(cause)) {
+        cause = cause.cause;
+    }
+
+    if (Array.isArray(cause)) {
+        return cause;
+    }
+
+    if (isObject(cause) && Array.isArray(cause.issues)) {
+        return cause.issues;
+    }
+
     return [];
 }
 
 /** An issue's path as `a.b.0`, undefined at the root. */
 function issuePath(issue: unknown): string | undefined {
-    if (!isObject(issue) || !Array.isArray(issue.path) || issue.path.length === 0) return undefined;
+    if (!isObject(issue) || !Array.isArray(issue.path) || issue.path.length === 0) {
+        return undefined;
+    }
+
     return issue.path.map((segment) => String(isObject(segment) ? segment.key : segment)).join('.');
 }
 
@@ -91,14 +109,20 @@ function issuePath(issue: unknown): string | undefined {
 function toolContextError(error: TypeValidationError): ValidationError {
     const prefix = `Type validation failed for tool context (${error.context?.entityName ?? 'unknown'}): `;
     const issues = causeIssues(error);
-    if (issues.some((issue) => isObject(issue) && issue.message === TOOL_CONTEXT_MISSING)) {
+
+    const missingContext = issues.some((issue) => isObject(issue) && issue.message === TOOL_CONTEXT_MISSING);
+
+    if (missingContext) {
         return new ValidationError(prefix + TOOL_CONTEXT_MISSING);
     }
+
     if (error.value === undefined) {
         return new ValidationError(`${prefix}the agent has no toolsContext entry for it, and its contextSchema requires one.`);
     }
+
     const paths = [...new Set(issues.map(issuePath).filter((path) => path !== undefined))];
     const at = paths.length > 0 ? ` (at ${paths.join(', ')})` : '';
+
     return new ValidationError(`${prefix}the agent's toolsContext entry does not match the tool's contextSchema${at}.`);
 }
 
@@ -110,10 +134,12 @@ export function toRunError(error: unknown): { code: string; message: string } {
     if (TypeValidationError.isInstance(error) && error.context?.field === 'tool context') {
         return toRunError(toolContextError(error));
     }
+
     const code = isObject(error) ? error.code : undefined;
+
     return {
         code: typeof code === 'string' ? code : 'Error',
-        message: error instanceof Error ? error.message : String(error),
+        message: Error.isError(error) ? error.message : String(error),
     };
 }
 
@@ -154,22 +180,33 @@ export function assembleTools(
         ...agentHooks,
         beforeToolExecution: async (...args: Parameters<NonNullable<NonNullable<typeof agentHooks>['beforeToolExecution']>>) => {
             await checkConversation(runContext);
+
             return agentHooks?.beforeToolExecution?.(...args);
         },
     } : agentHooks;
+
     if (!userTools && !schema && !Object.keys(ctx.skills?.tools ?? {}).length) {
         ctx.skills?.checkTools({});
-        if (agentToolsContext) assertToolsContext(ctx.agent.name, {}, agentToolsContext);
+
+        if (agentToolsContext) {
+            assertToolsContext(ctx.agent.name, {}, agentToolsContext);
+        }
+
         return { tools: {}, toolsContext: {} };
     }
+
     const toolContext: ToolContext = {
         run: runContext,
         state: createAgentState(ctx.agent.name, schema, ctx.store.state),
         artifacts: createRunArtifacts(ctx.store.artifacts, { id: ctx.run.id, agent: ctx.run.agent }, ctx.clock),
         channels: createToolChannels(runContext, ctx.store.effects, ctx.engine),
     };
+
     // before the factory, so inject() works there, in execute and in the effect hooks
-    if (ctx.provided) bindProvided(toolContext, ctx.provided);
+    if (ctx.provided) {
+        bindProvided(toolContext, ctx.provided);
+    }
+
     const tools: ToolSet = {
         ...(schema ? createStateTools(schema) : {}),
         ...(typeof userTools === 'function' ? userTools(toolContext) : userTools),
@@ -182,12 +219,19 @@ export function assembleTools(
     assertNoNeedsApproval(ctx.agent.name, tools);
 
     const toolsContext: Record<string, unknown> = {};
+
     for (const [name, tool] of Object.entries(tools)) {
-        if (hasToolContext(tool)) toolsContext[name] = toolContext;
+        if (hasToolContext(tool)) {
+            toolsContext[name] = toolContext;
+        }
     }
+
     if (agentToolsContext) {
         assertToolsContext(ctx.agent.name, tools, agentToolsContext);
-        for (const [name, value] of Object.entries(agentToolsContext)) toolsContext[name] = value;
+
+        for (const [name, value] of Object.entries(agentToolsContext)) {
+            toolsContext[name] = value;
+        }
     }
 
     if (!toolPolicy) {
@@ -200,7 +244,9 @@ export function assembleTools(
             toolsContext,
         };
     }
+
     const allow = (name: string) => toolPolicy(name, { run: runContext });
+
     return {
         tools: wrapToolsForRun(tools, toolContext, ctx.store.effects, {
             allow,
@@ -225,19 +271,16 @@ export function refusedCallError(
     tools: ToolSet,
     activeTools: string[] | undefined,
 ): ToolNotAllowedError | undefined {
-    if (!activeTools || !Object.hasOwn(tools, part.toolName) || activeTools.includes(part.toolName)) return undefined;
+    if (!activeTools || !Object.hasOwn(tools, part.toolName) || activeTools.includes(part.toolName)) {
+        return undefined;
+    }
+
     // an invalid (unparsable) call carries the parse error
     const call = step.toolCalls.find((c) => c.toolCallId === part.toolCallId);
     const error = call && 'error' in call ? call.error : undefined;
+
     return NoSuchToolError.isInstance(error) ? new ToolNotAllowedError(part.toolName) : undefined;
 }
-
-/** A tool call of the checkpoint that has no result yet: suspended by approve(). */
-export type PendingToolCall = {
-    toolCallId: string;
-    toolName: string;
-    input: unknown;
-};
 
 /**
  * The tool calls of the last assistant message in `messages` that have no
@@ -247,21 +290,39 @@ export type PendingToolCall = {
 export function pendingToolCalls(messages: ModelMessage[]): PendingToolCall[] {
     const index = messages.findLastIndex((message) => message.role === 'assistant');
     const assistant = messages[index];
-    if (!assistant || assistant.role !== 'assistant' || typeof assistant.content === 'string') return [];
-    const answered = new Set<string>();
-    for (const message of messages.slice(index)) {
-        if (typeof message.content === 'string') continue;
-        for (const part of message.content) if (part.type === 'tool-result') answered.add(part.toolCallId);
+
+    if (!assistant || assistant.role !== 'assistant' || typeof assistant.content === 'string') {
+        return [];
     }
+
+    const answered = new Set<string>();
+
+    for (const message of messages.slice(index)) {
+        if (typeof message.content === 'string') {
+            continue;
+        }
+
+        for (const part of message.content) {
+            if (part.type === 'tool-result') {
+                answered.add(part.toolCallId);
+            }
+        }
+    }
+
     const pending: PendingToolCall[] = [];
+
     for (const part of assistant.content) {
-        if (part.type !== 'tool-call' || part.providerExecuted || answered.has(part.toolCallId)) continue;
+        if (part.type !== 'tool-call' || part.providerExecuted || answered.has(part.toolCallId)) {
+            continue;
+        }
+
         pending.push({
             toolCallId: part.toolCallId,
             toolName: part.toolName,
             input: part.input,
         });
     }
+
     return pending;
 }
 
@@ -272,38 +333,63 @@ export function pendingToolCalls(messages: ModelMessage[]): PendingToolCall[] {
  */
 export function withoutResults(messages: ModelMessage[], toolCallIds: ReadonlySet<string>): ModelMessage[] {
     const out: ModelMessage[] = [];
+
     for (const message of messages) {
         if (message.role !== 'tool') {
             out.push(message);
+
             continue;
         }
+
         const content = message.content.filter((part) => !(part.type === 'tool-result' && toolCallIds.has(part.toolCallId)));
-        if (content.length > 0) out.push({ ...message, content });
+
+        if (content.length > 0) {
+            out.push({ ...message, content });
+        }
     }
+
     return out;
 }
 
 /** `messages` with `parts` added to their trailing tool message (a new one when they end otherwise). */
 export function withToolResults(messages: ModelMessage[], parts: ToolResultPart[]): ModelMessage[] {
-    if (parts.length === 0) return messages;
+    if (parts.length === 0) {
+        return messages;
+    }
+
     const last = messages.at(-1);
+
     if (last?.role === 'tool') {
         return [...messages.slice(0, -1), { ...last, content: [...last.content, ...parts] }];
     }
+
     return [...messages, { role: 'tool', content: parts }];
 }
 
 /** The message of anything thrown, as the AI SDK words a tool error for the model. */
 function errorMessage(error: unknown): string {
-    if (error == null) return 'unknown error';
-    if (typeof error === 'string') return error;
-    if (error instanceof Error) return error.message;
+    if (error == null) {
+        return 'unknown error';
+    }
+
+    if (typeof error === 'string') {
+        return error;
+    }
+
+    if (Error.isError(error)) {
+        return error.message;
+    }
+
     return JSON.stringify(error);
 }
 
 function toJsonValue(value: unknown): JSONValue {
-    if (value === undefined) return null;
+    if (value === undefined) {
+        return null;
+    }
+
     const serialized = JSON.stringify(value);
+
     return serialized === undefined ? null : JSON.parse(serialized) as JSONValue;
 }
 
@@ -314,6 +400,7 @@ export async function toToolResultPart(
     outcome: { output: unknown } | { error: unknown },
 ): Promise<ToolResultPart> {
     let output: ToolResultPart['output'];
+
     if ('error' in outcome) {
         output = { type: 'error-text', value: errorMessage(outcome.error) };
     } else if (tool?.toModelOutput) {
@@ -327,6 +414,7 @@ export async function toToolResultPart(
             { type: 'text', value: outcome.output } :
             { type: 'json', value: toJsonValue(outcome.output) };
     }
+
     return {
         type: 'tool-result',
         toolCallId: call.toolCallId,
@@ -359,12 +447,17 @@ export async function executePendingCall(input: {
         toolsContext,
     } = input;
     const tool = Object.hasOwn(tools, call.toolName) ? tools[call.toolName] : undefined;
+
     if (!tool || typeof tool.execute !== 'function') {
         return { error: new ValidationError(`Tool "${call.toolName}" is not available any more.`) };
     }
-    if (activeTools && !activeTools.includes(call.toolName)) return { error: new ToolNotAllowedError(call.toolName) };
+
+    if (activeTools && !activeTools.includes(call.toolName)) {
+        return { error: new ToolNotAllowedError(call.toolName) };
+    }
 
     let parsed: unknown;
+
     try {
         parsed = await validateToolInput(call.toolName, tool.inputSchema, call.input, 'the pending call\'s input');
     } catch (error) {
@@ -372,10 +465,13 @@ export async function executePendingCall(input: {
     }
 
     let context = Object.hasOwn(toolsContext, call.toolName) ? toolsContext[call.toolName] : undefined;
+
     if (tool.contextSchema) {
         const { validate } = asSchema(tool.contextSchema);
+
         if (validate) {
             const result = await validate(context);
+
             if (!result.success) {
                 throw new TypeValidationError({
                     value: context,
@@ -383,6 +479,7 @@ export async function executePendingCall(input: {
                     context: { field: 'tool context', entityName: call.toolName },
                 });
             }
+
             context = result.value;
         }
     }
@@ -394,11 +491,17 @@ export async function executePendingCall(input: {
             abortSignal: input.signal,
             context,
         });
+
         if (isObject(output) && Symbol.asyncIterator in output) {
             let last: unknown;
-            for await (const chunk of output as AsyncIterable<unknown>) last = chunk;
+
+            for await (const chunk of output as AsyncIterable<unknown>) {
+                last = chunk;
+            }
+
             output = last;
         }
+
         return { output };
     } catch (error) {
         return { error };
@@ -408,8 +511,15 @@ export async function executePendingCall(input: {
 /** Text of the last assistant message, '' when there is none. */
 export function lastAssistantText(messages: ModelMessage[]): string {
     const last = messages.findLast((m) => m.role === 'assistant');
-    if (!last) return '';
-    if (typeof last.content === 'string') return last.content;
+
+    if (!last) {
+        return '';
+    }
+
+    if (typeof last.content === 'string') {
+        return last.content;
+    }
+
     return last.content.map((part) => (part.type === 'text' ? part.text : '')).join('');
 }
 
@@ -425,19 +535,30 @@ export function budgetExceeded(budget: Budget, kind: 'steps' | 'tokens'): Budget
  * to MAX_ERROR_CAUSE_LENGTH characters (the whole answer stays in the llm step).
  */
 export function toValidationError(error: unknown): ValidationError {
-    const message = error instanceof Error ? error.message : String(error);
-    let cause = isObject(error) && error.cause instanceof Error ? error.cause.message : undefined;
-    if (cause && cause.length > MAX_ERROR_CAUSE_LENGTH) cause = `${cause.slice(0, MAX_ERROR_CAUSE_LENGTH)}…`;
+    const message = Error.isError(error) ? error.message : String(error);
+    let cause = isObject(error) && Error.isError(error.cause) ? error.cause.message : undefined;
+
+    if (cause && cause.length > MAX_ERROR_CAUSE_LENGTH) {
+        cause = `${cause.slice(0, MAX_ERROR_CAUSE_LENGTH)}…`;
+    }
+
     return new ValidationError(cause ? `${message} ${cause}` : message);
 }
 
 /** Names of the step's tool calls that got neither a result nor an error. */
 export function unansweredToolNames(step: StepResult<ToolSet> | undefined): string[] {
-    if (!step) return [];
-    const answered = new Set<string>();
-    for (const part of step.content) {
-        if (part.type === 'tool-result' || part.type === 'tool-error') answered.add(part.toolCallId);
+    if (!step) {
+        return [];
     }
+
+    const answered = new Set<string>();
+
+    for (const part of step.content) {
+        if (part.type === 'tool-result' || part.type === 'tool-error') {
+            answered.add(part.toolCallId);
+        }
+    }
+
     return step.toolCalls.filter((call) => !answered.has(call.toolCallId)).map((call) => call.toolName);
 }
 
@@ -453,12 +574,15 @@ export function incompleteOutput(finishReason: string | undefined, toolNames: st
             'The model answer was cut off at its output token limit (finish reason length), so there is no complete output to parse.',
         );
     }
+
     if (finishReason === 'tool-calls') {
         const names = toolNames.length > 0 ? toolNames.map((name) => `"${name}"`).join(', ') : 'a tool';
+
         return new IncompleteResponseError(
             `The model ended on a call to ${names} that nothing executed (a tool without execute), so there is no final answer to parse.`,
         );
     }
+
     return undefined;
 }
 
@@ -504,6 +628,8 @@ export function outputContext(checkpoint: Checkpoint, now: Date): {
  */
 export function withoutPartialOutput(output: OutputInterface): OutputInterface {
     const copy: OutputInterface = Object.create(output);
+
     copy.parsePartialOutput = async ({ text }: { text: string }) => ({ partial: text });
+
     return copy;
 }

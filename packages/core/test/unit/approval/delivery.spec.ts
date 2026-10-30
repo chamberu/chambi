@@ -33,7 +33,10 @@ const CLAIM_TTL_MS = 30;
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -54,10 +57,15 @@ function createChannel(name = 'slack', behave?: (sent: Sent) => Promise<void>) {
                 address,
                 opts,
             };
+
             sent.push(entry);
-            if (behave) await behave(entry);
+
+            if (behave) {
+                await behave(entry);
+            }
         },
     };
+
     return { channel, sent };
 }
 
@@ -68,6 +76,7 @@ const askTool = (channel: string | null) => defineTool({
         const decision = channel ?
             await context.channels.findOneOrFail(channel).approve({ ...request, address: 'C0OPS' }) :
             await approve(context, request);
+
         return decision.approved;
     },
 });
@@ -101,25 +110,33 @@ function createEngine(store: ReturnType<typeof createMemoryStore>, clock: Contro
             errors.push(error);
         },
     });
+
     engines.push(engine);
+
     return { engine, errors };
 }
 
 function setup() {
     const clock = new ControllableClock(new Date(START));
     const store = createMemoryStore({ clock });
+
     return { clock, store };
 }
 
 async function start(engine: Engine, wait = true) {
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: 'release',
         trigger: 'http',
         channel: 'http',
         payload: {},
     });
-    if (wait) await engine.idle();
+
+    if (wait) {
+        await engine.idle();
+    }
+
     return runId;
 }
 
@@ -131,14 +148,19 @@ describe('approval delivery', () => {
         const runId = await start(engine);
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('waiting');
+
         const waiting = run!.waiting!;
+
         expect(sent).toHaveLength(1);
+
         const [{
             message,
             address,
             opts,
         }] = sent as [Sent];
+
         expect(address).toBe('C0OPS');
         expect(message).toEqual({
             kind: 'approval',
@@ -154,6 +176,7 @@ describe('approval delivery', () => {
         expect(opts.signal).toBeInstanceOf(AbortSignal);
 
         const json = JSON.stringify(message);
+
         expect(json).not.toContain('resumeToken');
         expect(waiting.notifiedAt).toBeInstanceOf(Date);
 
@@ -166,7 +189,9 @@ describe('approval delivery', () => {
         const { clock, store } = setup();
         let failures = 2;
         const { channel, sent } = createChannel('slack', async () => {
-            if (failures-- > 0) throw new Error('slack is down');
+            if (failures-- > 0) {
+                throw new Error('slack is down');
+            }
         });
         const { engine, errors } = createEngine(store, clock, [channel]);
         const runId = await start(engine);
@@ -195,14 +220,18 @@ describe('approval delivery', () => {
         const hung = createChannel('slack', () => new Promise(() => {}));
         const first = createEngine(store, clock, [hung.channel]);
         const runId = await start(first.engine, false);
+
         await vi.waitFor(() => expect(hung.sent).toHaveLength(1));
         // the replica dies: nothing of it runs any more
         first.engine.stop();
+
         const waiting = (await store.runs.findOne(runId))?.waiting;
+
         expect(waiting?.notifiedAt).toBeUndefined();
 
         const { channel, sent } = createChannel();
         const second = createEngine(store, clock, [channel]);
+
         // the dead replica's send lock is still held
         await second.engine.tick();
         expect(sent).toHaveLength(0);
@@ -225,6 +254,7 @@ describe('approval delivery', () => {
         const { engine, errors } = createEngine(store, clock, [channel], null);
         const runId = await start(engine);
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('waiting');
         expect(run?.waiting?.channel).toBeUndefined();
 
@@ -240,20 +270,25 @@ describe('approval delivery', () => {
         const behave = async () => {
             if (fail) {
                 fail = false;
+
                 throw new Error('first send fails');
             }
+
             await gate;
         };
         const a = createChannel('slack', behave);
         const b = createChannel('slack', behave);
         const first = createEngine(store, clock, [a.channel]);
         const runId = await start(first.engine);
+
         expect(a.sent).toHaveLength(1);
         expect((await store.runs.findOne(runId))?.waiting?.notifiedAt).toBeUndefined();
         first.engine.stop();
+
         const second = createEngine(store, clock, [b.channel]);
 
         const ticks = Promise.all([first.engine.tick(), second.engine.tick()]);
+
         await vi.waitFor(() => expect(a.sent.length + b.sent.length).toBe(2));
         release();
         await ticks;
@@ -271,10 +306,12 @@ describe('approval delivery', () => {
         });
         const failing = createEngine(store, clock, [down.channel]);
         const runId = await start(failing.engine);
+
         failing.engine.stop();
         expect((await store.runs.findOne(runId))?.waiting?.notifiedAt).toBeUndefined();
 
         const { engine, errors } = createEngine(store, clock, [], null);
+
         await engine.tick();
         expect(errors).toHaveLength(1);
         expect(errors[0]).toBeInstanceOf(ChannelNotFoundError);

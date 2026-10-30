@@ -18,6 +18,13 @@ import type { IStore } from '../../repository/types.ts';
 import type { Engine } from '../module.ts';
 import type { RunDelta } from '../types.ts';
 
+/** A tool call of the checkpoint that has no result yet: suspended by approve(). */
+export type PendingToolCall = {
+    toolCallId: string;
+    toolName: string;
+    input: unknown;
+};
+
 export type ExecuteContext = {
     /** The executing engine, handed to the execution's ToolContext as `engine`. */
     engine: Engine;

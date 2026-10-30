@@ -34,7 +34,10 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -50,13 +53,19 @@ const callTool = (toolName: string): MockResponse => ({
 /** Records every resolve(); answers with the model mapped to the ref. */
 function recordingResolver(models: Record<string, LanguageModel>): IModelResolver & { resolved: string[] } {
     const resolved: string[] = [];
+
     return {
         resolved,
         check() {},
         resolve(ref: string) {
             resolved.push(ref);
+
             const model = models[ref];
-            if (!model) throw new Error(`no model ${ref}`);
+
+            if (!model) {
+                throw new Error(`no model ${ref}`);
+            }
+
             return model;
         },
     };
@@ -81,19 +90,24 @@ function setup(
         onError: () => {},
         ...options,
     });
+
     engines.push(engine);
+
     return { store, engine };
 }
 
 async function runOn(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: 'ops',
         trigger: 'http',
         channel: 'http',
         payload: {},
     });
+
     await engine.idle();
+
     return {
         run: await store.runs.findOne(runId),
         steps: await store.steps.find(runId),
@@ -105,6 +119,7 @@ function seeingTool(seen: unknown[], ref?: string) {
         inputSchema: z.object({}),
         execute: async (_input, { context }) => {
             seen.push(resolveModel(context, ref));
+
             return 'ok';
         },
     });
@@ -115,6 +130,7 @@ describe('resolveModel', () => {
         const own = mockModel([callTool('use'), text('done')]);
         const seen: unknown[] = [];
         const a = setup({ model: own, tools: { use: seeingTool(seen) } });
+
         expect((await runOn(a.engine, a.store)).run?.status).toBe('completed');
         expect(seen).toHaveLength(1);
         expect(seen[0]).toBe(own);
@@ -122,6 +138,7 @@ describe('resolveModel', () => {
         const fallback = mockModel([callTool('use'), text('done')]);
         const other: unknown[] = [];
         const b = setup({ tools: { use: seeingTool(other) } }, { model: fallback });
+
         expect((await runOn(b.engine, b.store)).run?.status).toBe('completed');
         expect(other).toHaveLength(1);
         expect(other[0]).toBe(fallback);
@@ -135,6 +152,7 @@ describe('resolveModel', () => {
             { model: mockModel([callTool('use'), text('done')]), tools: { use: seeingTool(seen, 'router/cc/claude-opus-4-6') } },
             { models },
         );
+
         expect((await runOn(engine, store)).run?.status).toBe('completed');
         expect(models.resolved).toEqual(['router/cc/claude-opus-4-6']);
         expect(seen[0]).toBe(delegate);
@@ -147,10 +165,12 @@ describe('resolveModel', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 seen.push(resolveModel(context, delegate));
+
                 return 'ok';
             },
         });
         const { engine, store } = setup({ model: mockModel([callTool('use'), text('done')]), tools: { use } });
+
         expect((await runOn(engine, store)).run?.status).toBe('completed');
         expect(seen).toEqual([delegate]);
     });
@@ -161,8 +181,11 @@ describe('resolveModel', () => {
             tools: { use: seeingTool([], 'router/cc/claude-opus-4-6') },
         });
         const { run, steps } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
+
         const step = steps.find((s) => s.kind === 'tool' && s.name === 'use');
+
         expect((step?.error as { code: string } | undefined)?.code).toBe('invalid_agent_definition');
         expect((step?.error as { message: string } | undefined)?.message).toBe(
             'resolveModel(): the model string "router/cc/claude-opus-4-6" needs a model resolver (EngineOptions.models).',
@@ -176,8 +199,11 @@ describe('resolveModel', () => {
             { models },
         );
         const { run, steps } = await runOn(engine, store);
+
         expect(run?.status).toBe('completed');
+
         const step = steps.find((s) => s.kind === 'tool' && s.name === 'use');
+
         expect((step?.error as { code: string } | undefined)?.code).toBe('invalid_agent_definition');
         expect((step?.error as { message: string } | undefined)?.message).toContain('Model "router/unknown" could not be resolved');
     });
@@ -187,6 +213,7 @@ describe('resolveModel', () => {
         const second = mockModel([callTool('use'), text('done')]);
         const seen: unknown[] = [];
         const { engine, store } = setup({ model: first, tools: { use: seeingTool(seen) } });
+
         await engine.putAgent(defineAgent({
             name: 'ops',
             instructions: 'You operate.',
@@ -204,9 +231,11 @@ describe('resolveModel', () => {
             model: own,
             tools: (ctx) => {
                 seen = resolveModel(ctx);
+
                 return {};
             },
         });
+
         expect((await runOn(engine, store)).run?.status).toBe('completed');
         expect(seen).toBe(own);
     });
@@ -217,9 +246,11 @@ describe('resolveModel', () => {
             model: mockModel([text('done')]),
             tools: (ctx) => {
                 keys = Object.keys(ctx).sort();
+
                 return {};
             },
         });
+
         expect((await runOn(engine, store)).run?.status).toBe('completed');
         expect(keys).toEqual(['artifacts', 'channels', 'run', 'state']);
     });
@@ -231,6 +262,7 @@ describe('resolveModel', () => {
             state: {} as ToolContext['state'],
             artifacts: {} as ToolContext['artifacts'],
         };
+
         expect(() => resolveModel(ctx)).toThrow(ContextNotProvidedError);
     });
 });

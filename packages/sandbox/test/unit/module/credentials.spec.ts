@@ -5,11 +5,11 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { 
-    afterEach, 
-    describe, 
-    expect, 
-    it, 
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
 } from 'vitest';
 import { InvalidAgentDefinitionError, defineAgent } from '@chamvi/core';
 import {
@@ -50,9 +50,9 @@ async function harnessWith(modules: IModule[]): Promise<ModuleHarness> {
         mode: 'start',
         env: {},
         agents: [defineAgent({
-            name: 'coder', 
-            model: textModel('done'), 
-            instructions: 'x', 
+            name: 'coder',
+            model: textModel('done'),
+            instructions: 'x',
         })],
         modules: [
             configModule({ logger: createRecordingLogger() }),
@@ -61,7 +61,9 @@ async function harnessWith(modules: IModule[]): Promise<ModuleHarness> {
             ...modules,
         ],
     });
+
     harnesses.push(harness);
+
     return harness;
 }
 
@@ -73,12 +75,13 @@ describe('sandboxModule git credentials', () => {
             gcIntervalMs: 0,
             env: {
                 CHAMVI_GIT_TOKENS: JSON.stringify([{
-                    host: 'github.com', 
-                    path: 'octo', 
-                    token: 'ghp_envtoken', 
-                }]), 
+                    host: 'github.com',
+                    path: 'octo',
+                    token: 'ghp_envtoken',
+                }]),
             },
         });
+
         await module.manager.acquire('r1', { repo: 'octo/demo' });
         expect(provider.created[0]!.checkout?.credential).toEqual({ username: 'x-access-token', password: 'ghp_envtoken' });
         await module.manager.close();
@@ -87,11 +90,13 @@ describe('sandboxModule git credentials', () => {
     it('names CHAMVI_GIT_TOKENS for a bad value without echoing it', () => {
         for (const value of ['{nope', JSON.stringify({ host: 'github.com' }), JSON.stringify([{ host: 'github.com', token: 'a\nsecret-value' }])]) {
             let error: unknown;
+
             try {
                 sandboxModule({ provider: createFakeProvider(), env: { CHAMVI_GIT_TOKENS: value } });
             } catch (e) {
                 error = e;
             }
+
             expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
             expect((error as Error).message).toContain('CHAMVI_GIT_TOKENS');
             expect((error as Error).message).not.toContain('secret-value');
@@ -109,8 +114,11 @@ describe('sandboxModule git credentials', () => {
             },
         });
         const { workspace } = await module.manager.acquire('r1', { repo: 'octo/demo' });
+
         await workspace.exec(['true']);
+
         const raw = provider.workspaces.get(workspace.id)!;
+
         expect(raw.calls.some((call) => call.argv[2] === INSTALL_CREDENTIALS_SCRIPT)).toBe(true);
         // a value the former parser refused is ignored too
         expect(() => sandboxModule({ provider, env: { CHAMVI_GIT_CREDENTIAL_MODE: 'env' } })).not.toThrow();
@@ -123,19 +131,22 @@ describe('sandboxModule git credentials', () => {
         const own: IGitCredentials = {
             async get(input) {
                 asked.push(`own:${input.path}`);
+
                 return input.path === 'octo/own' ? { username: 'u', password: 'own-token' } : undefined;
             },
         };
         const module = sandboxModule({
-            provider, 
-            gcIntervalMs: 0, 
-            credentials: own, 
-            env: {}, 
+            provider,
+            gcIntervalMs: 0,
+            credentials: own,
+            env: {},
         });
+
         await harnessWith([
             contributing({
                 async get(input) {
                     asked.push(`contributed:${input.path}`);
+
                     return { username: 'x-access-token', password: 'app-token' };
                 },
             }),

@@ -30,6 +30,7 @@ export function approvalDecisionKey(runId: string, approvalId: string): string {
 /** A recorded decision as approve() returns it (no undefined fields). */
 export function toApprovalDecision(value: unknown): ApprovalDecision {
     const record = isObject(value) ? value : {};
+
     return {
         approved: record.approved === true,
         ...(typeof record.reason === 'string' ? { reason: record.reason } : {}),
@@ -45,23 +46,32 @@ export function toApprovalDecision(value: unknown): ApprovalDecision {
 function isOneLine(text: string): boolean {
     for (let i = 0; i < text.length; i++) {
         const code = text.charCodeAt(i);
-        if (code < 0x20 || (code >= 0x7F && code <= 0x9F) || code === 0x2028 || code === 0x2029) return false;
+
+        if (code < 0x20 || (code >= 0x7F && code <= 0x9F) || code === 0x2028 || code === 0x2029) {
+            return false;
+        }
     }
+
     return true;
 }
 
 function toApprovalOption(value: unknown, index: number): ApprovalOption {
-    if (!isObject(value)) throw new ValidationError(`Approval option ${index} must be an object.`);
+    if (!isObject(value)) {
+        throw new ValidationError(`Approval option ${index} must be an object.`);
+    }
+
     const {
-        id, 
-        label, 
-        detail, 
+        id,
+        label,
+        detail,
     } = value;
+
     if (typeof id !== 'string' || !APPROVAL_OPTION_ID_PATTERN.test(id)) {
         throw new ValidationError(
             `Approval option ${index} needs an id of at most 128 characters (letters, digits and . : / @ + - _, no whitespace).`,
         );
     }
+
     if (
         typeof label !== 'string' ||
         label.trim().length === 0 ||
@@ -72,15 +82,17 @@ function toApprovalOption(value: unknown, index: number): ApprovalOption {
             `Approval option "${id}" needs a label of one line with 1 to ${APPROVAL_OPTION_LABEL_MAX_LENGTH} characters.`,
         );
     }
+
     if (detail !== undefined && (typeof detail !== 'string' || detail.length > APPROVAL_OPTION_DETAIL_MAX_LENGTH)) {
         throw new ValidationError(
             `The detail of approval option "${id}" must be a string of at most ${APPROVAL_OPTION_DETAIL_MAX_LENGTH} characters.`,
         );
     }
+
     return {
-        id, 
-        label, 
-        ...(detail !== undefined ? { detail } : {}), 
+        id,
+        label,
+        ...(detail !== undefined ? { detail } : {}),
     };
 }
 
@@ -96,26 +108,38 @@ export function toApprovalOptions(
     if (multiple !== undefined && typeof multiple !== 'boolean') {
         throw new ValidationError('An approval request\'s multiple must be a boolean.');
     }
+
     if (options === undefined) {
-        if (multiple === true) throw new ValidationError('An approval request with multiple needs options.');
+        if (multiple === true) {
+            throw new ValidationError('An approval request with multiple needs options.');
+        }
+
         return {};
     }
+
     if (!Array.isArray(options) || options.length === 0 || options.length > APPROVAL_OPTIONS_MAX) {
         throw new ValidationError(`An approval request's options must be an array of 1 to ${APPROVAL_OPTIONS_MAX} options.`);
     }
+
     const copied = options.map((option, index) => toApprovalOption(option, index));
     const ids = new Set<string>();
     let details = 0;
+
     for (const option of copied) {
-        if (ids.has(option.id)) throw new ValidationError(`The approval option id "${option.id}" is used twice.`);
+        if (ids.has(option.id)) {
+            throw new ValidationError(`The approval option id "${option.id}" is used twice.`);
+        }
+
         ids.add(option.id);
         details += option.detail?.length ?? 0;
     }
+
     if (details > APPROVAL_OPTIONS_DETAIL_MAX_LENGTH) {
         throw new ValidationError(
             `The details of an approval request's options have at most ${APPROVAL_OPTIONS_DETAIL_MAX_LENGTH} characters together.`,
         );
     }
+
     return { options: copied, ...(multiple === true ? { multiple: true as const } : {}) };
 }
 
@@ -124,10 +148,14 @@ export function toApprovalOptions(
  * APPROVAL_OPTIONS_MAX distinct strings. Checked before any store read.
  */
 export function assertSelectionShape(selected: unknown): asserts selected is string[] | undefined {
-    if (selected === undefined) return;
+    if (selected === undefined) {
+        return;
+    }
+
     if (!isStringArray(selected) || selected.length > APPROVAL_OPTIONS_MAX) {
         throw new ValidationError(`An approval's selected must be an array of at most ${APPROVAL_OPTIONS_MAX} option ids.`);
     }
+
     if (new Set(selected).size !== selected.length) {
         throw new ValidationError('An approval\'s selected names an option twice.');
     }
@@ -145,28 +173,40 @@ export function toSelection(
     selected: string[] | undefined,
 ): string[] | undefined {
     const options = waiting.options ?? [];
+
     if (options.length === 0) {
         if (selected !== undefined && selected.length > 0) {
             throw new ValidationError(`Approval "${waiting.approvalId}" has no options to select.`);
         }
+
         return undefined;
     }
+
     if (!approved) {
         if (selected !== undefined && selected.length > 0) {
             throw new ValidationError('A denial selects no option.');
         }
+
         return undefined;
     }
+
     const chosen = new Set(selected ?? []);
     const known = new Set(options.map((option) => option.id));
+
     for (const id of chosen) {
-        if (!known.has(id)) throw new ValidationError(`Approval "${waiting.approvalId}" has no option "${id}".`);
+        if (!known.has(id)) {
+            throw new ValidationError(`Approval "${waiting.approvalId}" has no option "${id}".`);
+        }
     }
+
     if (waiting.multiple === true) {
-        if (chosen.size === 0) throw new ValidationError('An approval of a multiple choice selects at least one option.');
+        if (chosen.size === 0) {
+            throw new ValidationError('An approval of a multiple choice selects at least one option.');
+        }
     } else if (chosen.size !== 1) {
         throw new ValidationError('An approval of a single choice selects exactly one option.');
     }
+
     return options.filter((option) => chosen.has(option.id)).map((option) => option.id);
 }
 
@@ -182,19 +222,27 @@ export function toSelection(
 export function fitRecordedDecision(
     decision: ApprovalDecision,
     request: {
-        approvalId: string; 
-        options?: ApprovalOption[]; 
-        multiple?: boolean 
+        approvalId: string;
+        options?: ApprovalOption[];
+        multiple?: boolean
     },
 ): ApprovalDecision {
-    if (!decision.approved) return decision;
+    if (!decision.approved) {
+        return decision;
+    }
+
     const changed: ApprovalDecision = {
         approved: false,
         reason: 'options changed',
         ...(decision.approver ? { approver: decision.approver } : {}),
     };
-    if (!request.options) return decision.selected ? changed : decision;
+
+    if (!request.options) {
+        return decision.selected ? changed : decision;
+    }
+
     let selected: string[] | undefined;
+
     try {
         selected = toSelection({
             kind: 'approval',
@@ -209,5 +257,6 @@ export function fitRecordedDecision(
     } catch {
         return changed;
     }
+
     return { ...decision, ...(selected ? { selected } : {}) };
 }

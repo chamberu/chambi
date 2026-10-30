@@ -41,6 +41,7 @@ function setup(github: Partial<GithubAppOptions> = {}, context: ToolContextInput
     const ctx = toolContext(context);
     const tools: ToolSet = wrapToolsForRun(fixture.gh.readTools(), ctx, createMemoryStore().effects);
     const call = <T = unknown>(name: string, input: unknown) => callTool<T>(tools, name, input, ctx);
+
     return {
         ...fixture,
         ctx,
@@ -52,6 +53,7 @@ function setup(github: Partial<GithubAppOptions> = {}, context: ToolContextInput
 describe('read tools', () => {
     it('offers the read tools only', () => {
         const { gh } = createGithubFixture();
+
         expect(Object.keys(gh.readTools()).sort()).toEqual([
             'github_compare',
             'github_get_file',
@@ -71,6 +73,7 @@ describe('read tools', () => {
 
     it('github_get_issue returns a slim issue', async () => {
         const { fake, call } = setup();
+
         fake.issues.set('octo/demo#5', { ...ISSUE });
         fake.issues.set('octo/demo#6', {
             ...ISSUE,
@@ -96,8 +99,11 @@ describe('read tools', () => {
 
     it('github_search_issues sends the query and limit', async () => {
         const { fake, call } = setup();
+
         fake.issues.set('octo/demo#5', { ...ISSUE, repository_url: 'https://api.github.com/repos/octo/demo' });
+
         const result = await call('github_search_issues', { query: 'Crash' });
+
         expect(result).toEqual({
             total: 1,
             items: [{
@@ -123,22 +129,28 @@ describe('read tools', () => {
 
     it('github_list_labels pages through every label', async () => {
         const { fake, call } = setup();
+
         fake.labels.set('octo/demo', Array.from({ length: 150 }, (_, i) => ({
             id: i,
             name: `l${i}`,
             description: i === 0 ? null : `d${i}`,
             color: 'fff',
         })));
+
         const labels = await call<Array<{ name: string; description: string | null }>>('github_list_labels', { repo: 'octo/demo' });
+
         expect(labels).toHaveLength(150);
         expect(labels[0]).toEqual({ name: 'l0', description: null });
         expect(labels[149]).toEqual({ name: 'l149', description: 'd149' });
+
         const pages = fake.requests.filter((r) => r.path === '/repos/octo/demo/labels');
+
         expect(pages.map((r) => r.query.per_page)).toEqual(['100', '100']);
     });
 
     it('github_get_pull_request returns a slim pull request', async () => {
         const { fake, call } = setup();
+
         fake.pulls.set('octo/demo#7', {
             number: 7,
             title: 'Fix the crash',
@@ -152,14 +164,14 @@ describe('read tools', () => {
             merge_commit_sha: 'm',
             labels: [{ name: 'dependencies' }],
             base: {
-                ref: 'main', 
-                sha: 'a', 
-                repo: { full_name: 'octo/demo' }, 
+                ref: 'main',
+                sha: 'a',
+                repo: { full_name: 'octo/demo' },
             },
             head: {
-                ref: 'fix/crash', 
-                sha: 'b', 
-                repo: { full_name: 'Octo/Demo' }, 
+                ref: 'fix/crash',
+                sha: 'b',
+                repo: { full_name: 'Octo/Demo' },
             },
             user: { login: 'bob', type: 'User' },
             html_url: 'https://github.com/octo/demo/pull/7',
@@ -191,20 +203,21 @@ describe('read tools', () => {
 
     it('github_get_pull_request reads absent fields as unknown', async () => {
         const { fake, call } = setup();
+
         fake.pulls.set('octo/demo#8', {
             number: 8,
             title: 'Gone fork',
             state: 'open',
             merged: false,
             base: {
-                ref: 'main', 
-                sha: 'a', 
-                repo: { full_name: 'octo/demo' }, 
+                ref: 'main',
+                sha: 'a',
+                repo: { full_name: 'octo/demo' },
             },
             head: {
-                ref: 'patch', 
-                sha: 'c', 
-                repo: null, 
+                ref: 'patch',
+                sha: 'c',
+                repo: null,
             },
             user: null,
             html_url: 'https://github.com/octo/demo/pull/8',
@@ -235,6 +248,7 @@ describe('read tools', () => {
             encoding: 'base64',
             content: Buffer.from(text).toString('base64'),
         });
+
         fake.files.set('octo/demo:src/index.ts', file('src/index.ts', 'export {};\n'));
         fake.files.set('octo/demo:src/big.txt', file('src/big.txt', 'é'.repeat(70_000)));
         fake.files.set('octo/demo:src/lib/a.ts', file('src/lib/a.ts', 'a'));
@@ -254,6 +268,7 @@ describe('read tools', () => {
         expect(fake.requests.at(-1)?.query).toEqual({ ref: 'main' });
 
         const big = await call<{ content: string; truncated: boolean }>('github_get_file', { repo: 'octo/demo', path: 'src/big.txt' });
+
         expect(big.truncated).toBe(true);
         expect(big.content).toHaveLength(65_536);
 
@@ -276,6 +291,7 @@ describe('read tools', () => {
 
     it('github_get_latest_release returns the release or none', async () => {
         const { fake, call } = setup();
+
         expect(await call('github_get_latest_release', { repo: 'octo/demo' })).toEqual({ none: true });
         fake.releases.set('octo/demo', [{
             tag_name: 'v1.2.0',
@@ -308,6 +324,7 @@ describe('read tools', () => {
 
         function withReleases() {
             const fixture = setup();
+
             fixture.fake.releases.set('octo/demo', [
                 release('0.9.0', 1),
                 release('v1.0.0', 2),
@@ -318,6 +335,7 @@ describe('read tools', () => {
                 release('nightly', 7),
                 release('v1.3.0', 8),
             ]);
+
             return fixture;
         }
 
@@ -332,6 +350,7 @@ describe('read tools', () => {
                     to: 'v1.2.0',
                 },
             );
+
             expect(result.truncated).toBe(false);
             expect(result.releases.map((r) => r.tag)).toEqual(['1.1.0', 'v1.2.0-rc.1', 'v1.2.0']);
             expect(result.releases[1]!.prerelease).toBe(true);
@@ -350,6 +369,7 @@ describe('read tools', () => {
             const { call } = withReleases();
 
             const result = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', { repo: 'octo/demo', from: 'v1.2.0' });
+
             expect(result.releases.map((r) => r.tag)).toEqual(['v1.3.0']);
         });
 
@@ -357,11 +377,13 @@ describe('read tools', () => {
             const { call } = withReleases();
 
             const result = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', { repo: 'octo/demo' });
+
             expect(result.releases.map((r) => r.tag)).toEqual(['0.9.0', 'v1.0.0', '1.1.0', 'v1.2.0-rc.1', 'v1.2.0', 'nightly', 'v1.3.0']);
         });
 
         it('reads a monorepo package by tag prefix', async () => {
             const { fake, call } = setup();
+
             fake.releases.set('octo/demo', [
                 release('@octo/a@1.0.0', 1),
                 release('@octo/b@2.0.0', 2),
@@ -376,11 +398,13 @@ describe('read tools', () => {
                     from: '1.0.0',
                 },
             );
+
             expect(result.releases.map((r) => r.tag)).toEqual(['@octo/a@1.1.0']);
         });
 
         it('caps the bodies and the number of releases', async () => {
             const { fake, call } = setup();
+
             fake.releases.set('octo/demo', Array.from({ length: 25 }, (_, i) => release(`v1.${i}.0`, i + 1, { body: 'x'.repeat(9_000) })));
 
             const result = await call<{
@@ -394,6 +418,7 @@ describe('read tools', () => {
                 'github_list_releases',
                 { repo: 'octo/demo', from: 'v1.0.0' },
             );
+
             expect(result.truncated).toBe(true);
             expect(result.releases).toHaveLength(20);
             expect(result.releases[0]!.tag).toBe('v1.1.0');
@@ -403,6 +428,7 @@ describe('read tools', () => {
 
         it('pages through the releases', async () => {
             const { fake, call } = setup();
+
             fake.releases.set('octo/demo', Array.from({ length: 150 }, (_, i) => release(`v0.${i}.0`, (i % 28) + 1)));
 
             const result = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', {
@@ -410,12 +436,14 @@ describe('read tools', () => {
                 from: 'v0.0.0',
                 to: 'v0.2.0',
             });
+
             expect(result.releases.map((r) => r.tag)).toEqual(['v0.1.0', 'v0.2.0']);
             expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(2);
         });
 
         it('keeps reading past a backport published after the wanted range', async () => {
             const { fake, call } = setup();
+
             fake.releases.set('octo/demo', [
                 ...Array.from({ length: 111 }, (_, i) => release(`v2.${i}.0`, (i % 28) + 1)),
                 release('v3.0.0', 1),
@@ -427,30 +455,38 @@ describe('read tools', () => {
                 from: '2.5.0',
                 to: '2.20.0',
             });
+
             expect(result.releases.map((r) => r.tag)).toEqual(Array.from({ length: 15 }, (_, i) => `v2.${i + 6}.0`));
             expect(result.truncated).toBe(false);
         });
 
         it('reads every page with exhaustive, also past a whole page below from', async () => {
             const { fake, call } = setup();
+
             // a page of old-line releases published after the one in range (the fake lists newest last)
             fake.releases.set('octo/demo', [
                 release('v2.1.0', 1),
                 ...Array.from({ length: 100 }, (_, i) => release(`v1.${i}.0`, 20)),
             ]);
+
             const input = { repo: 'octo/demo', from: '2.0.0' };
 
             const quick = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', input);
+
             expect(quick.releases).toEqual([]);
+
             const full = await call<{ releases: Array<{ tag: string }> }>('github_list_releases', { ...input, exhaustive: true });
+
             expect(full.releases.map((r) => r.tag)).toEqual(['v2.1.0']);
         });
 
         it('reads one page for the newest releases without from', async () => {
             const { fake, call } = setup();
+
             fake.releases.set('octo/demo', Array.from({ length: 1_000 }, (_, i) => release(`v1.${i}.0`, (i % 28) + 1)));
 
             const result = await call<{ releases: Array<{ tag: string }>; truncated: boolean }>('github_list_releases', { repo: 'octo/demo' });
+
             expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(1);
             expect(result.releases.map((r) => r.tag)).toEqual(Array.from({ length: 20 }, (_, i) => `v1.${i + 980}.0`));
             // older releases matched too
@@ -459,6 +495,7 @@ describe('read tools', () => {
 
         it('reads until enough releases of a tag prefix matched without from', async () => {
             const { fake, call } = setup();
+
             fake.releases.set('octo/demo', [
                 ...Array.from({ length: 30 }, (_, i) => release(`pkg-a@1.${i}.0`, (i % 28) + 1)),
                 ...Array.from({ length: 200 }, (_, i) => release(`pkg-b@1.${i}.0`, (i % 28) + 1)),
@@ -469,6 +506,7 @@ describe('read tools', () => {
                 'github_list_releases',
                 { repo: 'octo/demo', tagPrefix: 'pkg-a@' },
             );
+
             expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(3);
             expect(result.releases.map((r) => r.tag)).toEqual([
                 ...Array.from({ length: 10 }, (_, i) => `pkg-a@1.${i + 20}.0`),
@@ -478,18 +516,21 @@ describe('read tools', () => {
 
         it('stops reading up to to once a whole page is below the newest releases found', async () => {
             const { fake, call } = setup();
+
             fake.releases.set('octo/demo', Array.from({ length: 1_000 }, (_, i) => release(`v1.${i}.0`, (i % 28) + 1)));
 
             const result = await call<{ releases: Array<{ tag: string }>; truncated: boolean }>(
                 'github_list_releases',
                 { repo: 'octo/demo', to: 'v1.950.0' },
             );
+
             expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(2);
             expect(result.releases.map((r) => r.tag)).toEqual(Array.from({ length: 20 }, (_, i) => `v1.${i + 931}.0`));
         });
 
         it('reports a range the page cap left unread as truncated', async () => {
             const { fake, call } = setup();
+
             fake.releases.set('octo/demo', [
                 ...Array.from({ length: 10 }, (_, i) => release(`v1.${i}.0`, i + 1)),
                 ...Array.from({ length: 1_000 }, (_, i) => release(`nightly-${i}`, (i % 28) + 1)),
@@ -500,6 +541,7 @@ describe('read tools', () => {
                 from: '1.0.0',
                 to: '1.5.0',
             });
+
             expect(fake.requests.filter((r) => r.path.endsWith('/releases')).length).toBe(10);
             expect(result.truncated).toBe(true);
         });
@@ -508,6 +550,7 @@ describe('read tools', () => {
     describe('github_compare', () => {
         function withComparison(commits = 2, files = 1) {
             const fixture = setup();
+
             fixture.fake.route('GET', '/repos/:owner/:repo/compare/:basehead', ({ params }) => ({
                 status: 200,
                 body: {
@@ -531,6 +574,7 @@ describe('read tools', () => {
                     })),
                 },
             }));
+
             return fixture;
         }
 
@@ -587,13 +631,15 @@ describe('read tools', () => {
                     head: 'b',
                 },
             );
+
             expect(result.commits).toHaveLength(100);
             expect(result.files).toHaveLength(300);
             expect(result.truncated).toBe(true);
         });
 
         it('asks for the first, oldest page of commits and reports the rest by total_commits', async () => {
-            const fixture = withComparison(2);
+            const fixture = withComparison();
+
             fixture.fake.route('GET', '/repos/:owner/:repo/compare/:basehead', () => ({
                 status: 200,
                 body: {
@@ -604,18 +650,19 @@ describe('read tools', () => {
                     html_url: 'u',
                     files: [],
                     commits: [{
-                        sha: 'oldest', 
-                        commit: { message: 'm', author: { name: 'A', date: 'd' } }, 
-                        author: null, 
+                        sha: 'oldest',
+                        commit: { message: 'm', author: { name: 'A', date: 'd' } },
+                        author: null,
                     }],
                 },
             }));
 
             const result = await fixture.call<{ commits: Array<{ sha: string }>; truncated: boolean }>('github_compare', {
-                repo: 'octo/demo', 
-                base: 'a', 
+                repo: 'octo/demo',
+                base: 'a',
                 head: 'b',
             });
+
             expect(fixture.fake.requests.at(-1)!.query).toMatchObject({ per_page: '100', page: '1' });
             expect(result.commits.map((commit) => commit.sha)).toEqual(['oldest']);
             expect(result.truncated).toBe(true);
@@ -629,6 +676,7 @@ describe('read tools', () => {
                 base: 'a',
                 head: 'b',
             });
+
             expect(result.files).toHaveLength(300);
             expect(result.truncated).toBe(true);
         });
@@ -651,6 +699,7 @@ describe('read tools', () => {
 
     it('uses the configured installation for non-github runs', async () => {
         const { fake, call } = setup({ installationId: 7 }, { channel: 'cron' });
+
         fake.issues.set('octo/demo#5', { ...ISSUE });
         await call('github_get_issue', { repo: 'octo/demo', number: 5 });
         expect(fake.tokenInstallations).toEqual([7]);
@@ -658,7 +707,9 @@ describe('read tools', () => {
 
     it('uses the delivery installation for a run of a renamed github channel of the app', async () => {
         const fixture = createGithubFixture({ installationId: 7 });
+
         githubChannel({ app: fixture.gh, name: 'github-ent' });
+
         const event = {
             name: 'issues',
             action: 'opened',
@@ -668,6 +719,7 @@ describe('read tools', () => {
         };
         const ctx = toolContext({ channel: 'github-ent', payload: event });
         const tools: ToolSet = wrapToolsForRun(fixture.gh.readTools(), ctx, createMemoryStore().effects);
+
         fixture.fake.issues.set('octo/demo#5', { ...ISSUE });
         await callTool(tools, 'github_get_issue', { repo: 'octo/demo', number: 5 }, ctx);
         expect(fixture.fake.tokenInstallations).toEqual([42]);
@@ -683,6 +735,7 @@ describe('read tools', () => {
                 payload: {},
             },
         });
+
         fake.issues.set('octo/demo#5', { ...ISSUE });
         await call('github_get_issue', { repo: 'octo/demo', number: 5 });
         expect(fake.tokenInstallations).toEqual([7]);
@@ -690,6 +743,7 @@ describe('read tools', () => {
 
     it('acts as the repository installation for a cron run', async () => {
         const { fake, call } = setup({}, { channel: 'cron' });
+
         fake.installations.set('octo/demo', 9);
         fake.issues.set('octo/demo#5', { ...ISSUE });
         await call('github_get_issue', { repo: 'octo/demo', number: 5 });
@@ -705,6 +759,7 @@ describe('read tools', () => {
                 payload: { repository: { full_name: 'Octo/Demo' } },
             },
         });
+
         fake.installations.set('octo/demo', 42);
         fake.issues.set('octo/demo#5', { ...ISSUE });
         await call('github_get_issue', { repo: 'octo/demo', number: 5 });
@@ -721,6 +776,7 @@ describe('read tools', () => {
                 payload: { repository: { full_name: 'octo/demo' } },
             },
         });
+
         fake.installations.set('acme/api', 9);
         fake.issues.set('acme/api#5', { ...ISSUE });
         await call('github_get_issue', { repo: 'acme/api', number: 5 });
@@ -729,6 +785,7 @@ describe('read tools', () => {
 
     it('falls back to the default installation for an uninstalled repository', async () => {
         const { fake, call } = setup({ installationId: 7 }, { channel: 'cron' });
+
         fake.issues.set('upstream/lib#5', { ...ISSUE });
         await call('github_get_issue', { repo: 'upstream/lib', number: 5 });
         expect(fake.tokenInstallations).toEqual([7]);
@@ -737,18 +794,21 @@ describe('read tools', () => {
     it('answers a tool error without any installation', async () => {
         const { call } = setup({}, { channel: 'http' });
         const error = await call('github_get_issue', { repo: 'octo/demo', number: 5 }).catch((e: unknown) => e);
+
         expect(error).not.toBeInstanceOf(FatalToolError);
         expect(error).toMatchObject({ code: 'github_request', message: expect.stringContaining('not installed on octo/demo') });
     });
 
     it('answers a tool error when the installation lookup fails', async () => {
         const { fake, call } = setup({ installationId: 7 }, { channel: 'cron' });
+
         fake.failNext('GET', '/repos/octo/demo/installation', 500);
         await expect(call('github_get_issue', { repo: 'octo/demo', number: 5 })).rejects.toMatchObject({ code: 'github_request' });
     });
 
     it('takes the repo: qualifier of a search query', async () => {
         const { fake, call } = setup({}, { channel: 'cron' });
+
         fake.installations.set('acme/api', 9);
         await call('github_search_issues', { query: 'is:open repo:acme/api' });
         expect(fake.tokenInstallations).toEqual([9]);
@@ -756,12 +816,16 @@ describe('read tools', () => {
 
     it('rejects a malformed repo as a tool error', async () => {
         const { call } = setup();
+
         for (const repo of ['octo', 'a/b/c', 'a /b']) {
             const error = await call('github_get_issue', { repo, number: 5 }).catch((e: unknown) => e);
+
             expect(error).toBeInstanceOf(ValidationError);
             expect(error).not.toBeInstanceOf(FatalToolError);
         }
+
         const error = await call('github_get_issue', { repo: 'octo/demo', number: 0 }).catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(ValidationError);
     });
 
@@ -775,9 +839,17 @@ describe('read tools', () => {
             clock: fixture.clock,
             fetch: async (resource, init) => {
                 const request = new Request(resource as RequestInfo, init);
-                if (!new URL(request.url).pathname.startsWith('/repos/')) return fixture.fake.fetch(resource, init);
-                if (!init?.signal) throw new TypeError('the request carries no signal');
+
+                if (!new URL(request.url).pathname.startsWith('/repos/')) {
+                    return fixture.fake.fetch(resource, init);
+                }
+
+                if (!init?.signal) {
+                    throw new TypeError('the request carries no signal');
+                }
+
                 started.resolve();
+
                 // a stalled GitHub: answers only by rejecting on abort
                 return new Promise<Response>((_resolve, reject) => {
                     init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
@@ -788,9 +860,12 @@ describe('read tools', () => {
         const ctx = toolContext({ signal: controller.signal });
         const tools: ToolSet = wrapToolsForRun(gh.readTools(), ctx, createMemoryStore().effects);
         const result = callTool(tools, 'github_get_issue', { repo: 'octo/demo', number: 5 }, ctx).catch((e: unknown) => e);
+
         await started.promise;
         controller.abort(new Error('drained'));
+
         const error = await result;
+
         expect(error).toBeInstanceOf(Error);
         expect(error).not.toBeInstanceOf(FatalToolError);
     });
@@ -837,17 +912,22 @@ describe('read tools', () => {
                 payload: {},
             },
         });
+
         await engine.start();
         await engine.idle();
         await engine.drain();
 
         expect((await store.runs.findOne(runId))?.status).toBe('completed');
         expect(fake.requests.some((r) => r.path === '/repos/octo/demo/issues/99' && r.authorization === 'token ghs_1')).toBe(true);
+
         const steps = await store.steps.find(runId);
         const toolStep = steps.find((s) => s.kind === 'tool');
+
         expect(toolStep?.error).toMatchObject({ message: expect.stringContaining('GitHub 404') });
+
         const checkpoint = await store.checkpoints.findOne(runId);
         const stored = JSON.stringify({ steps, checkpoint });
+
         expect(stored).not.toContain('ghs_');
         expect(stored.toLowerCase()).not.toContain('authorization');
     });

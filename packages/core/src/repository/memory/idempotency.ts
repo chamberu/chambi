@@ -24,13 +24,16 @@ export class MemoryIdempotencyRepository implements IIdempotencyRepository {
     }
 
     async claim(scope: string, key: string, runId: string, ttlMs: number): Promise<{ created: boolean; runId: string }> {
-        const id = `${scope}\u0000${key}`;
+        const id = `${scope}\0${key}`;
         const now = this.now();
         const existing = this.keys.get(id);
+
         if (existing && existing.expiresAt > now) {
             return { created: false, runId: existing.runId };
         }
+
         this.keys.set(id, { runId, expiresAt: now + ttlMs });
+
         return { created: true, runId };
     }
 }

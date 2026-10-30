@@ -27,8 +27,12 @@ const deploy = defineTool({
                 body: 'Staging has been green for a day.',
                 timeoutMs: 60 * 60 * 1000,
             });
-            if (!decision.approved) return `Not deployed: ${decision.reason ?? 'denied'}.`;
+
+            if (!decision.approved) {
+                return `Not deployed: ${decision.reason ?? 'denied'}.`;
+            }
         }
+
         // staging deploys run right away
         return deployVersion(version, env);
     },
@@ -38,14 +42,14 @@ const deploy = defineTool({
 // #region choice
 const RULES = [
     {
-        id: 'unicorn/no-null', 
-        label: 'unicorn/no-null', 
-        detail: '@@ -1 +1 @@\n-const user = null;\n+const user = undefined;', 
+        id: 'unicorn/no-null',
+        label: 'unicorn/no-null',
+        detail: '@@ -1 +1 @@\n-const user = null;\n+const user = undefined;',
     },
     {
-        id: 'unicorn/prefer-at', 
-        label: 'unicorn/prefer-at', 
-        detail: '@@ -1 +1 @@\n-items[items.length - 1]\n+items.at(-1)', 
+        id: 'unicorn/prefer-at',
+        label: 'unicorn/prefer-at',
+        detail: '@@ -1 +1 @@\n-items[items.length - 1]\n+items.at(-1)',
     },
 ];
 
@@ -59,9 +63,14 @@ const pickRules = defineTool({
             options: RULES,
             multiple: true,
         });
-        if (!decision.approved) return `Adopt none: ${decision.reason ?? 'denied'}.`;
+
+        if (!decision.approved) {
+            return `Adopt none: ${decision.reason ?? 'denied'}.`;
+        }
+
         // map the ids back to your own options; an id you do not know is a denial
         const adopted = RULES.filter((rule) => decision.selected?.includes(rule.id));
+
         return `Adopt ${adopted.map((rule) => rule.id).join(', ')}.`;
     },
 });
@@ -77,6 +86,7 @@ const restart = defineTool({
             title: `Restart ${service}?`,
             address: 'ops',
         });
+
         return approved ? `restarted ${service}` : 'left running';
     },
 });
@@ -99,11 +109,18 @@ export function createOperator(model: LanguageModel) {
         hooks: {
             // runs before every tool call, inside the call: approve() works here and replays on resume
             async beforeToolExecution({ toolName, input }, ctx) {
-                if (toolName !== 'shell') return input;
+                if (toolName !== 'shell') {
+                    return input;
+                }
+
                 const { command } = input as { command: string };
                 const decision = await approve(ctx, { title: 'Run a shell command?', body: command });
+
                 // a tool error the model sees; the run goes on
-                if (!decision.approved) throw new ToolDeniedError(`Refused: ${decision.reason ?? 'denied'}`);
+                if (!decision.approved) {
+                    throw new ToolDeniedError(`Refused: ${decision.reason ?? 'denied'}`);
+                }
+
                 return input;
             },
             // runs on a fresh and on a recorded result alike: redact before the model sees it
@@ -122,9 +139,9 @@ export async function approvalFlow(model: LanguageModel) {
         model,
         instructions: 'Deploy the requested version.',
         tools: {
-            deploy, 
-            restart, 
-            pickRules, 
+            deploy,
+            restart,
+            pickRules,
         },
     });
 
@@ -136,16 +153,19 @@ export async function approvalFlow(model: LanguageModel) {
     // #endregion engine
 
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: 'deployer',
         trigger: 'manual',
         channel: 'console',
         payload: { version: '1.4.0', env: 'prod' },
     });
+
     await engine.idle();
 
     // #region answer
     const run = await engine.getRun(runId);
+
     if (run?.status === RunStatus.WAITING && run.waiting) {
         // run.waiting: { approvalId, toolName, toolCallId, title, body?, channel?, address?, expiresAt, ... }
         await engine.approve(run.id, {
@@ -158,5 +178,6 @@ export async function approvalFlow(model: LanguageModel) {
 
     await engine.idle();
     await engine.stop();
+
     return engine.getRun(runId);
 }

@@ -16,6 +16,7 @@ async function storeReachable(ctx: HttpContext): Promise<boolean> {
         timer = ctx.clock.setTimeout(() => resolve(false), ctx.readyTimeoutMs);
     });
     const probe = ctx.store.runs.findOne(READINESS_PROBE_RUN_ID).then(() => true, () => false);
+
     try {
         return await Promise.race([probe, timeout]);
     } finally {
@@ -32,9 +33,18 @@ export function registerHealthRoutes(app: App, ctx: HttpContext): void {
     app.get('/healthz', defineCoreHandler(() => ({ status: 'ok' })));
 
     app.get('/readyz', defineCoreHandler(async () => {
-        if (ctx.shutdown?.shuttingDown) return unavailable('shutting-down');
-        if (ctx.engine.isDraining) return unavailable('draining');
-        if (!await storeReachable(ctx)) return unavailable('store-unreachable');
+        if (ctx.shutdown?.shuttingDown) {
+            return unavailable('shutting-down');
+        }
+
+        if (ctx.engine.isDraining) {
+            return unavailable('draining');
+        }
+
+        if (!await storeReachable(ctx)) {
+            return unavailable('store-unreachable');
+        }
+
         return { status: 'ok' };
     }));
 }

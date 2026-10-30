@@ -18,19 +18,29 @@ export function createOutputCollector(maxBytes: number): IOutputCollector {
     const bytes = (): Uint8Array => {
         const out = new Uint8Array(size);
         let offset = 0;
+
         for (const chunk of chunks) {
             out.set(chunk, offset);
             offset += chunk.length;
         }
+
         return out;
     };
 
     return {
         write(chunk) {
             const room = maxBytes - size;
-            if (chunk.length > room) truncated = true;
+
+            if (chunk.length > room) {
+                truncated = true;
+            }
+
             const kept = Math.min(room, chunk.length);
-            if (kept <= 0) return;
+
+            if (kept <= 0) {
+                return;
+            }
+
             // A copy, also for a Buffer, whose slice() is a view of the caller's memory.
             chunks.push(new Uint8Array(chunk.subarray(0, kept)));
             size += kept;
@@ -41,6 +51,7 @@ export function createOutputCollector(maxBytes: number): IOutputCollector {
         bytes,
         text() {
             const all = bytes();
+
             return decoder.decode(truncated ? all.subarray(0, completeLength(all)) : all);
         },
     };

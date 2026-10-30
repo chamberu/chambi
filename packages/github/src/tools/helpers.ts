@@ -25,17 +25,23 @@ import {
 
 function isGithubRun(ctx: ToolContext, app: IGithubApp): boolean {
     const { channel } = ctx.run.trigger;
+
     return channel === GITHUB_CHANNEL_NAME || isChannelOf(app, channel);
 }
 
 /** The delivery's installation of a run a GitHub channel of this app started, else undefined. */
 function eventInstallation(ctx: ToolContext, app: IGithubApp): { id: number; repository?: string } | undefined {
     const { payload } = ctx.run.trigger;
-    if (!isGithubRun(ctx, app) || !isObject(payload) || typeof payload.installationId !== 'number') return undefined;
+
+    if (!isGithubRun(ctx, app) || !isObject(payload) || typeof payload.installationId !== 'number') {
+        return undefined;
+    }
+
     const event = isObject(payload.payload) ? payload.payload : {};
     const repository = isObject(event.repository) && typeof event.repository.full_name === 'string' ?
         event.repository.full_name :
         undefined;
+
     return { id: payload.installationId, ...(repository ? { repository } : {}) };
 }
 
@@ -54,14 +60,29 @@ function eventInstallation(ctx: ToolContext, app: IGithubApp): { id: number; rep
  */
 export async function installationOf(app: IGithubApp, ctx: ToolContext, target?: RepoTarget): Promise<number> {
     const event = eventInstallation(ctx, app);
+
     if (target) {
         const name = `${target.owner}/${target.repo}`.toLowerCase();
-        if (event?.repository?.toLowerCase() === name) return event.id;
+
+        if (event?.repository?.toLowerCase() === name) {
+            return event.id;
+        }
+
         const found = await app.installationFor(target);
-        if (found !== undefined) return found;
+
+        if (found !== undefined) {
+            return found;
+        }
     }
-    if (event) return event.id;
-    if (app.installationId !== undefined) return app.installationId;
+
+    if (event) {
+        return event.id;
+    }
+
+    if (app.installationId !== undefined) {
+        return app.installationId;
+    }
+
     const where = target ? ` on ${target.owner}/${target.repo}` : '';
     throw new ChamviError({
         code: GITHUB_REQUEST_ERROR_CODE,
@@ -77,7 +98,10 @@ export function login(user: unknown): string | null {
 
 /** A label's name (GitHub sends objects, older payloads strings). */
 export function labelName(label: unknown): string {
-    if (typeof label === 'string') return label;
+    if (typeof label === 'string') {
+        return label;
+    }
+
     return isObject(label) && typeof label.name === 'string' ? label.name : '';
 }
 
@@ -86,15 +110,18 @@ const REPO = new RegExp(REPO_PATTERN);
 /** `owner/name`; a ValidationError (a tool error the model can correct) otherwise. */
 export function parseRepo(repo: unknown): { owner: string; repo: string } {
     const match = typeof repo === 'string' ? REPO.exec(repo) : null;
+
     if (!match?.[1] || !match[2]) {
         throw new ValidationError(`repo must look like "owner/name", got ${JSON.stringify(repo)}.`);
     }
+
     return { owner: match[1], repo: match[2] };
 }
 
 /** The repository of a search query's single `repo:owner/name` qualifier (an unparsable one ignored), else undefined. */
 export function searchTarget(query: string): RepoTarget | undefined {
     const targets: RepoTarget[] = [];
+
     for (const match of query.matchAll(/(?:^|\s)repo:(\S+)/g)) {
         try {
             targets.push(parseRepo(match[1]));
@@ -102,6 +129,7 @@ export function searchTarget(query: string): RepoTarget | undefined {
             // not a repository: no target from it
         }
     }
+
     return targets.length === 1 ? targets[0] : undefined;
 }
 
@@ -110,9 +138,11 @@ const REF = new RegExp(REF_PATTERN);
 /** A branch, tag or commit (REF_PATTERN, no `..`), else a ValidationError. */
 export function requireRef(value: unknown, name: string): string {
     const ref = requireString(value, name);
+
     if (!REF.test(ref) || ref.includes('..')) {
         throw new ValidationError(`${name} must be a branch, tag or commit, got ${JSON.stringify(ref)}.`);
     }
+
     return ref;
 }
 
@@ -121,6 +151,7 @@ export function requireInteger(value: unknown, name: string, min: number, max = 
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
         throw new ValidationError(`${name} must be an integer from ${min} to ${max}.`);
     }
+
     return value;
 }
 
@@ -129,6 +160,7 @@ export function requireString(value: unknown, name: string): string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new ValidationError(`${name} must be a non-empty string.`);
     }
+
     return value;
 }
 
@@ -148,25 +180,38 @@ function hasPart(message: ModelMessage, type: string, toolCallId: string): boole
 export function stepOf(options: Pick<ToolExecutionOptions<unknown>, 'toolCallId' | 'messages'>): number {
     const { messages, toolCallId } = options;
     let step = 0;
+
     for (const [index, message] of messages.entries()) {
-        if (message.role !== 'assistant') continue;
+        if (message.role !== 'assistant') {
+            continue;
+        }
+
         if (hasPart(message, 'tool-call', toolCallId)) {
             let answered = false;
+
             for (let next = index + 1; next < messages.length && messages[next]!.role !== 'assistant'; next++) {
-                if (messages[next]!.role === 'tool' && hasPart(messages[next]!, 'tool-result', toolCallId)) answered = true;
+                if (messages[next]!.role === 'tool' && hasPart(messages[next]!, 'tool-result', toolCallId)) {
+                    answered = true;
+                }
             }
-            if (!answered) return step;
+
+            if (!answered) {
+                return step;
+            }
         }
+
         step++;
     }
+
     return step;
 }
 
 /** The HTTP status of an Octokit RequestError, else undefined. */
 export function statusOf(error: unknown): number | undefined {
-    if (error instanceof Error && error.name === 'HttpError' && typeof (error as { status?: unknown }).status === 'number') {
+    if (Error.isError(error) && error.name === 'HttpError' && typeof (error as { status?: unknown }).status === 'number') {
         return (error as unknown as { status: number }).status;
     }
+
     return undefined;
 }
 
@@ -176,9 +221,13 @@ export function statusOf(error: unknown): number | undefined {
  * chamvi errors (FatalToolError, ValidationError) pass through.
  */
 export function toolError(error: unknown): Error {
-    if (error instanceof ChamviError) return error;
+    if (error instanceof ChamviError) {
+        return error;
+    }
+
     const status = statusOf(error);
-    const message = error instanceof Error ? error.message : String(error);
+    const message = Error.isError(error) ? error.message : String(error);
+
     return new ChamviError({
         message: status !== undefined ? `GitHub ${status}: ${message}` : `GitHub request failed: ${message}`,
         code: GITHUB_REQUEST_ERROR_CODE,
@@ -190,6 +239,7 @@ export function bindSignal(octokit: GithubOctokit, signal: AbortSignal): GithubO
     octokit.hook.before('request', (options) => {
         options.request = { ...options.request, signal };
     });
+
     return octokit;
 }
 
@@ -199,9 +249,13 @@ export function bindSignal(octokit: GithubOctokit, signal: AbortSignal): GithubO
  * signal must not abort, so the caller only stops waiting.
  */
 export function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-    if (signal.aborted) return Promise.reject(signal.reason);
+    if (signal.aborted) {
+        return Promise.reject(signal.reason);
+    }
+
     return new Promise<T>((resolve, reject) => {
         const onAbort = () => reject(signal.reason);
+
         signal.addEventListener('abort', onAbort, { once: true });
         promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
     });
@@ -222,6 +276,7 @@ export async function withOctokit<T>(
         const { signal } = ctx.run;
         const installationId = await untilAborted(installationOf(app, ctx, target), signal);
         const octokit = bindSignal(await app.octokit(installationId), signal);
+
         return await fn(octokit);
     } catch (error) {
         throw toolError(error);
@@ -249,9 +304,9 @@ export function numberSchema<T extends NumberInput = NumberInput>(what: string, 
     return objectSchema<T>({
         repo: REPO_PROPERTY,
         number: {
-            type: 'integer', 
-            minimum: 1, 
-            description: `The ${what} number.`, 
+            type: 'integer',
+            minimum: 1,
+            description: `The ${what} number.`,
         },
         ...extra,
     }, optional);
@@ -266,22 +321,43 @@ type Version = { core: number[]; pre: string[] };
 
 /** The version a release tag names: `tagPrefix` and a leading `v` removed, else undefined (no version). */
 export function versionOf(tag: string, tagPrefix = ''): Version | undefined {
-    if (!tag.startsWith(tagPrefix)) return undefined;
+    if (!tag.startsWith(tagPrefix)) {
+        return undefined;
+    }
+
     const match = /^v?(\d+(?:\.\d+){0,3})(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(tag.slice(tagPrefix.length));
-    if (!match?.[1]) return undefined;
+
+    if (!match?.[1]) {
+        return undefined;
+    }
+
     return { core: match[1].split('.').map(Number), pre: match[2] ? match[2].split('.') : [] };
 }
 
 function comparePre(a: string[], b: string[]): number {
-    if (a.length === 0 || b.length === 0) return b.length - a.length;
+    if (a.length === 0 || b.length === 0) {
+        return b.length - a.length;
+    }
+
     for (let i = 0; i < Math.max(a.length, b.length); i++) {
         const x = a[i];
         const y = b[i];
-        if (x === undefined || y === undefined) return x === undefined ? -1 : 1;
+
+        if (x === undefined || y === undefined) {
+            return x === undefined ? -1 : 1;
+        }
+
         const numeric = /^\d+$/.test(x) && /^\d+$/.test(y);
-        if (numeric && Number(x) !== Number(y)) return Number(x) - Number(y);
-        if (!numeric && x !== y) return x < y ? -1 : 1;
+
+        if (numeric && Number(x) !== Number(y)) {
+            return Number(x) - Number(y);
+        }
+
+        if (!numeric && x !== y) {
+            return x < y ? -1 : 1;
+        }
     }
+
     return 0;
 }
 
@@ -289,19 +365,28 @@ function comparePre(a: string[], b: string[]): number {
 export function compareVersions(a: Version, b: Version): number {
     for (let i = 0; i < Math.max(a.core.length, b.core.length); i++) {
         const diff = (a.core[i] ?? 0) - (b.core[i] ?? 0);
-        if (diff !== 0) return diff;
+
+        if (diff !== 0) {
+            return diff;
+        }
     }
+
     return comparePre(a.pre, b.pre);
 }
 
 /** A version bound of the input (`from`, `to`), else a ValidationError. */
 export function versionBound(value: unknown, name: string, tagPrefix: string): Version | undefined {
-    if (value === undefined) return undefined;
+    if (value === undefined) {
+        return undefined;
+    }
+
     const text = requireString(value, name);
     const version = versionOf(text.startsWith(tagPrefix) ? text : `${tagPrefix}${text}`, tagPrefix);
+
     if (!version) {
         throw new ValidationError(`${name} must be a version like 1.2.3 or v1.2.3, got ${JSON.stringify(text)}.`);
     }
+
     return version;
 }
 
@@ -312,10 +397,14 @@ export function cut(text: string, max: number): { text: string; truncated: boole
 
 /** `writeTools({ mergeMethod })`: DEFAULT_MERGE_METHOD when unset, an InvalidAgentDefinitionError outside MERGE_METHODS. */
 export function resolveMergeMethod(value: unknown): GithubMergeMethod {
-    if (value === undefined) return DEFAULT_MERGE_METHOD;
+    if (value === undefined) {
+        return DEFAULT_MERGE_METHOD;
+    }
+
     if (!(MERGE_METHODS as readonly unknown[]).includes(value)) {
         throw new InvalidAgentDefinitionError(`writeTools: mergeMethod must be one of ${MERGE_METHODS.join(', ')}.`);
     }
+
     return value as GithubMergeMethod;
 }
 

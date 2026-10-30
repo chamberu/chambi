@@ -28,6 +28,7 @@ describe('context keys', () => {
     it('defineContextKey returns a new key per call', () => {
         const a = defineContextKey<number>('x');
         const b = defineContextKey<number>('x');
+
         expect(a).not.toBe(b);
         expect(a.name).toBe('x');
         expect(Object.isFrozen(a)).toBe(true);
@@ -42,11 +43,13 @@ describe('context keys', () => {
         const key = defineContextKey<ReturnType<typeof createMemoryStore>>('x');
         const ctx = handBuilt();
         let caught: unknown;
+
         try {
             inject(ctx, key);
         } catch (error) {
             caught = error;
         }
+
         expect(caught).toBeInstanceOf(ContextNotProvidedError);
         expect((caught as ContextNotProvidedError).code).toBe('context_not_provided');
         expect((caught as Error).message).toContain('Context "x"');

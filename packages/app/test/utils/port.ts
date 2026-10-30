@@ -12,10 +12,12 @@ import type { Server } from 'node:net';
 export function freePort(): Promise<number> {
     return new Promise((resolve, reject) => {
         const server = createServer();
+
         server.once('error', reject);
         server.listen(0, '127.0.0.1', () => {
             const address = server.address();
             const port = typeof address === 'object' && address ? address.port : 0;
+
             server.close(() => resolve(port));
         });
     });
@@ -25,6 +27,7 @@ export function freePort(): Promise<number> {
 export function listenOn(port: number): Promise<Server> {
     return new Promise((resolve, reject) => {
         const server = createServer();
+
         server.once('error', reject);
         server.listen(port, '127.0.0.1', () => resolve(server));
     });

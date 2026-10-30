@@ -27,7 +27,9 @@ import { createTestDataSource, describePostgres, truncateRepository } from '../.
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
-const sleep = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
+const sleep = (ms: number) => new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+});
 
 const WAIT = { timeout: 5_000 };
 
@@ -40,20 +42,29 @@ function scripted(script: Turn[]) {
     const model = new MockLanguageModelV4({
         doStream: async (options) => {
             const turn = script[calls.length];
+
             calls.push(options);
-            if (!turn) throw new Error('mock script exhausted');
+
+            if (!turn) {
+                throw new Error('mock script exhausted');
+            }
+
             if (turn === 'hang') {
                 return new Promise((_resolve, reject) => {
                     options.abortSignal?.addEventListener('abort', () => reject(options.abortSignal?.reason));
                 });
             }
+
             if ('before' in turn) {
                 await turn.before();
+
                 return mockModel([turn.response]).doStream(options);
             }
+
             return mockModel([turn]).doStream(options);
         },
     });
+
     return { model, calls };
 }
 
@@ -101,11 +112,13 @@ describePostgres('two engines sharing TypeORM store', () => {
             },
             ...opts,
         });
+
         engines.push(engine);
+
         return {
             store,
-            engine, 
-            errors, 
+            engine,
+            errors,
         };
     }
 
@@ -139,7 +152,9 @@ describePostgres('two engines sharing TypeORM store', () => {
         const b = make(model, { tools, owner: 'B' });
 
         await a.engine.start();
+
         const { runId } = await a.engine.dispatch(env);
+
         await vi.waitFor(() => expect(calls).toHaveLength(2), WAIT);
         await a.engine.drain({ timeoutMs: 50 });
         expect((await a.store.runs.findOne(runId))?.status).toBe('interrupted');
@@ -148,12 +163,15 @@ describePostgres('two engines sharing TypeORM store', () => {
         await b.engine.idle();
 
         const run = await b.store.runs.findOne(runId);
+
         expect(run).toMatchObject({ status: 'completed', output: 'done' });
         expect(run?.claim).toBeUndefined();
         expect(lookup).toHaveBeenCalledTimes(1);
         expect(calls).toHaveLength(3);
         expect((await b.store.checkpoints.findOne(runId))?.stepIndex).toBe(1);
+
         const steps = await b.store.steps.find(runId);
+
         expect(steps.map((s) => s.kind)).toEqual(['llm', 'tool', 'llm']);
         expect(a.errors).toEqual([]);
         expect(b.errors).toEqual([]);
@@ -163,6 +181,7 @@ describePostgres('two engines sharing TypeORM store', () => {
         const { model } = scripted([text('done')]);
         const a = make(model, { owner: 'A' });
         const b = make(model, { owner: 'B' });
+
         await a.engine.start();
         await b.engine.start();
 
@@ -170,6 +189,7 @@ describePostgres('two engines sharing TypeORM store', () => {
             a.engine.dispatch({ ...env, idempotencyKey: 'd1' }),
             b.engine.dispatch({ ...env, idempotencyKey: 'd1' }),
         ]);
+
         expect(results[0].runId).toBe(results[1].runId);
         expect(results.filter((r) => r.deduplicated)).toHaveLength(1);
         expect((await a.store.runs.find({})).total).toBe(1);
@@ -186,15 +206,18 @@ describePostgres('two engines sharing TypeORM store', () => {
         const { model } = scripted([{ before: () => opened, response: text('one') }, text('two')]);
         const a = make(model, { owner: 'A' });
         const b = make(model, { owner: 'B' });
+
         await a.engine.start();
         await b.engine.start();
 
         const { runId: run1 } = await a.engine.dispatch({ ...env, concurrencyKey: 'k' });
+
         await vi.waitFor(async () => {
             expect((await a.store.runs.findOne(run1))?.status).toBe('running');
         }, WAIT);
 
         const { runId: run2 } = await b.engine.dispatch({ ...env, concurrencyKey: 'k' });
+
         await sleep(500);
         expect((await b.store.runs.findOne(run2))?.status).toBe('queued');
 
@@ -206,6 +229,7 @@ describePostgres('two engines sharing TypeORM store', () => {
 
         const first = await a.store.runs.findOne(run1);
         const second = await a.store.runs.findOne(run2);
+
         expect(second!.startedAt!.getTime()).toBeGreaterThanOrEqual(first!.finishedAt!.getTime());
         expect(a.errors).toEqual([]);
         expect(b.errors).toEqual([]);

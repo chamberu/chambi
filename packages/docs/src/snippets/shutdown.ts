@@ -8,6 +8,7 @@ export async function serve(store: IStore, agents: Agent[]) {
         agents,
         onError: (error, run) => console.error('[agents]', run?.id, error),
     });
+
     await engine.start();
 
     process.once('SIGTERM', () => {
@@ -24,7 +25,9 @@ export async function serve(store: IStore, agents: Agent[]) {
 export async function cancelRun(engine: Engine, runId: string) {
     // #region cancel
     await engine.cancel(runId);
+
     const run = await engine.getRun(runId);
+
     // RunStatus.CANCELLED, or still RunStatus.RUNNING with cancelRequested when another replica executes it
     console.log(run?.status, run?.cancelRequested);
     // #endregion cancel

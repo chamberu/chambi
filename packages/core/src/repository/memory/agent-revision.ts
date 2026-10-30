@@ -15,18 +15,27 @@ export class MemoryAgentRevisionRepository implements IAgentRevisionRepository {
 
     async findOneOrFail(agent: string): Promise<AgentRevision> {
         const result = await this.findOne(agent);
-        if (result === undefined) throw new RepositoryNotFoundError('agent revisions');
+
+        if (result === undefined) {
+            throw new RepositoryNotFoundError('agent revisions');
+        }
+
         return result;
     }
 
     async findOrFail(): Promise<AgentRevision[]> {
         const result = await this.find();
-        if (result.length === 0) throw new RepositoryNotFoundError('agent revisions');
+
+        if (result.length === 0) {
+            throw new RepositoryNotFoundError('agent revisions');
+        }
+
         return result;
     }
 
     async findOne(agent: string): Promise<AgentRevision | undefined> {
         const revision = this.agentRevisions.get(agent);
+
         return revision ? copy(revision) : undefined;
     }
 

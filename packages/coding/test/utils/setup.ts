@@ -53,6 +53,7 @@ export async function setupCoding(fixture: GitFixture, options?: CodingToolsOpti
     const { workspace } = await manager.acquire('r1', { repo: fixture.url });
     const tools = codingTools(manager, options);
     const artifacts = createArtifacts();
+
     return {
         root,
         manager,

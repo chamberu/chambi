@@ -20,6 +20,7 @@ describe('readConfig', () => {
             uiBase: '/api/ui',
             auth: { tokens: false, authup: { url: 'https://auth.example.com', clientId: 'chamvi' } },
         };
+
         expect(readConfig(doc(JSON.stringify(config)))).toEqual(config);
     });
 

@@ -28,6 +28,7 @@ export function toInvoker(principal: Principal): Invoker {
     const name = NAME_CLAIMS
         .map((key) => principal.claims?.[key])
         .find((value): value is string => typeof value === 'string' && value.length > 0);
+
     return {
         id: principal.id,
         kind: principal.kind,
@@ -42,9 +43,17 @@ export function toInvoker(principal: Principal): Invoker {
  */
 export function readBearerToken(request: Request): string | undefined {
     const header = request.headers.get('authorization');
-    if (header === null) return undefined;
+
+    if (header === null) {
+        return undefined;
+    }
+
     const match = /^bearer +(\S+) *$/i.exec(header);
-    if (!match?.[1]) throw new UnauthorizedError({ message: 'The authorization header is malformed.' });
+
+    if (!match?.[1]) {
+        throw new UnauthorizedError({ message: 'The authorization header is malformed.' });
+    }
+
     return match[1];
 }
 
@@ -67,39 +76,52 @@ export function isPrincipal(value: Principal): boolean {
  */
 export async function resolvePrincipal(request: Request, authenticators: readonly Authenticator[]): Promise<Principal> {
     let rejection: unknown;
+
     for (const authenticator of authenticators) {
         let principal: Principal | undefined;
+
         try {
             principal = await authenticator(request);
         } catch (error) {
             rejection ??= error;
+
             continue;
         }
-        if (!principal) continue;
+
+        if (!principal) {
+            continue;
+        }
+
         // a server misconfiguration (500 and onError), never a client error nor a reason to try the next authenticator
         if (!isPrincipal(principal)) {
             throw new InvalidAgentDefinitionError('An authenticator resolved a principal without a non-empty id and kind and a permissions array of strings.');
         }
+
         return principal;
     }
+
     throw rejection ?? new UnauthorizedError({ message: 'Authentication required.' });
 }
 
 /** Runs the authenticator chain once per request; the first principal wins. */
 export function authenticate(event: IAppEvent, ctx: HttpContext): Promise<Principal> {
     let pending = event.store[PRINCIPAL] as Promise<Principal> | undefined;
+
     if (!pending) {
         pending = resolvePrincipal(event.request, ctx.authenticators);
         event.store[PRINCIPAL] = pending;
     }
+
     return pending;
 }
 
 /** `authenticate`, then 403 when `permission` is given and not granted. */
 export async function authorize(event: IAppEvent, ctx: HttpContext, permission?: string): Promise<Principal> {
     const principal = await authenticate(event, ctx);
+
     if (permission !== undefined && !hasPermission(principal.permissions, permission)) {
         throw new ForbiddenError({ message: `Missing permission "${permission}".` });
     }
+
     return principal;
 }

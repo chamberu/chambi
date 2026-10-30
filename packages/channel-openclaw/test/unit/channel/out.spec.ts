@@ -68,6 +68,7 @@ function setup(patch: Partial<OpenclawChannelOptions> = {}) {
         ...patch,
     });
     const send = (m: ChannelMessage, address = '', o: ChannelSendOptions = opts) => channel.out!(m, address, o);
+
     return {
         clock,
         fake,
@@ -80,16 +81,21 @@ const messageOf = (body: unknown) => (body as { message: string }).message;
 
 async function rejection(promise: Promise<unknown>): Promise<ChamviError> {
     const error = await promise.then(() => undefined, (e: unknown) => e);
+
     expect(error).toBeInstanceOf(ChamviError);
+
     return error as ChamviError;
 }
 
 describe('openclawChannel out', () => {
     it('posts the hook', async () => {
         const { fake, send } = setup();
+
         await send(approval);
         expect(fake.requests).toHaveLength(1);
+
         const [request] = fake.requests;
+
         expect(request!.url).toBe('http://openclaw:18789/hooks/agent');
         expect(request!.method).toBe('POST');
         expect(request!.headers).toMatchObject({
@@ -110,6 +116,7 @@ describe('openclawChannel out', () => {
 
     it('address overrides deliver.to', async () => {
         const { fake, send } = setup();
+
         await send(message, '-100777');
         await send({ ...message, key: 'r1:emit:openclaw:def' }, '');
         expect(fake.requests.map((r) => (r.body as { to: string }).to)).toEqual(['-100777', '12345']);
@@ -125,8 +132,11 @@ describe('openclawChannel out', () => {
                 accountId: 'bot-2',
             },
         });
+
         await send(approval);
+
         const body = fake.requests[0]!.body as Record<string, unknown>;
+
         expect(body.accountId).toBe('bot-2');
         expect(body).not.toHaveProperty('agentId');
     });
@@ -143,6 +153,7 @@ describe('openclawChannel out', () => {
             clock,
             fetch: fake.fetch,
         });
+
         await channel.out!(approval, '', opts);
         expect(fake.requests[0]!.url).toBe('https://gw.example/base/oc-hooks/agent');
     });
@@ -157,12 +168,14 @@ describe('openclawChannel out', () => {
             clock: new ControllableClock(),
             fetch: fake.fetch,
         });
+
         await channel.out!(approval, '', opts);
         expect(fake.requests[0]!.url).toBe('http://openclaw:18789/hooks/agent');
     });
 
     it('renders an approval with the hint when no link is configured', async () => {
         const { fake, send } = setup();
+
         await send(approval);
         expect(messageOf(fake.requests[0]!.body)).toBe([
             RELAY,
@@ -188,8 +201,11 @@ describe('openclawChannel out', () => {
         ['with a leftover resumeTool', { resumeTool: true } as Partial<OpenclawChannelOptions>],
     ])('the message holds no token %s', async (_label, patch) => {
         const { fake, send } = setup(patch);
+
         await send(approval);
+
         const sent = JSON.stringify(fake.requests);
+
         expect(sent).not.toContain('resume_run');
         expect(sent).not.toContain('"token"');
         expect(sent).not.toMatch(/token=/);
@@ -201,16 +217,20 @@ describe('openclawChannel out', () => {
         const { fake, send } = setup({
             approvalUrl: (ref) => {
                 refs.push(ref);
+
                 return approvalUrl(ref);
             },
         });
+
         await send(approval);
         expect(refs).toEqual([{
             runId: 'r1',
             approvalId: 'a1',
             agent: 'release',
         }]);
+
         const text = messageOf(fake.requests[0]!.body);
+
         expect(text.endsWith('Expires: 2026-10-21T10:00:00.000Z\nApprove or deny: https://app.example/ui/approvals?run=r1&approval=a1')).toBe(true);
         expect(text).not.toContain('Answer it in the chamvi UI');
     });
@@ -220,14 +240,18 @@ describe('openclawChannel out', () => {
         const { fake, send } = setup({
             approvalUrl: (ref) => {
                 refs.push(ref);
+
                 return approvalUrl(ref);
             },
         });
         const withoutId: ChannelMessage = { ...approval };
+
         delete withoutId.approvalId;
         await send(withoutId);
         expect(refs).toEqual([]);
+
         const text = messageOf(fake.requests[0]!.body);
+
         expect(text).not.toContain('Approve or deny');
         expect(text).toContain('Answer it in the chamvi UI or through POST /runs/:id/approve.');
     });
@@ -237,14 +261,17 @@ describe('openclawChannel out', () => {
         const choice: ChannelMessage = {
             ...approval,
             options: [{
-                id: 'a', 
-                label: 'A', 
-                detail: 'secret detail', 
+                id: 'a',
+                label: 'A',
+                detail: 'secret detail',
             }, { id: 'b', label: 'B' }],
         };
+
         await send(choice);
         await send(choice);
+
         const text = messageOf(fake.requests[0]!.body);
+
         expect(text).toBe([
             RELAY,
             '',
@@ -266,18 +293,22 @@ describe('openclawChannel out', () => {
 
     it('names where to choose without a link', async () => {
         const { fake, send } = setup();
+
         await send({
-            ...approval, 
-            options: [{ id: 'a', label: 'A' }], 
-            multiple: true, 
+            ...approval,
+            options: [{ id: 'a', label: 'A' }],
+            multiple: true,
         });
+
         const text = messageOf(fake.requests[0]!.body);
+
         expect(text).toContain('Options (choose one or more):\n- a: A');
         expect(text.endsWith('Choose in the chamvi UI or through POST /runs/:id/approve with selected.')).toBe(true);
     });
 
     it('renders a message without approval lines', async () => {
         const { fake, send } = setup({ approvalUrl });
+
         await send(message, 'C1');
         expect(messageOf(fake.requests[0]!.body)).toBe([
             RELAY,
@@ -295,6 +326,7 @@ describe('openclawChannel out', () => {
     it('renders a message without a title', async () => {
         const { fake, send } = setup();
         const untitled: ChannelMessage = { ...message };
+
         delete untitled.title;
         await send(untitled, 'C1');
         expect(messageOf(fake.requests[0]!.body)).toBe([
@@ -309,6 +341,7 @@ describe('openclawChannel out', () => {
 
     it('renders an approval asked without a body', async () => {
         const { fake, send } = setup({ approvalUrl });
+
         await send({ ...approval, body: '' });
         expect(messageOf(fake.requests[0]!.body)).toBe([
             RELAY,
@@ -329,6 +362,7 @@ describe('openclawChannel out', () => {
             send,
             clock,
         } = setup({ approvalUrl });
+
         await send(approval);
         clock.advance(60_000);
         await send(approval);
@@ -340,8 +374,11 @@ describe('openclawChannel out', () => {
 
     it('cuts a huge body', async () => {
         const { fake, send } = setup();
+
         await send({ ...approval, body: 'x'.repeat(1024 * 1024) });
+
         const text = messageOf(fake.requests[0]!.body);
+
         expect(text.length).toBeLessThan(MESSAGE_BODY_MAX_LENGTH + 500);
         expect(text).toContain('more characters)\n\nAgent: release');
         expect(text).toContain(`(cut, ${1024 * 1024 - MESSAGE_BODY_MAX_LENGTH} more characters)`);
@@ -351,8 +388,11 @@ describe('openclawChannel out', () => {
         const { fake, send } = setup();
         // the cut point falls between the two halves of an emoji
         const body = `${'x'.repeat(MESSAGE_BODY_MAX_LENGTH - 1)}😀${'y'.repeat(100)}`;
+
         await send({ ...approval, body });
+
         const text = messageOf(fake.requests[0]!.body);
+
         expect(text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
         expect(text).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
     });
@@ -360,20 +400,25 @@ describe('openclawChannel out', () => {
     it('hashes a long key', async () => {
         const { fake, send } = setup();
         const long = 'k'.repeat(300);
+
         await send({ ...approval, key: long });
         await send({ ...approval, key: long });
+
         const sent = fake.requests.map((r) => r.headers['idempotency-key']);
+
         expect(sent[0]).toMatch(/^sha256:[0-9a-f]{64}$/);
         expect(sent[1]).toBe(sent[0]);
         expect(fake.dispatched).toHaveLength(1);
 
         const exact = 'k'.repeat(256);
+
         await send({ ...approval, key: exact });
         expect(fake.requests[2]!.headers['idempotency-key']).toBe(exact);
     });
 
     it('hashes a key with whitespace', async () => {
         const { fake, send } = setup();
+
         await send({ ...approval, key: ' r1 a1 ' });
         expect(fake.requests[0]!.headers['idempotency-key']).toMatch(/^sha256:[0-9a-f]{64}$/);
     });
@@ -388,35 +433,51 @@ describe('openclawChannel out', () => {
         [503, {}, undefined],
     ])('throws on a refused hook (%i)', async (status, headers, body) => {
         const { fake, send } = setup();
+
         fake.failNext(status, headers, body);
+
         const error = await rejection(send(approval));
+
         expect(error.code).toBe('openclaw_request');
         expect(error.message.startsWith(`OpenClaw ${status}:`)).toBe(true);
         expect(error.message).toContain(body ?? '{"error":"injected"}');
-        if (status === 429) expect(error.message).toContain('retry after 30');
+
+        if (status === 429) {
+            expect(error.message).toContain('retry after 30');
+        }
+
         expect(error.message).not.toContain(TOKEN);
         expect(fake.dispatched).toHaveLength(0);
     });
 
     it('cuts the response text', async () => {
         const { fake, send } = setup();
+
         fake.failNext(400, {}, 'e'.repeat(10_000));
+
         const error = await rejection(send(approval));
+
         expect(error.message.length).toBeLessThan(700);
     });
 
     it('redacts an echoed hooks token', async () => {
         const { fake, send } = setup();
+
         fake.failNext(400, {}, `{"error":"rejected: $MESSAGE","auth":"${TOKEN}"}`);
+
         const error = await rejection(send(approval));
+
         expect(error.message).toContain('[redacted]');
         expect(error.message).not.toContain(TOKEN);
     });
 
     it('throws on a network failure', async () => {
         const { fake, send } = setup();
+
         fake.loseNextResponse();
+
         const error = await rejection(send(approval));
+
         expect(error.code).toBe('openclaw_request');
         expect(error.message).toBe('OpenClaw request failed: fetch failed (other side closed)');
     });
@@ -428,6 +489,7 @@ describe('openclawChannel out', () => {
             },
         });
         const error = await rejection(send(approval));
+
         expect(error.code).toBe('openclaw_request');
         expect(error.message).toBe('OpenClaw request failed: Headers.append: "Bearer [redacted]" is an invalid header value. ([redacted] seen)');
     });
@@ -438,22 +500,32 @@ describe('openclawChannel out', () => {
             send,
             clock,
         } = setup();
+
         fake.hangNext();
+
         const pending = send(approval);
+
         await vi.waitFor(() => expect(fake.requests).toHaveLength(1));
         clock.advance(OPENCLAW_TIMEOUT_MS);
+
         const error = await rejection(pending);
+
         expect(error.code).toBe('openclaw_request');
         expect(error.message).toBe('OpenClaw did not answer within 30000ms.');
     });
 
     it('rejects with the caller\'s abort reason', async () => {
         const { fake, send } = setup();
+
         fake.hangNext();
+
         const controller = new AbortController();
         const pending = send(approval, '', { ...opts, signal: controller.signal });
+
         await vi.waitFor(() => expect(fake.requests).toHaveLength(1));
+
         const reason = new Error('cancelled');
+
         controller.abort(reason);
         await expect(pending).rejects.toBe(reason);
     });
@@ -462,6 +534,7 @@ describe('openclawChannel out', () => {
         const { fake, send } = setup();
         const controller = new AbortController();
         const reason = new Error('gone');
+
         controller.abort(reason);
         await expect(send(approval, '', { ...opts, signal: controller.signal })).rejects.toBe(reason);
         expect(fake.requests).toHaveLength(0);
@@ -478,10 +551,14 @@ describe('openclawChannel out', () => {
             timeoutMs: 1000,
             clock,
             fetch: (resource, init) => {
-                if (init?.signal) signals.push(init.signal);
+                if (init?.signal) {
+                    signals.push(init.signal);
+                }
+
                 return fake.fetch(resource, init);
             },
         });
+
         await channel.out!(approval, '', opts);
         clock.advance(1000);
         expect(signals).toHaveLength(1);
@@ -490,7 +567,9 @@ describe('openclawChannel out', () => {
 
     it('resolves on any 2xx', async () => {
         const { send, clock } = setup();
+
         await expect(send(approval)).resolves.toBeUndefined();
+
         const accepted = openclawChannel({
             baseUrl: 'http://openclaw:18789',
             hooksToken: TOKEN,
@@ -498,6 +577,7 @@ describe('openclawChannel out', () => {
             clock,
             fetch: async () => new Response(null, { status: 202 }),
         });
+
         await expect(accepted.out!(approval, '', opts)).resolves.toBeUndefined();
     });
 });

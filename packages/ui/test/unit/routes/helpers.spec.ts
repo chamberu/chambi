@@ -40,7 +40,7 @@ describe('resolveBuildPath', () => {
             '/%2e%2e/x',
             '/%252e%252e/x',
             '/a%2f..%2fb',
-            '/a\u0000b',
+            '/a\0b',
             '/a%00b',
             '/a//b',
             '/a\\b',
@@ -60,6 +60,7 @@ describe('renderIndex', () => {
             uiBase: '/ui',
             auth: { tokens: true, authup: { url: 'https://a', clientId: '<>&\u2028\u2029' } },
         });
+
         expect(html).toBe(
             '<head><base href="/ui/"><script type="application/json" id="chamvi-config">' +
             '{"apiBase":"","uiBase":"/ui","auth":{"tokens":true,"authup":{"url":"https://a","clientId":"\\u003c\\u003e\\u0026\\u2028\\u2029"}}}' +
@@ -86,6 +87,7 @@ describe('buildCsp', () => {
 describe('loadBuild', () => {
     it('walks the build once and marks assets immutable', async () => {
         const files = await loadBuild(FIXTURE_BUILD);
+
         expect(files.keys().toArray().sort()).toEqual([
             'assets/app-1a2b3c4d.css',
             'assets/app-1a2b3c4d.js',
@@ -98,9 +100,11 @@ describe('loadBuild', () => {
 
     it('follows symbolic links, skips dangling ones and reads a link cycle once', async () => {
         const base = await mkdtemp(join(tmpdir(), 'chamvi-ui-links-'));
+
         try {
             const shared = join(base, 'shared');
             const root = join(base, 'root');
+
             await mkdir(join(shared, 'nested'), { recursive: true });
             await mkdir(root);
             await writeFile(join(shared, 'app-1.js'), 'js');
@@ -112,6 +116,7 @@ describe('loadBuild', () => {
             await symlink(root, join(shared, 'loop'));
 
             const files = await loadBuild(root);
+
             expect(files.keys().toArray().sort()).toEqual([
                 'assets/app-1.js',
                 'assets/nested/x.css',

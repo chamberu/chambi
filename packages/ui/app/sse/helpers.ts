@@ -15,12 +15,20 @@ function toEvent(lines: string[]): {
     let id: string | undefined;
     const data: string[] = [];
     let seen = false;
+
     for (const line of lines) {
-        if (line.startsWith(':')) continue;
+        if (line.startsWith(':')) {
+            continue;
+        }
+
         const colon = line.indexOf(':');
         const field = colon === -1 ? line : line.slice(0, colon);
         let value = colon === -1 ? '' : line.slice(colon + 1);
-        if (value.startsWith(' ')) value = value.slice(1);
+
+        if (value.startsWith(' ')) {
+            value = value.slice(1);
+        }
+
         if (field === 'event') {
             event = value;
             seen = true;
@@ -32,7 +40,11 @@ function toEvent(lines: string[]): {
             seen = true;
         }
     }
-    if (!seen) return undefined;
+
+    if (!seen) {
+        return undefined;
+    }
+
     return id === undefined ? { event, data: data.join('\n') } : {
         event,
         data: data.join('\n'),
@@ -46,22 +58,36 @@ export async function* parseEventStream(body: ReadableStream<Uint8Array>) {
     const decoder = new TextDecoder();
     let buffer = '';
     let lines: string[] = [];
+
     try {
         while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+
+            if (done) {
+                break;
+            }
+
             buffer += decoder.decode(value, { stream: true });
+
             let index = buffer.search(/\r?\n/);
+
             while (index !== -1) {
                 const line = buffer.slice(0, index);
+
                 buffer = buffer.slice(buffer[index] === '\r' ? index + 2 : index + 1);
+
                 if (line === '') {
                     const event = toEvent(lines);
+
                     lines = [];
-                    if (event) yield event;
+
+                    if (event) {
+                        yield event;
+                    }
                 } else {
                     lines.push(line);
                 }
+
                 index = buffer.search(/\r?\n/);
             }
         }
@@ -75,8 +101,10 @@ export function sleep(ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve) => {
         if (signal.aborted) {
             resolve();
+
             return;
         }
+
         const timer = setTimeout(done, ms);
         function done(): void {
             clearTimeout(timer);

@@ -98,18 +98,30 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             try {
                 return await docker.createContainer(signal ? { ...createOptions, abortSignal: signal } : createOptions);
             } catch (error) {
-                if (!signal?.aborted) throw error;
+                if (!signal?.aborted) {
+                    throw error;
+                }
+
                 // the daemon may have made it before the request was dropped
-                if (createOptions.name) await removeContainer(docker.getContainer(createOptions.name)).catch(() => undefined);
+                if (createOptions.name) {
+                    await removeContainer(docker.getContainer(createOptions.name)).catch(() => undefined);
+                }
+
                 throw abortedCreate(error);
             }
         };
 
-        if (pull === 'always') await pullImage(docker, imageName, signal);
+        if (pull === 'always') {
+            await pullImage(docker, imageName, signal);
+        }
+
         try {
             return await attempt();
         } catch (error) {
-            if (error instanceof SandboxError) throw error;
+            if (error instanceof SandboxError) {
+                throw error;
+            }
+
             if (pull !== 'missing' || !isMissingImage(error)) {
                 throw new SandboxError(`cannot create a workspace container from ${imageName}: ${dockerMessage(error)}`, { cause: error });
             }
@@ -117,10 +129,14 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
 
         // the image is not present: pull it once, then try again
         await pullImage(docker, imageName, signal);
+
         try {
             return await attempt();
         } catch (error) {
-            if (error instanceof SandboxError) throw error;
+            if (error instanceof SandboxError) {
+                throw error;
+            }
+
             throw new SandboxError(`cannot create a workspace container from ${imageName}: ${dockerMessage(error)}`, { cause: error });
         }
     }
@@ -149,14 +165,20 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 live.delete(id);
             },
         };
+
         live.set(id, workspace);
+
         return workspace;
     }
 
     /** The managed containers of `deployment` (and of `runId` when given), stopped ones too. */
     async function listWorkspaceContainers(deployment: string, runId?: string): Promise<Docker.ContainerInfo[]> {
         const label = [...SANDBOX_LABEL_SELECTORS, `${DEPLOYMENT_LABEL}=${deployment}`];
-        if (runId !== undefined) label.push(`${RUN_LABEL}=${runId}`);
+
+        if (runId !== undefined) {
+            label.push(`${RUN_LABEL}=${runId}`);
+        }
+
         try {
             return await docker.listContainers({ all: true, filters: { label } });
         } catch (error) {
@@ -169,9 +191,11 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
 
         async create(input) {
             assertCreateInput(input, { image: true });
+
             if (input.signal?.aborted) {
                 throw abortedCreate();
             }
+
             const deployment = assertDeployment(input.deployment);
             const limits = resolveLimits(options.limits, input.limits);
             const imageName = input.image ?? image;
@@ -196,14 +220,17 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
 
             try {
                 await container.start(input.signal ? { abortSignal: input.signal } : {});
+
                 if (input.signal?.aborted) {
                     throw abortedCreate();
                 }
+
                 await probeImage(transport, {
-                    image: imageName, 
-                    clock, 
-                    signal: input.signal, 
+                    image: imageName,
+                    clock,
+                    signal: input.signal,
                 });
+
                 if (!isRootUser(user)) {
                     // never disposed: it removes the container, which the workspace owns
                     const root = createRemoteWorkspace({
@@ -212,8 +239,10 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                         transport: createDockerTransport(docker, container, clock, CACHE_OPEN_USER),
                         clock,
                     });
+
                     await openCache(root, user, input.signal);
                 }
+
                 // the commit and the default branch, each only when known
                 Object.assign(info, await prepareWorkspace(workspace, {
                     ...input.checkout,
@@ -223,10 +252,18 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                 }));
             } catch (error) {
                 await workspace.dispose().catch(() => undefined);
-                if (error instanceof ChamviError) throw error;
-                if (input.signal?.aborted) throw abortedCreate(error);
+
+                if (error instanceof ChamviError) {
+                    throw error;
+                }
+
+                if (input.signal?.aborted) {
+                    throw abortedCreate(error);
+                }
+
                 throw new SandboxError(`cannot start workspace container ${id}: ${dockerMessage(error)}`, { cause: error });
             }
+
             return workspace;
         },
 
@@ -243,64 +280,104 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
              */
             const restart = async (container: Docker.Container): Promise<boolean> => {
                 let state: Docker.ContainerInspectInfo['State'];
+
                 try {
                     ({ State: state } = await container.inspect(findOptions.signal ? { abortSignal: findOptions.signal } : {}));
                 } catch (error) {
                     // removed meanwhile; any other failure is no answer, so find fails
-                    if (isStatus(error, 404)) return false;
+                    if (isStatus(error, 404)) {
+                        return false;
+                    }
+
                     throw new SandboxError(`cannot inspect workspace container ${container.id}: ${dockerMessage(error)}`, { cause: error });
                 }
+
                 if (state.Paused) {
                     // Running reads true for a paused container, which takes no exec
                     try {
                         await container.unpause(findOptions.signal ? { abortSignal: findOptions.signal } : {});
                     } catch (error) {
                         // unpaused meanwhile
-                        if (!isStatus(error, 409)) return false;
+                        if (!isStatus(error, 409)) {
+                            return false;
+                        }
                     }
+
                     return true;
                 }
-                if (state.Running) return true;
+
+                if (state.Running) {
+                    return true;
+                }
+
                 // stopped (a host or daemon restart): the volume still holds the work.
                 // A container never started is a create that crashed: left to the collection
-                if (state.Status !== 'exited') return false;
+                if (state.Status !== 'exited') {
+                    return false;
+                }
+
                 try {
                     await container.start(findOptions.signal ? { abortSignal: findOptions.signal } : {});
+
                     return true;
                 } catch (error) {
                     // started meanwhile (an operator, live-restore, another replica's find)
                     return isStatus(error, 304);
                 }
             };
+
             for (const item of containers) {
                 const labels = item.Labels ?? {};
                 const id = labels[WORKSPACE_LABEL] ?? '';
                 const held = live.get(id);
+
                 if (held && (!held.disposed || disposing.has(held))) {
                     // a disposed one (also after a failed removal) is never found again
-                    if (disposing.has(held)) continue;
+                    if (disposing.has(held)) {
+                        continue;
+                    }
+
                     // not probed yet: its container may have stopped all the same,
                     // and the same container started again serves the held handle
-                    if (held.info.expiresAt.getTime() > now && await restart(docker.getContainer(item.Id))) found.push(held);
+                    if (held.info.expiresAt.getTime() > now && await restart(docker.getContainer(item.Id))) {
+                        found.push(held);
+                    }
+
                     continue;
                 }
+
                 // gone (its container stopped): a fresh handle, restarted below
-                if (held) live.delete(id);
+                if (held) {
+                    live.delete(id);
+                }
+
                 const info = readWorkspaceInfo(labels, PROVIDER_NAME);
-                if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
+
+                if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) {
+                    continue;
+                }
+
                 const container = docker.getContainer(item.Id);
-                if (!await restart(container)) continue;
+
+                if (!await restart(container)) {
+                    continue;
+                }
+
                 const workspace = open(id, info, createDockerTransport(docker, container, clock, user));
                 const checkout = await readCheckout(workspace, findOptions.signal, clock);
+
                 if (!checkout) {
                     // a create that died before its checkout finished (restarted above
                     // only to read that): left to the collection
                     live.delete(id);
+
                     continue;
                 }
+
                 Object.assign(info, checkout);
                 found.push(workspace);
             }
+
             return found;
         },
 
@@ -313,16 +390,25 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
             // one container that cannot go never keeps the others
             const failures: SandboxError[] = [];
             const isSettled = createSettledCheck(gcOptions.isSettled);
+
             for (const container of containers) {
                 const labels = container.Labels ?? {};
+
                 if (!isExpiredAt(labels[EXPIRES_AT_KEY], now)) {
                     const answer = await isSettled(labels[RUN_LABEL] ?? '');
-                    if (answer instanceof SandboxError) failures.push(answer);
-                    if (answer !== true) continue;
+
+                    if (answer instanceof SandboxError) {
+                        failures.push(answer);
+                    }
+
+                    if (answer !== true) {
+                        continue;
+                    }
                 }
 
                 // one open here is disposed, so its in-flight commands settle too
                 const workspace = live.get(labels[WORKSPACE_LABEL] ?? '');
+
                 try {
                     if (workspace) {
                         await workspace.dispose();
@@ -333,11 +419,17 @@ export function createDockerSandbox(options: DockerSandboxOptions = {}): ISandbo
                     failures.push(error instanceof SandboxError ?
                         error :
                         new SandboxError(`cannot remove workspace container ${container.Id}: ${dockerMessage(error)}`, { cause: error }));
+
                     continue;
                 }
+
                 count++;
             }
-            if (failures.length > 0) throw collectionError(count, failures);
+
+            if (failures.length > 0) {
+                throw collectionError(count, failures);
+            }
+
             return count;
         },
     };

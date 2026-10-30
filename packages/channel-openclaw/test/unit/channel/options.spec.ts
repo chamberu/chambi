@@ -60,6 +60,7 @@ describe('openclawChannel options', () => {
 
     it('is out only', () => {
         const channel = openclawChannel(valid);
+
         expect(channel.out).toBeTypeOf('function');
         expect(channel.in).toBeUndefined();
         expect(channel.start).toBeUndefined();

@@ -43,6 +43,7 @@ describe('local garbage collection', () => {
         const first = await provider.create({ runId: 'r1', limits: { maxLifetimeMs: 1_000 } });
         const second = await provider.create({ runId: 'r2', limits: { maxLifetimeMs: 60_000 } });
         const foreign = join(root, 'not-a-workspace');
+
         await mkdir(foreign);
 
         clock.advance(1_000);
@@ -58,6 +59,7 @@ describe('local garbage collection', () => {
     it('deletes expired workspaces another process left behind', async () => {
         const clock = new ControllableClock(new Date(10_000));
         const id = '00000000-0000-4000-8000-000000000000';
+
         await mkdir(join(root, id, 'repo'), { recursive: true });
         await writeFile(join(root, id, 'workspace.json'), JSON.stringify({ runId: 'r0', expiresAt: new Date(5_000).toISOString() }));
         await mkdir(join(root, 'broken'));
@@ -70,15 +72,20 @@ describe('local garbage collection', () => {
     it.skipIf(process.getuid?.() === 0)('keeps collecting past a folder it cannot delete and reports it once', async () => {
         const clock = new ControllableClock(new Date(10_000));
         const ids = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000003'];
+
         for (const id of ids) {
             await mkdir(join(root, id, 'repo', 'locked'), { recursive: true });
             await writeFile(join(root, id, 'repo', 'locked', 'file'), 'x');
             await writeFile(join(root, id, 'workspace.json'), JSON.stringify({ runId: 'r0', expiresAt: new Date(5_000).toISOString() }));
         }
+
         const locked = join(root, ids[1]!, 'repo', 'locked');
+
         await chmod(locked, 0o500);
+
         try {
             const error = await createLocalSandbox({ root, clock }).collectGarbage().catch((e: unknown) => e);
+
             expect(error).toBeInstanceOf(SandboxError);
             expect((error as Error).message).toMatch(/removed 2 .*1 failed/);
             expect((error as Error).message).toContain(ids[1]);
@@ -99,6 +106,7 @@ describe('local garbage collection', () => {
         expect(await provider.collectGarbage({
             isSettled: async (runId) => {
                 asked.push(runId);
+
                 return runId === 'done';
             },
         })).toBe(1);
@@ -115,8 +123,13 @@ describe('local garbage collection', () => {
     it('keeps a workspace whose isSettled rejects and reports it', async () => {
         const provider = createLocalSandbox({ root });
         const workspace = await provider.create({ runId: 'r1' });
-        const error = await provider.collectGarbage({ isSettled: async () => { throw new Error('store down'); } })
+        const error = await provider.collectGarbage({
+            isSettled: async () => {
+                throw new Error('store down');
+            },
+        })
             .catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toMatch(/removed 0 .*1 failed.*store down/);
         expect(await readdir(root)).toEqual([workspace.id]);

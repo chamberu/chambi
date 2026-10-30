@@ -5,4 +5,15 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export * from './types.ts';
+/* eslint-disable @tada5hi/no-reexport-shims -- Intentional public SDK type facade; native types pass through unchanged. */
+export type {
+    AssistantContent,
+    AssistantModelMessage,
+    FilePart,
+    ModelMessage,
+    SystemModelMessage,
+    TextPart,
+    UserContent,
+    UserModelMessage,
+} from 'ai';
+/* eslint-enable @tada5hi/no-reexport-shims */

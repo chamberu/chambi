@@ -15,13 +15,18 @@ export class MemoryStepRepository implements IStepRepository {
 
     async insert(step: Step): Promise<void> {
         const list = this.steps.get(step.runId) ?? [];
+
         list.push(copy(step));
         this.steps.set(step.runId, list);
     }
 
     async findOrFail(runId: string): Promise<Step[]> {
         const result = await this.find(runId);
-        if (result.length === 0) throw new RepositoryNotFoundError('steps');
+
+        if (result.length === 0) {
+            throw new RepositoryNotFoundError('steps');
+        }
+
         return result;
     }
 

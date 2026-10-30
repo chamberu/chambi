@@ -38,12 +38,15 @@ export function installSignalHandlers(input: SignalHandlersInput): SignalHandler
             if (input.clock.now().getTime() - firstAt >= SIGNAL_REPEAT_MS) {
                 input.exit(EXIT_CODE.FAILURE);
             }
+
             return;
         }
+
         signalled = true;
         firstAt = input.clock.now().getTime();
 
         input.stderr(`received ${signal}, stopping (again to force)\n`);
+
         // keeps the process alive: a stop stalled on a promise without a live handle still ends in exit 1;
         // cleared once the stop settled, so a clean stop lets Node exit
         const timer = input.clock.setTimeout(() => {
@@ -65,6 +68,7 @@ export function installSignalHandlers(input: SignalHandlersInput): SignalHandler
 
     SIGNALS.forEach((signal) => {
         const fn = () => onSignal(signal);
+
         listeners.set(signal, fn);
         input.target.on(signal, fn);
     });

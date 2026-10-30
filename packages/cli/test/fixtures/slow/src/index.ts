@@ -20,11 +20,13 @@ const slowRepository = {
     dependencies: [ModuleName.CONFIG],
     async setup(container: { resolve(token: typeof AppToken.CONTEXT): AppContext }): Promise<void> {
         const { signal } = container.resolve(AppToken.CONTEXT);
+
         globalThis.chamviSlowStoreWaiting = true;
         await new Promise<void>((resolve) => {
             signal.addEventListener('abort', () => resolve(), { once: true });
         });
         globalThis.chamviSlowStoreWaiting = false;
+
         throw signal.reason;
     },
 };

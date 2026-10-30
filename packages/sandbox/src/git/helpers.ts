@@ -11,6 +11,7 @@ import type { GitCredential } from '../credentials/types.ts';
 /** `https://host[:port]` of a URL. */
 export function urlOrigin(url: string): string {
     const parsed = new URL(url);
+
     return `${parsed.protocol}//${parsed.host}`;
 }
 

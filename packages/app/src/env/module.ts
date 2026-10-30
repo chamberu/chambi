@@ -31,6 +31,7 @@ function fail(message: string): never {
  */
 function readRaw<T>(env: Env, name: string, options: EnvReadOptions<T> | undefined): string | undefined {
     const value = env[name];
+
     if (typeof value === 'string' && value.length > 0) {
         return value;
     }
@@ -46,6 +47,7 @@ export function envString(env: Env, name: string, options: EnvStringOptions & En
 export function envString(env: Env, name: string, options?: EnvStringOptions): string | undefined;
 export function envString(env: Env, name: string, options?: EnvStringOptions): string | undefined {
     const value = readRaw(env, name, options);
+
     if (typeof value === 'undefined') {
         return options?.default;
     }
@@ -61,11 +63,13 @@ export function envInteger(env: Env, name: string, options: EnvIntegerOptions & 
 export function envInteger(env: Env, name: string, options?: EnvIntegerOptions): number | undefined;
 export function envInteger(env: Env, name: string, options?: EnvIntegerOptions): number | undefined {
     const value = readRaw(env, name, options);
+
     if (typeof value === 'undefined') {
         return options?.default;
     }
 
     const parsed = INTEGER_PATTERN.test(value) ? toInt(value) : undefined;
+
     if (typeof parsed === 'undefined' || !Number.isSafeInteger(parsed)) {
         fail(`${name} must be a non-negative integer.`);
     }
@@ -85,11 +89,13 @@ export function envBoolean(env: Env, name: string, options: EnvReadOptions<boole
 export function envBoolean(env: Env, name: string, options?: EnvReadOptions<boolean>): boolean | undefined;
 export function envBoolean(env: Env, name: string, options?: EnvReadOptions<boolean>): boolean | undefined {
     const value = readRaw(env, name, options);
+
     if (typeof value === 'undefined') {
         return options?.default;
     }
 
     const parsed = BOOLEAN_PATTERN.test(value) ? toBool(value) : undefined;
+
     if (typeof parsed === 'undefined') {
         fail(`${name} must be one of true, false, 1, 0.`);
     }
@@ -101,6 +107,7 @@ export function envUrl(env: Env, name: string, options: EnvUrlOptions & EnvDefin
 export function envUrl(env: Env, name: string, options?: EnvUrlOptions): string | undefined;
 export function envUrl(env: Env, name: string, options?: EnvUrlOptions): string | undefined {
     const value = readRaw(env, name, options);
+
     if (typeof value === 'undefined') {
         return options?.default;
     }
@@ -110,6 +117,7 @@ export function envUrl(env: Env, name: string, options?: EnvUrlOptions): string 
     }
 
     const url = new URL(value);
+
     if (options?.protocols && !options.protocols.includes(url.protocol)) {
         fail(`${name} must use one of the protocols ${options.protocols.join(', ')}.`);
     }
@@ -121,6 +129,7 @@ export function envList(env: Env, name: string, options: EnvReadOptions<string[]
 export function envList(env: Env, name: string, options?: EnvReadOptions<string[]>): string[] | undefined;
 export function envList(env: Env, name: string, options?: EnvReadOptions<string[]>): string[] | undefined {
     const value = readRaw(env, name, options);
+
     if (typeof value === 'undefined') {
         return options?.default;
     }
@@ -130,6 +139,7 @@ export function envList(env: Env, name: string, options?: EnvReadOptions<string[
 
 export function envJson(env: Env, name: string, options?: EnvJsonOptions): unknown {
     const value = readRaw(env, name, options);
+
     if (typeof value === 'undefined') {
         return undefined;
     }
@@ -151,6 +161,7 @@ export function envOneOf<T extends string>(
 export function envOneOf<T extends string>(env: Env, name: string, values: readonly T[], options?: EnvReadOptions<T>): T | undefined;
 export function envOneOf<T extends string>(env: Env, name: string, values: readonly T[], options?: EnvReadOptions<T>): T | undefined {
     const value = readRaw(env, name, options);
+
     if (typeof value === 'undefined') {
         return options?.default;
     }

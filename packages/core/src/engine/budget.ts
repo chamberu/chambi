@@ -14,6 +14,7 @@ import type { Budget, Usage } from '../run/types.ts';
 
 export function resolveBudget(agent: Agent): Budget {
     const { budget } = agent.definition;
+
     return {
         maxSteps: budget.maxSteps ?? DEFAULT_MAX_STEPS,
         maxTokens: budget.maxTokens,
@@ -32,6 +33,7 @@ export function stepTokens(step: Pick<StepResult<ToolSet>, 'usage'>): Usage {
 export function tokensExceeded(maxTokens: number, spent = 0): StopCondition<ToolSet> {
     return ({ steps }) => steps.reduce((sum, step) => {
         const { inputTokens, outputTokens } = stepTokens(step);
+
         return sum + inputTokens + outputTokens;
     }, spent) >= maxTokens;
 }
@@ -40,5 +42,6 @@ export function tokensExceeded(maxTokens: number, spent = 0): StopCondition<Tool
 export function timeoutSignal(clock: IClock, ms: number): { signal: AbortSignal; clear(): void } {
     const controller = new AbortController();
     const timer = clock.setTimeout(() => controller.abort(new TimeoutError(ms)), ms);
+
     return { signal: controller.signal, clear: () => timer.clear() };
 }

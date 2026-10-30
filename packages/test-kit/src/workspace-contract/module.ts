@@ -57,6 +57,7 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
 
         it('runs argv and reports the exit code', async () => {
             const result = await workspace.exec(['echo', 'hello']);
+
             expect(result).toMatchObject({
                 exitCode: 0,
                 stdout: 'hello\n',
@@ -70,6 +71,7 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
 
         it('separates stdout and stderr', async () => {
             const result = await workspace.exec(['sh', '-c', 'echo out; echo err >&2; exit 3']);
+
             expect(result.exitCode).toBe(3);
             expect(result.stdout).toBe('out\n');
             expect(result.stderr).toBe('err\n');
@@ -77,11 +79,13 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
 
         it('reports a missing command as 127', async () => {
             const result = await workspace.exec(['chamvi-no-such-command']);
+
             expect(result.exitCode).toBe(127);
         }, TEST_TIMEOUT_MS);
 
         it('passes stdin', async () => {
             const result = await workspace.exec(['cat'], { stdin: 'piped ✓' });
+
             expect(result.stdout).toBe('piped ✓');
         }, TEST_TIMEOUT_MS);
 
@@ -91,7 +95,9 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
 
         it('runs in a relative cwd and refuses escapes', async () => {
             await workspace.writeFile('sub/dir/f.txt', 'x');
+
             const result = await workspace.exec(['pwd'], { cwd: 'sub/dir' });
+
             expect(result.stdout.endsWith('/sub/dir\n')).toBe(true);
 
             for (const cwd of ['../..', '/etc', '', 'a\0b']) {
@@ -101,8 +107,10 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
 
         it('refuses a cwd that is no directory', async () => {
             await workspace.writeFile('cwd-file.txt', 'x');
+
             for (const cwd of ['nope', 'cwd-file.txt']) {
                 const error = await workspace.exec(['pwd'], { cwd }).catch((e: unknown) => e);
+
                 expect(error).toBeInstanceOf(SandboxError);
                 expect((error as SandboxError).message).toBe(`cwd /workspace/${cwd} is no directory in the workspace.`);
             }
@@ -111,6 +119,7 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
         it('returns when the command exits while a background job holds its output', async () => {
             const started = Date.now();
             const result = await workspace.exec(['sh', '-c', 'echo before >&2; sleep 60 & echo started'], { timeoutMs: 20_000 });
+
             expect(result).toMatchObject({
                 exitCode: 0,
                 stdout: 'started\n',
@@ -122,6 +131,7 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
 
         it('caps output per stream', async () => {
             const result = await workspace.exec(['sh', '-c', 'head -c 1000000 /dev/zero | tr "\\0" a']);
+
             expect(result.exitCode).toBe(0);
             expect(Buffer.byteLength(result.stdout)).toBe(65_536);
             expect(result.stdoutTruncated).toBe(true);
@@ -133,18 +143,24 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
                 ['sh', '-c', '(sleep 2; touch late.txt) & sleep 30'],
                 { timeoutMs: 500 },
             );
+
             expect(result.timedOut).toBe(true);
             expect(result.durationMs).toBeLessThan(10_000);
 
             await sleep(3_000);
+
             const listing = await workspace.exec(['ls', '-a']);
+
             expect(listing.stdout).not.toContain('late.txt');
         }, TEST_TIMEOUT_MS);
 
         it('rejects an aborted exec', async () => {
             const controller = new AbortController();
+
             setTimeout(() => controller.abort(), 200);
+
             const started = Date.now();
+
             await expect(workspace.exec(['sleep', '30'], { signal: controller.signal }))
                 .rejects.toBeInstanceOf(SandboxError);
             expect(Date.now() - started).toBeLessThan(10_000);
@@ -152,6 +168,7 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
 
         it('round-trips UTF-8 files and creates directories', async () => {
             const content = 'héllo 👋\n';
+
             await workspace.writeFile('a/b/ü.txt', content);
             expect(await workspace.readFile('a/b/ü.txt')).toBe(content);
             expect(await workspace.readFile('/workspace/a/b/ü.txt')).toBe(content);
@@ -159,6 +176,7 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
 
         it('refuses a file that is not UTF-8 text', async () => {
             const created = await workspace.exec(['sh', '-c', "printf 'a\\377b' > latin1.txt"]);
+
             expect(created.exitCode).toBe(0);
             await expect(workspace.readFile('latin1.txt')).rejects.toBeInstanceOf(SandboxError);
         }, TEST_TIMEOUT_MS);
@@ -166,6 +184,7 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
         it('writes a file whole, also with a concurrent write, and keeps its mode', async () => {
             const long = 'a'.repeat(1_000_000);
             const short = 'b'.repeat(10);
+
             for (let round = 0; round < 3; round++) {
                 await Promise.all([workspace.writeFile('race.txt', long), workspace.writeFile('race.txt', short)]);
                 expect([long, short]).toContain(await workspace.readFile('race.txt'));
@@ -175,22 +194,30 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
             expect((await workspace.exec(['chmod', '755', 'run.sh'])).exitCode).toBe(0);
             await workspace.writeFile('run.sh', '#!/bin/sh\necho two\n');
             expect((await workspace.exec(['./run.sh'])).stdout).toBe('two\n');
+
             const listing = await workspace.exec(['ls', '-a']);
+
             expect(listing.stdout).not.toContain('.chamvi-write-');
         }, TEST_TIMEOUT_MS);
 
         it('round-trips binary files, also past the former 1 MiB cap', async () => {
             const bytes = new Uint8Array(256).map((_, index) => index);
+
             await workspace.writeFile('bin/all.bin', bytes);
             expect(await workspace.readBytes('bin/all.bin')).toEqual(bytes);
             await expect(workspace.readFile('bin/all.bin')).rejects.toBeInstanceOf(SandboxError);
 
             const large = new Uint8Array(2 * 1_048_576).map((_, index) => index % 251);
+
             await workspace.writeFile('bin/large.bin', large);
+
             const read = await workspace.readBytes('bin/large.bin');
+
             expect(read.length).toBe(large.length);
             expect(Buffer.from(read).equals(Buffer.from(large))).toBe(true);
+
             const size = await workspace.exec(['sh', '-c', 'wc -c < bin/large.bin']);
+
             expect(size.stdout.trim()).toBe(String(large.length));
         }, TEST_TIMEOUT_MS);
 
@@ -203,17 +230,20 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
             await expect(workspace.writeFile('big', new Uint8Array(FILE_MAX_BYTES + 1))).rejects.toBeInstanceOf(ValidationError);
 
             const created = await workspace.exec(['sh', '-c', `head -c ${FILE_MAX_BYTES + 1} /dev/zero > big2`]);
+
             expect(created.exitCode).toBe(0);
             await expect(workspace.readBytes('big2')).rejects.toBeInstanceOf(SandboxError);
         }, TEST_TIMEOUT_MS);
 
         it('has a writable HOME', async () => {
             const result = await workspace.exec(['sh', '-c', 'touch "$HOME/.probe" && echo ok']);
+
             expect(result.stdout).toBe('ok\n');
         }, TEST_TIMEOUT_MS);
 
         it('is unusable after dispose and disposes idempotently', async () => {
             const own = await factory();
+
             expect(own.disposed).toBe(false);
             await own.dispose();
             expect(own.disposed).toBe(true);
@@ -227,6 +257,7 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
             const started = Date.now();
             const pending = own.exec(['sleep', '30']);
             const settled = expect(pending).rejects.toThrow(/disposed/);
+
             await sleep(200);
             await own.dispose();
             await settled;
@@ -235,18 +266,23 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
         }, TEST_TIMEOUT_MS);
 
         const { find } = options;
+
         it.runIf(find !== undefined)('finds a workspace again after its handle was dropped', async () => {
             const runId = `contract-${randomUUID()}`;
             const created = await factory({ runId });
             let found: ContractWorkspace[] = [];
+
             try {
                 await created.writeFile('kept/note.txt', 'still here ✓');
+
                 const { id } = created;
                 // the handle is dropped: only a second provider instance looks
 
                 found = await find!(runId);
                 expect(found).toHaveLength(1);
+
                 const [again] = found;
+
                 expect(again!.id).toBe(id);
                 expect(again!.disposed).toBe(false);
                 expect(again!.info?.runId).toBe(runId);
@@ -267,10 +303,12 @@ export function describeWorkspaceContract(name: string, factory: WorkspaceContra
             const runId = `contract-${randomUUID()}`;
             const created = await factory({ runId });
             let found: ContractWorkspace[] = [];
+
             try {
                 // the state a create killed before the end of prepareWorkspace leaves:
                 // its record (labels, metadata) is there, the end of the checkout is not
                 const unset = await created.exec(['git', 'config', '--unset', 'chamvi.checkout']);
+
                 expect(unset.exitCode).toBe(0);
 
                 found = await find!(runId);

@@ -49,11 +49,13 @@ describe('normalizeRepo', () => {
         'https://x-access-token:token@github.com/o/r?token=1',
     ])('rejects credentials in %j without echoing them', (input) => {
         let error: unknown;
+
         try {
             normalizeRepo(input);
         } catch (e) {
             error = e;
         }
+
         expect(error).toBeInstanceOf(ValidationError);
         expect((error as Error).message).not.toContain('token');
         expect(JSON.stringify(error)).not.toContain('token');
@@ -68,9 +70,11 @@ describe('normalizeRepo', () => {
 
     it('applies allowRepo to the normalized URL', () => {
         const seen: string[] = [];
+
         expect(() => normalizeRepo('octo/demo', {
             allowRepo: (url) => {
                 seen.push(url);
+
                 return false;
             },
         })).toThrow(/repository not allowed/);

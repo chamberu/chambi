@@ -24,6 +24,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ page: [offset: number] }>();
+
 defineSlots<{ empty?: () => unknown }>();
 
 const router = useRouter();
@@ -51,11 +52,13 @@ function inOut(run: RunWire): string {
 
 function ratio(run: RunWire): number {
     const max = maxTokensOf(run);
+
     return max ? Math.min(100, Math.round(tokens(run) / max * 100)) : 0;
 }
 
 function by(run: RunWire): string {
     const invoker = run.trigger.invoker ? `by ${run.trigger.invoker.name ?? run.trigger.invoker.id} · ` : '';
+
     return `${invoker}via ${run.trigger.channel}`;
 }
 
@@ -65,7 +68,11 @@ function open(run: RunWire): void {
 
 const range = computed(() => {
     const meta = props.page?.meta;
-    if (!meta || meta.total === 0) return '0 runs';
+
+    if (!meta || meta.total === 0) {
+        return '0 runs';
+    }
+
     return `${meta.offset + 1}–${Math.min(meta.offset + meta.limit, meta.total)} of ${meta.total}`;
 });
 

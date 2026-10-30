@@ -40,8 +40,11 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
     } = opts;
     const { clock, store } = engine;
     const subscription = resolveCronSubscription(engine, agent, opts.subscription);
+
     // a stop that arrived before the job must not recover and execute the store's queued runs
-    if (signal?.aborted) return { status: 'skipped', exitCode: 0 };
+    if (signal?.aborted) {
+        return { status: 'skipped', exitCode: 0 };
+    }
 
     const tick = await fireCronSubscription({
         engine,
@@ -55,6 +58,7 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
     let onAbort: (() => void) | undefined;
     let settled = false;
     let run: Run | undefined;
+
     try {
         // recovery, the queue and the approval tick also run when the tick was skipped
         // checked again after start: a stop that arrived meanwhile must not deny approvals or notify
@@ -62,32 +66,53 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
         if (!signal?.aborted) {
             await engine.start({ channels: false, signal });
         }
-        if (!signal?.aborted) await engine.tick();
+
+        if (!signal?.aborted) {
+            await engine.tick();
+        }
+
         if (tick.dispatched && !signal?.aborted) {
             const { runId } = tick;
+
             run = await new Promise<Run | undefined>((resolve, reject) => {
                 const done = (candidate: Run | undefined) => {
                     settled = true;
                     resolve(candidate);
                 };
+
                 // a signal is a request to stop, not an error: the wait ends and the drain runs
                 onAbort = () => done(undefined);
                 signal?.addEventListener('abort', onAbort, { once: true });
                 // the event only shortens the wait; the poll covers a run executed elsewhere
                 unsubscribe = engine.on('run.updated', (e) => {
-                    if (e.type === 'run.updated' && e.run.id === runId && SETTLING.includes(e.run.status)) done(e.run);
+                    if (e.type === 'run.updated' && e.run.id === runId && SETTLING.includes(e.run.status)) {
+                        done(e.run);
+                    }
                 });
+
                 const poll = async () => {
-                    if (settled) return;
-                    const candidate = await engine.getRun(runId);
-                    if (settled) return;
-                    if (candidate && (SETTLING.includes(candidate.status) || await isQueuedBehindApproval(store.runs, candidate))) {
-                        done(candidate);
+                    if (settled) {
                         return;
                     }
+
+                    const candidate = await engine.getRun(runId);
+
+                    if (settled) {
+                        return;
+                    }
+
+                    if (candidate && (SETTLING.includes(candidate.status) || await isQueuedBehindApproval(store.runs, candidate))) {
+                        done(candidate);
+
+                        return;
+                    }
+
                     // a poll in flight when the run settled must not re-arm the timer
-                    if (!settled) timer = clock.setTimeout(() => poll().catch(reject), pollMs, { keepAlive: true });
+                    if (!settled) {
+                        timer = clock.setTimeout(() => poll().catch(reject), pollMs, { keepAlive: true });
+                    }
                 };
+
                 poll().catch(reject);
             });
         }
@@ -96,19 +121,30 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
         if (!signal?.aborted || error !== signal.reason) {
             settled = true;
             await engine.drain({ timeoutMs: drainTimeoutMs }).catch(() => {});
+
             throw error;
         }
     } finally {
         settled = true;
         timer?.clear();
         unsubscribe?.();
-        if (onAbort) signal?.removeEventListener('abort', onAbort);
+
+        if (onAbort) {
+            signal?.removeEventListener('abort', onAbort);
+        }
     }
+
     await engine.drain({ timeoutMs: drainTimeoutMs });
 
     // aborted: the run as the drain left it (interrupted, or running when the drain timed out)
-    if (!run && tick.dispatched) run = await engine.getRun(tick.runId);
-    if (!run) return { status: 'skipped', exitCode: 0 };
+    if (!run && tick.dispatched) {
+        run = await engine.getRun(tick.runId);
+    }
+
+    if (!run) {
+        return { status: 'skipped', exitCode: 0 };
+    }
+
     return {
         runId: run.id,
         status: run.status,

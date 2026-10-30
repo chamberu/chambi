@@ -23,7 +23,9 @@ describePostgres('schema', () => {
 
     const create = async (opts?: TestDataSourceOptions) => {
         const dataSource = await createTestDataSource(opts);
+
         dataSources.push(dataSource);
+
         return dataSource;
     };
 
@@ -34,6 +36,7 @@ describePostgres('schema', () => {
 
     it('the migration creates the schema the entities describe', async () => {
         const ds = await create();
+
         await expect(assertSchemaMatchesMetadata(ds)).resolves.toBeUndefined();
     });
 
@@ -43,6 +46,7 @@ describePostgres('schema', () => {
             ...ds.options,
             migrations: STORE_MIGRATIONS.filter((migration) => migration.name !== 'Conversations1792713600000'),
         });
+
         await prior.initialize();
         dataSources.push(prior);
         await migrateStore(prior);
@@ -56,8 +60,10 @@ describePostgres('schema', () => {
             'INSERT INTO chamvi_steps (run_id, step_index, kind, name, input, output, started_at, finished_at) VALUES ($1, 2, $2, $3, $4, $5, $6, $6)',
             [runId, 'tool', 'legacy tool', JSON.stringify({ input: 'kept' }), JSON.stringify({ output: 'kept' }), new Date('2026-10-28T00:00:00.000Z')],
         );
+
         await insertCheckpoint('legacy-checkpoint-only');
         await insertStep('legacy-step-only');
+
         const checkpointQuery = 'SELECT run_id, step_index, messages, finish_reason, created_at FROM chamvi_checkpoints';
         const checkpoints = await ds.query(checkpointQuery);
         const steps = await ds.query('SELECT * FROM chamvi_steps');
@@ -80,6 +86,7 @@ describePostgres('schema', () => {
     it('store fixed conversation fields as columns and only frozen messages as JSONB', async () => {
         const ds = await create();
         const runner = ds.createQueryRunner();
+
         try {
             const names = [
                 TableName.CONVERSATIONS,
@@ -88,16 +95,21 @@ describePostgres('schema', () => {
                 TableName.CONVERSATION_OPERATIONS,
             ];
             const tables = await runner.getTables(names);
+
             expect(await runner.hasTable('chamvi_conversation_turns')).toBe(false);
             expect(tables.flatMap((table) => table.columns.filter((column) => column.type === 'jsonb')
                 .map((column) => `${table.name}.${column.name}`))).toEqual([`${TableName.CONVERSATIONS}.snapshot_messages`]);
+
             for (const name of [TableName.RUNS, TableName.CHECKPOINTS]) {
                 const table = await runner.getTable(name);
+
                 expect(table?.findColumnByName('conversation')).toBeUndefined();
                 expect(table?.findColumnByName('conversation_scope_id')?.type).toBe('character varying');
             }
+
             for (const name of names.slice(1)) {
                 const table = tables.find((entry) => entry.name === name)!;
+
                 expect(table.foreignKeys).toHaveLength(2);
                 expect(table.foreignKeys.find((key) => key.columnNames.includes('scope_id'))).toMatchObject({
                     columnNames: ['scope_id'],
@@ -123,6 +135,7 @@ describePostgres('schema', () => {
             audience: 'direct',
         };
         const scope = await store.resolve(identity);
+
         await seedRun(ds, 'run');
         await store.beginTurn(scope, 'run', 'hello', DEFAULT_CONVERSATION_LIMITS);
         await store.applyNote(scope, {
@@ -137,15 +150,18 @@ describePostgres('schema', () => {
                 stepIndex: 0,
             },
         });
+
         const ownedTables = [
             TableName.CONVERSATION_ITEMS,
             TableName.CONVERSATION_NOTES,
             TableName.CONVERSATION_OPERATIONS,
         ];
+
         for (const table of ownedTables) {
             await expect(ds.query(`UPDATE "${table}" SET scope_id = $1`, ['b'.repeat(64)]))
                 .rejects.toMatchObject({ driverError: { code: '23503' } });
         }
+
         await store.endTurn(scope, 'run', []);
         await store.reset(identity, { keepNotes: true });
         expect((await store.findItems(scope, { limit: 10, offset: 0 })).total).toBe(1);
@@ -159,6 +175,7 @@ describePostgres('schema', () => {
             'SELECT indexdef FROM pg_indexes WHERE indexname = $1',
             ['IDX_chamvi_docs_doc_gin'],
         );
+
         expect(rows).toHaveLength(1);
         expect(rows[0]!.indexdef).toContain('USING gin');
     });
@@ -169,26 +186,31 @@ describePostgres('schema', () => {
             'SELECT indexdef FROM pg_indexes WHERE tablename = $1',
             [TableName.ARTIFACTS],
         );
+
         expect(rows.some((row) => row.indexdef.includes('(run_id)'))).toBe(true);
     });
 
     it('migrateStore is safe to call concurrently and twice', async () => {
         const ds = await create({ migrate: false });
+
         await Promise.all([migrateStore(ds), migrateStore(ds)]);
         await migrateStore(ds);
 
         const migrations: { name: string }[] = await ds.query('SELECT name FROM migrations ORDER BY id');
+
         expect(migrations.map((m) => m.name)).toEqual(['Init1792195200000', 'Artifacts1792368000000', 'IdempotencyScope1792454400000', 'KvKeyCollation1792540800000', 'AgentRevisions1792627200000', 'Conversations1792713600000']);
 
         const tables: { table_name: string }[] = await ds.query(
             'SELECT table_name FROM information_schema.tables WHERE table_name = ANY($1::text[])',
             [Object.values(TableName)],
         );
+
         expect(tables.map((t) => t.table_name).sort()).toEqual(Object.values(TableName).sort());
     });
 
     it('pendingMigrations lists every migration on an empty database and none after migrateStore', async () => {
         const ds = await create({ migrate: false });
+
         expect(await pendingMigrations(ds)).toEqual([
             'Init1792195200000',
             'Artifacts1792368000000',
@@ -203,8 +225,11 @@ describePostgres('schema', () => {
 
     it('pendingMigrations does not create the migrations table', async () => {
         const ds = await create({ migrate: false });
+
         await pendingMigrations(ds);
+
         const queryRunner = ds.createQueryRunner();
+
         try {
             expect(await queryRunner.hasTable('migrations')).toBe(false);
         } finally {
@@ -219,13 +244,17 @@ describePostgres('schema', () => {
                 'SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name = ANY($2::text[])',
                 [schema, Object.values(TableName)],
             );
+
             return rows.length;
         };
+
         expect(await tablesIn('other')).toBe(Object.values(TableName).length);
         expect(await tablesIn('public')).toBe(0);
 
         await ds.undoLastMigration({ transaction: 'each' });
+
         const tableCount = Object.values(TableName).length - 4;
+
         expect(await tablesIn('other')).toBe(tableCount);
 
         const scopeLength = async () => {
@@ -233,6 +262,7 @@ describePostgres('schema', () => {
                 'SELECT character_maximum_length AS length FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3',
                 ['other', TableName.IDEMPOTENCY_KEYS, 'scope'],
             );
+
             return row?.length;
         };
         const keyCollation = async () => {
@@ -240,8 +270,10 @@ describePostgres('schema', () => {
                 'SELECT collation_name AS collation FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3',
                 ['other', TableName.KV, 'key'],
             );
+
             return row?.collation;
         };
+
         await ds.undoLastMigration({ transaction: 'each' });
         expect(await tablesIn('other')).toBe(tableCount - 1);
 
@@ -269,9 +301,11 @@ describePostgres('schema', () => {
         ]);
 
         const single = await create({ migrate: false, max: 1 });
+
         await expect(within(migrateStore(single))).resolves.toBeUndefined();
 
         const pair = await create({ migrate: false, max: 2 });
+
         await expect(within(Promise.all([migrateStore(pair), migrateStore(pair)]))).resolves.toHaveLength(2);
         await expect(assertSchemaMatchesMetadata(pair)).resolves.toBeUndefined();
     }, 15_000);

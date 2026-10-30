@@ -23,6 +23,7 @@ const props = defineProps<{
 const reading = computed(() => {
     const zone = props.schedule.timezone ?? 'server time zone';
     const text = describeCron(props.schedule.expression);
+
     return text ? `${text} · ${zone}` : zone;
 });
 </script>

@@ -43,20 +43,27 @@ export class SuspendSignal extends ChamviError {
 }
 
 function assertRequest(request: unknown): Pick<ApprovalRequest, 'options' | 'multiple'> {
-    if (!isObject(request)) throw new ValidationError('An approval request must be an object.');
+    if (!isObject(request)) {
+        throw new ValidationError('An approval request must be an object.');
+    }
+
     if (typeof request.title !== 'string' || request.title.length === 0) {
         throw new ValidationError('An approval request needs a non-empty title.');
     }
+
     if (request.body !== undefined && typeof request.body !== 'string') {
         throw new ValidationError('An approval request body must be a string.');
     }
+
     const { timeoutMs } = request;
+
     if (
         timeoutMs !== undefined &&
         (typeof timeoutMs !== 'number' || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > APPROVAL_TIMEOUT_MAX_MS)
     ) {
         throw new ValidationError(`An approval timeoutMs must be an integer from 1 to ${APPROVAL_TIMEOUT_MAX_MS}.`);
     }
+
     return toApprovalOptions(request.options, request.multiple);
 }
 
@@ -73,19 +80,25 @@ export async function requestApproval(
     target: { channel?: string; address?: string } = {},
 ): Promise<ApprovalDecision> {
     const frame = currentToolCall();
+
     if (!frame) {
         throw new InvalidRunStateError('approve() runs inside a tool call (its execute or the agent hooks), not in the tools factory.');
     }
+
     if (frame.streaming) {
         throw new InvalidRunStateError(
             `approve() cannot run in the body of the streaming tool "${frame.toolName}"; gate it in beforeToolExecution.`,
         );
     }
+
     const choice = assertRequest(request);
     // taken before any await, so the ordinals follow the order of the calls
     const approvalId = `${frame.stepIndex}:${frame.toolCallId}:${frame.approvals++}`;
     const recorded = await frame.effects.findOne(approvalDecisionKey(frame.runId, approvalId));
-    if (recorded) return fitRecordedDecision(toApprovalDecision(recorded.result), { approvalId, ...choice });
+
+    if (recorded) {
+        return fitRecordedDecision(toApprovalDecision(recorded.result), { approvalId, ...choice });
+    }
 
     const pending: ApprovalRequest = {
         approvalId,
@@ -98,8 +111,10 @@ export async function requestApproval(
         ...(target.address !== undefined ? { address: target.address } : {}),
         timeoutMs: request.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
     };
+
     // the first suspension of the call wins, also when the tool catches the signal
     frame.suspended ??= pending;
+
     throw new SuspendSignal(pending);
 }
 
@@ -118,8 +133,10 @@ export async function approve<S extends StateSchema = StateSchema>(
     request: ApprovalRequestInput,
 ): Promise<ApprovalDecision> {
     const frame = currentToolCall();
+
     if (frame && ctx?.run?.runId !== undefined && ctx.run.runId !== frame.runId) {
         throw new InvalidRunStateError('approve() got the context of another run than the tool call it runs in.');
     }
+
     return requestApproval(request);
 }

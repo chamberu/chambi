@@ -37,7 +37,10 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -73,10 +76,18 @@ function setup(s: Setup) {
         execute: async (input, { context }) => {
             if (s.gated?.(input.env) ?? true) {
                 const decision = await approve(context, { title: `Deploy ${input.env}?`, timeoutMs: TIMEOUT });
-                if (!decision.approved) return `not deployed: ${decision.reason ?? 'denied'}`;
+
+                if (!decision.approved) {
+                    return `not deployed: ${decision.reason ?? 'denied'}`;
+                }
             }
+
             executed.push(input);
-            if (s.deploy) return s.deploy(input);
+
+            if (s.deploy) {
+                return s.deploy(input);
+            }
+
             return `deployed ${input.env}`;
         },
     });
@@ -98,8 +109,11 @@ function setup(s: Setup) {
         },
         ...s.engine,
     });
+
     engines.push(engine);
+
     const notifier = recordApprovals(engine);
+
     return {
         clock,
         store,
@@ -122,9 +136,13 @@ const env = (concurrencyKey?: string) => ({
 
 async function dispatchToWaiting(ctx: Ctx, key?: string) {
     await ctx.engine.start();
+
     const { runId } = await ctx.engine.dispatch(env(key));
+
     await ctx.engine.idle();
+
     const run = await ctx.store.runs.findOne(runId);
+
     return { runId, run };
 }
 
@@ -137,6 +155,7 @@ async function poll(ctx: Ctx, ms = 10) {
 /** Answers the i-th approval the engine asked for, as the owner would. */
 const answerOf = (ctx: Ctx, decision: { approved: boolean; reason?: string }, i = 0) => {
     const call = ctx.notifier.calls[i]!;
+
     return ctx.engine.approve(call.runId, { approvalId: call.approvalId, ...decision });
 };
 
@@ -158,7 +177,9 @@ describe('approvals', () => {
             expiresAt: new Date(1_000_000 + TIMEOUT),
         });
         expect(ctx.executed).toEqual([]);
+
         const { approvalId } = run!.waiting!;
+
         expect(typeof approvalId).toBe('string');
 
         expect(ctx.notifier.calls).toHaveLength(1);
@@ -168,10 +189,13 @@ describe('approvals', () => {
         for (let i = 0; i < 2; i++) {
             await ctx.store.runs.update(runId, { status: 'queued' }, { expectStatus: ['waiting'] });
             await poll(ctx);
+
             const again = await ctx.store.runs.findOne(runId);
+
             expect(again?.status).toBe('waiting');
             expect(again?.waiting).toEqual(run?.waiting);
         }
+
         expect(model.doStreamCalls).toHaveLength(1);
         expect(ctx.notifier.calls).toHaveLength(1);
 
@@ -190,6 +214,7 @@ describe('approvals', () => {
         await ctx.engine.idle();
 
         const done = await ctx.store.runs.findOne(runId);
+
         expect(done?.status).toBe('completed');
         expect(done?.output).toBe('done');
         expect(done?.waiting).toBeUndefined();
@@ -197,10 +222,12 @@ describe('approvals', () => {
         expect(promptOf(model, 1)).toContain('deployed prod');
 
         const { messages } = (await ctx.store.checkpoints.findOne(runId))!;
+
         // the tool result of the approved call is part of the checkpoint
         expect(JSON.stringify(messages)).toContain('deployed prod');
 
         const steps = await ctx.store.steps.find(runId);
+
         expect(steps.map((s) => s.kind)).toEqual(['llm', 'wait', 'tool', 'llm']);
         expect(steps[1]).toMatchObject({
             name: 'deploy',
@@ -223,6 +250,7 @@ describe('approvals', () => {
         await ctx.engine.idle();
 
         const done = await ctx.store.runs.findOne(runId);
+
         expect(done?.status).toBe('completed');
         expect(done?.output).toBe('ok, not deploying');
         expect(ctx.executed).toEqual([]);
@@ -252,8 +280,11 @@ describe('approvals', () => {
             answerOf(ctx, { approved: true }),
             answerOf(ctx, { approved: false }),
         ]);
+
         expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+
         const rejected = results.find((r) => r.status === 'rejected');
+
         expect(rejected?.reason).toBeInstanceOf(InvalidRunStateError);
         // only the winner's decision
         expect(put.mock.calls.filter(([key]) => key.startsWith('approval:'))).toHaveLength(1);
@@ -267,11 +298,13 @@ describe('approvals', () => {
         const ctx = setup({ model });
         const { runId } = await dispatchToWaiting(ctx);
         const put = ctx.store.effects.save.bind(ctx.store.effects);
+
         // a poll pass runs while the answer records the decision
         vi.spyOn(ctx.store.effects, 'save').mockImplementationOnce(async (key, result) => {
             ctx.clock.advance(10);
             await ctx.engine.idle();
             expect((await ctx.store.runs.findOne(runId))?.status).toBe('queued');
+
             return put(key, result);
         });
 
@@ -293,14 +326,18 @@ describe('approvals', () => {
         await vi.waitFor(async () => {
             expect((await ctx.store.runs.findOne(runId))?.status).toBe('queued');
         });
+
         const crashed = await ctx.store.runs.findOne(runId);
+
         expect(crashed?.claim).toBeDefined();
         // the wait point survives the transition
         expect(crashed?.waiting).toEqual(run?.waiting);
 
         // once the dead claim expired, the run is re-executed and pauses on the same wait point
         await poll(ctx, 40);
+
         const again = await ctx.store.runs.findOne(runId);
+
         expect(again?.status).toBe('waiting');
         expect(again?.waiting?.approvalId).toBe(run?.waiting?.approvalId);
         expect(again?.waiting?.expiresAt).toEqual(run?.waiting?.expiresAt);
@@ -310,7 +347,9 @@ describe('approvals', () => {
         // the owner's answer to the same approval still goes through
         await answerOf(ctx, { approved: true });
         await ctx.engine.idle();
+
         const done = await ctx.store.runs.findOne(runId);
+
         expect(done).toMatchObject({ status: 'completed', output: 'done' });
         expect(done?.waiting).toBeUndefined();
         expect(ctx.executed).toEqual([{ env: 'prod' }]);
@@ -320,7 +359,9 @@ describe('approvals', () => {
         const model = mockModel([deployTurn(), text('done')]);
         const ctx = setup({ model });
         const { runId, run } = await dispatchToWaiting(ctx);
+
         ctx.engine.stop();
+
         const before = await ctx.store.checkpoints.findOne(runId);
         // a snapshot from before the run moved on to another (unexpired) approval
         const stale = {
@@ -341,6 +382,7 @@ describe('approvals', () => {
         await ctx.engine.tick();
 
         const current = await ctx.store.runs.findOne(runId);
+
         expect(current?.status).toBe('waiting');
         expect(current?.claim).toBeUndefined();
         expect(current?.waiting).toEqual(run?.waiting);
@@ -375,7 +417,9 @@ describe('approvals', () => {
 
         await answerOf(ctx, { approved: true });
         await ctx.engine.idle();
+
         const done = await ctx.store.runs.findOne(runId);
+
         expect(done?.status).toBe('failed');
         expect(done?.error).toEqual({ code: 'BudgetExceeded', message: 'The run reached its 1 step limit.' });
         expect(model.doStreamCalls).toHaveLength(2);
@@ -405,13 +449,17 @@ describe('approvals', () => {
 
         await answerOf(ctx, { approved: true });
         await ctx.engine.idle();
+
         const done = await ctx.store.runs.findOne(runId);
+
         expect(done?.status).toBe('failed');
         expect(done?.error).toEqual({ code: 'RepoGone', message: 'repository gone' });
         expect(done?.waiting).toBeUndefined();
         // no model call after the fatal tool
         expect(model.doStreamCalls).toHaveLength(1);
+
         const steps = await ctx.store.steps.find(runId);
+
         expect(steps.map((s) => s.kind)).toEqual(['llm', 'wait', 'tool']);
         expect(steps[2]).toMatchObject({ name: 'deploy', error: { code: 'RepoGone', message: 'repository gone' } });
         expect(steps[2]?.output).toBeUndefined();
@@ -431,7 +479,9 @@ describe('approvals', () => {
         await ctx.engine.idle();
         expect(await ctx.store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'deploy failed, reported' });
         expect(promptOf(model, 1)).toContain('flaky');
+
         const steps = await ctx.store.steps.find(runId);
+
         expect(steps[2]).toMatchObject({ kind: 'tool', error: { code: 'Error', message: 'flaky' } });
     });
 
@@ -439,6 +489,7 @@ describe('approvals', () => {
         const model = mockModel([deployTurn(), text('timed out, skipping')]);
         const ctx = setup({ model });
         const { runId } = await dispatchToWaiting(ctx);
+
         ctx.engine.stop();
 
         ctx.clock.advance(TIMEOUT - 1);
@@ -451,10 +502,13 @@ describe('approvals', () => {
         await ctx.engine.idle();
 
         const done = await ctx.store.runs.findOne(runId);
+
         expect(done?.status).toBe('completed');
         expect(ctx.executed).toEqual([]);
         expect(promptOf(model, 1)).toContain('approval timed out');
+
         const steps = await ctx.store.steps.find(runId);
+
         expect(steps.find((s) => s.kind === 'wait')?.output).toMatchObject({ approved: false, reason: 'approval timed out' });
     });
 
@@ -473,6 +527,7 @@ describe('approvals', () => {
         const ctx = setup({ model });
         const { runId: a } = await dispatchToWaiting(ctx, 'repo-1');
         const { runId: b } = await ctx.engine.dispatch(env('repo-1'));
+
         await ctx.engine.idle();
         await poll(ctx);
         expect((await ctx.store.runs.findOne(a))?.status).toBe('waiting');
@@ -487,8 +542,11 @@ describe('approvals', () => {
     it('a waiting run frees its concurrency slot', async () => {
         const model = mockModel([deployTurn(), text('other done')]);
         const ctx = setup({ model, engine: { concurrencyMaxRuns: 1 } });
+
         await dispatchToWaiting(ctx);
+
         const { runId } = await ctx.engine.dispatch(env());
+
         await ctx.engine.idle();
         expect((await ctx.store.runs.findOne(runId))?.status).toBe('completed');
     });
@@ -498,10 +556,13 @@ describe('approvals', () => {
         const ctx = setup({ model });
         const { runId: a } = await dispatchToWaiting(ctx, 'repo-1');
         const { runId: b } = await ctx.engine.dispatch(env('repo-1'));
+
         await ctx.engine.idle();
 
         await ctx.engine.cancel(a);
+
         const cancelled = await ctx.store.runs.findOne(a);
+
         expect(cancelled).toMatchObject({ status: 'cancelled', waiting: undefined });
         await expect(answerOf(ctx, { approved: true })).rejects.toThrow(InvalidRunStateError);
         await poll(ctx);
@@ -514,19 +575,24 @@ describe('approvals', () => {
         const { promise: gate, resolve: open } = Promise.withResolvers<void>();
         let holding = false;
         const update = ctx.store.runs.update.bind(ctx.store.runs);
+
         vi.spyOn(ctx.store.runs, 'update').mockImplementation(async (id, patch, opts) => {
             if (patch.status === 'waiting') {
                 holding = true;
                 await gate;
             }
+
             return update(id, patch, opts);
         });
         await ctx.engine.start();
+
         const { runId } = await ctx.engine.dispatch(env());
+
         await vi.waitFor(() => expect(holding).toBe(true));
 
         // the abort cannot interrupt the waiting write already in flight
         const cancelled = ctx.engine.cancel(runId);
+
         open();
         await cancelled;
         await ctx.engine.idle();
@@ -558,7 +624,9 @@ describe('Engine.approve', () => {
 
         expect((await ctx.store.runs.findOne(runId))?.status).toBe('completed');
         expect(ctx.executed).toEqual([{ env: 'prod' }]);
+
         const steps = await ctx.store.steps.find(runId);
+
         expect(steps.find((s) => s.kind === 'wait')?.output).toEqual({
             approvalId,
             approved: true,
@@ -599,6 +667,7 @@ describe('Engine.approve', () => {
         const ctx = setup({ model });
         const { runId, run } = await dispatchToWaiting(ctx);
         const { approvalId } = run!.waiting!;
+
         ctx.engine.stop();
         ctx.clock.advance(TIMEOUT);
 
@@ -607,7 +676,9 @@ describe('Engine.approve', () => {
         expect((await ctx.store.runs.findOne(runId))?.status).toBe('waiting');
 
         await ctx.engine.tick();
+
         const wait = (await ctx.store.steps.find(runId)).find((s) => s.kind === 'wait');
+
         expect(wait?.output).toMatchObject({ approved: false, reason: 'approval timed out' });
     });
 
@@ -615,6 +686,7 @@ describe('Engine.approve', () => {
         const ctx = setup({ model: mockModel([deployTurn(), text('done')]) });
         const { runId, run } = await dispatchToWaiting(ctx);
         const { approvalId } = run!.waiting!;
+
         await ctx.engine.approve(runId, { approvalId, approved: true });
         await ctx.engine.idle();
 
@@ -624,6 +696,7 @@ describe('Engine.approve', () => {
 
     it('approve of an unknown run throws RunNotFoundError', async () => {
         const ctx = setup({ model: mockModel([]) });
+
         await expect(ctx.engine.approve('nope', { approvalId: 'a', approved: true }))
             .rejects.toThrow(RunNotFoundError);
     });
@@ -631,6 +704,7 @@ describe('Engine.approve', () => {
     it('approve validates the approver before reading the store', async () => {
         const ctx = setup({ model: mockModel([]) });
         const getRun = vi.spyOn(ctx.store.runs, 'findOne');
+
         await expect(ctx.engine.approve('r1', {
             approvalId: 'a',
             approved: true,

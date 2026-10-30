@@ -24,6 +24,7 @@ describe('githubChannel options', () => {
 
     it('has in and out, and no start', () => {
         const channel = githubChannel({ app: gh });
+
         expect(channel.in).toBeTypeOf('function');
         expect(channel.out).toBeTypeOf('function');
         expect(channel).not.toHaveProperty('start');

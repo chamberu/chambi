@@ -148,6 +148,7 @@ describe('buildContainerOptions', () => {
                 ref: 'main',
             },
         }));
+
         expect(options.Labels).toMatchObject({
             'chamvi.dev/deployment': 'prod',
             'chamvi.dev/repo': repo,
@@ -166,6 +167,7 @@ describe('buildContainerOptions', () => {
 
     it('restores the hardened mode with a user and a read-only root', () => {
         const options = buildContainerOptions(input({ user: '1000:1000', readOnlyRoot: true }));
+
         expect(options.User).toBe('1000:1000');
         expect(options.HostConfig?.ReadonlyRootfs).toBe(true);
         expect(options.HostConfig?.CapDrop).toEqual(['ALL']);
@@ -179,6 +181,7 @@ describe('buildContainerOptions', () => {
 
     it('mounts a cache of its own without a shared volume', () => {
         const options = buildContainerOptions(input({ cacheVolume: undefined }));
+
         expect(options.HostConfig?.Mounts?.find((mount) => mount.Target === '/cache')).toEqual({
             Type: 'volume',
             Source: '',
@@ -194,10 +197,13 @@ describe('buildContainerOptions', () => {
         const now = Math.floor(Date.now() / 1000);
         // a restart after the expiry: it exits at once
         const started = Date.now();
+
         await run('sh', ['-c', SLEEP_UNTIL_SCRIPT, 'sh', String(now - 60)]);
         expect(Date.now() - started).toBeLessThan(1_000);
+
         // a restart before it: only the time left
         const waited = Date.now();
+
         await run('sh', ['-c', SLEEP_UNTIL_SCRIPT, 'sh', String(now + 2)]);
         expect(Date.now() - waited).toBeGreaterThanOrEqual(500);
         expect(Date.now() - waited).toBeLessThan(3_500);
@@ -213,11 +219,13 @@ describe('buildContainerOptions', () => {
                 expiresAt: new Date('2026-01-01T00:10:00.200Z'),
             },
         }));
+
         expect(options.Cmd?.at(-1)).toBe(String(Number(DEADLINE) + 1));
     });
 
     it('sleeps until the workspace expiry and skips the image entrypoint', () => {
         const options = buildContainerOptions(input());
+
         expect(options.Cmd).toEqual(['sh', '-c', SLEEP_UNTIL_SCRIPT, 'sh', DEADLINE]);
         expect(options.Entrypoint).toEqual([]);
         expect(options.HostConfig?.Init).toBe(true);
@@ -225,6 +233,7 @@ describe('buildContainerOptions', () => {
 
     it('mounts a shared volume only when one is named', () => {
         const options = buildContainerOptions(input({ cacheVolume: 'chamvi-shared' }));
+
         expect(options.HostConfig?.Mounts?.find((mount) => mount.Target === '/cache')).toEqual({
             Type: 'volume',
             Source: 'chamvi-shared',
@@ -238,6 +247,7 @@ describe('buildContainerOptions', () => {
 
     it('lets the configured env replace a cache variable', () => {
         const options = buildContainerOptions(input({ env: { PIP_CACHE_DIR: '/tmp/pip' } }));
+
         expect(options.Env?.filter((entry) => entry.startsWith('PIP_CACHE_DIR='))).toEqual(['PIP_CACHE_DIR=/tmp/pip']);
     });
 });

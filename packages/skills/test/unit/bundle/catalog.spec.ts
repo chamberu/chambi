@@ -28,6 +28,7 @@ describe('approved skill catalog', () => {
     it('exposes a singular verified immutable snapshot without retaining filesystem readers', () => {
         const approved = approvedSkill('audit', { files: { 'ref.txt': 'REFERENCE' } });
         const snapshot = app.loadSkillBundle(approved);
+
         fs.rmSync(approved.directory, { recursive: true });
         expect(snapshot).toMatchObject({
             name: 'audit',
@@ -45,13 +46,16 @@ describe('approved skill catalog', () => {
         const zulu = approvedSkill('zulu', { files: { 'ref.txt': 'PRIVATE-REFERENCE' } });
         const alpha = approvedSkill('alpha', { description: 'Review "quoted" code \u2028 safely' });
         const catalog = app.loadSkillBundles([zulu, alpha]);
+
         expect(catalog.skills.map((entry) => entry.name)).toEqual(['alpha', 'zulu']);
+
         for (const approved of [alpha, zulu]) {
             expect(catalog.instructions).toContain(JSON.stringify(approved.name));
             expect(catalog.instructions).toContain(approved.version);
             expect(catalog.instructions).toContain(approved.hash);
             expect(catalog.instructions).not.toContain(approved.directory);
         }
+
         expect(catalog.instructions.indexOf('"alpha"')).toBeLessThan(catalog.instructions.indexOf('"zulu"'));
         expect(catalog.instructions).toContain(JSON.stringify(alpha.name));
         expect(catalog.instructions).toContain(String.raw`Review \"quoted\" code`);
@@ -64,10 +68,13 @@ describe('approved skill catalog', () => {
 
     it('rejects_duplicate_names_and_over_limit_catalog', () => {
         const approved = approvedSkill();
+
         expect(() => app.loadSkillBundles([approved, approved])).toThrow(InvalidAgentDefinitionError);
         expect(() => app.loadSkillBundles(Array.from({ length: 17 }, (_, index) => ({ ...approved, name: `skill-${index}` }))))
             .toThrow(InvalidAgentDefinitionError);
+
         const sixteen = Array.from({ length: 16 }, (_, index) => approvedSkill(`skill-${index}`));
+
         expect(app.loadSkillBundles(sixteen).skills).toHaveLength(16);
     });
 
@@ -82,10 +89,16 @@ describe('approved skill catalog', () => {
     it('failed_bundle_prevents_partial_catalog', () => {
         const good = approvedSkill();
         const invalid = approvedSkill('other');
+
         fs.appendFileSync(join(invalid.directory, 'SKILL.md'), 'PRIVATE-CHANGED');
+
         let result: SkillCatalog | undefined;
-        expect(() => { result = app.loadSkillBundles([good, invalid]); }).toThrow(InvalidAgentDefinitionError);
+
+        expect(() => {
+            result = app.loadSkillBundles([good, invalid]);
+        }).toThrow(InvalidAgentDefinitionError);
         expect(result).toBeUndefined();
+
         try {
             app.loadSkillBundles([good, invalid]);
         } catch (error) {
@@ -98,6 +111,7 @@ describe('approved skill catalog', () => {
         const approved = approvedSkill('audit', { frontmatter: 'model: secret/model\n' });
         const entries = [approved];
         const catalog = app.loadSkillBundles(entries);
+
         entries.length = 0;
         approved.name = 'changed';
         approved.version = 'changed';
@@ -116,7 +130,9 @@ describe('approved skill catalog', () => {
 
     it('importing_the_root_does_not_scan_bundles', async () => {
         vi.resetModules();
+
         const scan = vi.spyOn(fs, 'opendirSync');
+
         await import('@chamvi/skills');
         expect(scan).not.toHaveBeenCalled();
     });

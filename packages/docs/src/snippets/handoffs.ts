@@ -20,6 +20,7 @@ const handOffPr = defineTool({
     execute: async ({ pr }, { context }) => {
         // the day the daily run was fired, not the wall clock: a redo keeps the key
         const day = context.run.trigger.receivedAt.toISOString().slice(0, 10);
+
         return startHandoff(context, {
             payload: { pr },
             idempotencyKey: `${pr}@${day}`,

@@ -18,16 +18,19 @@ describe('README example', () => {
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = readme.matchAll(/```typescript\n([\s\S]*?)```/g).map((m) => m[1]).toArray();
+
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
     it('gives the agent web_fetch', () => {
         const agent = createResearchAgent(mockModel([]));
+
         expect(Object.keys(agent.definition.tools as object)).toEqual(['web_fetch']);
     });
 
     it('subscribes to the http channel, so REST and MCP can start it', () => {
         const agent = createResearchAgent(mockModel([]));
+
         expect(agent.definition.channels?.map((subscription) => subscription.channel)).toEqual(['http']);
     });
 
@@ -48,6 +51,7 @@ describe('README example', () => {
             agents: [agent],
             channels: [httpChannel()],
         });
+
         await engine.start();
 
         const { runId } = await engine.dispatch({
@@ -56,11 +60,14 @@ describe('README example', () => {
             channel: 'http',
             payload: {},
         });
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.status).toBe('completed');
+
         const steps = await engine.store.steps.find(runId);
         const fetch = steps.find((step) => step.kind === 'tool' && step.name === 'web_fetch');
+
         expect(fetch?.error).toMatchObject({ code: 'validation_error' });
         engine.stop();
     });

@@ -21,6 +21,7 @@ const summarize = defineTool({
             prompt: `Summarize in three sentences:\n\n${text}`,
             abortSignal: context.run.signal,
         });
+
         return summary;
     },
 });

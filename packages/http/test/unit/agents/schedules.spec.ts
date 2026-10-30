@@ -37,6 +37,7 @@ function setup() {
             channels: [http.on(), cronOn('*/15 * * * *')],
         }),
     ];
+
     return createTestApp({ agents, clock });
 }
 
@@ -44,6 +45,7 @@ describe('GET /schedules', () => {
     it('lists every cron subscription with its next fire time', async () => {
         const { app } = setup();
         const response = await call(app, 'GET', '/schedules', { token: READER_TOKEN });
+
         expect(response.status).toBe(200);
         expect((await response.json()).data).toEqual([
             {
@@ -78,6 +80,7 @@ describe('GET /schedules', () => {
 
     it('needs run:read', async () => {
         const { app } = setup();
+
         expect((await call(app, 'GET', '/schedules', { token: tokenFor() })).status).toBe(403);
         expect((await call(app, 'GET', '/schedules')).status).toBe(401);
     });

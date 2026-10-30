@@ -22,7 +22,13 @@ const opts: ChannelSendOptions = { signal: new AbortController().signal, trigger
 
 function collect() {
     const lines: string[] = [];
-    return { lines, write: (line: string) => { lines.push(line); } };
+
+    return {
+        lines,
+        write: (line: string) => {
+            lines.push(line);
+        },
+    };
 }
 
 describe('consoleChannel', () => {
@@ -36,6 +42,7 @@ describe('consoleChannel', () => {
             title: 'Deployed',
             body: 'line one\nline two',
         };
+
         await consoleChannel({ write }).out!(message, 'anywhere', opts);
         expect(lines).toEqual([
             '[chamvi] message: Deployed (agent release, run r1, key k1)',
@@ -46,6 +53,7 @@ describe('consoleChannel', () => {
 
     it('uses the first body line without a title', async () => {
         const { lines, write } = collect();
+
         await consoleChannel({ write }).out!({
             kind: 'message',
             key: 'k1',
@@ -59,6 +67,7 @@ describe('consoleChannel', () => {
 
     it('writes when an approval waits until', async () => {
         const { lines, write } = collect();
+
         await consoleChannel({ write }).out!({
             kind: 'approval',
             key: 'r1:a1',
@@ -93,6 +102,7 @@ describe('consoleChannel', () => {
                 detail: 'x',
             }, { id: 'b', label: 'Beta' }],
         };
+
         await consoleChannel({ write }).out!({ ...message, multiple: true }, 'x', opts);
         expect(lines).toEqual([
             '[chamvi] approval: Adopt? (agent release, run r1, key r1:a1)',
@@ -113,6 +123,7 @@ describe('consoleChannel', () => {
                 throw new Error('closed');
             },
         });
+
         await expect(channel.out!({
             kind: 'message',
             key: 'k',
@@ -124,6 +135,7 @@ describe('consoleChannel', () => {
 
     it('is out only and named console by default', () => {
         const channel = consoleChannel();
+
         expect(channel.name).toBe('console');
         expect(channel.in).toBeUndefined();
         expect(channel.start).toBeUndefined();

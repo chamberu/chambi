@@ -43,9 +43,9 @@ const TABS = ['overview', 'runs', 'state', 'schedules'] as const;
 type Tab = typeof TABS[number];
 
 const {
-    client, 
-    config, 
-    session, 
+    client,
+    config,
+    session,
 } = useAppContext();
 const route = useRoute();
 const router = useRouter();
@@ -64,7 +64,9 @@ const state = useAgentState(client, stateName);
 
 const tab = computed<Tab>({
     get: () => (TABS as readonly string[]).includes(String(route.query.tab)) ? route.query.tab as Tab : 'overview',
-    set: (value) => { void router.replace({ query: value === 'overview' ? {} : { tab: value } }); },
+    set: (value) => {
+        void router.replace({ query: value === 'overview' ? {} : { tab: value } });
+    },
 });
 
 const chips = computed(() => (agent.value ? channelChips(agent.value, schedules.value) : []));
@@ -86,8 +88,14 @@ function onStarted(result: StartRunResult): void {
 }
 
 function runSub(run: { trigger: { trigger: string; invoker?: { id: string; name?: string } }; concurrencyKey?: string }): string {
-    if (run.concurrencyKey) return `${run.trigger.trigger} · ${run.concurrencyKey}`;
-    if (run.trigger.invoker) return `${run.trigger.trigger} · by ${run.trigger.invoker.name ?? run.trigger.invoker.id}`;
+    if (run.concurrencyKey) {
+        return `${run.trigger.trigger} · ${run.concurrencyKey}`;
+    }
+
+    if (run.trigger.invoker) {
+        return `${run.trigger.trigger} · by ${run.trigger.invoker.name ?? run.trigger.invoker.id}`;
+    }
+
     return run.trigger.trigger;
 }
 

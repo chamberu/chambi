@@ -31,10 +31,16 @@ import type { WebhookChannel, WebhookChannelOptions } from './types.ts';
 
 function assertOptions(options: WebhookChannelOptions): void {
     const auth = Array.isArray(options?.auth) ? options.auth : [options?.auth];
-    if (auth.length === 0 || auth.some((authenticator) => typeof authenticator !== 'function')) {
+
+    const hasInvalidAuthenticator = auth.length !== 0 &&
+        auth.some((authenticator) => typeof authenticator !== 'function');
+
+    if (auth.length === 0 || hasInvalidAuthenticator) {
         throw new InvalidAgentDefinitionError('webhookChannel: auth needs at least one authenticator.');
     }
+
     const { bodyLimit } = options;
+
     if (bodyLimit !== undefined && (!Number.isSafeInteger(bodyLimit) || bodyLimit < 1)) {
         throw new InvalidAgentDefinitionError(`webhookChannel: bodyLimit must be a positive integer, got ${String(bodyLimit)}.`);
     }
@@ -55,6 +61,7 @@ function assertOptions(options: WebhookChannelOptions): void {
  */
 export function webhookChannel(options: WebhookChannelOptions): WebhookChannel {
     assertOptions(options);
+
     const name = options.name ?? WEBHOOK_CHANNEL_NAME;
     const authenticators = Array.isArray(options.auth) ? [...options.auth] : [options.auth];
     const limit = options.bodyLimit ?? DEFAULT_BODY_LIMIT;
@@ -62,34 +69,50 @@ export function webhookChannel(options: WebhookChannelOptions): WebhookChannel {
     const receive = async ({ request, subpath }: ChannelRequest, ctx: ChannelContext): Promise<Response> => {
         const target = parseWebhookSubpath(subpath);
         const principal = await resolvePrincipal(request, authenticators);
-        if (!target) throw new NotFoundError({ message: 'The webhook URL names no agent.' });
+
+        if (!target) {
+            throw new NotFoundError({ message: 'The webhook URL names no agent.' });
+        }
+
         const permission = agentPermission(target.agent, 'run');
+
         if (!hasPermission(principal.permissions, permission)) {
             throw new ForbiddenError({ message: `Missing permission "${permission}".` });
         }
+
         const subscription = ctx.engine.getAgent(target.agent)?.definition.channels
             ?.find((s) => s.channel === name && s.options.path === target.path);
+
         if (!subscription) {
             throw new NotFoundError({ message: `No webhook "${target.path}" on agent "${target.agent}".` });
         }
 
         const bytes = await readRequestBody(request, { limit });
-        if (bytes.byteLength === 0) throw new BadRequestError({ message: 'The webhook needs a JSON body.' });
+
+        if (bytes.byteLength === 0) {
+            throw new BadRequestError({ message: 'The webhook needs a JSON body.' });
+        }
+
         if (!isJsonMediaType(request.headers.get('content-type'))) {
             throw new UnsupportedMediaTypeError({ message: 'The request body must be application/json.' });
         }
+
         let body: unknown;
+
         try {
             body = JSON.parse(new TextDecoder().decode(bytes));
         } catch {
             throw new BadRequestError({ message: 'The request body is not valid JSON.' });
         }
+
         const payload = await validatePayload(subscription.options.schema as StandardSchemaV1 | undefined, body);
 
         const idempotencyKey = readIdempotencyHeader(request) ?? subscription.idempotencyKey?.(payload);
         const concurrencyKey = subscription.concurrencyKey?.(payload);
+
         assertDerivedKey('idempotency key', idempotencyKey);
         assertDerivedKey('concurrency key', concurrencyKey);
+
         const result = await ctx.dispatch({
             agent: target.agent,
             trigger: subscription.id,
@@ -97,6 +120,7 @@ export function webhookChannel(options: WebhookChannelOptions): WebhookChannel {
             ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
             ...(concurrencyKey !== undefined ? { concurrencyKey } : {}),
         });
+
         return Response.json(result, { status: 202 });
     };
 
@@ -105,6 +129,8 @@ export function webhookChannel(options: WebhookChannelOptions): WebhookChannel {
         in: receive,
         on: (path, subscriptionOptions) => createWebhookSubscription(name, path, subscriptionOptions),
     };
+
     markWebhookChannel(channel);
+
     return channel;
 }

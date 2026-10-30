@@ -33,6 +33,7 @@ describe('a refused body on a keep-alive connection', () => {
 
     beforeEach(async () => {
         const { app } = createRunTestApp();
+
         server = serve(app, {
             port: 0,
             hostname: '127.0.0.1',
@@ -51,6 +52,7 @@ describe('a refused body on a keep-alive connection', () => {
 
     function send(options: Send): Promise<Answer> {
         const started = Date.now();
+
         return new Promise((resolve, reject) => {
             const req = request({
                 agent,
@@ -66,10 +68,19 @@ describe('a refused body on a keep-alive connection', () => {
                 res.on('end', () => resolve({ status: res.statusCode ?? 0, ms: Date.now() - started }));
             });
             let answered = false;
+
             req.on('timeout', () => req.destroy(new Error('timed out')));
             // the server may close while the client still writes a refused body
-            req.on('error', (error) => { if (!answered) reject(error); });
-            for (const chunk of options.chunks ?? []) req.write(chunk);
+            req.on('error', (error) => {
+                if (!answered) {
+                    reject(error);
+                }
+            });
+
+            for (const chunk of options.chunks ?? []) {
+                req.write(chunk);
+            }
+
             req.end();
         });
     }
@@ -81,9 +92,9 @@ describe('a refused body on a keep-alive connection', () => {
 
     it.each([
         ['a chunked json body over the limit', {
-            method: 'POST', 
-            path: '/agents/echo/runs', 
-            headers: json, 
+            method: 'POST',
+            path: '/agents/echo/runs',
+            headers: json,
             chunks: big(),
         }, 413],
         ['a non-json body', {
@@ -93,9 +104,9 @@ describe('a refused body on a keep-alive connection', () => {
             chunks: small(),
         }, 415],
         ['a chunked mcp body over the limit', {
-            method: 'POST', 
-            path: '/mcp', 
-            headers: json, 
+            method: 'POST',
+            path: '/mcp',
+            headers: json,
             chunks: big(),
         }, 413],
         ['an mcp body whose content-length is over the limit', {
@@ -106,7 +117,9 @@ describe('a refused body on a keep-alive connection', () => {
         }, 413],
     ] as Array<[string, Send, number]>)('does not stall the next request after %s', async (_name, options, status) => {
         expect((await send(options)).status).toBe(status);
+
         const next = await send({ method: 'GET', path: '/healthz' });
+
         expect(next.status).toBe(200);
         expect(next.ms).toBeLessThan(1_000);
     });

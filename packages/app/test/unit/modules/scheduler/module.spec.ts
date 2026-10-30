@@ -52,9 +52,11 @@ async function settle(promise: Promise<void>): Promise<void> {
     const tracked = promise.finally(() => {
         done = true;
     });
+
     while (!done) {
         await vi.advanceTimersByTimeAsync(1_000);
     }
+
     await tracked;
 }
 
@@ -78,7 +80,9 @@ async function setup(options: { mode?: AppMode; env?: Record<string, string> } =
             schedulerModule(),
         ],
     });
+
     harnesses.push(harness);
+
     return harness;
 }
 
@@ -89,6 +93,7 @@ async function runs(harness: Harness) {
 describe('schedulerModule', () => {
     it('is named and depends on the config module', () => {
         const module = schedulerModule();
+
         expect(module.name).toBe(ModuleName.SCHEDULER);
         expect(module.dependencies).toEqual([ModuleName.CONFIG]);
     });
@@ -96,6 +101,7 @@ describe('schedulerModule', () => {
     it('contributes the cron channel, which engine.start() starts in start mode', async () => {
         const harness = await setup();
         const engine = harness.container.resolve(AppToken.ENGINE);
+
         expect(engine.getChannel('cron')?.start).toBeTypeOf('function');
 
         await vi.advanceTimersByTimeAsync(30_000);
@@ -105,6 +111,7 @@ describe('schedulerModule', () => {
     it('CHAMVI_SCHEDULER=false contributes a cron channel that fires nothing', async () => {
         const harness = await setup({ env: { CHAMVI_SCHEDULER: 'false' } });
         const channel = harness.container.resolve(AppToken.ENGINE).getChannel('cron');
+
         expect(channel?.name).toBe('cron');
         expect(channel?.start).toBeUndefined();
 
@@ -114,6 +121,7 @@ describe('schedulerModule', () => {
 
     it('job mode registers the cron channel but never starts it', async () => {
         const harness = await setup({ mode: 'job' });
+
         expect(harness.container.resolve(AppToken.ENGINE).getChannel('cron')?.start).toBeTypeOf('function');
 
         await vi.advanceTimersByTimeAsync(120_000);
@@ -123,6 +131,7 @@ describe('schedulerModule', () => {
     it('teardown stops it', async () => {
         const harness = await setup();
         const store = harness.container.resolve(AppToken.STORE);
+
         await vi.advanceTimersByTimeAsync(30_000);
         expect(await runs(harness)).toHaveLength(1);
 

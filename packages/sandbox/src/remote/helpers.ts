@@ -60,8 +60,11 @@ export function wrapExec(argv: readonly string[], cwd: string, marker: string): 
 /** How many trailing bytes of `buffer` start `head` (fewer than all of it). */
 function partialSuffix(buffer: Buffer, head: Buffer): number {
     for (let length = Math.min(buffer.length, head.length - 1); length > 0; length--) {
-        if (buffer.subarray(buffer.length - length).equals(head.subarray(0, length))) return length;
+        if (buffer.subarray(buffer.length - length).equals(head.subarray(0, length))) {
+            return length;
+        }
     }
+
     return 0;
 }
 
@@ -81,41 +84,63 @@ export function createExitMarkerFilter(
     let held: Buffer | undefined;
     let found = false;
     const pass = (bytes: Uint8Array) => {
-        if (bytes.length > 0) sink.write(bytes);
+        if (bytes.length > 0) {
+            sink.write(bytes);
+        }
     };
 
     return {
         write(chunk) {
             if (found) {
                 pass(chunk);
+
                 return;
             }
+
             const buffer = held ?
                 Buffer.concat([held, chunk]) :
                 Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+
             held = undefined;
 
             const start = buffer.indexOf(head);
+
             if (start === -1) {
                 const keep = partialSuffix(buffer, head);
+
                 pass(buffer.subarray(0, buffer.length - keep));
-                if (keep > 0) held = Buffer.from(buffer.subarray(buffer.length - keep));
+
+                if (keep > 0) {
+                    held = Buffer.from(buffer.subarray(buffer.length - keep));
+                }
+
                 return;
             }
+
             pass(buffer.subarray(0, start));
+
             const end = buffer.indexOf(0x0A, start + head.length);
+
             if (end === -1) {
                 held = Buffer.from(buffer.subarray(start));
+
                 return;
             }
+
             found = true;
+
             const value = buffer.toString('latin1', start + head.length, end);
+
             pass(buffer.subarray(end + 1));
             onMarker(value);
         },
         flush() {
-            if (!held) return;
+            if (!held) {
+                return;
+            }
+
             const rest = held;
+
             held = undefined;
             pass(rest);
         },

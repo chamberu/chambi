@@ -51,11 +51,13 @@ export class DatabaseIdempotencyRepository implements IIdempotencyRepository {
                 .returning(['runId'])
                 .updateEntity(false)
                 .execute();
+
             if (result.raw.length > 0) {
                 return { created: true, runId };
             }
 
             const existing = await this.idempotencyKeys.findOneBy({ scope, key });
+
             if (existing) {
                 return { created: false, runId: existing.runId };
             }
@@ -65,6 +67,7 @@ export class DatabaseIdempotencyRepository implements IIdempotencyRepository {
     /** Delete rows expired at the supplied time (default: the clock). */
     async purgeExpired(now: Date = this.now()): Promise<number> {
         const result = await this.idempotencyKeys.delete({ expiresAt: LessThanOrEqual(now) });
+
         return result.affected ?? 0;
     }
 }

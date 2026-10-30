@@ -51,6 +51,7 @@ describe('createLogger', () => {
 
     it('filters below level', () => {
         const info = capture('info');
+
         info.logger.debug('d');
         info.logger.info('i');
         info.logger.warn('w');
@@ -58,11 +59,13 @@ describe('createLogger', () => {
         expect(info.entries().map((entry) => entry.level)).toEqual(['info', 'warn', 'error']);
 
         const error = capture('error');
+
         error.logger.warn('w');
         error.logger.error('e');
         expect(error.entries().map((entry) => entry.level)).toEqual(['error']);
 
         const debug = capture('debug');
+
         debug.logger.debug('d');
         expect(debug.entries()).toHaveLength(1);
     });
@@ -81,6 +84,7 @@ describe('createLogger', () => {
         logger.error('failed', new ChamviError({ code: 'x', message: 'm' }), { run: 'r1' });
 
         const [entry] = entries();
+
         expect(Object.keys(entry!)).toEqual(['level', 'time', 'msg', 'run', 'error']);
         expect(entry).toMatchObject({
             level: 'error',
@@ -156,6 +160,7 @@ describe('createLogger', () => {
     it('an unserializable field never throws', () => {
         const { logger, entries } = capture();
         const circular: Record<string, unknown> = {};
+
         circular.self = circular;
 
         expect(() => logger.info('circular', { circular, big: 1n })).not.toThrow();

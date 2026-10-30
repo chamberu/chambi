@@ -32,11 +32,13 @@ function flush(): Promise<void> {
 function purgingRepository() {
     const calls: Array<{ resolve(value: unknown): void; reject(error: unknown): void }> = [];
     const store = createMemoryStore();
+
     Object.assign(store.idempotency, {
         purgeExpired: () => new Promise<unknown>((resolve, reject) => {
             calls.push({ resolve, reject });
         }),
     });
+
     return { store, calls };
 }
 
@@ -57,6 +59,7 @@ async function setup(options: {
             storeModule(options.store ? { store: options.store } : {}),
         ],
     });
+
     return {
         harness,
         clock,
@@ -67,6 +70,7 @@ async function setup(options: {
 describe('storeModule', () => {
     it('is named and depends on the config module', () => {
         const module = storeModule();
+
         expect(module.name).toBe(ModuleName.STORE);
         expect(module.dependencies).toEqual([ModuleName.CONFIG]);
     });
@@ -74,6 +78,7 @@ describe('storeModule', () => {
     it('memory store without DATABASE_URL', async () => {
         const { harness, clock } = await setup();
         const store = harness.container.resolve(AppToken.STORE);
+
         expect(store.runs).toBeInstanceOf(MemoryRunRepository);
 
         // the store runs on the app clock
@@ -86,6 +91,7 @@ describe('storeModule', () => {
     it('warns outside dev', async () => {
         const { harness, logger } = await setup();
         const warnings = logger.entries.filter((entry) => entry.msg.includes('DATABASE_URL'));
+
         expect(warnings).toHaveLength(1);
         expect(warnings[0]!.level).toBe('warn');
         expect(warnings[0]!.msg).toContain('memory store');
@@ -94,6 +100,7 @@ describe('storeModule', () => {
 
     it('silent in dev', async () => {
         const { harness, logger } = await setup({ dev: true });
+
         expect(logger.entries.filter((entry) => entry.msg.includes('DATABASE_URL'))).toEqual([]);
         await harness.stop();
     });
@@ -101,6 +108,7 @@ describe('storeModule', () => {
     it('accepts a store bundle without conversation persistence', async () => {
         const store = { ...createMemoryStore(), conversations: undefined };
         const { harness } = await setup({ store });
+
         expect(harness.container.resolve(AppToken.STORE)).toBe(store);
         await harness.stop();
     });
@@ -108,6 +116,7 @@ describe('storeModule', () => {
     it('uses a given store', async () => {
         const store = createMemoryStore();
         const { harness, logger } = await setup({ store });
+
         expect(harness.container.resolve(AppToken.STORE)).toBe(store);
         expect(logger.entries).toEqual([]);
         await harness.stop();
@@ -120,6 +129,7 @@ describe('storeModule', () => {
             clock,
             logger,
         } = await setup({ store });
+
         await runHooks(harness.container, 'started');
 
         clock.advance(DEFAULT_PURGE_INTERVAL_MS - 1);
@@ -146,6 +156,7 @@ describe('storeModule', () => {
     it('purge stops on stopping', async () => {
         const { store, calls } = purgingRepository();
         const { harness, clock } = await setup({ store });
+
         await runHooks(harness.container, 'started');
         await runHooks(harness.container, 'stopping');
 
@@ -157,6 +168,7 @@ describe('storeModule', () => {
     it('stopping prevents the re-arm of a call in flight', async () => {
         const { store, calls } = purgingRepository();
         const { harness, clock } = await setup({ store });
+
         await runHooks(harness.container, 'started');
         clock.advance(DEFAULT_PURGE_INTERVAL_MS);
         expect(calls).toHaveLength(1);
@@ -165,6 +177,7 @@ describe('storeModule', () => {
             runHooks(harness.container, 'stopping'),
             runHooks(harness.container, 'stopping'),
         ]);
+
         calls[0]!.resolve({ idempotencyKeys: 0, locks: 0 });
         await stopping;
         clock.advance(DEFAULT_PURGE_INTERVAL_MS * 3);
@@ -175,6 +188,7 @@ describe('storeModule', () => {
     it('stopping waits for a call in flight', async () => {
         const { store, calls } = purgingRepository();
         const { harness, clock } = await setup({ store });
+
         await runHooks(harness.container, 'started');
         clock.advance(DEFAULT_PURGE_INTERVAL_MS);
         expect(calls).toHaveLength(1);
@@ -183,6 +197,7 @@ describe('storeModule', () => {
         const stopping = runHooks(harness.container, 'stopping').then(() => {
             stopped = true;
         });
+
         await flush();
         expect(stopped).toBe(false);
 
@@ -199,12 +214,15 @@ describe('storeModule', () => {
             clock,
             logger,
         } = await setup({ store });
+
         await runHooks(harness.container, 'started');
         clock.advance(DEFAULT_PURGE_INTERVAL_MS);
 
         calls[0]!.reject(new Error('connection lost'));
         await flush();
+
         const errors = logger.entries.filter((entry) => entry.level === 'error');
+
         expect(errors).toHaveLength(1);
         expect(errors[0]!.error).toMatchObject({ message: 'connection lost' });
 
@@ -218,6 +236,7 @@ describe('storeModule', () => {
     it('teardown stops the purge timer', async () => {
         const { store, calls } = purgingRepository();
         const { harness, clock } = await setup({ store });
+
         await runHooks(harness.container, 'started');
         await harness.stop();
 
@@ -232,6 +251,7 @@ describe('storeModule', () => {
             store,
             env: mode === 'migrate' ? { DATABASE_URL: 'postgres://u:p@127.0.0.1:1/x' } : {},
         });
+
         expect(harness.container.resolveAll(AppToken.LIFECYCLE_HOOKS)).toEqual([]);
         await harness.stop();
     });
@@ -239,12 +259,14 @@ describe('storeModule', () => {
     it('no purge hook when CHAMVI_PURGE_INTERVAL_MS=0', async () => {
         const { store } = purgingRepository();
         const { harness } = await setup({ store, env: { CHAMVI_PURGE_INTERVAL_MS: '0' } });
+
         expect(harness.container.resolveAll(AppToken.LIFECYCLE_HOOKS)).toEqual([]);
         await harness.stop();
     });
 
     it('no purge hook for a store without purgeExpired', async () => {
         const { harness } = await setup();
+
         expect(harness.container.resolveAll(AppToken.LIFECYCLE_HOOKS)).toEqual([]);
         await harness.stop();
     });
@@ -252,6 +274,7 @@ describe('storeModule', () => {
     it('registers the purge hook', async () => {
         const { store } = purgingRepository();
         const { harness } = await setup({ store });
+
         expect(harness.container.resolveAll(AppToken.LIFECYCLE_HOOKS).map((hook) => hook.name)).toEqual(['chamvi:purge']);
         await harness.stop();
     });

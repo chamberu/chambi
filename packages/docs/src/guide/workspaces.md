@@ -20,7 +20,7 @@ All three pass the same workspace contract (`describeWorkspaceContract` from `@c
 
 <<< @/snippets/sandbox-providers.ts#k8s
 
-The container providers use `ghcr.io/chamvi/sandbox-dev:trixie` by default (Debian, git, curl, ripgrep, jq, build-essential, `tini` and [mise](https://mise.jdx.dev)), built for `linux/amd64` and `linux/arm64`. It ships no language toolchain: the model installs what the repository needs, `mise use -g node@22` or `mise install` (which reads `.tool-versions`, `mise.toml`, `.nvmrc` and `.python-version`), and system packages with `apt-get`. Pin a digest in production. See [Docker Image](/deployment/docker#sandbox-image).
+The container providers use `ghcr.io/chamvi/sandbox-dev:trixie` by default (Debian, git, curl, ripgrep, jq, build-essential, `tini` and [mise](https://mise.jdx.dev)), built for `linux/amd64` and `linux/arm64`. It ships no language toolchain: the model installs what the repository needs, `mise use -g node@24` or `mise install` (which reads `.tool-versions`, `mise.toml`, `.nvmrc` and `.python-version`), and system packages with `apt-get`. Pin a digest in production. See [Docker Image](/deployment/docker#sandbox-image).
 
 ### Usable inside, strict at the edge
 

@@ -19,12 +19,14 @@ import { MIGRATION_LOCK_NAME } from './constants.ts';
  */
 export async function migrateStore(dataSource: DataSource): Promise<void> {
     const queryRunner = dataSource.createQueryRunner();
+
     try {
         await withDatabaseLock(
             queryRunner,
             MIGRATION_LOCK_NAME,
             async () => {
                 const executor = new MigrationExecutor(dataSource, queryRunner);
+
                 executor.transaction = 'each';
                 await executor.executePendingMigrations();
             },
@@ -42,5 +44,6 @@ export async function migrateStore(dataSource: DataSource): Promise<void> {
 export async function pendingMigrations(dataSource: DataSource): Promise<string[]> {
     const executor = new MigrationExecutor(dataSource);
     const pending = await executor.getPendingMigrations();
+
     return pending.map((migration) => migration.name);
 }

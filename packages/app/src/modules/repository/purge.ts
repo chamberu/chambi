@@ -34,6 +34,7 @@ export function createPurgeTimer(options: PurgeTimerOptions): IPurgeTimer {
                     return await store.purgeExpired();
                 } catch (error) {
                     logger.error('Purging expired store records failed.', error);
+
                     return undefined;
                 }
             }))

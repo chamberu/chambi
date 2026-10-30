@@ -68,8 +68,12 @@ const cases: Case[] = [
 ];
 
 describe('pollers wait out a rate limit', () => {
-    beforeEach(() => { vi.useFakeTimers(); });
-    afterEach(() => { vi.useRealTimers(); });
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
 
     it.each(cases)('$name waits out a 429 before the next pass', async ({
         method,
@@ -80,11 +84,13 @@ describe('pollers wait out a rate limit', () => {
         const client = fakeClient({
             [method]: async () => {
                 calls++;
+
                 throw new ApiError(429, 'too_many_requests', 'slow down', RETRY_AFTER_SECONDS);
             },
         });
         const scope = effectScope();
         const state = scope.run(() => use(client))!;
+
         await vi.advanceTimersByTimeAsync(0);
         expect(state.error.value?.status).toBe(429);
         expect(calls).toBe(1);

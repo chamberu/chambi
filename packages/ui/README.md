@@ -34,7 +34,7 @@
 npm install @chamvi/ui @chamvi/http @chamvi/core --save
 ```
 
-ESM only, Node.js `>=22`. `@chamvi/core` and `@chamvi/http` are peer dependencies. The package ships a prebuilt Vue 3 app (`dist/app`); nothing of it runs on the server but a static file route.
+ESM only, Node.js `>=24.3.0`. `@chamvi/core` and `@chamvi/http` are peer dependencies. The package ships a prebuilt Vue 3 app (`dist/app`); nothing of it runs on the server but a static file route.
 
 ## Usage
 

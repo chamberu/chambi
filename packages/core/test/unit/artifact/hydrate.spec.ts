@@ -41,6 +41,7 @@ describe('hydrateMessages', () => {
 
         const [message] = await hydrateMessages(messages, store.artifacts);
         const { output } = ((message!.content as Array<{ output: { value: Array<Record<string, unknown>> } }>)[0]!);
+
         expect(output.value[0]).toEqual({ type: 'text', text: 'an image' });
         expect(output.value[1]).toEqual({
             type: 'file',
@@ -52,6 +53,7 @@ describe('hydrateMessages', () => {
 
     it('returns messages without a marker as they are', async () => {
         const messages: ModelMessage[] = [{ role: 'user', content: 'hi' }];
+
         await expect(hydrateMessages(messages, createMemoryStore().artifacts)).resolves.toBe(messages);
     });
 

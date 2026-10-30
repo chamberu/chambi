@@ -16,48 +16,51 @@ import { MockLanguageModelV4 } from 'ai/test';
 
 const usage = {
     inputTokens: {
-        total: 1, 
-        noCache: 1, 
-        cacheRead: undefined, 
-        cacheWrite: undefined, 
+        total: 1,
+        noCache: 1,
+        cacheRead: undefined,
+        cacheWrite: undefined,
     },
     outputTokens: {
-        total: 1, 
-        text: 1, 
-        reasoning: undefined, 
+        total: 1,
+        text: 1,
+        reasoning: undefined,
     },
 };
 const turns = [
     [{
-        type: 'tool-call', 
-        toolCallId: 'call-1', 
-        toolName: 'greet', 
-        input: '{}', 
+        type: 'tool-call',
+        toolCallId: 'call-1',
+        toolName: 'greet',
+        input: '{}',
     }],
     [{ type: 'text-start', id: 't' }, {
-        type: 'text-delta', 
-        id: 't', 
-        delta: 'done', 
+        type: 'text-delta',
+        id: 't',
+        delta: 'done',
     }, { type: 'text-end', id: 't' }],
 ];
 let turn = 0;
 const model = new MockLanguageModelV4({
     doStream: async () => {
         const parts = turns[turn++] ?? [];
-        const finishReason = { unified: parts.some((part) => part.type === 'tool-call') ? 'tool-calls' : 'stop', raw: undefined };
+        const hasToolCall = parts.some((part) => part.type === 'tool-call');
+        const finishReason = { unified: hasToolCall ? 'tool-calls' : 'stop', raw: undefined };
+
         return {
             stream: simulateReadableStream({
                 chunks: [{ type: 'stream-start', warnings: [] }, ...parts, {
-                    type: 'finish', 
-                    finishReason, 
-                    usage, 
-                }], 
+                    type: 'finish',
+                    finishReason,
+                    usage,
+                }],
             }),
         };
     },
 });
 
 const key = defineContextKey('greeting');
+
 globalThis.chamviGreetingKey = key;
 // the model goes in directly: through a models provider the AI SDK would wrap the mock
 globalThis.chamviModel = model;
@@ -83,8 +86,9 @@ const result = await app.runJob({
 });
 const steps = result.runId ? await store.steps.find(result.runId) : [];
 const tool = steps.find((step) => step.kind === 'tool');
+
 process.stdout.write(`${JSON.stringify({
-    status: result.status, 
-    output: tool?.output ?? null, 
-    error: tool?.error ?? null, 
+    status: result.status,
+    output: tool?.output ?? null,
+    error: tool?.error ?? null,
 })}\n`);

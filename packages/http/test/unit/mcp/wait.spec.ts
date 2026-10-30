@@ -33,18 +33,26 @@ function spyOnSubscriptions(engine: Engine) {
     const original = engine.on.bind(engine);
     const on: Engine['on'] = (type, listener) => {
         const unsubscribe = vi.fn(original(type, listener));
+
         unsubscribes.push(unsubscribe);
+
         return unsubscribe;
     };
+
     vi.spyOn(engine, 'on').mockImplementation(on);
+
     return unsubscribes;
 }
 
 async function until(check: () => boolean | Promise<boolean>): Promise<void> {
     for (let i = 0; i < 200; i++) {
-        if (await check()) return;
+        if (await check()) {
+            return;
+        }
+
         await flush();
     }
+
     throw new Error('condition never held');
 }
 
@@ -55,9 +63,12 @@ afterEach(() => {
 describe('mcp run_<agent> with waitSeconds', () => {
     it('waits for a completed run and returns its output', async () => {
         const setup = createRunTestApp();
+
         await setup.engine.start();
+
         const client = await connectMcp(setup.app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_echo', { waitSeconds: 5 });
+
         expect(result.structuredContent).toMatchObject({
             status: 'completed',
             deduplicated: false,
@@ -69,18 +80,23 @@ describe('mcp run_<agent> with waitSeconds', () => {
 
     it('returns a waiting run with its pending approval', async () => {
         const setup = createRunTestApp();
+
         await setup.engine.start();
+
         const client = await connectMcp(setup.app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_gate', { waitSeconds: 5 });
+
         expect(result.structuredContent).toMatchObject({
             status: 'waiting',
             waiting: {
-                toolName: 'deploy', 
-                title: 'Deploy?', 
-                body: 'release 1.2', 
+                toolName: 'deploy',
+                title: 'Deploy?',
+                body: 'release 1.2',
             },
         });
+
         const json = JSON.stringify(result);
+
         expect(json).not.toContain('resumeToken');
         await client.close();
         await setup.engine.drain();
@@ -88,14 +104,17 @@ describe('mcp run_<agent> with waitSeconds', () => {
 
     it('shows the options of a waiting run', async () => {
         const setup = createRunTestApp();
+
         await setup.engine.start();
+
         const client = await connectMcp(setup.app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_choose', { waitSeconds: 5 });
         const { waiting } = (result.structuredContent as { waiting: Record<string, unknown> });
+
         expect(waiting.options).toEqual([{ id: 'a', label: 'A' }, {
-            id: 'b', 
-            label: 'B', 
-            detail: 'diff', 
+            id: 'b',
+            label: 'B',
+            detail: 'diff',
         }]);
         expect(Object.keys(waiting)).not.toContain('multiple');
         await client.close();
@@ -107,7 +126,10 @@ describe('mcp run_<agent> with waitSeconds', () => {
         const subscriptions = spyOnSubscriptions(setup.engine);
         const client = await connectMcp(setup.app, ADMIN_TOKEN);
         let result: ToolResult | undefined;
-        const pending = callTool(client, 'run_echo', { waitSeconds: 600 }).then((r) => { result = r; });
+        const pending = callTool(client, 'run_echo', { waitSeconds: 600 }).then((r) => {
+            result = r;
+        });
+
         await until(() => subscriptions.length > 0);
 
         setup.clock.advance(59_999);
@@ -126,6 +148,7 @@ describe('mcp run_<agent> with waitSeconds', () => {
         const subscriptions = spyOnSubscriptions(setup.engine);
         const client = await connectMcp(setup.app, ADMIN_TOKEN);
         const pending = callTool(client, 'run_echo', { waitSeconds: 30 });
+
         await until(() => subscriptions.length > 0);
         setup.clock.advance(2_000);
         expect((await pending).structuredContent).toMatchObject({ status: 'queued' });
@@ -152,6 +175,7 @@ describe('mcp run_<agent> with waitSeconds', () => {
         const subscriptions = spyOnSubscriptions(setup.engine);
         const client = await connectMcp(setup.app, ADMIN_TOKEN);
         const pending = callTool(client, 'run_echo', { waitSeconds: 10 });
+
         await until(() => subscriptions.length > 0);
 
         await other.start();
@@ -167,17 +191,22 @@ describe('mcp run_<agent> with waitSeconds', () => {
         const subscriptions = spyOnSubscriptions(setup.engine);
         const controller = new AbortController();
         const client = await connectMcp(setup.app, ADMIN_TOKEN, { signal: controller.signal });
+
         // the client never hears back once its request is gone: do not await the call
         void callTool(client, 'run_echo', { waitSeconds: 30 }).catch(() => undefined);
         await until(() => subscriptions.length > 0);
+
         const [run] = (await setup.store.runs.find({ agent: 'echo' })).data;
 
         controller.abort();
         await until(() => subscriptions.every((unsubscribe) => unsubscribe.mock.calls.length > 0));
 
         const getRun = vi.spyOn(setup.store.runs, 'findOne');
+
         await flush();
+
         const calls = getRun.mock.calls.filter(([id]) => id === run!.id).length;
+
         setup.clock.advance(1_000);
         await flush();
         expect(getRun.mock.calls.filter(([id]) => id === run!.id)).toHaveLength(calls);
@@ -198,6 +227,7 @@ describe('waitForRun', () => {
             onError: () => {},
         });
         const ctx = buildContext({ engine, auth: testAuth });
+
         return {
             ctx,
             engine,
@@ -225,10 +255,15 @@ describe('waitForRun', () => {
             pollMs: 1_000,
             signal: AbortSignal.abort(),
         });
+
         expect(run.status).toBe('queued');
-        for (const unsubscribe of subscriptions) expect(unsubscribe).toHaveBeenCalledTimes(1);
+
+        for (const unsubscribe of subscriptions) {
+            expect(unsubscribe).toHaveBeenCalledTimes(1);
+        }
 
         const getRun = vi.spyOn(store.runs, 'findOne');
+
         clock.advance(60_000);
         await flush();
         expect(getRun).not.toHaveBeenCalled();
@@ -248,8 +283,11 @@ describe('waitForRun', () => {
             payload: {},
         });
         const pending = waitForRun(ctx, runId, { timeoutMs: 10_000, pollMs: 1_000 });
+
         await flush();
+
         const failure = new Error('store down');
+
         vi.spyOn(store.runs, 'findOne').mockRejectedValue(failure);
         clock.advance(1_000);
         await expect(pending).rejects.toBe(failure);
@@ -261,12 +299,17 @@ describe('waitForRun', () => {
         const subscriptions = spyOnSubscriptions(setup.engine);
         const client = await connectMcp(setup.app, ADMIN_TOKEN);
         const pending = callTool(client, 'run_echo', { waitSeconds: 10 });
+
         await until(() => subscriptions.length > 0);
         await flush();
+
         const failure = new Error('store down');
+
         vi.spyOn(setup.store.runs, 'findOne').mockRejectedValue(failure);
         setup.clock.advance(1_000);
+
         const result = await pending;
+
         expect(result.isError).toBe(true);
         expect(onError).toHaveBeenCalledWith(failure);
         await client.close();

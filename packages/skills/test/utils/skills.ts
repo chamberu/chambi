@@ -20,16 +20,20 @@ export function approvedSkill(name = 'audit', options: {
     files?: Record<string, string>;
 } = {}): ApprovedSkill {
     const directory = fs.mkdtempSync(join(tmpdir(), 'chamvi-catalog-'));
+
     directories.push(directory);
+
     const metadata = `name: ${name}\ndescription: ${JSON.stringify(options.description ?? 'Review code')}\n${options.frontmatter ?? ''}`;
     const files = {
         'SKILL.md': `---\n${metadata}---\n${options.body ?? 'PRIVATE-BODY\n'}`,
         ...options.files,
     };
+
     for (const [path, content] of Object.entries(files)) {
         fs.mkdirSync(dirname(join(directory, path)), { recursive: true });
         fs.writeFileSync(join(directory, path), content);
     }
+
     return {
         name,
         directory,
@@ -39,6 +43,9 @@ export function approvedSkill(name = 'audit', options: {
 }
 
 export function cleanupSkills(): void {
-    for (const directory of directories) fs.rmSync(directory, { recursive: true, force: true });
+    for (const directory of directories) {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+
     directories.length = 0;
 }

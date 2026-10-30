@@ -29,7 +29,9 @@ function send(app: App, path: string, options: SendOptions = {}): Promise<Respon
         method: options.method ?? 'POST',
         headers: { authorization: `Bearer ${ADMIN_TOKEN}`, ...options.headers },
     });
+
     (request as Request & { ip?: string }).ip = options.ip ?? '10.0.0.1';
+
     return app.fetch(request);
 }
 
@@ -38,6 +40,7 @@ function createApp(options: Partial<Omit<HttpAppOptions, 'agents'>> = {}) {
         name,
         in: async () => new Response(null, { status: 202 }),
     }));
+
     return createTestApp({
         engineChannels: channels,
         channels,
@@ -51,7 +54,11 @@ afterEach(() => vi.useRealTimers());
 describe('channel rate limits', () => {
     it('disables a channel limit without consuming or disabling the REST bucket', async () => {
         const app = createApp({ channelRateLimits: { github: false } });
-        for (let i = 0; i < 3; i++) expect((await send(app, '/channels/github')).status).toBe(202);
+
+        for (let i = 0; i < 3; i++) {
+            expect((await send(app, '/channels/github')).status).toBe(202);
+        }
+
         expect((await send(app, '/agents', { method: 'GET' })).status).toBe(200);
         expect((await send(app, '/agents', { method: 'GET' })).status).toBe(429);
         expect((await send(app, '/channels/github')).status).toBe(202);
@@ -59,10 +66,13 @@ describe('channel rate limits', () => {
 
     it('replaces the general bucket with an independent channel bucket and JSON error', async () => {
         const app = createApp({ channelRateLimits: { github: { max: 2 } } });
+
         expect((await send(app, '/agents', { method: 'GET' })).status).toBe(200);
         expect((await send(app, '/channels/github')).status).toBe(202);
         expect((await send(app, '/channels/github')).status).toBe(202);
+
         const response = await send(app, '/channels/github');
+
         expect(response.status).toBe(429);
         expect(response.headers.get('retry-after')).toBe('60');
         expect(response.headers.get('ratelimit-limit')).toBe('2');
@@ -73,6 +83,7 @@ describe('channel rate limits', () => {
 
     it('gives two configured channels separate buckets', async () => {
         const app = createApp({ channelRateLimits: { github: { max: 1 }, events: { max: 1 } } });
+
         expect((await send(app, '/channels/github')).status).toBe(202);
         expect((await send(app, '/channels/events')).status).toBe(202);
         expect((await send(app, '/channels/github')).status).toBe(429);
@@ -81,13 +92,18 @@ describe('channel rate limits', () => {
 
     it('enforces an explicit channel policy with the general limiter disabled', async () => {
         const app = createApp({ rateLimit: false, channelRateLimits: { github: { max: 1 } } });
+
         expect((await send(app, '/channels/github')).status).toBe(202);
         expect((await send(app, '/channels/github')).status).toBe(429);
-        for (let i = 0; i < 3; i++) expect((await send(app, '/agents', { method: 'GET' })).status).toBe(200);
+
+        for (let i = 0; i < 3; i++) {
+            expect((await send(app, '/agents', { method: 'GET' })).status).toBe(200);
+        }
     });
 
     it('keeps the shared general bucket for omitted channel policies', async () => {
         const app = createApp();
+
         expect((await send(app, '/channels/github')).status).toBe(202);
         expect((await send(app, '/agents', { method: 'GET' })).status).toBe(429);
         expect((await send(app, '/channels/events')).status).toBe(429);
@@ -95,6 +111,7 @@ describe('channel rate limits', () => {
 
     it('inherits the general bucket for an unconfigured mounted sibling', async () => {
         const app = createApp({ channelRateLimits: { github: false } });
+
         expect((await send(app, '/channels/events')).status).toBe(202);
         expect((await send(app, '/agents', { method: 'GET' })).status).toBe(429);
         expect((await send(app, '/channels/github')).status).toBe(202);
@@ -102,6 +119,7 @@ describe('channel rate limits', () => {
 
     it('matches case, trailing slash and nested paths under a normalized basePath', async () => {
         const app = createApp({ basePath: '/api/', channelRateLimits: { github: { max: 2 } } });
+
         expect((await send(app, '/API/CHANNELS/GITHUB/')).status).toBe(202);
         expect((await send(app, '/api/channels/github/a/b')).status).toBe(202);
         expect((await send(app, '/api/channels/github')).status).toBe(429);
@@ -112,6 +130,7 @@ describe('channel rate limits', () => {
         'does not exempt an unknown channel path %s',
         async (path) => {
             const app = createApp({ channelRateLimits: { github: false } });
+
             expect((await send(app, path)).status).toBe(404);
             expect((await send(app, path)).status).toBe(429);
             expect((await send(app, '/channels/github')).status).toBe(202);
@@ -120,6 +139,7 @@ describe('channel rate limits', () => {
 
     it('does not give GET the POST exemption', async () => {
         const app = createApp({ channelRateLimits: { github: false } });
+
         expect((await send(app, '/channels/github', { method: 'GET' })).status).toBe(404);
         expect((await send(app, '/channels/github', { method: 'GET' })).status).toBe(429);
         expect((await send(app, '/channels/github')).status).toBe(202);
@@ -132,6 +152,7 @@ describe('channel rate limits', () => {
         });
         const first = { headers: { 'x-forwarded-for': '203.0.113.1' } };
         const second = { headers: { 'x-forwarded-for': '203.0.113.2' } };
+
         expect((await send(app, '/channels/github', first)).status).toBe(202);
         expect((await send(app, '/channels/github', second)).status).toBe(202);
         expect((await send(app, '/channels/github', first)).status).toBe(429);
@@ -141,13 +162,16 @@ describe('channel rate limits', () => {
 
     it('does not trust forwarded headers by default', async () => {
         const app = createApp({ channelRateLimits: { github: { max: 1 } } });
+
         expect((await send(app, '/channels/github', { headers: { 'x-forwarded-for': '203.0.113.1' } })).status).toBe(202);
         expect((await send(app, '/channels/github', { headers: { 'x-forwarded-for': '203.0.113.2' } })).status).toBe(429);
     });
 
     it('resets the independent bucket at its configured window', async () => {
         vi.useFakeTimers();
+
         const app = createApp({ channelRateLimits: { github: { max: 1, windowMs: 2_000 } } });
+
         expect((await send(app, '/channels/github')).status).toBe(202);
         expect((await send(app, '/channels/github')).headers.get('retry-after')).toBe('2');
         await vi.advanceTimersByTimeAsync(1_999);
@@ -162,8 +186,11 @@ describe('channel rate limits', () => {
             channelRateLimits: { github: { max: 1 } },
         });
         const options = { headers: { origin: 'https://dashboard.test' } };
+
         await send(app, '/channels/github', options);
+
         const response = await send(app, '/channels/github', options);
+
         expect(response.status).toBe(429);
         expect(response.headers.get('access-control-allow-origin')).toBe('https://dashboard.test');
         expect(response.headers.get('ratelimit-limit')).toBe('1');
@@ -180,10 +207,12 @@ describe('channel rate limits', () => {
                 handler: async () => ({ status: 200 }),
             }],
         });
+
         for (let i = 0; i < 3; i++) {
             expect((await send(app, '/healthz', { method: 'GET' })).status).toBe(200);
             expect((await send(app, '/free', { method: 'GET' })).status).toBe(200);
         }
+
         expect((await send(app, '/channels/github')).status).toBe(202);
         expect((await send(app, '/channels/github')).status).toBe(429);
         expect((await send(app, '/agents', { method: 'GET' })).status).toBe(200);
@@ -191,7 +220,11 @@ describe('channel rate limits', () => {
 
     it('does not let a custom general skip replace channel-policy selection', async () => {
         const app = createApp({ rateLimit: { max: 1, skip: () => false }, channelRateLimits: { github: false } });
-        for (let i = 0; i < 3; i++) expect((await send(app, '/channels/github')).status).toBe(202);
+
+        for (let i = 0; i < 3; i++) {
+            expect((await send(app, '/channels/github')).status).toBe(202);
+        }
+
         expect((await send(app, '/agents', { method: 'GET' })).status).toBe(200);
         expect((await send(app, '/agents', { method: 'GET' })).status).toBe(429);
     });
@@ -201,6 +234,7 @@ describe('channel rate limits', () => {
         const channelRateLimits = Object.freeze({ github: policy });
         const rateLimit = Object.freeze({ max: 2 });
         const app = createApp({ channelRateLimits, rateLimit });
+
         expect((await send(app, '/channels/github')).status).toBe(202);
         expect((await send(app, '/channels/github')).status).toBe(429);
         expect(policy).toEqual({ max: 1 });
@@ -240,6 +274,7 @@ describe('channel rate-limit configuration', () => {
 
     it('accepts positive boundary values', () => {
         const channelRateLimits = { github: { max: Number.MAX_SAFE_INTEGER, windowMs: 2 ** 31 - 1 }, events: false as const };
+
         expect(() => createApp({ channelRateLimits })).not.toThrow();
     });
 });

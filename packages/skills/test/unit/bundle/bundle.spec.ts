@@ -27,11 +27,14 @@ const skill = (metadata = frontmatter, body = 'Audit the code.\n') => `---\n${me
 
 function bundle(files: Record<string, string | Buffer> = {}): string {
     const directory = fs.mkdtempSync(join(tmpdir(), 'chamvi-skill-'));
+
     directories.push(directory);
+
     for (const [path, content] of Object.entries({ 'SKILL.md': skill(), ...files })) {
         fs.mkdirSync(dirname(join(directory, path)), { recursive: true });
         fs.writeFileSync(join(directory, path), content);
     }
+
     return directory;
 }
 
@@ -46,7 +49,11 @@ function descriptor(directory: string) {
 
 afterEach(() => {
     vi.restoreAllMocks();
-    for (const directory of directories) fs.rmSync(directory, { recursive: true, force: true });
+
+    for (const directory of directories) {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+
     directories.length = 0;
 });
 
@@ -64,12 +71,15 @@ describe('passive skill bundles', () => {
             'references/README.md': 'read me',
         });
         const original = hashSkillBundle(one);
+
         expect(hashSkillBundle(two)).toBe(original);
+
         for (const [path, content] of Object.entries({ 'SKILL.md': skill(), ...files })) {
             fs.writeFileSync(join(two, path), `${content}changed`);
             expect(hashSkillBundle(two)).not.toBe(original);
             fs.writeFileSync(join(two, path), content);
         }
+
         fs.writeFileSync(join(two, 'SKILL.md'), skill('name: audit\ndescription: Different\n'));
         expect(hashSkillBundle(two)).not.toBe(original);
         fs.writeFileSync(join(two, 'SKILL.md'), skill());
@@ -91,6 +101,7 @@ describe('passive skill bundles', () => {
             .update('7:\uE000.txt3:bmp')
             .update('8:😀.txt6:astral')
             .digest('hex');
+
         expect(hashSkillBundle(directory)).toBe(expected);
     });
 
@@ -109,8 +120,11 @@ describe('passive skill bundles', () => {
             .update(`8:SKILL.md${Buffer.byteLength(skill())}:${skill()}`)
             .update(`${Buffer.byteLength(path)}:${path}${Buffer.byteLength(content)}:${content}`)
             .digest('hex');
+
         expect(approved.hash).toBe(expected);
+
         const loaded = readSkillBundle(approved);
+
         expect(loaded.references).toEqual([path]);
         expect(loaded.readReference(path)).toBe(content);
         fs.appendFileSync(join(directory, path), '\n');
@@ -122,8 +136,10 @@ describe('passive skill bundles', () => {
         const directory = bundle();
         const marker = join(directory, 'executed');
         const content = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed'); // Grüße\n`;
+
         fs.mkdirSync(dirname(join(directory, path)), { recursive: true });
         fs.writeFileSync(join(directory, path), content);
+
         const approved = descriptor(directory);
         const expected = createHash('sha256')
             .update('chamvi-skill-bundle-v1\n')
@@ -136,14 +152,19 @@ describe('passive skill bundles', () => {
             .update(`${Buffer.byteLength(path)}:${path}${Buffer.byteLength(content)}:${content}`)
             .update(`8:SKILL.md${Buffer.byteLength(skill())}:${skill()}`)
             .digest('hex') : expected;
+
         expect(approved.hash).toBe(sortedExpected);
+
         const catalog = loadSkillBundles([approved]);
+
         expect(catalog.instructions).not.toContain(content);
+
         const result = await catalog.tools.load_skill!.execute!({ name: 'audit', reference: path }, {
             toolCallId: 'reference',
             messages: [],
             context: undefined,
         });
+
         expect(result).toMatchObject({
             hash: approved.hash,
             reference: path,
@@ -169,6 +190,7 @@ describe('passive skill bundles', () => {
         [`" ${'x'.repeat(1024)} "\n`, 'x'.repeat(1024)],
     ])('trims surrounding description whitespace before validation: %j', (value, expected) => {
         const directory = bundle({ 'SKILL.md': skill(`name: audit\ndescription: ${value}`) });
+
         expect(readSkillBundle(descriptor(directory)).metadata.description).toBe(expected);
     });
 
@@ -179,21 +201,26 @@ describe('passive skill bundles', () => {
 
     it('requires_matching_name_and_pin', () => {
         const approved = descriptor(bundle());
+
         expect(readSkillBundle(approved).metadata.name).toBe('audit');
+
         for (const hash of ['', 'a'.repeat(63), 'A'.repeat(64), 'z'.repeat(64), '0'.repeat(64)]) {
             expect(() => readSkillBundle({ ...approved, hash })).toThrow(InvalidAgentDefinitionError);
         }
+
         expect(() => readSkillBundle({ ...approved, name: 'other' })).toThrow(InvalidAgentDefinitionError);
         expect(() => readSkillBundle({ ...approved, name: 'Audit' })).toThrow(InvalidAgentDefinitionError);
     });
 
     it.each(['', 'latest', 'LATEST', 'main', 'master', 'HEAD', '^1.0', '~1', '1.*', 'x', '1.x', '1.2.X', '>=1', '1 || 2', '1\n2', 'a'.repeat(129)])('rejects inexact descriptor version %j', (version) => {
         const approved = descriptor(bundle());
+
         expect(() => readSkillBundle({ ...approved, version })).toThrow(InvalidAgentDefinitionError);
     });
 
     it('accepts exact opaque versions and frozen metadata snapshots', () => {
         const loaded = readSkillBundle({ ...descriptor(bundle()), version: 'release-2026.10+reviewed' });
+
         expect(loaded.metadata.version).toBe('release-2026.10+reviewed');
         expect(Object.isFrozen(loaded)).toBe(true);
         expect(Object.isFrozen(loaded.metadata)).toBe(true);
@@ -224,6 +251,7 @@ describe('passive skill bundles', () => {
     it('reports_ignored_fields_without_applying_them', () => {
         const directory = bundle({ 'SKILL.md': skill(`${frontmatter}model: provider/model\nallowed-tools: [shell]\nextra: {nested: value}\n`) });
         const loaded = readSkillBundle(descriptor(directory));
+
         expect(loaded.metadata.ignoredFields).toEqual(['allowed-tools', 'extra', 'model']);
         expect(Object.keys(loaded.metadata).sort()).toEqual(['description', 'hash', 'ignoredFields', 'name', 'version']);
         expect(loaded.body).toBe('Audit the code.\n');
@@ -237,6 +265,7 @@ describe('passive skill bundles', () => {
         const directory = bundle();
         const outside = bundle({ 'safe.txt': 'outside' });
         const marker = join(directory, 'marker.txt');
+
         fs.writeFileSync(join(directory, 'instructions.txt'), `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'executed')`);
         expect(hashSkillBundle(directory)).toMatch(/^[a-f0-9]{64}$/);
         expect(fs.existsSync(marker)).toBe(false);
@@ -256,6 +285,7 @@ describe('passive skill bundles', () => {
         const directory = bundle();
         const parent = bundle();
         const link = join(parent, 'linked');
+
         fs.symlinkSync(directory, link, 'dir');
         expect(hashSkillBundle(`${directory}${suffix}`)).toBe(hashSkillBundle(directory));
         expect(() => hashSkillBundle(`${link}${suffix}`)).toThrow(InvalidAgentDefinitionError);
@@ -265,6 +295,7 @@ describe('passive skill bundles', () => {
         const approved = descriptor(bundle());
         const parent = bundle();
         const link = join(parent, 'linked');
+
         fs.symlinkSync(approved.directory, link, 'dir');
         expect(() => readSkillBundle({ ...approved, directory: `${link}${suffix}` })).toThrow(InvalidAgentDefinitionError);
     });
@@ -272,6 +303,7 @@ describe('passive skill bundles', () => {
     it('bounds_metadata_body_references_total_and_count', () => {
         const directory = bundle();
         const metadata = `${frontmatter}#${'x'.repeat(4096 - Buffer.byteLength(frontmatter) - 2)}\n`;
+
         fs.writeFileSync(join(directory, 'SKILL.md'), skill(metadata, 'x'.repeat(65536)));
         expect(hashSkillBundle(directory)).toMatch(/^[a-f0-9]{64}$/);
         fs.writeFileSync(join(directory, 'SKILL.md'), skill(metadata.replace('#', '#x')));
@@ -284,13 +316,21 @@ describe('passive skill bundles', () => {
         fs.appendFileSync(join(directory, 'ref.txt'), 'x');
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
         fs.unlinkSync(join(directory, 'ref.txt'));
-        for (let index = 0; index < 63; index++) fs.writeFileSync(join(directory, `${index}.txt`), '');
+
+        for (let index = 0; index < 63; index++) {
+            fs.writeFileSync(join(directory, `${index}.txt`), '');
+        }
+
         expect(hashSkillBundle(directory)).toMatch(/^[a-f0-9]{64}$/);
         fs.writeFileSync(join(directory, 'overflow.txt'), '');
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
 
         const total = bundle();
-        for (let index = 0; index < 7; index++) fs.writeFileSync(join(total, `${index}.txt`), 'x'.repeat(131072));
+
+        for (let index = 0; index < 7; index++) {
+            fs.writeFileSync(join(total, `${index}.txt`), 'x'.repeat(131072));
+        }
+
         fs.writeFileSync(join(total, 'last.txt'), 'x'.repeat(131072 - Buffer.byteLength(skill())));
         expect(hashSkillBundle(total)).toMatch(/^[a-f0-9]{64}$/);
         fs.appendFileSync(join(total, 'last.txt'), 'x');
@@ -299,19 +339,24 @@ describe('passive skill bundles', () => {
 
     it('bounds_description_length_and_requires_root_frontmatter', () => {
         expect(hashSkillBundle(bundle({ 'SKILL.md': skill(`name: audit\ndescription: ${'x'.repeat(1024)}\n`) }))).toMatch(/^[a-f0-9]{64}$/);
+
         for (const content of [skill(`name: audit\ndescription: ${'x'.repeat(1025)}\n`), 'no frontmatter', '---\nname: audit\n']) {
             expect(() => hashSkillBundle(bundle({ 'SKILL.md': content }))).toThrow(InvalidAgentDefinitionError);
         }
+
         const directory = bundle();
+
         fs.unlinkSync(join(directory, 'SKILL.md'));
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
     });
 
     it('rejects_invalid_utf8_without_leaking_body_or_absolute_path', () => {
         const directory = bundle({ 'secret.txt': Buffer.from([0xc3, 0x28]) });
+
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
         fs.writeFileSync(join(directory, 'SKILL.md'), skill('name: audit\ndescription: [PRIVATE-SECRET\n'));
         fs.unlinkSync(join(directory, 'secret.txt'));
+
         try {
             hashSkillBundle(directory);
             expect.unreachable('invalid YAML was accepted');
@@ -325,14 +370,17 @@ describe('passive skill bundles', () => {
 
     it('rejects_binary_text_and_final_symlink_swaps', () => {
         expect(() => hashSkillBundle(bundle({ 'binary.txt': 'text\0binary' }))).toThrow(InvalidAgentDefinitionError);
+
         const directory = bundle({ 'ref.txt': 'approved reference' });
         const outside = bundle({ 'secret.txt': 'private outside content' });
         const open = fs.openSync;
+
         vi.spyOn(fs, 'openSync').mockImplementation((...args: Parameters<typeof fs.openSync>) => {
             if (String(args[0]) === join(directory, 'ref.txt')) {
                 fs.unlinkSync(join(directory, 'ref.txt'));
                 fs.symlinkSync(join(outside, 'secret.txt'), join(directory, 'ref.txt'));
             }
+
             return open(...args);
         });
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
@@ -342,12 +390,15 @@ describe('passive skill bundles', () => {
         const directory = bundle();
         const read = fs.readSync;
         let changed = false;
+
         vi.spyOn(fs, 'readSync').mockImplementation((...args: Parameters<typeof fs.readSync>) => {
             const result = read(...args);
+
             if (!changed) {
                 changed = true;
                 fs.mkdirSync(join(directory, 'new-empty-directory'));
             }
+
             return result;
         });
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
@@ -357,12 +408,15 @@ describe('passive skill bundles', () => {
         const directory = bundle({ 'ref.txt': 'original' });
         const read = fs.readSync;
         let changed = false;
+
         vi.spyOn(fs, 'readSync').mockImplementation((...args: Parameters<typeof fs.readSync>) => {
             const result = read(...args);
+
             if (!changed) {
                 changed = true;
                 fs.appendFileSync(join(directory, 'SKILL.md'), 'changed');
             }
+
             return result;
         });
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
@@ -370,22 +424,33 @@ describe('passive skill bundles', () => {
 
     it.each(['file', 'directory'])('rejects duplicate decoded inventory paths for a %s', (kind) => {
         const directory = bundle({ '\uFFFD.txt': 'reference' });
+
         fs.mkdirSync(join(directory, 'empty-dir'));
+
         const open = fs.opendirSync;
+
         vi.spyOn(fs, 'opendirSync').mockImplementation((...args: Parameters<typeof fs.opendirSync>) => {
             const handle = open(...args);
             const read = handle.readSync.bind(handle);
             let duplicate: fs.Dirent | null = null;
             let repeated = false;
+
             vi.spyOn(handle, 'readSync').mockImplementation(() => {
                 if (duplicate && !repeated) {
                     repeated = true;
+
                     return duplicate;
                 }
+
                 const next = read();
-                if (next && !duplicate && next.isDirectory() === (kind === 'directory')) duplicate = next;
+
+                if (next && !duplicate && next.isDirectory() === (kind === 'directory')) {
+                    duplicate = next;
+                }
+
                 return next;
             });
+
             return handle;
         });
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
@@ -393,7 +458,11 @@ describe('passive skill bundles', () => {
 
     it('bounds_empty_directory_traversal', () => {
         const directory = bundle();
-        for (let index = 0; index < 1025; index++) fs.mkdirSync(join(directory, `empty-${index}`));
+
+        for (let index = 0; index < 1025; index++) {
+            fs.mkdirSync(join(directory, `empty-${index}`));
+        }
+
         expect(() => hashSkillBundle(directory)).toThrow(InvalidAgentDefinitionError);
     });
 
@@ -401,6 +470,7 @@ describe('passive skill bundles', () => {
         const directory = bundle({ 'references/README.md': 'original reference', 'data.json': '{invalid opaque JSON' });
         const approved = descriptor(directory);
         const loaded = readSkillBundle(approved);
+
         expect(loaded.references).toEqual(['data.json', 'references/README.md']);
         expect(loaded.readReference('data.json')).toBe('{invalid opaque JSON');
         expect(loaded.readReference('SKILL.md')).toBeUndefined();

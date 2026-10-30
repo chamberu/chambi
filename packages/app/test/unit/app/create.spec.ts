@@ -48,18 +48,23 @@ describe('createApp', () => {
         const env = new Proxy(process.env, {
             get(target, key) {
                 read.push(key);
+
                 return Reflect.get(target, key);
             },
         });
         const original = process.env;
+
         process.env = env;
+
         try {
             const app = createApp({ agents: [agent], modules: [named('a', calls)] });
+
             expect(isApp(app)).toBe(true);
             expect(app.agents).toEqual([agent]);
         } finally {
             process.env = original;
         }
+
         expect(read).toEqual([]);
         expect(calls).toEqual([]);
     });

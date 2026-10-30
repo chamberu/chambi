@@ -48,6 +48,7 @@ export function createRunJobCommand(context: CliContext): CommandDef<typeof RUN_
         args: RUN_JOB_ARGS,
         async run({ args }) {
             assertKnownArgs(args, RUN_JOB_ARGS);
+
             const { env } = context;
             const forceExitMs = envInteger(env, FORCE_EXIT_VARIABLE, { default: FORCE_EXIT_MS, max: TIMER_MAX_MS });
             const entry = await resolveEntry({
@@ -70,6 +71,7 @@ export function createRunJobCommand(context: CliContext): CommandDef<typeof RUN_
             });
 
             let result;
+
             try {
                 result = await app.runJob({
                     agent: args.agent,
@@ -85,6 +87,7 @@ export function createRunJobCommand(context: CliContext): CommandDef<typeof RUN_
                 } else {
                     jobCode = exitCodeOf(error);
                 }
+
                 throw error;
             }
 
@@ -93,8 +96,11 @@ export function createRunJobCommand(context: CliContext): CommandDef<typeof RUN_
             }
 
             jobCode = result.exitCode;
+
             const run = result.runId ? ` (run ${result.runId})` : '';
+
             context.stdout(`${args.agent}: ${result.status}${run}\n`);
+
             if (!handlers.signalled || result.exitCode !== EXIT_CODE.OK) {
                 context.setExitCode(result.exitCode);
             }

@@ -13,8 +13,10 @@ function delay(clock: IClock, ms: number): { promise: Promise<'timeout'>; clear(
     let clear = () => {};
     const promise = new Promise<'timeout'>((resolve) => {
         const timer = clock.setTimeout(() => resolve('timeout'), ms, { keepAlive: true });
+
         clear = () => timer.clear();
     });
+
     return { promise, clear };
 }
 
@@ -42,7 +44,10 @@ export function createShutdown(options: ShutdownOptions): IShutdown {
 
     const run = async (): Promise<void> => {
         const readinessDelayMs = options.readinessDelayMs ?? 0;
-        if (readinessDelayMs > 0) await delay(clock, readinessDelayMs).promise;
+
+        if (readinessDelayMs > 0) {
+            await delay(clock, readinessDelayMs).promise;
+        }
 
         for (const callback of [...callbacks]) {
             await guard(callback);
@@ -52,18 +57,25 @@ export function createShutdown(options: ShutdownOptions): IShutdown {
         const closing = server ?
             server.close().then(() => 'closed' as const, (error: unknown) => {
                 onError(error);
+
                 return 'closed' as const;
             }) :
             undefined;
 
         await guard(() => options.engine.drain({ timeoutMs: options.drainTimeoutMs ?? DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS }));
 
-        if (server && closing) {
-            const timeout = delay(clock, options.closeTimeoutMs ?? DEFAULT_SHUTDOWN_CLOSE_TIMEOUT_MS);
-            const outcome = await Promise.race([closing, timeout.promise]);
-            timeout.clear();
-            // a forced close is expected (keep-alive, open streams), not an error
-            if (outcome === 'timeout') await guard(() => server.close(true));
+        if (!server || !closing) {
+            return;
+        }
+
+        const timeout = delay(clock, options.closeTimeoutMs ?? DEFAULT_SHUTDOWN_CLOSE_TIMEOUT_MS);
+        const outcome = await Promise.race([closing, timeout.promise]);
+
+        timeout.clear();
+
+        // a forced close is expected (keep-alive, open streams), not an error
+        if (outcome === 'timeout') {
+            await guard(() => server.close(true));
         }
     };
 
@@ -73,6 +85,7 @@ export function createShutdown(options: ShutdownOptions): IShutdown {
         },
         onShutdown(fn) {
             callbacks.add(fn);
+
             return () => {
                 callbacks.delete(fn);
             };
@@ -82,6 +95,7 @@ export function createShutdown(options: ShutdownOptions): IShutdown {
                 shuttingDown = true;
                 running = run();
             }
+
             return running;
         },
     };

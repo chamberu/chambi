@@ -52,14 +52,17 @@ describeDocker('docker garbage collection', () => {
         const deployment = `test-${randomUUID().slice(0, 8)}`;
         const provider = createDockerSandbox({
             ...dockerOptions,
-            clock, 
-            limits: { maxLifetimeMs: 600_000 }, 
+            clock,
+            limits: { maxLifetimeMs: 600_000 },
         });
 
         const first = await provider.create({ runId: `test-${randomUUID()}`, deployment });
+
         workspaces.push(first);
         clock.advance(60_000);
+
         const second = await provider.create({ runId: `test-${randomUUID()}`, deployment });
+
         workspaces.push(second);
 
         // past the first one's expiry, a minute before the second one's
@@ -68,7 +71,9 @@ describeDocker('docker garbage collection', () => {
 
         await expect(docker.getContainer(`${CONTAINER_NAME_PREFIX}${first.id}`).inspect())
             .rejects.toSatisfy((error) => statusCode(error) === 404);
+
         const info = await docker.getContainer(`${CONTAINER_NAME_PREFIX}${second.id}`).inspect();
+
         expect(info.State.Running).toBe(true);
     });
 
@@ -76,6 +81,7 @@ describeDocker('docker garbage collection', () => {
         // expired at the epoch, left behind by no process of this run
         const runId = `test-${randomUUID()}`;
         const containers: Docker.Container[] = [];
+
         for (let index = 0; index < 3; index++) {
             const container = await docker.createContainer({
                 Image: dockerImage,
@@ -89,27 +95,38 @@ describeDocker('docker garbage collection', () => {
                     'chamvi.dev/expires-at': '1',
                 },
             });
+
             containers.push(container);
             strangers.push(container);
         }
+
         const stuck = containers[1]!.id;
         // a client whose removal of one container fails like a busy filesystem
         const failing = Object.create(docker) as Docker;
+
         failing.getContainer = (id: string) => {
             const container = docker.getContainer(id);
-            if (id !== stuck) return container;
+
+            if (id !== stuck) {
+                return container;
+            }
+
             container.remove = async () => {
                 throw Object.assign(new Error('(HTTP code 500) unable to remove filesystem: device or resource busy'), { statusCode: 500 });
             };
+
             return container;
         };
 
         const error = await createDockerSandbox({ docker: failing, image: dockerImage })
             .collectGarbage()
             .catch((e: unknown) => e);
+
         expect(error).toBeInstanceOf(SandboxError);
         expect((error as Error).message).toMatch(/1 failed.*resource busy/);
+
         const left = await docker.listContainers({ all: true, filters: { label: [`chamvi.dev/run=${runId}`] } });
+
         expect(left.map((info) => info.Id)).toEqual([stuck]);
     });
 
@@ -122,6 +139,7 @@ describeDocker('docker garbage collection', () => {
         const settled = await provider.create({ runId: done, deployment });
         const kept = await provider.create({ runId: live, deployment });
         const other = await provider.create({ runId: done, deployment: 'test-other' });
+
         workspaces.push(settled, kept, other);
 
         expect(await provider.collectGarbage({ deployment, isSettled: async (runId) => runId === done })).toBe(1);
@@ -141,9 +159,11 @@ describeDocker('docker garbage collection', () => {
                 'chamvi.dev/expires-at': '0',
             },
         });
+
         strangers.push(container);
 
         const provider = createDockerSandbox({ ...dockerOptions, clock: new ExpiryClock(new Date(Date.now() - 3_600_000)) });
+
         await provider.collectGarbage();
 
         await expect(container.inspect()).resolves.toBeDefined();

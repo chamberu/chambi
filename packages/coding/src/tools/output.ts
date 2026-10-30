@@ -44,20 +44,35 @@ export function completeLength(bytes: Uint8Array): number {
 function cutTailLength(bytes: Uint8Array): number {
     for (let back = 1; back <= Math.min(4, bytes.length); back++) {
         const byte = bytes[bytes.length - back] as number;
-        if ((byte & 0xC0) === 0x80) continue;
+
+        if ((byte & 0xC0) === 0x80) {
+            continue;
+        }
+
         let expected = 1;
-        if ((byte & 0xE0) === 0xC0) expected = 2;
-        else if ((byte & 0xF0) === 0xE0) expected = 3;
-        else if ((byte & 0xF8) === 0xF0) expected = 4;
+
+        if ((byte & 0xE0) === 0xC0) {
+            expected = 2;
+        } else if ((byte & 0xF0) === 0xE0) {
+            expected = 3;
+        } else if ((byte & 0xF8) === 0xF0) {
+            expected = 4;
+        }
+
         return expected > back ? back : 0;
     }
+
     return 0;
 }
 
 /** Leading UTF-8 continuation bytes of `bytes` (a character the cut split), at most 3. */
 function cutHeadLength(bytes: Uint8Array): number {
     let length = 0;
-    while (length < Math.min(3, bytes.length) && ((bytes[length] as number) & 0xC0) === 0x80) length++;
+
+    while (length < Math.min(3, bytes.length) && ((bytes[length] as number) & 0xC0) === 0x80) {
+        length++;
+    }
+
     return length;
 }
 
@@ -70,19 +85,22 @@ const decoder = new TextDecoder();
  */
 export function excerptOf(stream: ReportStream): { text: string; truncated: boolean } {
     const {
-        head, 
-        tail, 
-        size, 
+        head,
+        tail,
+        size,
     } = stream;
     const cut = size - head.length - tail.length;
+
     if (cut <= 0) {
         return { text: decoder.decode(Buffer.concat([head, tail])), truncated: false };
     }
+
     const kept = head.subarray(0, head.length - cutTailLength(head));
     const rest = tail.subarray(cutHeadLength(tail));
     const dropped = cut + (head.length - kept.length) + (tail.length - rest.length);
     const before = decoder.decode(kept);
     const separator = before.length === 0 || before.endsWith('\n') ? '' : '\n';
+
     return {
         text: `${before}${separator}[... ${dropped} bytes cut, full output in ${stream.log}]\n${decoder.decode(rest)}`,
         truncated: true,
@@ -92,19 +110,31 @@ export function excerptOf(stream: ReportStream): { text: string; truncated: bool
 /** The stream section starting at `lines[start]` (`<size> <log>`, two base64 blocks); undefined when incomplete. */
 function readStream(lines: string[], start: number): { stream: ReportStream; next: number } | undefined {
     const match = /^(\d+) (\S+)$/.exec(lines[start] ?? '');
-    if (!match) return undefined;
+
+    if (!match) {
+        return undefined;
+    }
+
     const blocks: Uint8Array[] = [];
     let index = start + 1;
+
     for (let block = 0; block < 2; block++) {
         const parts: string[] = [];
+
         while (index < lines.length && lines[index] !== BLOCK_END) {
             parts.push(lines[index] as string);
             index++;
         }
-        if (index >= lines.length) return undefined;
+
+        if (index >= lines.length) {
+            return undefined;
+        }
+
         index++;
+
         blocks.push(new Uint8Array(Buffer.from(parts.join(''), 'base64')));
     }
+
     return {
         stream: {
             size: Number(match[1]),
@@ -120,13 +150,20 @@ function readStream(lines: string[], start: number): { stream: ReportStream; nex
 export function parseReport(stdout: string, stderr: string): Report | undefined {
     const out = stdout.split('\n');
     const header = new RegExp(`^${REPORT_HEADER} (-|\\d+)( ${REPORT_CAPPED})?$`).exec(out[0] ?? '');
-    if (!header || out.length < 2) return undefined;
+
+    if (!header || out.length < 2) {
+        return undefined;
+    }
+
     const stdoutStream = readStream(out, 2);
 
     const err = stderr.split('\n');
     const start = err.lastIndexOf(REPORT_STDERR_HEADER);
     const stderrStream = start === -1 ? undefined : readStream(err, start + 1);
-    if (!stdoutStream || !stderrStream) return undefined;
+
+    if (!stdoutStream || !stderrStream) {
+        return undefined;
+    }
 
     return {
         status: header[1] === '-' ? undefined : Number(header[1]),

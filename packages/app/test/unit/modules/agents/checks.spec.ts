@@ -60,12 +60,15 @@ describe('the checks a folder agent passes before it is registered', () => {
         ['a name whose run_<agent> MCP tool is too long', { [`${LONG_NAME}/agent.ts`]: agentFile('x', 'test/model', LONG_NAME, [HTTP_TRIGGER]) }, LONG_NAME, /exceeds 64 characters/],
     ])('%s is a load issue at boot, never a failed start', async (_label, tree, agent, message) => {
         await writeTree(root.path, { ...tree, 'greeter/agent.ts': agentFile('v1') });
+
         const clock = new ControllableClock(START);
         const app = createApp({
             models: { test: provider() },
             modules: [configModule({ clock, logger: createRecordingLogger(clock) })],
         });
+
         apps.push(app);
+
         const port = await freePort();
 
         await app.start({
@@ -79,6 +82,7 @@ describe('the checks a folder agent passes before it is registered', () => {
 
         const response = await fetch(`http://127.0.0.1:${port}/agents`, { headers: { authorization: `Bearer ${TOKEN}` } });
         const body = await response.json() as { data: Array<{ name: string }>; issues: Array<{ agent: string; message: string }> };
+
         expect(body.data.map((entry) => entry.name)).toEqual(['greeter']);
         expect(body.issues).toEqual([expect.objectContaining({ agent, message: expect.stringMatching(message) })]);
     });
@@ -89,6 +93,7 @@ describe('the checks a folder agent passes before it is registered', () => {
         ['a model on an unconfigured provider', { 'agent.ts': agentFile('v2', 'nope/m') }],
     ])('a change to %s keeps the old agent, cancels nothing and is tried once', async (_label, change) => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+
         const clock = new ControllableClock(START);
         const store = createMemoryStore({ clock });
         const setup = buildAgentsDirHarness({
@@ -97,14 +102,19 @@ describe('the checks a folder agent passes before it is registered', () => {
             store,
             modules: [schedulerModule()],
         });
+
         harnesses.push(setup.harness);
         await setup.harness.setup();
         await setup.watch();
+
         const marker = await store.agentRevisions.findOne('greeter');
         const runId = await queueRun(store, clock, 'greeter');
 
         await writeTree(join(root.path, 'greeter'), change);
-        for (let i = 0; i < 5; i++) await setup.poll();
+
+        for (let i = 0; i < 5; i++) {
+            await setup.poll();
+        }
 
         expect(setup.engine().getAgent('greeter')?.definition.instructions).toBe('v1');
         expect(await store.agentRevisions.findOne('greeter')).toEqual(marker);

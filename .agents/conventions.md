@@ -18,11 +18,11 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 
 ## Code Style
 
-- ESM only (`"type": "module"`), Node >= 22.
+- ESM only (`"type": "module"`), Node >= 24.3.0 (the minimum required by `@tada5hi/eslint-config` 3.2).
 - Configured agent/contributed instructions use core `AgentInstructions`; preserve native SDK role-specific content and provider options. Only the leading system run goes into SDK `instructions`; later configured blocks stay transient and ordered. Manual skills catalog instructions remain strings.
-- `@chamvi/ui`'s app ships to Vite's default browser target (Safari 16.4, Firefox 114), which esbuild does not polyfill: no ES2025 iterator helpers (`map.entries().toArray()`; use `Array.from`), enforced by a `no-restricted-syntax` rule in `eslint.config.js`.
+- `@chamvi/ui`'s app ships to Vite's default browser target (Safari 16.4, Firefox 114), which esbuild does not polyfill: no ES2025 iterator helpers (`map.entries().toArray()`; use `Array.from`), enforced by a `no-restricted-syntax` rule in `eslint.config.js`. Its scoped Unicorn override also retains `instanceof Error` instead of requiring the newer `Error.isError` API. The `Uint8Array` base64/hex preference rules are disabled globally because Node 24 does not implement those APIs; keep the existing Buffer encodings.
 - 4-space indent (also JSON and YAML), LF, UTF-8, final newline, trailing whitespace trimmed except in Markdown (see `.editorconfig`).
-- Single quotes, semicolons (enforced by ESLint).
+- Single quotes, semicolons, and braces around every control-flow body, including single statements (enforced by ESLint).
 - Package scope `@chamvi/*`, Apache-2.0 license (`LICENSE` plus `NOTICE` in the root and every package), all packages public.
 
 ## File Organization
@@ -44,7 +44,7 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
   - `constants.ts`: every exported constant (`agent/constants.ts`, `effect/constants.ts`, `errors/constants.ts`).
   - `index.ts`: the barrel. It re-exports **files of its own folder only**, alphabetically: `export *` when the whole file is public, named exports when the folder keeps part of it internal (`effect/index.ts` exports `EFFECT` but not `EFFECT_HOOKS`; helpers are never exported).
 - **One class per file.** `max-classes-per-file` is `1` in `@tada5hi/eslint-config`; never disable it in source. Sibling classes share a folder: `src/errors/base.ts` holds `ChamviError`, and every other error has its own file named after its concept, kebab-case and without an `-error` suffix (`lease-lost.ts` holds `LeaseLostError`). Error codes live in `ErrorCode` (`errors/constants.ts`), never as string literals in the constructors.
-- **No cross-module re-export files.** A file that just pulls symbols out of other modules is not allowed; the code moves into the folder (or package) it belongs to. One exception: `@chamvi/app` re-exports `@chamvi/core` and named `@chamvi/http` symbols (`src/core/index.ts`), by owner decision, so an agent repository imports one package; it also re-exports the orkos `IModule` and eldin `IContainer` types (`module/types.ts`), so a module imports its whole contract from `@chamvi/app`.
+- **No cross-module re-export files.** A file that just pulls symbols out of other modules is not allowed; the code moves into the folder (or package) it belongs to. One exception: `@chamvi/app` exposes `@chamvi/core` and named cron/HTTP symbols from its root barrel, by owner decision, so an agent repository imports one package; it also exposes the orkos `IModule` and eldin `IContainer` types from `module/index.ts`. The root facade uses narrow inline `no-reexport-shims` exceptions for these external package exports, preserving core's wildcard surface; directory re-export declarations elsewhere stay within their subtree.
 - **The package entry composes folder barrels.** `src/index.ts` is `export * from './<folder>/index.ts'` per folder. Inside a package, import the file you need (`../errors/index.ts`, `../state/types.ts`), not `src/index.ts`.
 - **Feature package modules.** An app module lives in its feature package's `src/module/`, published as the `/module` subpath (`@chamvi/github/module`, ...): the only folder importing `@chamvi/app`, which is an optional peer (`peerDependenciesMeta`) plus a devDependency, and stays external in `dist/module.mjs` (one `AppToken` set per process). The main entry and every chunk it loads stay app-free. A shared instance reaches tools through a context pair in the main entry (`provide<Name>Context(engine, value)`, `inject<Name>Context(ctx)`, core-only, in `src/context/`); the `ContextKey` stays internal, and the module provides in its `engineCreated` hook. `@chamvi/app` itself keeps only `/authup` (http cannot depend on app) and `/testing`.
 - **Dependency graph.** The `@chamvi/*` edges of `dependencies`, `devDependencies`, `optionalDependencies` and `peerDependencies` (optional or not) must stay acyclic: nx builds its project graph from them, and release-please's node-workspace plugin (with `updatePeerDependencies`) throws on a cycle, which aborts the release run for every package. An `nx.implicitDependencies` exclusion only hides an edge from nx, so it is no fix. Break a cycle in the package.json files instead (a structural type in place of a type import, as `@chamvi/test-kit` does for `IWorkspace`; a variable-specifier import of a package that is in no dependency field, as `@chamvi/sandbox/module` does for its providers). `packages/app/test/unit/graph.spec.ts` checks the graph release-please builds.
@@ -101,7 +101,7 @@ Conventional Commits: `<type>(scope): <description>`, e.g. `feat(core): add run 
 
 ## CI/CD
 
-- `ci.yml`: on push and PR to `master`, install, lint, build, typecheck, test on Node 22 and 24.
+- `ci.yml`: on push and PR to `master`, install, lint, build, typecheck, test on Node 24.3.0 (the minimum) and latest 24.
 - `release.yml`: release-please on `master` opens one release PR for every package (`linked-versions`, the root package `chamvi-root` as component `root`, one tag `v<version>` without a component, `node-workspace` plugin); when merged, build and publish via `tada5hi/monoship@v2` with npm provenance.
 - Both reuse the composite actions in `.github/actions/{install,build}`; change Node setup or caching there.
 

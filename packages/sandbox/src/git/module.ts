@@ -22,6 +22,7 @@ export function gitArgv(url: string, args: readonly string[], credential?: GitCr
     if (!credential) {
         return { argv: ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null', ...args] };
     }
+
     return {
         argv: ['sh', '-c', GIT_AUTH_SCRIPT, 'sh', url, urlOrigin(url), urlRepoPath(url), ...args],
         stdin: `${credential.username}\n${credential.password}\n`,
@@ -43,13 +44,26 @@ export async function runGit(workspace: IWorkspace, input: {
 }): Promise<ExecResult> {
     const { argv, stdin } = gitArgv(input.url, input.args, input.credential);
     const options: Parameters<IWorkspace['exec']>[1] = {};
-    if (stdin !== undefined) options.stdin = stdin;
-    if (input.cwd !== undefined) options.cwd = input.cwd;
+
+    if (stdin !== undefined) {
+        options.stdin = stdin;
+    }
+
+    if (input.cwd !== undefined) {
+        options.cwd = input.cwd;
+    }
+
     options.timeoutMs = input.timeoutMs ?? EXEC_TIMEOUT_MS;
-    if (input.signal) options.signal = input.signal;
+
+    if (input.signal) {
+        options.signal = input.signal;
+    }
+
     const result = await workspace.exec(argv, options);
+
     if (input.credential && result.exitCode === GIT_AUTH_REFUSED_EXIT && !result.timedOut) {
         throw new SandboxError(result.stderr.trim().slice(0, 1000) || 'the git config would send the credential elsewhere.');
     }
+
     return result;
 }

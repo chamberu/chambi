@@ -38,6 +38,7 @@ describe('README example', () => {
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = readme.matchAll(/```typescript\n([\s\S]*?)```/g).map((m) => m[1]).toArray();
+
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
@@ -85,6 +86,7 @@ describe('README example', () => {
             store: createMemoryStore(),
             agents: [agent],
         });
+
         await engine.start();
 
         const { runId } = await engine.dispatch({
@@ -93,9 +95,11 @@ describe('README example', () => {
             channel: 'manual',
             payload: {},
         });
+
         await engine.idle();
 
         const waiting = await engine.getRun(runId);
+
         expect(waiting?.status).toBe('waiting');
         expect(waiting?.waiting?.toolName).toBe('bash');
         expect(waiting?.waiting?.body).toBe('rm -rf /workspace');
@@ -108,9 +112,12 @@ describe('README example', () => {
         await engine.idle();
 
         const run = await engine.getRun(runId);
+
         expect(run?.status).toBe('completed');
+
         const steps = await engine.store.steps.find(runId);
         const bash = steps.find((step) => step.kind === 'tool' && step.name === 'bash');
+
         expect(bash?.error).toMatchObject({ code: 'tool_denied' });
 
         engine.stop();

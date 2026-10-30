@@ -1,6 +1,6 @@
 # @chamvi/skills
 
-Verify passive skill bundles and prepare explicitly selected, commit-pinned sources for Chamvi agents. This optional package requires Node >=22.20; Git is needed for source preparation.
+Verify passive skill bundles and prepare explicitly selected, commit-pinned sources for Chamvi agents. This optional package requires Node >=24.3.0; Git is needed for source preparation.
 
 ```bash
 npm install @chamvi/skills @chamvi/core
@@ -58,6 +58,7 @@ export async function prepareCatalog(options: Omit<PrepareSkillsOptions, 'verify
             }
         },
     });
+
     return loadSkillBundles(prepared.map((skill) => ({
         name: skill.name,
         directory: skill.path,

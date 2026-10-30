@@ -12,6 +12,7 @@ import type { Artifact, IRunArtifacts, ToolContext } from '@chamvi/core';
 /** In-memory run artifacts (`read_file` stores the images it shows), ids `artifact-<n>`. */
 export function createArtifacts(runId = 'r1'): IRunArtifacts {
     const stored = new Map<string, { artifact: Artifact; data: Uint8Array }>();
+
     return {
         put: async (input) => {
             const artifact: Artifact = {
@@ -23,7 +24,9 @@ export function createArtifacts(runId = 'r1'): IRunArtifacts {
                 size: input.data.byteLength,
                 createdAt: new Date(0),
             };
+
             stored.set(artifact.id, { artifact, data: Uint8Array.from(input.data) });
+
             return artifact;
         },
         get: async (id) => stored.get(id),
@@ -67,7 +70,11 @@ export async function callTool<T = unknown>(
     abortSignal?: AbortSignal,
 ): Promise<T> {
     const execute = tools[name]?.execute as ((i: unknown, o: unknown) => Promise<unknown>) | undefined;
-    if (!execute) throw new TypeError(`no tool ${name}`);
+
+    if (!execute) {
+        throw new TypeError(`no tool ${name}`);
+    }
+
     return await execute(input, {
         toolCallId: 'call-1',
         messages: [],

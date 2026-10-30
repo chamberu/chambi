@@ -5,11 +5,11 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { 
-    mkdir, 
-    mkdtemp, 
-    rm, 
-    writeFile,  
+import {
+    mkdir,
+    mkdtemp,
+    rm,
+    writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -60,7 +60,9 @@ describe('start --check', () => {
         expect(exitCode()).toBe(0);
         expect(fake.exits).toEqual([]);
         expect(fake.stdout.join('')).toContain('chamvi: start check passed');
+
         const server = await listenOn(port);
+
         await closeServer(server);
         expect(fake.signals.listenerCount('SIGTERM')).toBe(0);
     });
@@ -70,11 +72,14 @@ describe('start --check', () => {
             await mkdir(path.join(dir, name), { recursive: true });
             await writeFile(path.join(dir, name, 'agent.ts'), 'export default 42;\n');
         }
+
         await check('app', startEnv(port, { CHAMVI_AGENTS_DIR: dir }));
 
         expect(exitCode()).toBe(2);
         expect(fake.stdout.join('')).not.toContain('passed');
+
         const lines = fake.stderr.join('').split('\n').filter((line) => line.length > 0);
+
         expect(lines).toHaveLength(2);
         expect(lines[0]).toMatch(/^alpha\//);
         expect(lines[1]).toMatch(/^beta\//);
@@ -82,6 +87,7 @@ describe('start --check', () => {
 
     it('exits 2 without CHAMVI_TOKENS', async () => {
         const env = startEnv(port);
+
         delete env.CHAMVI_TOKENS;
         await check('app', env);
 
@@ -99,6 +105,7 @@ describe('start --check', () => {
 
     it('exits 1 for an unreachable DATABASE_URL', async () => {
         const closed = await freePort();
+
         await check('app', startEnv(port, { DATABASE_URL: `postgres://u:secret@127.0.0.1:${closed}/db` }));
 
         expect(exitCode()).toBe(1);

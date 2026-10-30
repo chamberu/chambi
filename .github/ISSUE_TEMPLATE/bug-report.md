@@ -15,7 +15,7 @@ assignees: ''
 -->
 
 ### Versions
-- Node: <!-- e.g. Node 22 -->
+- Node: <!-- e.g. Node 24.3.0 -->
 - OS: <!-- e.g. Windows 99> -->
 
 ### Reproduction

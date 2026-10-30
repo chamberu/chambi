@@ -28,16 +28,19 @@ describe('README example', () => {
     it('is the code of test/fixtures/readme-example.ts', () => {
         const readme = read('../../README.md');
         const blocks = readme.matchAll(/```typescript\n([\s\S]*?)```/g).map((m) => m[1]).toArray();
+
         expect(blocks).toContain(read('../fixtures/readme-example.ts'));
     });
 
     it('starts runs over REST and shuts down', async () => {
         vi.stubEnv('CHAMVI_TOKEN', TOKEN);
+
         const { app, shutdown } = await createAgentServer(textModel());
         const response = await app.fetch(new Request('http://test/agents/echo/runs', {
             method: 'POST',
             headers: { authorization: `Bearer ${TOKEN}` },
         }));
+
         expect(response.status).toBe(202);
         await expect(shutdown.shutdown()).resolves.toBeUndefined();
     });

@@ -35,6 +35,7 @@ export function createLogger(options: LoggerOptions = {}): ILogger {
                 time: clock.now().toISOString(),
                 msg,
             };
+
             write(toLine(head, fields ?? {}, error ? serializeError(error.value) : undefined));
         } catch {
             // a closed stream or a throwing clock must never break the caller

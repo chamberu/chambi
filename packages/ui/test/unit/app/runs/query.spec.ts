@@ -30,6 +30,7 @@ describe('run list query', () => {
             limit: 25,
             offset: 25,
         };
+
         expect(queryFromFilter(filter)).toEqual({
             agent: 'a',
             status: 'queued',

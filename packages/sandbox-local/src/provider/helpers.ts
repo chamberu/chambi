@@ -34,6 +34,7 @@ export function killGroup(pid: number): void {
 export function groupAlive(pid: number): boolean {
     try {
         process.kill(-pid, 0);
+
         return true;
     } catch {
         return false;
@@ -42,8 +43,12 @@ export function groupAlive(pid: number): boolean {
 
 /** The exit code a shell reports: the code, or 128 + the signal number. */
 export function exitCodeOf(code: number | null, signal: NodeJS.Signals | null): number {
-    if (code !== null) return code;
+    if (code !== null) {
+        return code;
+    }
+
     const number = signal ? constants.signals[signal] : undefined;
+
     return 128 + (number ?? 0);
 }
 
@@ -55,10 +60,15 @@ export function exitCodeOf(code: number | null, signal: NodeJS.Signals | null): 
  */
 export function buildEnv(dir: string, env: Record<string, string>, cacheDir?: string): Record<string, string> {
     const base: Record<string, string> = { PATH: process.env.PATH || FALLBACK_PATH };
+
     for (const [key, value] of Object.entries(SANDBOX_ENV)) {
-        if (key === 'HOME' || (key.startsWith('GIT_CONFIG_') && key !== 'GIT_CONFIG_NOSYSTEM')) continue;
+        if (key === 'HOME' || (key.startsWith('GIT_CONFIG_') && key !== 'GIT_CONFIG_NOSYSTEM')) {
+            continue;
+        }
+
         base[key] = value;
     }
+
     return {
         ...base,
         HOME: join(dir, 'home'),
@@ -70,6 +80,7 @@ export function buildEnv(dir: string, env: Record<string, string>, cacheDir?: st
 
 export function errnoCode(error: unknown): string | undefined {
     const { code } = (error ?? {}) as { code?: unknown };
+
     return typeof code === 'string' ? code : undefined;
 }
 
@@ -81,14 +92,25 @@ export function toRecord(info: WorkspaceInfo, deployment: string, env?: Record<s
         createdAt: info.createdAt.toISOString(),
         expiresAt: info.expiresAt.toISOString(),
     };
-    if (info.repo !== undefined) record.repo = info.repo;
-    if (info.ref !== undefined) record.ref = info.ref;
-    if (env !== undefined && Object.keys(env).length > 0) record.env = env;
+
+    if (info.repo !== undefined) {
+        record.repo = info.repo;
+    }
+
+    if (info.ref !== undefined) {
+        record.ref = info.ref;
+    }
+
+    if (env !== undefined && Object.keys(env).length > 0) {
+        record.env = env;
+    }
+
     return record;
 }
 
 function readTime(value: unknown): Date | undefined {
     const time = typeof value === 'string' ? Date.parse(value) : NaN;
+
     return Number.isNaN(time) ? undefined : new Date(time);
 }
 
@@ -98,29 +120,44 @@ function readTime(value: unknown): Date | undefined {
  * the default deployment, created at its expiry.
  */
 export function parseRecord(value: unknown): ParsedRecord | undefined {
-    if (!isObject(value)) return undefined;
+    if (!isObject(value)) {
+        return undefined;
+    }
+
     const {
-        runId, 
-        deployment, 
-        repo, 
-        ref, 
-        env, 
+        runId,
+        deployment,
+        repo,
+        ref,
+        env,
     } = value;
     const expiresAt = readTime(value.expiresAt);
-    if (typeof runId !== 'string' || runId.length === 0 || !expiresAt) return undefined;
+
+    if (typeof runId !== 'string' || runId.length === 0 || !expiresAt) {
+        return undefined;
+    }
+
     const info: WorkspaceInfo = {
         runId,
         provider: LOCAL_PROVIDER_NAME,
         createdAt: readTime(value.createdAt) ?? expiresAt,
         expiresAt,
     };
-    if (typeof repo === 'string') info.repo = repo;
-    if (typeof ref === 'string') info.ref = ref;
+
+    if (typeof repo === 'string') {
+        info.repo = repo;
+    }
+
+    if (typeof ref === 'string') {
+        info.ref = ref;
+    }
+
     const parsed: ParsedRecord = {
         runId,
         deployment: typeof deployment === 'string' ? deployment : DEFAULT_DEPLOYMENT,
         info,
     };
+
     if (env !== undefined) {
         try {
             assertSandboxEnv(env as Record<string, string>);
@@ -129,5 +166,6 @@ export function parseRecord(value: unknown): ParsedRecord | undefined {
             return undefined;
         }
     }
+
     return parsed;
 }

@@ -55,12 +55,19 @@ export function createTriage(model: LanguageModel, store: IStore) {
         hooks: {
             // closing waits for the owner, asked in a comment on the run's issue
             async beforeToolExecution({ toolName, input }, ctx) {
-                if (toolName !== 'github_close_issue') return input;
+                if (toolName !== 'github_close_issue') {
+                    return input;
+                }
+
                 const { approved } = await ctx.channels.findOneOrFail('github').approve({
                     title: 'Close this issue?',
                     body: JSON.stringify(input),
                 });
-                if (!approved) throw new ToolDeniedError('The owner keeps the issue open.');
+
+                if (!approved) {
+                    throw new ToolDeniedError('The owner keeps the issue open.');
+                }
+
                 return input;
             },
         },
@@ -105,6 +112,7 @@ export const answer = defineTool({
         await context.channels.findOne()?.emit({ body });
         // any issue: the address is <owner>/<repo>#<number>
         await context.channels.findOneOrFail('github').emit({ title: 'Triage log', body }, github.to({ repo: 'octo/ops', number: 1 }));
+
         return 'sent';
     },
 });

@@ -72,6 +72,7 @@ function run(
                 code: error ? Number((error as { code?: number }).code ?? 1) : 0,
             });
         });
+
         // a script that refuses exits before reading its stdin; the write then fails with EPIPE
         child.stdin!.on('error', () => {});
         child.stdin!.end(stdin);
@@ -110,20 +111,24 @@ describe('GIT_AUTH_SCRIPT', () => {
             ['http', 'github.com', 'octo/demo.git'],
         ] as const) {
             const { stdout } = await auth(protocol, host, path);
+
             expect(stdout).toBe('');
         }
     });
 
     it('keeps the credential out of the environment of git', async () => {
         const envGit = join(dir, 'env-git');
+
         await mkdir(envGit);
         await writeFile(join(envGit, 'git'), '#!/bin/sh\nfor a; do test "$a" = config && exit 1; done\nenv\n');
         await chmod(join(envGit, 'git'), 0o755);
+
         const { stdout, code } = await run(
             ['sh', '-c', GIT_AUTH_SCRIPT, 'sh', REPO_URL, 'https://github.com', 'octo/demo', 'status'],
             'x-access-token\nghs_secret\n',
             { PATH: `${envGit}:${process.env.PATH}` },
         );
+
         expect(code).toBe(0);
         expect(stdout).toContain('CHAMVI_GIT_ORIGIN=https://github.com');
         expect(stdout).not.toContain('ghs_secret');
@@ -135,10 +140,13 @@ describe('GIT_AUTH_SCRIPT against the git config', () => {
 
     async function repository(config: Array<[string, string]>): Promise<string> {
         const repo = await mkdtemp(join(tmpdir(), 'chamvi-git-auth-'));
+
         await run(['git', 'init', '-q', repo], '', realGit);
+
         for (const [key, value] of config) {
             await run(['git', 'config', key, value], '', realGit, repo);
         }
+
         return repo;
     }
 
@@ -158,6 +166,7 @@ describe('GIT_AUTH_SCRIPT against the git config', () => {
             ['http.proxy', 'http://127.0.0.1:9'],
             ['http.sslVerify', 'false'],
         ]);
+
         try {
             await expect(status(repo)).resolves.toMatchObject({ code: 0 });
         } finally {
@@ -168,13 +177,16 @@ describe('GIT_AUTH_SCRIPT against the git config', () => {
     it('never runs a transport the config names for the URL, so nothing reads the credential on fd 3', async () => {
         const bin = await mkdtemp(join(tmpdir(), 'chamvi-git-vcs-'));
         const leak = join(bin, 'leak');
+
         await writeFile(join(bin, 'git-remote-evil'), `#!/bin/sh\ncat <&3 > '${leak}'\nexit 1\n`);
         await chmod(join(bin, 'git-remote-evil'), 0o755);
+
         const repo = await repository([
             [`remote.${REPO_URL}.url`, REPO_URL],
             [`remote.${REPO_URL}.vcs`, 'evil'],
             ['protocol.evil.allow', 'always'],
         ]);
+
         try {
             for (const args of [
                 ['fetch', REPO_URL, 'refs/heads/main'],
@@ -191,6 +203,7 @@ describe('GIT_AUTH_SCRIPT against the git config', () => {
                     },
                     repo,
                 );
+
                 expect(result.code, args[0]).not.toBe(0);
                 expect(result.stderr, args[0]).toContain('not allowed');
                 await expect(readFile(leak, 'utf8'), args[0]).rejects.toThrow();
@@ -216,8 +229,10 @@ describe('GIT_AUTH_SCRIPT against the git config', () => {
             ['url.https://github.com/octo/demo.pushInsteadOf', REPO_URL, 'url.https://github.com/octo/demo.pushinsteadof'],
         ] as const) {
             const repo = await repository([[key, value]]);
+
             try {
                 const result = await status(repo);
+
                 expect(result.code, key).toBe(GIT_AUTH_REFUSED_EXIT);
                 expect(result.stderr, key).toContain(named);
                 expect(result.stderr, key).not.toContain('ghs_secret');
@@ -230,6 +245,7 @@ describe('GIT_AUTH_SCRIPT against the git config', () => {
     it('reads the global config too', async () => {
         const home = await mkdtemp(join(tmpdir(), 'chamvi-git-home-'));
         const repo = await repository([]);
+
         try {
             await writeFile(join(home, '.gitconfig'), '[http "https://github.com"]\n\tproxy = http://attacker:3128\n');
             await expect(status(repo, home)).resolves.toMatchObject({ code: GIT_AUTH_REFUSED_EXIT });
@@ -243,6 +259,7 @@ describe('GIT_AUTH_SCRIPT against the git config', () => {
 describe('the workspace credential helper', () => {
     it('installs the file (0600) and the helper, and answers through real git', async () => {
         const home = await mkdtemp(join(tmpdir(), 'chamvi-git-home-'));
+
         try {
             const content = credentialsFileContent([
                 {
@@ -262,14 +279,18 @@ describe('the workspace credential helper', () => {
                 GIT_CONFIG_NOSYSTEM: '1',
             };
             const install = await run(['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(content))], content, realGit);
+
             expect(install.code).toBe(0);
             expect(await readFile(join(home, '.chamvi/credentials'), 'utf8')).toBe(content);
             expect((await stat(join(home, '.chamvi/credentials'))).mode & 0o777).toBe(0o600);
 
             const fill = (request: string) => run(['git', 'credential', 'fill'], request, { ...realGit, GIT_TERMINAL_PROMPT: '0' });
+
             await expect(fill('protocol=https\nhost=github.com\npath=octo/demo.git\n\n')).resolves.toMatchObject({ stdout: expect.stringContaining('password=repo-secret') });
             await expect(fill('protocol=https\nhost=github.com\npath=other/repo.git\n\n')).resolves.toMatchObject({ stdout: expect.stringContaining('password=host-secret') });
+
             const other = await fill('protocol=https\nhost=gitlab.com\npath=octo/demo.git\n\n');
+
             expect(other.stdout).not.toContain('secret');
 
             // a second install replaces the file
@@ -278,6 +299,7 @@ describe('the workspace credential helper', () => {
                 username: 'x-access-token',
                 password: 'fresh-secret',
             }]);
+
             await run(['sh', '-c', INSTALL_CREDENTIALS_SCRIPT, 'sh', CREDENTIAL_HELPER_SCRIPT, String(Buffer.byteLength(next))], next, realGit);
             await expect(fill('protocol=https\nhost=github.com\npath=octo/demo.git\n\n')).resolves.toMatchObject({ stdout: expect.stringContaining('password=fresh-secret') });
         } finally {

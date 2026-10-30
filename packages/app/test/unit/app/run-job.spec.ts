@@ -68,7 +68,9 @@ function build(agents: Agent[], modules: IModule[] = []) {
         agents,
         modules: [configModule({ clock, logger }), storeModule({ store }), ...modules],
     });
+
     apps.push(app);
+
     return {
         app,
         clock,
@@ -150,10 +152,11 @@ describe('App.runJob', () => {
 
         const named = build([sweep(textModel(), [cron.on('*/5 * * * *'), cron.on('0 * * * *')])]);
         const result = await named.app.runJob({
-            env: named.env, 
-            agent: 'sweep', 
-            subscription: 'cron:0 * * * *', 
+            env: named.env,
+            agent: 'sweep',
+            subscription: 'cron:0 * * * *',
         });
+
         expect(result).toMatchObject({ status: 'completed', exitCode: 0 });
         expect((await named.store.runs.findOne(result.runId as string))?.trigger).toMatchObject({ channel: 'cron', trigger: 'cron:0 * * * *' });
     });
@@ -191,16 +194,20 @@ describe('App.runJob', () => {
         let stopped = false;
         const job = app.runJob({ env, agent: 'sweep' }).then((r) => {
             result = r;
+
             return r;
         });
 
         await vi.waitFor(async () => {
             const { data } = await store.runs.find({ agent: 'sweep' });
+
             expect(data[0]?.status).toBe('running');
         });
+
         const stop = app.stop().then(() => {
             stopped = true;
         });
+
         // the drain timeout lives on the controllable clock
         await vi.waitFor(() => {
             clock.advance(DRAIN_MS);
@@ -210,38 +217,48 @@ describe('App.runJob', () => {
         await stop;
 
         expect(await job).toMatchObject({ status: 'interrupted', exitCode: 0 });
+
         const getRun = vi.spyOn(store.runs, 'findOne');
         const listRuns = vi.spyOn(store.runs, 'find');
+
         clock.advance(10 * POLL_MS);
-        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+        });
         expect(getRun).not.toHaveBeenCalled();
         expect(listRuns).not.toHaveBeenCalled();
     });
 
     it('rejects with invalid_run_state when its folder changed since the marker', async () => {
         const dir = await createTempDir();
+
         try {
             await writeTree(dir.path, { 'greeter/agent.ts': agentFile('v1', 'test/model', 'greeter', [cronTrigger('*/5 * * * *')]) });
+
             const clock = new ControllableClock(new Date('2026-10-21T08:00:00Z'));
             const logger = createRecordingLogger(clock);
             const store = createMemoryStore({ clock });
             const old = 'c'.repeat(64);
+
             await store.agentRevisions.save({
-                agent: 'greeter', 
-                hash: old, 
-                changedAt: clock.now(), 
+                agent: 'greeter',
+                hash: old,
+                changedAt: clock.now(),
             });
+
             const runId = await queueRun(store, clock, 'greeter');
             const app = createApp({
                 models: { test: provider() },
                 modules: [configModule({ clock, logger }), storeModule({ store })],
             });
+
             apps.push(app);
 
             const error = await rejectionOf(app.runJob({
                 env: { CHAMVI_DRAIN_TIMEOUT_MS: String(DRAIN_MS), CHAMVI_AGENTS_DIR: dir.path },
                 agent: 'greeter',
             }));
+
             expect(error.code).toBe(APP_ERROR_CODE_INVALID_RUN_STATE);
             expect(error.message).toContain(old.slice(0, 12));
             expect((await store.agentRevisions.findOne('greeter'))?.hash).toBe(old);

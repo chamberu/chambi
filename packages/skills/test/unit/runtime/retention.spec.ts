@@ -37,8 +37,12 @@ const candidate = (skills: Parameters<typeof defineAgent>[0]['skills']) => defin
 
 // Inspect the optional runtime, without reintroducing domain state on core's Engine.
 class InspectedRuntime extends SkillRuntime {
-    get providerCache() { return this.sources; }
-    get attestations() { return this.attestedSkills; }
+    get providerCache() {
+        return this.sources;
+    }
+    get attestations() {
+        return this.attestedSkills;
+    }
 }
 function engine() {
     const runtime = new InspectedRuntime([]);
@@ -53,16 +57,20 @@ function engine() {
         model: mockModel([]),
         skills: [{ ...defineSkillSource({ skills: [], load: async () => [] }), runtime: provider }],
     });
+
     return Object.assign(e, { providerCache: runtime.providerCache, attestations: runtime.attestations });
 }
 
 describe('skill preparation retention', () => {
     it('keeps retired providers weakly and historical contents as bounded fingerprints', async () => {
         const e = engine();
+
         for (let i = 0; i < 8; i++) {
             const ready = skill({ version: `${i}`, body: 'x'.repeat(64_000) });
+
             await e.putAgent(candidate([defineSkillSource({ skills: [ready], load: async () => [ready] })]));
         }
+
         await e.removeAgent('test');
         await e.stop();
         expect({
@@ -76,6 +84,7 @@ describe('skill preparation retention', () => {
             attestedIdentities: 8,
             attestationCharacters: 512,
         });
+
         for (const value of e.attestations.values()) {
             expect(value).toMatch(/^[a-f0-9]{64}$/);
         }
@@ -88,9 +97,11 @@ describe('skill preparation retention', () => {
             skills: [skill()],
             load: async () => {
                 calls++;
+
                 return [skill()];
             },
         });
+
         await e.prepare({ agents: [candidate([source])] });
         await e.putAgent(candidate([source]));
         await e.removeAgent('test');
@@ -104,12 +115,15 @@ describe('skill preparation retention', () => {
 
     it('prepares a new identity without copying or scanning historical attestations', async () => {
         const e = engine();
+
         await e.prepare({ agents: [candidate([skill()])] });
+
         const iterator = vi.spyOn(e.attestations, Symbol.iterator);
         const entries = vi.spyOn(e.attestations, 'entries');
         const values = vi.spyOn(e.attestations, 'values');
         const keys = vi.spyOn(e.attestations, 'keys');
         const forEach = vi.spyOn(e.attestations, 'forEach');
+
         await e.prepare({ agents: [candidate([skill({ version: '2' })])] });
         expect(iterator).not.toHaveBeenCalled();
         expect(entries).not.toHaveBeenCalled();
@@ -128,6 +142,7 @@ describe('skill preparation retention', () => {
         { references: { 'references/a.md': 'different reference' } },
     ])('rejects historical identity reuse with changed contents: %j', async (overrides) => {
         const e = engine();
+
         await e.prepare({ agents: [candidate([skill()])] });
         await expect(e.prepare({
             agents: [candidate([defineSkillSource({
@@ -140,6 +155,7 @@ describe('skill preparation retention', () => {
 
     it('canonicalizes field order before fingerprinting and covers every identity field', async () => {
         const e = engine();
+
         await e.prepare({
             agents: [candidate([skill({
                 ignoredFields: ['model', 'allowed-tools'],
@@ -160,6 +176,7 @@ describe('skill preparation retention', () => {
                 }],
             })])],
         });
+
         for (const overrides of [{ name: 'other' }, { version: '2' }, { hash: 'b'.repeat(64) }]) {
             await e.prepare({
                 agents: [candidate([skill({
@@ -169,6 +186,7 @@ describe('skill preparation retention', () => {
                 })])],
             });
         }
+
         expect(e.attestations.size).toBe(4);
         expect(new Set(e.attestations.values()).size).toBe(4);
         await e.stop();
@@ -184,10 +202,12 @@ describe('skill preparation retention', () => {
             skills: [extra],
             load: async () => {
                 entered.resolve();
+
                 return release.promise;
             },
         })]);
         const slow = e.prepare({ agents: [firstCandidate, slowCandidate] }).catch((error: unknown) => error);
+
         await entered.promise;
         await e.prepare({ agents: [candidate([skill({ body: 'published first' })])] });
         release.resolve([extra]);

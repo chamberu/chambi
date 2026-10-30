@@ -66,22 +66,33 @@ class RecordingSandboxModule extends SandboxModule {
 
     protected override async importProvider(name: SandboxProviderName): Promise<ISandboxProvider> {
         this.imported.push(name);
+
         if (this.failure) {
             throw this.failure;
         }
+
         return {
             name,
-            create: async () => { throw new Error('not used'); },
+            create: async () => {
+                throw new Error('not used');
+            },
             find: async (_runId, options) => {
                 this.calls.push(['find', options]);
+
                 return [];
             },
             collectGarbage: async (options) => {
                 this.calls.push(['collectGarbage', options]);
                 await this.gcGate;
+
                 const failure = this.gcFailure;
+
                 this.gcFailure = undefined;
-                if (failure) throw failure;
+
+                if (failure) {
+                    throw failure;
+                }
+
                 return 0;
             },
         };
@@ -95,16 +106,24 @@ class RecordingSandboxModule extends SandboxModule {
 function fakeManager(events: string[]): IWorkspaceManager & { engines: unknown[]; closes: unknown[] } {
     const engines: unknown[] = [];
     const closes: unknown[] = [];
+
     return {
         engines,
         closes,
-        acquire: async () => { throw new Error('not used'); },
-        get: async () => { throw new Error('not used'); },
+        acquire: async () => {
+            throw new Error('not used');
+        },
+        get: async () => {
+            throw new Error('not used');
+        },
         release: async () => undefined,
         attach(engine) {
             engines.push(engine);
             events.push('attach');
-            return () => { events.push('detach'); };
+
+            return () => {
+                events.push('detach');
+            };
         },
         tools: () => ({}),
         collectGarbage: async () => 0,
@@ -155,15 +174,19 @@ async function harnessWith(module: IModule, options: {
             module,
         ],
     });
+
     harnesses.push(harness);
+
     return harness;
 }
 
 /** Records `drain` into `events` when the engine module drains the engine (C5: before the manager closes). */
 function recordDrain(engine: Engine, events: string[]): void {
     const drain = engine.drain.bind(engine);
+
     engine.drain = async (options) => {
         events.push('drain');
+
         return drain(options);
     };
 }
@@ -176,11 +199,15 @@ describe('sandboxModule: garbage collection timer', () => {
     it('collects garbage every GC_INTERVAL_MS in start mode', async () => {
         const time = clock();
         const module = new RecordingSandboxModule({ env: {} });
+
         await harnessWith(module, { clock: time });
+
         const before = module.collections();
 
         time.advance(GC_INTERVAL_MS - 1);
-        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+        });
         expect(module.collections()).toBe(before);
 
         time.advance(1);
@@ -193,11 +220,15 @@ describe('sandboxModule: garbage collection timer', () => {
     it('runs no collector in job mode', async () => {
         const time = clock();
         const module = new RecordingSandboxModule({ env: {} });
+
         await harnessWith(module, { clock: time, mode: 'job' });
+
         const before = module.collections();
 
         time.advance(2 * GC_INTERVAL_MS);
-        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+        });
         expect(module.collections()).toBe(before);
     });
 
@@ -205,11 +236,15 @@ describe('sandboxModule: garbage collection timer', () => {
         const time = clock();
         const module = new RecordingSandboxModule({ env: {} });
         const harness = await harnessWith(module, { clock: time });
+
         await harness.stop();
+
         const before = module.collections();
 
         time.advance(2 * GC_INTERVAL_MS);
-        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+        });
         expect(module.collections()).toBe(before);
     });
 
@@ -218,15 +253,22 @@ describe('sandboxModule: garbage collection timer', () => {
         const module = new RecordingSandboxModule({ env: {} });
         const harness = await harnessWith(module, { clock: time });
         const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+
         module.gcGate = gate;
+
         const before = module.collections();
 
         time.advance(GC_INTERVAL_MS);
         await vi.waitFor(() => expect(module.collections()).toBe(before + 1));
 
         let stopped = false;
-        const stopping = harness.stop().then(() => { stopped = true; });
-        await new Promise((resolve) => { setTimeout(resolve, 20); });
+        const stopping = harness.stop().then(() => {
+            stopped = true;
+        });
+
+        await new Promise((resolve) => {
+            setTimeout(resolve, 20);
+        });
         expect(stopped).toBe(false);
 
         release();
@@ -237,11 +279,15 @@ describe('sandboxModule: garbage collection timer', () => {
     it('runs no collector with gcIntervalMs 0', async () => {
         const time = clock();
         const module = new RecordingSandboxModule({ env: {}, gcIntervalMs: 0 });
+
         await harnessWith(module, { clock: time });
+
         const before = module.collections();
 
         time.advance(2 * GC_INTERVAL_MS);
-        await new Promise((resolve) => { setTimeout(resolve, 10); });
+        await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+        });
         expect(module.collections()).toBe(before);
     });
 
@@ -250,7 +296,9 @@ describe('sandboxModule: garbage collection timer', () => {
         const module = new RecordingSandboxModule({ env: {} });
         const harness = await harnessWith(module, { clock: time });
         const failure = new Error('collection failed');
+
         module.gcFailure = failure;
+
         const before = module.collections();
 
         time.advance(GC_INTERVAL_MS);
@@ -265,7 +313,9 @@ describe('sandboxModule: image allow-list', () => {
     function dockerProvider(): ISandboxProvider {
         return {
             name: 'docker',
-            create: async () => { throw new Error('not used'); },
+            create: async () => {
+                throw new Error('not used');
+            },
             find: async () => [],
             collectGarbage: async () => 0,
         };
@@ -273,16 +323,19 @@ describe('sandboxModule: image allow-list', () => {
 
     function imageParameterOf(module: SandboxModule): boolean {
         const tool = module.manager.tools().create_workspace as { inputSchema: { jsonSchema: { properties: Record<string, unknown> } } };
+
         return 'image' in tool.inputSchema.jsonSchema.properties;
     }
 
     it('offers no image without an allow-list', () => {
         const module = sandboxModule({ provider: dockerProvider(), env: {} });
+
         expect(imageParameterOf(module)).toBe(false);
     });
 
     it('builds the allow-list from CHAMVI_SANDBOX_IMAGES', async () => {
         const module = sandboxModule({ provider: dockerProvider(), env: { CHAMVI_SANDBOX_IMAGES: ' python:3.13 ,rust:1,' } });
+
         managers.push(module.manager);
         expect(imageParameterOf(module)).toBe(true);
         await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
@@ -291,6 +344,7 @@ describe('sandboxModule: image allow-list', () => {
     it('reads a CHAMVI_SANDBOX_IMAGES of separators and blanks as unset', () => {
         for (const value of [',', ' , ', '  ']) {
             const module = sandboxModule({ provider: dockerProvider(), env: { CHAMVI_SANDBOX_IMAGES: value } });
+
             expect(imageParameterOf(module)).toBe(false);
         }
     });
@@ -298,10 +352,11 @@ describe('sandboxModule: image allow-list', () => {
     it('keeps the allowImage option under a CHAMVI_SANDBOX_IMAGES without an entry', async () => {
         const allowImage = vi.fn(() => false);
         const module = sandboxModule({
-            provider: dockerProvider(), 
-            allowImage, 
-            env: { CHAMVI_SANDBOX_IMAGES: ' , ' }, 
+            provider: dockerProvider(),
+            allowImage,
+            env: { CHAMVI_SANDBOX_IMAGES: ' , ' },
         });
+
         managers.push(module.manager);
         expect(imageParameterOf(module)).toBe(true);
         await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
@@ -310,11 +365,13 @@ describe('sandboxModule: image allow-list', () => {
 
     it('names CHAMVI_SANDBOX_IMAGES for an entry that is no image reference, never echoing it', () => {
         let error: unknown;
+
         try {
             sandboxModule({ provider: dockerProvider(), env: { CHAMVI_SANDBOX_IMAGES: 'ok:1,bad image' } });
         } catch (e) {
             error = e;
         }
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect((error as Error).message).toContain('CHAMVI_SANDBOX_IMAGES');
         expect((error as Error).message).not.toContain('bad image');
@@ -327,6 +384,7 @@ describe('sandboxModule: image allow-list', () => {
             allowImage,
             env: { CHAMVI_SANDBOX_IMAGES: 'python:3.13' },
         });
+
         managers.push(module.manager);
         await expect(module.manager.acquire('r1', { image: 'node:24' })).rejects.toThrow('image not allowed.');
         expect(allowImage).not.toHaveBeenCalled();
@@ -349,6 +407,7 @@ describe('sandboxModule', () => {
 
     it('local by default, exposes the manager synchronously', async () => {
         const module = new RecordingSandboxModule({ env: {} });
+
         expect(module.name).toBe('chamvi:sandbox');
         expect(typeof module.manager.acquire).toBe('function');
         expect(module.imported).toEqual([]);
@@ -359,12 +418,14 @@ describe('sandboxModule', () => {
 
     it('the provider option names the provider', async () => {
         const module = new RecordingSandboxModule({ env: {}, provider: 'docker' });
+
         await harnessWith(module);
         expect(module.imported).toEqual(['docker']);
     });
 
     it('env wins over the option', async () => {
         const module = new RecordingSandboxModule({ env: { CHAMVI_SANDBOX_PROVIDER: 'docker' }, provider: 'local' });
+
         await harnessWith(module);
         expect(module.imported).toEqual(['docker']);
     });
@@ -393,6 +454,7 @@ describe('sandboxModule', () => {
         const module = new RecordingSandboxModule({ env: { CHAMVI_SANDBOX_PROVIDER: 'kubernetes', CHAMVI_SANDBOX_NAMESPACE: 'sb' } }, failure);
 
         const error = await rejectionOf(harnessWith(module));
+
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toBe('CHAMVI_SANDBOX_PROVIDER=kubernetes needs @chamvi/sandbox-k8s installed.');
     });
@@ -407,6 +469,7 @@ describe('sandboxModule', () => {
     it('another load failure is kept', async () => {
         const module = new RecordingSandboxModule({ env: {} }, new Error('boom'));
         const error = await rejectionOf(harnessWith(module));
+
         expect(error.message).toBe('boom');
     });
 
@@ -416,6 +479,7 @@ describe('sandboxModule', () => {
         const harness = await harnessWith(sandboxModule({ manager, env: {} }));
 
         const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+
         expect(manager.engines).toEqual([engine]);
         expect(events).toEqual(['attach']);
         recordDrain(engine, events);
@@ -427,6 +491,7 @@ describe('sandboxModule', () => {
     it('disposes the held workspaces after drained when the store is in-memory', async () => {
         // nothing resumes a run of a memory store after the restart
         const manager = fakeManager([]);
+
         await (await harnessWith(sandboxModule({ manager, env: {} }))).stop();
         expect(manager.closes).toEqual([{ dispose: true }]);
     });
@@ -437,25 +502,30 @@ describe('sandboxModule', () => {
         const runs = new Proxy({}, {
             get: (_target, key) => {
                 const value: unknown = Reflect.get(memory.runs, key);
+
                 return typeof value === 'function' ? value.bind(memory.runs) : value;
             },
         }) as IStore['runs'];
         const store = { ...memory, runs };
         const manager = fakeManager([]);
+
         await (await harnessWith(sandboxModule({ manager, env: {} }), { store })).stop();
         expect(manager.closes).toEqual([{ dispose: false }]);
     });
 
     it('an app with a memory store disposes a live run\'s workspace on stop', async () => {
         const root = await mkdtemp(join(tmpdir(), 'chamvi-sandbox-module-'));
+
         roots.push(root);
+
         const module = sandboxModule({
-            env: {}, 
-            provider: createLocalSandbox({ root }), 
-            gcIntervalMs: 0, 
+            env: {},
+            provider: createLocalSandbox({ root }),
+            gcIntervalMs: 0,
         });
         const harness = await harnessWith(module);
         const { workspace } = await module.manager.acquire('run-1', {});
+
         expect(await readdir(root)).toHaveLength(1);
         await harness.stop();
         expect(workspace.disposed).toBe(true);
@@ -465,6 +535,7 @@ describe('sandboxModule', () => {
     it('job mode attaches too', async () => {
         const events: string[] = [];
         const harness = await harnessWith(sandboxModule({ manager: fakeManager(events), env: {} }), { mode: 'job' });
+
         expect(events).toEqual(['attach']);
         recordDrain(harness.container.resolve(AppToken.ENGINE), events);
         await harness.stop();
@@ -478,6 +549,7 @@ describe('sandboxModule', () => {
             env: { DATABASE_URL: 'postgres://u:p@127.0.0.1:1/db' },
             modules: [configModule({ logger: createRecordingLogger() }), module],
         });
+
         harnesses.push(harness);
         expect(module.imported).toEqual([]);
         expect(harness.container.resolveAll(AppToken.LIFECYCLE_HOOKS)).toEqual([]);
@@ -485,21 +557,27 @@ describe('sandboxModule', () => {
 
     it('a given manager is used as is', () => {
         const manager = fakeManager([]);
+
         expect(sandboxModule({ manager, env: { CHAMVI_SANDBOX_PROVIDER: 'docker' } }).manager).toBe(manager);
     });
 
     it('a given provider is used as is', async () => {
         const root = await mkdtemp(join(tmpdir(), 'chamvi-sandbox-module-'));
+
         roots.push(root);
+
         const module = sandboxModule({ env: {}, provider: createLocalSandbox({ root }) });
         const { workspace } = await module.manager.acquire('run-1', {});
+
         expect(workspace.info.provider).toBe('local');
         await module.manager.close();
     });
 
     it('local end to end', async () => {
         const root = await mkdtemp(join(tmpdir(), 'chamvi-sandbox-module-'));
+
         roots.push(root);
+
         const module = sandboxModule({ env: {}, provider: createLocalSandbox({ root }) });
         const coder = agent({
             model: mockModel([
@@ -523,12 +601,16 @@ describe('sandboxModule', () => {
             channel: 'http',
             payload: {},
         });
+
         await engine.idle();
 
         const run = await engine.getRun(runId);
+
         expect(run?.status).toBe('completed');
+
         const steps = await engine.store.steps.find(runId);
         const created = steps.find((step) => step.kind === 'tool');
+
         expect(created?.output).toMatchObject({ root: '/workspace', reused: false });
 
         // attach disposed the completed run's workspace
@@ -544,6 +626,7 @@ describe('sandboxModule', () => {
             inputSchema: z.object({}),
             execute: async (_input, { context }) => {
                 seen.push(injectSandboxContext(context) === module.manager);
+
                 return 'ok';
             },
         });
@@ -569,6 +652,7 @@ describe('sandboxModule', () => {
             channel: 'http',
             payload: {},
         });
+
         await engine.idle();
 
         expect((await engine.getRun(runId))?.status).toBe('completed');
@@ -584,6 +668,7 @@ describe('sandboxModule', () => {
                     name: 'earlier',
                     engineCreated: (engine) => provideSandboxContext(engine, fakeManager([])),
                 };
+
                 container.registerMany(AppToken.LIFECYCLE_HOOKS, { useValue: hook });
             },
         };
@@ -598,6 +683,7 @@ describe('sandboxModule', () => {
                 sandboxModule({ manager: fakeManager([]), env: {} }),
             ],
         });
+
         harnesses.push(harness);
 
         expect(harness.reported).toHaveLength(1);
@@ -608,21 +694,25 @@ describe('sandboxModule', () => {
 
     it('the real local provider loads', async () => {
         const module = sandboxModule({ env: {} });
+
         managers.push(module.manager);
         await harnessWith(module);
 
         const { workspace } = await module.manager.acquire('run-1', {});
+
         expect(workspace.info.provider).toBe('local');
         await module.manager.release('run-1');
     });
 
     it('CHAMVI_DEPLOYMENT wins over the deployment option', async () => {
         const module = new RecordingSandboxModule({ env: { CHAMVI_DEPLOYMENT: 'prod' }, deployment: 'ci' });
+
         await harnessWith(module);
         await expect(module.manager.get('r1')).rejects.toThrow(/create_workspace/);
         expect(module.calls[0]).toEqual(['find', { deployment: 'prod' }]);
 
         const other = new RecordingSandboxModule({ env: {}, deployment: 'ci' });
+
         await harnessWith(other);
         await other.manager.get('r1').catch(() => undefined);
         expect(other.calls[0]).toEqual(['find', { deployment: 'ci' }]);
@@ -636,13 +726,18 @@ describe('sandboxModule', () => {
         // another app sharing the host in deployment `default` holds runs this engine never saw
         const module = new RecordingSandboxModule({ env: {} });
         const harness = await harnessWith(module);
+
         await module.manager.collectGarbage();
+
         const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
         const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
 
         const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+
         expect(await isSettled('missing')).toBe(false);
+
         const getRun = vi.spyOn(engine, 'getRun');
+
         getRun.mockResolvedValueOnce({ status: 'waiting' } as Run);
         expect(await isSettled('r1')).toBe(false);
         getRun.mockResolvedValueOnce({ status: 'cancelled' } as Run);
@@ -651,15 +746,17 @@ describe('sandboxModule', () => {
 
     it('a GC with the default deployment keeps the workspaces of runs another app holds', async () => {
         const root = await mkdtemp(join(tmpdir(), 'chamvi-module-shared-'));
+
         try {
             const other = createWorkspaceManager({ provider: createLocalSandbox({ root }), gcIntervalMs: 0 });
             const { workspace } = await other.acquire('run-of-another-app', {});
 
             const module = new SandboxModule({
-                env: {}, 
-                provider: createLocalSandbox({ root }), 
-                gcIntervalMs: 0, 
+                env: {},
+                provider: createLocalSandbox({ root }),
+                gcIntervalMs: 0,
             });
+
             managers.push(module.manager);
             await harnessWith(module);
             expect(await module.manager.collectGarbage()).toBe(0);
@@ -676,13 +773,18 @@ describe('sandboxModule', () => {
     it('answers isSettled through the engine: with an explicit deployment a missing or settled run is settled', async () => {
         const module = new RecordingSandboxModule({ env: { CHAMVI_DEPLOYMENT: 'prod' } });
         const harness = await harnessWith(module);
+
         await module.manager.collectGarbage();
+
         const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
         const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
 
         const engine: Engine = harness.container.resolve(AppToken.ENGINE);
+
         expect(await isSettled('missing')).toBe(true);
+
         const getRun = vi.spyOn(engine, 'getRun');
+
         getRun.mockResolvedValueOnce({ status: 'waiting' } as Run);
         expect(await isSettled('r1')).toBe(false);
         getRun.mockResolvedValueOnce({ status: 'cancelled' } as Run);
@@ -691,9 +793,12 @@ describe('sandboxModule', () => {
 
     it('answers isSettled false before the engine exists', async () => {
         const module = new RecordingSandboxModule({ env: {} });
+
         await module.manager.collectGarbage();
+
         const [, options] = module.calls.find(([name]) => name === 'collectGarbage')!;
         const { isSettled } = options as { isSettled(runId: string): Promise<boolean> };
+
         expect(await isSettled('missing')).toBe(false);
     });
 });

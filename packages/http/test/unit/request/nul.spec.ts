@@ -28,12 +28,14 @@ describe('a NUL character', () => {
     ])('in %s %s answers 400', async (method, path) => {
         const { app } = createRunTestApp();
         const response = await call(app, method, path, { token: ADMIN_TOKEN });
+
         expect(response.status).toBe(400);
     });
 
     it.each(['idempotencyKey', 'address'])('in a REST %s answers 400', async (key) => {
         const { app, store } = createRunTestApp();
-        const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { [key]: 'a\u0000b' } });
+        const response = await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { [key]: 'a\0b' } });
+
         expect(response.status).toBe(400);
         expect((await store.runs.find({})).total).toBe(0);
     });
@@ -46,19 +48,21 @@ describe('a NUL character', () => {
             channels: [webhook.on('/k', { concurrencyKey: (p) => String((p as { k: string }).k) })],
         });
         const { app } = createRunTestApp({ agents: [...createRunAgents(), agent] });
-        const response = await call(app, 'POST', '/channels/webhook/keyed/k', { token: ADMIN_TOKEN, body: { k: 'a\u0000b' } });
+        const response = await call(app, 'POST', '/channels/webhook/keyed/k', { token: ADMIN_TOKEN, body: { k: 'a\0b' } });
+
         expect(response.status).toBe(400);
     });
 
     it.each([
-        ['run_echo', { idempotencyKey: 'a\u0000b' }],
-        ['run_echo', { address: 'a\u0000b' }],
-        ['get_run', { runId: 'a\u0000b' }],
-        ['list_runs', { agent: 'a\u0000b' }],
+        ['run_echo', { idempotencyKey: 'a\0b' }],
+        ['run_echo', { address: 'a\0b' }],
+        ['get_run', { runId: 'a\0b' }],
+        ['list_runs', { agent: 'a\0b' }],
     ])('in MCP %s %j is a tool error', async (tool, args) => {
         const { app, store } = createRunTestApp();
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, tool, args);
+
         expect(result.isError).toBe(true);
         expect((await store.runs.find({})).total).toBe(0);
         await client.close();

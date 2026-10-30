@@ -5,11 +5,11 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { 
-    afterEach, 
-    describe, 
-    expect, 
-    it, 
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
 } from 'vitest';
 import {
     Engine,
@@ -30,7 +30,10 @@ import type { FakeProvider } from '../../utils/provider.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const engine of engines) engine.stop();
+    for (const engine of engines) {
+        engine.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -51,10 +54,16 @@ type Setup = {
 };
 
 function gateHooks(gate: string | undefined): AgentHooks | undefined {
-    if (!gate) return undefined;
+    if (!gate) {
+        return undefined;
+    }
+
     return {
         async beforeToolExecution({ toolName, input }, ctx) {
-            if (toolName === gate) await approve(ctx, { title: `Run ${toolName}?` });
+            if (toolName === gate) {
+                await approve(ctx, { title: `Run ${toolName}?` });
+            }
+
             return input;
         },
     };
@@ -69,7 +78,9 @@ async function run(s: Setup) {
         provider,
         clock,
         gcIntervalMs: 0,
-        onError: (error) => { errors.push(error); },
+        onError: (error) => {
+            errors.push(error);
+        },
     });
     const agent = defineAgent({
         name: 'coder',
@@ -84,16 +95,20 @@ async function run(s: Setup) {
         clock,
         onError: () => {},
     });
+
     engines.push(engine);
     manager.attach(engine);
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: 'coder',
         trigger: 'http',
         channel: 'http',
         payload: {},
     });
+
     await engine.idle();
+
     return {
         provider,
         manager,
@@ -106,41 +121,60 @@ async function run(s: Setup) {
 /** An engine stand-in that records its run.updated listeners. */
 function fakeEngine() {
     const listeners = new Set<(e: Extract<RunEvent, { type: 'run.updated' }>) => void>();
+
     return {
         listeners,
         on: ((type: string, listener: (e: Extract<RunEvent, { type: 'run.updated' }>) => void) => {
-            if (type === 'run.updated') listeners.add(listener);
-            return () => { listeners.delete(listener); };
+            if (type === 'run.updated') {
+                listeners.add(listener);
+            }
+
+            return () => {
+                listeners.delete(listener);
+            };
         }) as Engine['on'],
         emit(run: Pick<Run, 'id' | 'status'>) {
-            for (const listener of listeners) listener({ type: 'run.updated', run: run as Run });
+            for (const listener of listeners) {
+                listener({ type: 'run.updated', run: run as Run });
+            }
         },
     };
 }
 
 /** Lets already-queued callbacks settle; not a sleep. */
-const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+const flush = () => new Promise<void>((resolve) => {
+    setImmediate(resolve);
+});
 
 /** Flushes until `condition` holds (a lookup and a create each take a tick); at most 20 rounds. */
 async function until(condition: () => boolean): Promise<void> {
-    for (let round = 0; round < 20 && !condition(); round++) await flush();
+    for (let round = 0; round < 20 && !condition(); round++) {
+        await flush();
+    }
+
     expect(condition()).toBe(true);
 }
 
 describe('workspace manager: run lifecycle', () => {
     it('disposes when the run completes', async () => {
         const { provider, run: done } = await run({ script: [call('create_workspace'), text('done')] });
+
         expect(done?.status).toBe('completed');
         expect(provider.created).toHaveLength(1);
+
         const [id] = provider.workspaces.keys();
+
         expect(provider.disposed).toEqual([id]);
     });
 
     it('disposes when the run fails', async () => {
         // turn 2 has no script: the mock model throws
         const { provider, run: failed } = await run({ script: [call('create_workspace')] });
+
         expect(failed?.status).toBe('failed');
+
         const [id] = provider.workspaces.keys();
+
         expect(provider.disposed).toEqual([id]);
     });
 
@@ -154,9 +188,12 @@ describe('workspace manager: run lifecycle', () => {
             script: [call('create_workspace'), call('dispose_workspace')],
             gate: 'dispose_workspace',
         });
+
         expect(waiting?.status).toBe('waiting');
         expect(provider.disposed).toEqual([]);
+
         const [id] = provider.workspaces.keys();
+
         expect((await manager.get(runId)).id).toBe(id);
     });
 
@@ -164,16 +201,23 @@ describe('workspace manager: run lifecycle', () => {
         const provider = createFakeProvider();
         const create = provider.create.bind(provider);
         const failure = new Error('container gone');
+
         provider.create = async (options) => {
             const workspace = await create(options);
-            workspace.dispose = async () => { throw failure; };
+
+            workspace.dispose = async () => {
+                throw failure;
+            };
+
             return workspace;
         };
+
         const {
             manager,
             errors,
             runId,
         } = await run({ script: [call('create_workspace'), text('done')], provider });
+
         await flush();
         expect(errors).toHaveLength(1);
         expect(errors[0]).toBeInstanceOf(SandboxError);
@@ -186,18 +230,21 @@ describe('workspace manager: run lifecycle', () => {
         const clock = new ControllableClock(new Date(1_000_000));
         const provider = createFakeProvider({ clock });
         const manager = createWorkspaceManager({
-            provider, 
-            clock, 
-            gcIntervalMs: 0, 
+            provider,
+            clock,
+            gcIntervalMs: 0,
         });
         const engine = fakeEngine();
+
         manager.attach(engine);
+
         for (const status of [RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING, RunStatus.INTERRUPTED]) {
             await manager.acquire('r1', {});
             engine.emit({ id: 'r1', status });
             await flush();
             expect(provider.disposed).toEqual([]);
         }
+
         for (const [index, status] of [RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED].entries()) {
             await manager.acquire(`r${index + 2}`, {});
             engine.emit({ id: `r${index + 2}`, status });
@@ -217,6 +264,7 @@ describe('workspace manager: run lifecycle', () => {
         });
         const engine = fakeEngine();
         const unsubscribe = manager.attach(engine);
+
         expect(engine.listeners.size).toBe(1);
         await manager.close();
         expect(provider.disposed).toEqual([]);
@@ -238,6 +286,7 @@ describe('workspace manager: run lifecycle', () => {
             script: [call('create_workspace'), call('dispose_workspace')],
             gate: 'dispose_workspace',
         });
+
         expect(provider.disposed).toEqual([]);
         await manager.close({ dispose: true });
         expect(provider.disposed).toHaveLength(1);
@@ -252,30 +301,41 @@ describe('workspace manager: run lifecycle', () => {
             provider,
             clock,
             gcIntervalMs: 0,
-            onError: (error) => { errors.push(error); },
+            onError: (error) => {
+                errors.push(error);
+            },
         });
         const engine = fakeEngine();
+
         manager.attach(engine);
 
         const gate = Promise.withResolvers<void>();
         const gated = async (runId: string) => {
             const { workspace } = await manager.acquire(runId, {});
             const dispose = workspace.dispose.bind(workspace);
+
             workspace.dispose = async () => {
                 await gate.promise;
                 await dispose();
             };
+
             return workspace;
         };
+
         // one released when its run settled, one dropped when found expired
         await gated('r1');
+
         const expiring = await gated('r2');
+
         engine.emit({ id: 'r1', status: RunStatus.COMPLETED });
         Object.assign(expiring.info, { expiresAt: new Date(clock.now().getTime()) });
         await expect(manager.get('r2')).rejects.toThrow(/expired/);
 
         let closed = false;
-        const closing = manager.close().then(() => { closed = true; });
+        const closing = manager.close().then(() => {
+            closed = true;
+        });
+
         await flush();
         expect(closed).toBe(false);
 
@@ -293,27 +353,38 @@ describe('workspace manager: run lifecycle', () => {
             provider,
             clock,
             gcIntervalMs: 0,
-            onError: (error) => { errors.push(error); },
+            onError: (error) => {
+                errors.push(error);
+            },
         });
         const engine = fakeEngine();
+
         manager.attach(engine);
 
         // the fake provider ignores the abort while gated, like a cleanup in flight
         const gate = Promise.withResolvers<void>();
+
         provider.gate = gate.promise;
+
         const acquiring = manager.acquire('r1', {}).catch((error: unknown) => error);
+
         await until(() => provider.created.length === 1);
         engine.emit({ id: 'r1', status: RunStatus.CANCELLED });
 
         let closed = false;
-        const closing = manager.close().then(() => { closed = true; });
+        const closing = manager.close().then(() => {
+            closed = true;
+        });
+
         await flush();
         expect(closed).toBe(false);
 
         gate.resolve();
         await closing;
         expect(await acquiring).toBeInstanceOf(SandboxError);
+
         const [id] = provider.workspaces.keys();
+
         expect(provider.disposed).toEqual([id]);
         expect(errors).toEqual([]);
     });
@@ -326,9 +397,12 @@ describe('workspace manager: run lifecycle', () => {
             provider,
             clock,
             gcIntervalMs: 0,
-            onError: (error) => { errors.push(error); },
+            onError: (error) => {
+                errors.push(error);
+            },
         });
         const engine = fakeEngine();
+
         manager.attach(engine);
 
         provider.gate = new Promise<void>(() => {});
@@ -337,7 +411,10 @@ describe('workspace manager: run lifecycle', () => {
         engine.emit({ id: 'r1', status: RunStatus.COMPLETED });
 
         let closed = false;
-        const closing = manager.close({ timeoutMs: 1000 }).then(() => { closed = true; });
+        const closing = manager.close({ timeoutMs: 1000 }).then(() => {
+            closed = true;
+        });
+
         await flush();
         clock.advance(999);
         await flush();
@@ -357,13 +434,17 @@ describe('workspace manager: run lifecycle', () => {
             provider,
             clock,
             gcIntervalMs: 0,
-            onError: (error) => { errors.push(error); },
+            onError: (error) => {
+                errors.push(error);
+            },
         });
         const engine = fakeEngine();
+
         manager.attach(engine);
 
         // two creates of one run, each behind its own gate
         const first = Promise.withResolvers<void>();
+
         provider.gate = first.promise;
         void manager.acquire('r1', {}).catch(() => undefined);
         await until(() => provider.created.length === 1);
@@ -373,7 +454,10 @@ describe('workspace manager: run lifecycle', () => {
         engine.emit({ id: 'r1', status: RunStatus.COMPLETED });
 
         let closed = false;
-        const closing = manager.close({ timeoutMs: 1000 }).then(() => { closed = true; });
+        const closing = manager.close({ timeoutMs: 1000 }).then(() => {
+            closed = true;
+        });
+
         await flush();
         // the first create opens; the second is still running
         first.resolve();
@@ -391,9 +475,12 @@ describe('workspace manager: run lifecycle', () => {
 
     it('subscribes nothing when attached after close()', async () => {
         const { manager } = await run({ script: [text('done')] });
+
         await manager.close();
+
         const engine = fakeEngine();
         const unsubscribe = manager.attach(engine);
+
         expect(engine.listeners.size).toBe(0);
         unsubscribe();
     });
@@ -402,12 +489,14 @@ describe('workspace manager: run lifecycle', () => {
         const { manager } = await run({ script: [text('done')] });
         const engine = fakeEngine();
         const unsubscribe = manager.attach(engine);
+
         unsubscribe();
         expect(engine.listeners.size).toBe(0);
     });
 
     it('lets a workspace tool fail as a tool error, not the run', async () => {
         const { provider, run: done } = await run({ script: [call('dispose_workspace'), text('done')] });
+
         expect(done?.status).toBe('completed');
         expect(provider.created).toEqual([]);
     });

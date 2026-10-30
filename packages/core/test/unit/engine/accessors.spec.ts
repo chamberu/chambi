@@ -32,6 +32,7 @@ describe('engine accessors', () => {
             agents: [triage],
             clock,
         });
+
         expect(engine.store).toBe(store);
         expect(engine.clock).toBe(clock);
     });
@@ -41,6 +42,7 @@ describe('engine accessors', () => {
             store: createMemoryStore(),
             agents: [],
         });
+
         expect(engine.clock).toBe(systemClock);
     });
 
@@ -49,6 +51,7 @@ describe('engine accessors', () => {
             store: createMemoryStore(),
             agents: [triage, digest],
         });
+
         expect(engine.listAgents()).toEqual([triage, digest]);
         expect(engine.listAgents()[0]).toBe(triage);
     });
@@ -59,6 +62,7 @@ describe('engine accessors', () => {
             agents: [triage],
         });
         const agents = engine.listAgents();
+
         agents.push(digest);
         expect(engine.listAgents()).toEqual([triage]);
         expect(engine.getAgent('digest')).toBeUndefined();
@@ -69,6 +73,7 @@ describe('engine accessors', () => {
             store: createMemoryStore(),
             agents: [triage, digest],
         });
+
         expect(engine.getAgent('digest')).toBe(digest);
         expect(engine.getAgent('unknown')).toBeUndefined();
     });

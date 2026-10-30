@@ -48,6 +48,7 @@ export function createChannelContext(engine: Engine, channel: Pick<IChannel, 'na
 /** Refuses a `defaultAddress` that is given but no non-empty string (InvalidAgentDefinitionError). */
 export function assertDefaultAddress(channel: { name: string; defaultAddress?: unknown }): void {
     const { defaultAddress } = channel;
+
     if (defaultAddress !== undefined && (typeof defaultAddress !== 'string' || defaultAddress.length === 0)) {
         throw new InvalidAgentDefinitionError(`Channel "${channel.name}" has a defaultAddress that is no non-empty string.`);
     }
@@ -65,9 +66,11 @@ function assertEmitMessage(message: unknown): asserts message is EmitMessage {
     if (!isObject(message) || typeof message.body !== 'string') {
         throw new ValidationError('An emitted message needs a string body.');
     }
+
     if (message.title !== undefined && typeof message.title !== 'string') {
         throw new ValidationError('An emitted message title must be a string.');
     }
+
     if (message.key !== undefined && (typeof message.key !== 'string' || message.key.length === 0)) {
         throw new ValidationError('An emitted message key must be a non-empty string.');
     }
@@ -97,8 +100,15 @@ function createChannelHandle(
     const capture = conversation && run.trigger.channel === name ? conversation : undefined;
     const send = async (effectKey: string, key: string, message: EmitMessage, target: string) => {
         const stored = await effects.findOne(effectKey);
-        if (stored) return stored.result;
-        if (conversation) run.signal.throwIfAborted();
+
+        if (stored) {
+            return stored.result;
+        }
+
+        if (conversation) {
+            run.signal.throwIfAborted();
+        }
+
         const delivery = Promise.resolve(channel.out!({
             kind: 'message',
             key,
@@ -107,6 +117,7 @@ function createChannelHandle(
             ...(message.title !== undefined ? { title: message.title } : {}),
             body: message.body,
         }, target, { signal: run.signal, trigger: run.trigger }));
+
         if (conversation) {
             // An aborted, non-cooperative transport may still deliver; it must never write a late receipt.
             void delivery.catch(() => {});
@@ -114,19 +125,23 @@ function createChannelHandle(
         } else {
             await delivery;
         }
+
         // The message went out: a failing write must not fail the call (as for effect tools).
         const receipt = {
             channel: name,
             address: target,
             key,
         };
+
         try {
             await effects.save(effectKey, receipt);
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error(`chamvi: failed to record emit ${effectKey}`, error);
+
             return undefined;
         }
+
         return receipt;
     };
 
@@ -134,16 +149,27 @@ function createChannelHandle(
         if (!currentToolCall()) {
             throw new InvalidRunStateError(`emit() on channel "${name}" runs inside a tool call, not in the tools factory.`);
         }
+
         assertEmitMessage(message);
+
         const target = to ?? fallback;
-        if (target === undefined) throw missing();
+
+        if (target === undefined) {
+            throw missing();
+        }
+
         if (typeof target !== 'string' || target.length === 0) {
             throw new ValidationError('The address must be a non-empty string.');
         }
+
         if (conversation) {
-            if (message.key !== undefined) assertConversationText(message.key, Number.MAX_SAFE_INTEGER);
+            if (message.key !== undefined) {
+                assertConversationText(message.key, Number.MAX_SAFE_INTEGER);
+            }
+
             assertConversationText(target, Number.MAX_SAFE_INTEGER);
         }
+
         const prefix = `${run.runId}:emit:${name}:`;
         const effectKey = message.key !== undefined ?
             `${prefix}key:${message.key}` :
@@ -156,6 +182,7 @@ function createChannelHandle(
         const captured = { ...message };
         const work = (async () => {
             const source = capture && target === fallback ? capture : undefined;
+
             if (source) {
                 assertConversationText(captured.body, source.capability.limits.maxItemBytes);
                 await source.capability.repository.prepareEmit(source.binding.scope, {
@@ -169,29 +196,44 @@ function createChannelHandle(
                     createdAt: source.run.createdAt, // persistence owns the timestamp
                 });
             }
+
             // Prepare every caller before sharing a send, so key collisions cannot hide in-flight.
             let pending = inflight.get(effectKey);
+
             if (!pending) {
                 pending = send(effectKey, key, captured, target).finally(() => inflight.delete(effectKey));
                 inflight.set(effectKey, pending);
             }
+
             const receipt = await pending;
+
             // Every source caller validates a shared send, including the in-flight fast path.
-            if (source && receipt !== undefined) {
-                if (!matchesEmitReceipt(receipt, { channel: name, address: target })) throw new ValidationError('The emit effect belongs to another target.');
-                await source.capability.repository.confirmEmit(source.binding.scope, `emit:${stableHash(effectKey)}`);
+            if (!source || receipt === undefined) {
+                return;
             }
+
+            if (!matchesEmitReceipt(receipt, { channel: name, address: target })) {
+                throw new ValidationError('The emit effect belongs to another target.');
+            }
+
+            await source.capability.repository.confirmEmit(source.binding.scope, `emit:${stableHash(effectKey)}`);
         })();
+
         return conversation ? conversation.capability.track(conversation.run.id, work) : work;
     };
 
     const approve = async (request: ApprovalRequestInput & { address?: string }): Promise<ApprovalDecision> => {
         const { address: to, ...rest }: ApprovalRequestInput & { address?: string } = isObject(request) ? request : { title: '' };
         const target = to ?? fallback;
-        if (target === undefined) throw missing();
+
+        if (target === undefined) {
+            throw missing();
+        }
+
         if (typeof target !== 'string' || target.length === 0) {
             throw new ValidationError('The address must be a non-empty string.');
         }
+
         return requestApproval(rest as ApprovalRequestInput, { channel: name, address: target });
     };
 
@@ -236,13 +278,19 @@ export function createToolChannels(
     );
     const findOne = (name?: string) => {
         const channel = engine.getChannel(name ?? trusted.trigger.channel);
+
         return canSend(channel) ? handle(channel) : undefined;
     };
+
     return {
         findOne,
         findOneOrFail(name) {
             const found = findOne(name);
-            if (!found) throw new ChannelNotFoundError(name ?? trusted.trigger.channel);
+
+            if (!found) {
+                throw new ChannelNotFoundError(name ?? trusted.trigger.channel);
+            }
+
             return found;
         },
         find: () => engine.listChannels().filter(canSend).map(handle),

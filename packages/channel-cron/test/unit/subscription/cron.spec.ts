@@ -30,6 +30,7 @@ describe('cron.on', () => {
 
     it('subscribes to the cron channel with a stable id', () => {
         const s = cron.on('*/5 * * * *');
+
         expect(s.channel).toBe('cron');
         expect(s.id).toBe('cron:*/5 * * * *');
         expect(s.options.expression).toBe('*/5 * * * *');
@@ -45,6 +46,7 @@ describe('cron.on', () => {
             overlap: 'allow',
             payload: { a: 1 },
         });
+
         expect(s.options).toMatchObject({
             timezone: 'Europe/Berlin',
             overlap: 'allow',
@@ -54,6 +56,7 @@ describe('cron.on', () => {
 
     it('cronChannel().on() subscribes to that channel', () => {
         const s = cronChannel({ name: 'cron-eu' }).on('0 9 * * *', { timezone: 'Europe/Berlin' });
+
         expect(s.channel).toBe('cron-eu');
         expect(s.id).toBe('cron:0 9 * * *');
         expect(() => cronChannel({ name: 'cron-eu' }).on('nope')).toThrow(InvalidAgentDefinitionError);

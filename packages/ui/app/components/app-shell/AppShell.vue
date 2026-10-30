@@ -22,7 +22,9 @@ const props = defineProps<{ principal?: MeWire }>();
 // one inbox for the badge and the approvals view
 const { client } = useAppContext();
 const inbox = useApprovals(client);
+
 provide(INBOX, inbox);
+
 const waiting = computed(() => inbox.runs.value.length);
 
 const emit = defineEmits<{ signOut: [] }>();
@@ -66,6 +68,7 @@ const displayName = computed(() => props.principal?.name ?? props.principal?.id 
 const initials = computed(() => displayName.value.replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase() || '?');
 const grants = computed(() => {
     const count = props.principal?.permissions.length ?? 0;
+
     return `${props.principal?.kind ?? ''} · ${count} ${count === 1 ? 'grant' : 'grants'}`;
 });
 </script>

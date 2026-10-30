@@ -22,6 +22,7 @@ declare global {
 const hangingModel = new MockLanguageModelV4({
     doStream: async () => {
         globalThis.chamviHangStreaming = true;
+
         return {
             stream: new ReadableStream({
                 start(controller) {

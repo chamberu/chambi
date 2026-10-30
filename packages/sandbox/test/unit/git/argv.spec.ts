@@ -22,6 +22,7 @@ describe('gitArgv', () => {
 
     it('hands a credential over stdin to the one-shot helper, never in argv', () => {
         const { argv, stdin } = gitArgv(url, ['push', url, 'HEAD:refs/heads/x'], { username: 'x-access-token', password: 'ghs_secret' });
+
         expect(argv).toEqual(['sh', '-c', GIT_AUTH_SCRIPT, 'sh', url, 'https://github.com', 'octo/demo', 'push', url, 'HEAD:refs/heads/x']);
         expect(stdin).toBe('x-access-token\nghs_secret\n');
         expect(argv.join(' ')).not.toContain('ghs_secret');
@@ -32,6 +33,7 @@ describe('runGit', () => {
     it('runs the argv with stdin, the timeout and the signal', async () => {
         const workspace = createScriptedWorkspace();
         const controller = new AbortController();
+
         await runGit(workspace, {
             url,
             args: ['ls-remote', url],
@@ -58,12 +60,14 @@ describe('runGit refusing a poisoned config', () => {
             args: ['push', url, 'HEAD:refs/heads/x'],
             credential: { username: 'u', password: 'secret-1' },
         });
+
         await expect(run).rejects.toThrow(SandboxError);
         await expect(run).rejects.toThrow(/http\.proxy/);
     });
 
     it('keeps the exit code of a plain git call', async () => {
         const workspace = createScriptedWorkspace(() => ({ exitCode: GIT_AUTH_REFUSED_EXIT }));
+
         await expect(runGit(workspace, { url, args: ['fetch', url] })).resolves.toMatchObject({ exitCode: GIT_AUTH_REFUSED_EXIT });
     });
 });

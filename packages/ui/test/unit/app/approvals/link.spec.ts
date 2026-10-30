@@ -118,6 +118,7 @@ describe('linkedApprovalState', () => {
 
     it('is moved-on once the run no longer waits', () => {
         const run = wireRun({ id: 'r1', status: 'completed' });
+
         expect(state({ run })).toEqual({
             kind: 'moved-on',
             reason: 'not-waiting',
@@ -127,6 +128,7 @@ describe('linkedApprovalState', () => {
 
     it('is moved-on when the run waits on another approval', () => {
         const run = waitingRun('a2');
+
         expect(state({ run })).toEqual({
             kind: 'moved-on',
             reason: 'other-approval',
@@ -136,6 +138,7 @@ describe('linkedApprovalState', () => {
 
     it('is moved-on when the approval expired', () => {
         const run = waitingRun('a1', {});
+
         run.waiting!.expiresAt = '2026-10-21T11:59:59.000Z';
         expect(state({ run })).toMatchObject({ kind: 'moved-on', reason: 'expired' });
     });
@@ -146,6 +149,7 @@ describe('linkedApprovalState', () => {
             result: 'answered',
             approved: true,
         }];
+
         expect(state({ run: waitingRun(), decided }).kind).toBe('answered');
         expect(state({ run: wireRun({ id: 'r1', status: 'queued' }), decided }).kind).toBe('answered');
         // a refused answer does not count
@@ -174,12 +178,14 @@ describe('linkNotice', () => {
 
     it('is a 403 naming the grant when the principal may not answer', () => {
         const notice = linkNotice({ kind: 'forbidden', run: waitingRun() }, link);
+
         expect(notice).toMatchObject({ status: 403, runId: 'r1' });
         expect(notice?.text).toContain('agent:deploy:approve');
     });
 
     it('is a 403 when the run is not readable', () => {
         const notice = linkNotice({ kind: 'unreadable' }, link);
+
         expect(notice).toMatchObject({ status: 403 });
         expect(notice?.runId).toBeUndefined();
         expect(notice?.text).toContain('run:read');
@@ -187,22 +193,23 @@ describe('linkNotice', () => {
 
     it('links the run when it moved on', () => {
         const done = linkNotice({
-            kind: 'moved-on', 
-            reason: 'not-waiting', 
-            run: wireRun({ id: 'r1', status: 'completed' }), 
+            kind: 'moved-on',
+            reason: 'not-waiting',
+            run: wireRun({ id: 'r1', status: 'completed' }),
         }, link);
+
         expect(done).toMatchObject({ runId: 'r1' });
         expect(done?.status).toBeUndefined();
         expect(done?.text).toContain('completed');
         expect(linkNotice({
-            kind: 'moved-on', 
-            reason: 'other-approval', 
-            run: waitingRun('a2'), 
+            kind: 'moved-on',
+            reason: 'other-approval',
+            run: waitingRun('a2'),
         }, link)?.text).toContain('another approval');
         expect(linkNotice({
-            kind: 'moved-on', 
-            reason: 'expired', 
-            run: waitingRun(), 
+            kind: 'moved-on',
+            reason: 'expired',
+            run: waitingRun(),
         }, link)?.text).toContain('expired');
     });
 
@@ -219,11 +226,13 @@ describe('useLinkedApproval', () => {
             getRun: async (id) => {
                 calls++;
                 expect(id).toBe('r1');
+
                 return { ...waitingRun(), steps: [] };
             },
         });
         const scope = effectScope();
         const linked = scope.run(() => useLinkedApproval(client, ref<ApprovalLink | undefined>({ runId: 'r1', approvalId: 'a1' })))!;
+
         await flush();
         expect(linked.run.value?.id).toBe('r1');
         expect(linked.run.value).not.toHaveProperty('steps');
@@ -233,10 +242,11 @@ describe('useLinkedApproval', () => {
     });
 
     it('pins the approval a link without one found first', async () => {
-        let current = waitingRun('a1');
+        let current = waitingRun();
         const client = fakeClient({ getRun: async () => ({ ...current, steps: [] }) });
         const scope = effectScope();
         const linked = scope.run(() => useLinkedApproval(client, ref<ApprovalLink | undefined>({ runId: 'r1' })))!;
+
         await flush();
         expect(linked.link.value).toEqual({ runId: 'r1', approvalId: 'a1' });
         current = waitingRun('a2');
@@ -250,11 +260,13 @@ describe('useLinkedApproval', () => {
         const client = fakeClient({
             getRun: async () => {
                 calls++;
+
                 return { ...waitingRun(), steps: [] };
             },
         });
         const tick = shallowRef(0);
         const scope = effectScope();
+
         scope.run(() => useLinkedApproval(client, ref<ApprovalLink | undefined>({ runId: 'r1' }), tick));
         await flush();
         tick.value++;
@@ -264,10 +276,15 @@ describe('useLinkedApproval', () => {
     });
 
     it('keeps the error of a run it cannot read and loads nothing without a link', async () => {
-        const client = fakeClient({ getRun: async () => { throw apiError(403, 'forbidden'); } });
+        const client = fakeClient({
+            getRun: async () => {
+                throw apiError(403, 'forbidden');
+            },
+        });
         const scope = effectScope();
         const target = ref<ApprovalLink | undefined>({ runId: 'r1' });
         const linked = scope.run(() => useLinkedApproval(client, target))!;
+
         await flush();
         expect(linked.error.value?.status).toBe(403);
         target.value = undefined;
@@ -294,11 +311,13 @@ describe('the approval link across sign-in', () => {
             [createAuthGuard(session)],
             createMemoryHistory('/ui'),
         );
+
         return { router, session };
     }
 
     it('sends a signed-out visit to login with run and approval in the return path', async () => {
         const { router } = setup();
+
         await router.push('/approvals?run=r1&approval=a1');
         expect(router.currentRoute.value.name).toBe(RouteName.LOGIN);
         expect(router.currentRoute.value.query.redirect).toBe('/approvals?run=r1&approval=a1');
@@ -307,6 +326,7 @@ describe('the approval link across sign-in', () => {
 
     it('comes back to the same link after the token form', async () => {
         const { router, session } = setup();
+
         await router.push('/approvals?run=r1&approval=a1');
         await session.signInWithToken('good');
         await router.replace(safeReturnPath(router.currentRoute.value.query.redirect));
@@ -319,16 +339,21 @@ describe('the approval link across sign-in', () => {
         let token: string | undefined;
         const authup: IAuthupAdapter = {
             start: async () => 'https://authup.example/authorize',
-            complete: async () => { token = 'good'; },
+            complete: async () => {
+                token = 'good';
+            },
             token: async () => token,
             refresh: async () => false,
             signOut: async () => {},
         };
         const { router, session } = setup(storage, authup);
+
         await router.push('/approvals?run=r1&approval=a1');
         await session.startAuthup(safeReturnPath(router.currentRoute.value.query.redirect));
         expect(storage.getItem(RETURN_STORAGE_KEY)).toBe('/approvals?run=r1&approval=a1');
+
         const returnTo = await session.completeAuthup({ code: 'c', state: 's' });
+
         await router.replace(returnTo);
         expect(router.currentRoute.value.name).toBe(RouteName.APPROVALS);
         expect(router.currentRoute.value.query).toEqual({ run: 'r1', approval: 'a1' });

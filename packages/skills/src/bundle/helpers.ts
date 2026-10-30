@@ -42,6 +42,7 @@ export function validateApprovedSkill(descriptor: ApprovedSkill): void {
     }
 
     const { version, hash } = descriptor;
+
     if (typeof version !== 'string' || !version.trim() || version.length > 128) {
         invalidSkill('.', 'version must be an exact release identifier');
     }
@@ -68,18 +69,21 @@ export function compareSkillPaths(a: string, b: string): number {
 
 export function parseSkillDocument(content: string): ParsedSkillDocument {
     const opening = /^---\r?\n/.exec(content);
+
     if (!opening) {
         invalidSkill('SKILL.md', 'initial YAML frontmatter is required');
     }
 
     const rest = content.slice(opening[0].length);
     const closing = /^---(?:\r?\n|$)/m.exec(rest);
+
     if (!closing) {
         invalidSkill('SKILL.md', 'frontmatter closing delimiter is required');
     }
 
     const frontmatter = rest.slice(0, closing.index);
     const body = rest.slice(closing.index + closing[0].length);
+
     if (Buffer.byteLength(frontmatter) > SKILL_MAX_FRONTMATTER_BYTES) {
         invalidSkill('SKILL.md', 'frontmatter exceeds 4 KiB');
     }
@@ -97,6 +101,7 @@ export function parseSkillDocument(content: string): ParsedSkillDocument {
             resolveKnownTags: false,
             logLevel: 'silent',
         });
+
         if (document.errors.length || document.warnings.length || !isMap(document.contents)) {
             invalidSkill('SKILL.md', 'invalid YAML frontmatter');
         }
@@ -114,13 +119,16 @@ export function parseSkillDocument(content: string): ParsedSkillDocument {
                 }
             },
         });
+
         const metadata: unknown = document.toJS({ maxAliasCount: 0 });
+
         if (!isObject(metadata)) {
             invalidSkill('SKILL.md', 'metadata must be a mapping');
         }
 
         const { name } = metadata;
         const description = typeof metadata.description === 'string' ? metadata.description.trim() : undefined;
+
         if (typeof name !== 'string' || !SKILL_NAME_PATTERN.test(name)) {
             invalidSkill('SKILL.md', 'invalid skill name');
         }

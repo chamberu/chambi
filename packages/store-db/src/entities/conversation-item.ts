@@ -25,6 +25,7 @@ import { RunEntity } from './run.ts';
 export class ConversationItemEntity {
     @PrimaryGeneratedColumn('increment', { type: 'bigint' })
     seq!: string;
+
     @Column({
         name: 'scope_id',
         type: 'varchar',
@@ -32,10 +33,13 @@ export class ConversationItemEntity {
         collation: 'C',
     })
     scopeId!: string;
+
     @Column({ type: 'integer' })
     generation!: number;
+
     @Column({ type: 'text', collation: 'C' })
     id!: string;
+
     @Column({
         name: 'run_id',
         type: 'varchar',
@@ -43,14 +47,19 @@ export class ConversationItemEntity {
         collation: 'C',
     })
     runId!: string;
+
     @Column({ name: 'created_at', type: 'timestamp with time zone' })
     createdAt!: Date;
+
     @Column({ type: 'text' })
     role!: ConversationItem['role'];
+
     @Column({ type: 'text' })
     text!: string;
+
     @Column({ type: 'text' })
     status!: ConversationItem['status'];
+
     @Column({
         name: 'effect_key',
         type: 'text',
@@ -58,18 +67,21 @@ export class ConversationItemEntity {
     })
     // Journaled before the receipt exists; uncertain sends may never produce one.
     effectKey!: string | null;
+
     @Column({
         name: 'target_channel',
         type: 'text',
         nullable: true,
     })
     targetChannel!: string | null;
+
     @Column({
         name: 'target_address',
         type: 'text',
         nullable: true,
     })
     targetAddress!: string | null;
+
     @ManyToOne(() => ConversationEntity, {
         nullable: false,
         onDelete: 'NO ACTION',

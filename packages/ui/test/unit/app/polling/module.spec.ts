@@ -20,14 +20,18 @@ describe('createPoller', () => {
             calls++;
             running++;
             maxRunning = Math.max(maxRunning, running);
-            await new Promise<void>((resolve) => { gates.push(resolve); });
+            await new Promise<void>((resolve) => {
+                gates.push(resolve);
+            });
             running--;
         }, 5000, fake.timers);
 
         poller.start();
         expect(calls).toBe(1);
         expect(fake.pending()).toEqual([]); // the next tick waits for this one
+
         const refreshed = poller.refresh();
+
         expect(calls).toBe(1);
         gates.shift()!();
         await flush();
@@ -49,8 +53,10 @@ describe('createPoller', () => {
         let calls = 0;
         const poller = createPoller(async () => {
             calls++;
+
             throw new Error('boom');
         }, 1000, fake.timers);
+
         poller.start();
         await flush();
         expect(fake.pending()).toEqual([1000]);
@@ -64,6 +70,7 @@ describe('createPoller', () => {
         const fake = createFakeTimers();
         const delays = [30_000, 10, undefined];
         const poller = createPoller(async () => delays.shift(), 1000, fake.timers);
+
         poller.start();
         await flush();
         expect(fake.pending()).toEqual([30_000]);
@@ -79,7 +86,10 @@ describe('createPoller', () => {
     it('stop cancels the next tick', async () => {
         const fake = createFakeTimers();
         let calls = 0;
-        const poller = createPoller(async () => { calls++; }, 1000, fake.timers);
+        const poller = createPoller(async () => {
+            calls++;
+        }, 1000, fake.timers);
+
         poller.start();
         await flush();
         expect(fake.pending()).toEqual([1000]);
@@ -93,6 +103,7 @@ describe('createPoller', () => {
         const fake = createFakeTimers();
         const { promise, resolve: release } = Promise.withResolvers<void>();
         const poller = createPoller(() => promise, 1000, fake.timers);
+
         poller.start();
         poller.stop();
         release();
@@ -108,15 +119,24 @@ describe('createPoller', () => {
             hidden: () => hidden,
             onChange: (fn: () => void) => {
                 listeners.add(fn);
-                return () => { listeners.delete(fn); };
+
+                return () => {
+                    listeners.delete(fn);
+                };
             },
         };
         const change = (value: boolean) => {
             hidden = value;
-            for (const fn of listeners) fn();
+
+            for (const fn of listeners) {
+                fn();
+            }
         };
         let calls = 0;
-        const poller = createPoller(async () => { calls++; }, 5000, fake.timers, visibility);
+        const poller = createPoller(async () => {
+            calls++;
+        }, 5000, fake.timers, visibility);
+
         poller.start();
         await flush();
         expect(calls).toBe(1);

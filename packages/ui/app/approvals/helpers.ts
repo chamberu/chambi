@@ -21,6 +21,7 @@ import type {
 /** The first non-empty string of a query value (a repeated key is an array). */
 function firstToken(value: unknown): string | undefined {
     const values: unknown[] = Array.isArray(value) ? value : [value];
+
     return values.find((item): item is string => typeof item === 'string' && item.length > 0);
 }
 
@@ -49,10 +50,15 @@ export function pendingApprovals(
  */
 export function notifiedLine(run: RunWire): NotifiedLine {
     const { waiting } = run;
-    if (!waiting?.channel) return { text: 'inbox only', warn: false };
+
+    if (!waiting?.channel) {
+        return { text: 'inbox only', warn: false };
+    }
+
     if (waiting.notifiedAt) {
         return { text: waiting.address ? `${waiting.channel} · ${waiting.address}` : waiting.channel, warn: false };
     }
+
     return { text: 'not sent (retrying)', warn: true };
 }
 
@@ -63,8 +69,13 @@ export function notifiedLine(run: RunWire): NotifiedLine {
  */
 export function readApprovalLink(query: Record<string, unknown>): ApprovalLink | undefined {
     const runId = firstToken(query.run);
-    if (!runId) return undefined;
+
+    if (!runId) {
+        return undefined;
+    }
+
     const approvalId = firstToken(query.approval);
+
     return approvalId ? { runId, approvalId } : { runId };
 }
 
@@ -92,37 +103,64 @@ export function linkedApprovalState(input: {
     now: number;
 }): LinkedApprovalState {
     const {
-        link, 
-        run, 
-        error, 
+        link,
+        run,
+        error,
     } = input;
+
     if (!run) {
-        if (error?.status === 404) return { kind: 'not-found' };
-        if (error?.status === 403) return { kind: 'unreadable' };
-        if (error) return { kind: 'failed', message: error.message };
+        if (error?.status === 404) {
+            return { kind: 'not-found' };
+        }
+
+        if (error?.status === 403) {
+            return { kind: 'unreadable' };
+        }
+
+        if (error) {
+            return { kind: 'failed', message: error.message };
+        }
+
         return { kind: 'loading' };
     }
+
     const approvalId = link.approvalId ?? run.waiting?.approvalId;
     const answered = input.decided.some((d) => d.result === 'answered' &&
         d.run.id === run.id &&
         d.run.waiting?.approvalId === approvalId);
-    if (answered) return { kind: 'answered', run };
-    if (!run.waiting) {return {
-        kind: 'moved-on', 
-        reason: 'not-waiting', 
-        run, 
-    };}
-    if (run.waiting.approvalId !== approvalId) {return {
-        kind: 'moved-on', 
-        reason: 'other-approval', 
-        run, 
-    };}
-    if (Date.parse(run.waiting.expiresAt) <= input.now) {return {
-        kind: 'moved-on', 
-        reason: 'expired', 
-        run, 
-    };}
-    if (!hasPermission(input.permissions, `agent:${run.agent}:approve`)) return { kind: 'forbidden', run };
+
+    if (answered) {
+        return { kind: 'answered', run };
+    }
+
+    if (!run.waiting) {
+        return {
+            kind: 'moved-on',
+            reason: 'not-waiting',
+            run,
+        };
+    }
+
+    if (run.waiting.approvalId !== approvalId) {
+        return {
+            kind: 'moved-on',
+            reason: 'other-approval',
+            run,
+        };
+    }
+
+    if (Date.parse(run.waiting.expiresAt) <= input.now) {
+        return {
+            kind: 'moved-on',
+            reason: 'expired',
+            run,
+        };
+    }
+
+    if (!hasPermission(input.permissions, `agent:${run.agent}:approve`)) {
+        return { kind: 'forbidden', run };
+    }
+
     return { kind: 'pending', run };
 }
 
@@ -147,6 +185,7 @@ export function linkNotice(state: LinkedApprovalState, link: ApprovalLink): Link
                 'other-approval': `This run now waits on another approval (${state.run.waiting?.toolName}); it is listed below.`,
                 expired: 'This approval expired; the engine denies it on its next poll.',
             } as const;
+
             return { text: texts[state.reason], runId: state.run.id };
         }
         default:
@@ -159,13 +198,17 @@ export function linkNotice(state: LinkedApprovalState, link: ApprovalLink): Link
  * options, exactly one for a single choice, at least one for a multiple one.
  */
 export function canApprove(waiting: { options?: unknown[]; multiple?: boolean }, selected: readonly string[]): boolean {
-    if (!waiting.options || waiting.options.length === 0) return true;
+    if (!waiting.options || waiting.options.length === 0) {
+        return true;
+    }
+
     return waiting.multiple ? selected.length > 0 : selected.length === 1;
 }
 
 /** A detail reads as a diff when a line starts with `@@ ` or a `--- ` line is followed by a `+++ ` line. */
 export function isDiffDetail(detail: string): boolean {
     const lines = detail.split('\n');
+
     return lines.some((line, index) => line.startsWith('@@ ') ||
         (line.startsWith('--- ') && (lines[index + 1] ?? '').startsWith('+++ ')));
 }
@@ -173,11 +216,24 @@ export function isDiffDetail(detail: string): boolean {
 /** The lines of an option's detail, each marked add, del or hunk when the detail is a diff. */
 export function detailLines(detail: string): DetailLine[] {
     const lines = detail.split('\n');
-    if (!isDiffDetail(detail)) return lines.map((text) => ({ text }));
+
+    if (!isDiffDetail(detail)) {
+        return lines.map((text) => ({ text }));
+    }
+
     return lines.map((text) => {
-        if (text.startsWith('@@')) return { text, kind: 'hunk' as const };
-        if (text.startsWith('+') && !text.startsWith('+++')) return { text, kind: 'add' as const };
-        if (text.startsWith('-') && !text.startsWith('---')) return { text, kind: 'del' as const };
+        if (text.startsWith('@@')) {
+            return { text, kind: 'hunk' as const };
+        }
+
+        if (text.startsWith('+') && !text.startsWith('+++')) {
+            return { text, kind: 'add' as const };
+        }
+
+        if (text.startsWith('-') && !text.startsWith('---')) {
+            return { text, kind: 'del' as const };
+        }
+
         return { text };
     });
 }

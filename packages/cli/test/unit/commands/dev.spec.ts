@@ -40,6 +40,7 @@ class FakeChild extends EventEmitter {
 
     kill(signal: NodeJS.Signals = 'SIGTERM'): boolean {
         this.kills.push(signal);
+
         return true;
     }
 
@@ -70,6 +71,7 @@ describe('dev', () => {
                 args: spawnArgs,
                 options,
             });
+
             return child;
         }) as unknown as typeof spawn;
 
@@ -84,6 +86,7 @@ describe('dev', () => {
     /** The spawn call; rejects when the command ended without spawning. */
     async function spawned(running: Promise<void>): Promise<SpawnCall> {
         let ended = false;
+
         running.then(() => {
             ended = true;
         }, () => {
@@ -99,14 +102,17 @@ describe('dev', () => {
                     setImmediate(poll);
                 }
             };
+
             poll();
         });
+
         return calls[0]!;
     }
 
     it('spawns node --watch with the start args', async () => {
         const running = dev();
         const call = await spawned(running);
+
         expect(call.command).toBe('/usr/bin/node');
         expect(call.args).toEqual([
             '--watch',
@@ -127,10 +133,13 @@ describe('dev', () => {
 
     it('loads .env only when it exists', async () => {
         const app = await copyFixtureApp();
+
         try {
             await writeFile(path.join(app.cwd, '.env'), 'CHAMVI_LOG_LEVEL=info\n');
+
             const running = dev([], app.cwd);
             const call = await spawned(running);
+
             expect(call.args.slice(0, 3)).toEqual(['--watch', '--env-file-if-exists=.env', '/opt/cli/dist/cli.mjs']);
             child.end(0);
             await running;
@@ -142,6 +151,7 @@ describe('dev', () => {
     it('detached is set', async () => {
         const running = dev();
         const call = await spawned(running);
+
         expect(call.options.detached).toBe(true);
         child.end(0);
         await running;
@@ -149,9 +159,11 @@ describe('dev', () => {
 
     it('without an entry file spawns start without --entry (the default app)', async () => {
         const cwd = await mkdtemp(path.join(tmpdir(), 'chamvi-cli-dev-'));
+
         try {
             const running = dev([], cwd);
             const call = await spawned(running);
+
             expect(call.args).toEqual(['--watch', '/opt/cli/dist/cli.mjs', 'start', '--dev']);
             child.end(0);
             await running;
@@ -163,6 +175,7 @@ describe('dev', () => {
     it('--entry', async () => {
         const running = dev(['--entry', 'src/agents.ts']);
         const call = await spawned(running);
+
         expect(call.args.at(-1)).toBe(path.join(FIXTURE_APP, 'src/agents.ts'));
         child.end(0);
         await running;
@@ -170,6 +183,7 @@ describe('dev', () => {
 
     it('dev forwards one signal', async () => {
         const running = dev();
+
         await spawned(running);
 
         fake.signals.emit('SIGINT');
@@ -183,6 +197,7 @@ describe('dev', () => {
 
     it('a second signal is forwarded too', async () => {
         const running = dev();
+
         await spawned(running);
 
         fake.signals.emit('SIGTERM');
@@ -196,6 +211,7 @@ describe('dev', () => {
 
     it('child exit code is passed through', async () => {
         const running = dev();
+
         await spawned(running);
         child.end(2);
         await running;
@@ -204,6 +220,7 @@ describe('dev', () => {
 
     it('a child killed by a signal the CLI did not forward exits 1', async () => {
         const running = dev();
+
         await spawned(running);
         child.end(null, 'SIGKILL');
         await running;
@@ -212,6 +229,7 @@ describe('dev', () => {
 
     it('SIGHUP forwards SIGTERM', async () => {
         const running = dev();
+
         await spawned(running);
 
         fake.signals.emit('SIGHUP');
@@ -224,6 +242,7 @@ describe('dev', () => {
 
     it('the child is killed when the CLI exits first', async () => {
         const running = dev();
+
         await spawned(running);
 
         fake.signals.emit('exit');
@@ -235,6 +254,7 @@ describe('dev', () => {
 
     it('removes its listeners once the child ended', async () => {
         const running = dev();
+
         await spawned(running);
         child.end(0);
         await running;
@@ -248,6 +268,7 @@ describe('dev', () => {
 
     it('a spawn error exits 1', async () => {
         const running = dev();
+
         await spawned(running);
         child.emit('error', new Error('spawn /usr/bin/node ENOENT'));
         await running;

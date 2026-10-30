@@ -31,7 +31,10 @@ const ownership = 'chamvi-skills-v1\n';
 async function gitMetadata(args: string[], signal?: AbortSignal) {
     const pending = run('git', args, { timeout: 30_000, signal });
     // Abort rejects before close; cleanup must wait for the actual process and streams.
-    const closed = new Promise<void>((done) => { pending.child.once('close', () => done()); });
+    const closed = new Promise<void>((done) => {
+        pending.child.once('close', () => done());
+    });
+
     try {
         return await pending;
     } finally {
@@ -47,6 +50,7 @@ async function inspectTarget(directory: string): Promise<boolean> {
 
         throw error;
     });
+
     if (!stat) {
         return false;
     }
@@ -56,13 +60,16 @@ async function inspectTarget(directory: string): Promise<boolean> {
     }
 
     const entries = await fs.readdir(directory);
+
     if (entries.length) {
         const file = join(directory, marker);
         const identity = await fs.lstat(file);
+
         if (!identity.isFile() || identity.size !== ownership.length || await fs.readFile(file, 'utf8') !== ownership) {
             invalid();
         }
     }
+
     return true;
 }
 
@@ -76,6 +83,7 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
         signal,
         parsed,
     } = copyPreparationOptions(options);
+
     signal?.throwIfAborted();
 
     let clone: string | undefined;
@@ -83,13 +91,18 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
     let lock: string | undefined;
     let previous: string | undefined;
     let result: readonly PreparedSkill[];
+
     try {
         await fs.mkdir(dirname(requestedDirectory), { recursive: true });
         signal?.throwIfAborted();
+
         const parent = await fs.realpath(dirname(requestedDirectory));
+
         signal?.throwIfAborted();
+
         const directory = join(parent, basename(requestedDirectory));
         const guard = join(parent, `.${basename(directory)}.chamvi-skills-lock`);
+
         // shortcut: a crashed preparer leaves its guard, remove it manually after confirming no preparer is running.
         await fs.mkdir(guard);
         lock = guard;
@@ -101,19 +114,26 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
         clone = await cloneRepo(parsed.url, revision);
         // The SDK clone has no signal; join it before cleanup and never copy canceled work.
         signal?.throwIfAborted();
+
         const { stdout } = await gitMetadata(['-C', clone, 'rev-parse', '--verify', 'HEAD'], signal);
+
         if (stdout.trim().toLowerCase() !== revision) {
             invalid();
         }
 
         signal?.throwIfAborted();
+
         // Reject committed links before discovery or copying can follow them.
         const tree = await gitMetadata(['-C', clone, 'ls-tree', '-r', '-z', 'HEAD'], signal);
-        if (tree.stdout.split('\0').some((entry) => entry.startsWith('120000 '))) {
+
+        const hasSymlink = tree.stdout.split('\0').some((entry) => entry.startsWith('120000 '));
+
+        if (hasSymlink) {
             invalid();
         }
 
         signal?.throwIfAborted();
+
         const discovered = await discoverSkills(clone, parsed.subpath, {
             includeDuplicateNames: true,
             includeInternal: true,
@@ -121,12 +141,17 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
             // Source diagnostics can contain private YAML excerpts.
             onWarning: () => {},
         });
+
         signal?.throwIfAborted();
+
         const selected = filterSkills(discovered, names);
         const staged: PreparedSkill[] = [];
+
         for (const name of names) {
             signal?.throwIfAborted();
+
             const matches = selected.filter((skill) => skill.name === name);
+
             if (matches.length !== 1) {
                 invalid();
             }
@@ -137,8 +162,11 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
                 mode: 'copy',
                 global: false,
             });
+
             signal?.throwIfAborted();
+
             const path = resolve(installed.path);
+
             if (!installed.success || path !== join(stage, '.agents', 'skills', name)) {
                 invalid();
             }
@@ -152,6 +180,7 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
                 description: skill.description,
                 path,
             });
+
             if (await verify?.(prepared) !== undefined) {
                 invalid();
             }
@@ -159,16 +188,23 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
             signal?.throwIfAborted();
             staged.push(prepared);
         }
+
         const corpus = join(stage, '.agents', 'skills');
+
         await fs.writeFile(join(corpus, marker), ownership, { flag: 'wx' });
+
         const exists = await inspectTarget(directory);
+
         signal?.throwIfAborted();
+
         // Complete promotion and rollback without cancellation interrupting ownership.
         if (exists) {
             const backup = join(stage, 'previous');
+
             await fs.rename(directory, backup);
             previous = backup;
         }
+
         try {
             await fs.rename(corpus, directory);
         } catch (error) {
@@ -176,8 +212,10 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
                 await fs.rename(previous, directory);
                 previous = undefined;
             }
+
             throw error;
         }
+
         previous = undefined;
         result = Object.freeze(staged.map((skill) => Object.freeze({ ...skill, path: join(requestedDirectory, skill.name) })));
     } catch (error) {
@@ -185,7 +223,7 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
             throw error;
         }
 
-        if (signal?.aborted && error instanceof Error) {
+        if (signal?.aborted && Error.isError(error)) {
             if ('code' in error && error.code === 'ABORT_ERR' && error.cause === signal.reason) {
                 throw signal.reason;
             }
@@ -200,11 +238,15 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
             lock && fs.rmdir(lock),
         ];
         const settled = await Promise.allSettled(cleanups);
-        if (settled.some((result) => result.status === 'rejected')) {
+
+        const hasRejectedCleanup = settled.some((result) => result.status === 'rejected');
+
+        if (hasRejectedCleanup) {
             invalid();
         }
     }
 
     signal?.throwIfAborted();
+
     return result;
 }

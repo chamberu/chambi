@@ -24,12 +24,17 @@ export class DatabaseEffectRepository implements IEffectRepository {
 
     async findOne(key: string): Promise<{ result: unknown } | undefined> {
         const entity = await this.effects.findOneBy({ key });
+
         return entity ? { result: entity.result } : undefined;
     }
 
     async findOneOrFail(key: string): Promise<{ result: unknown }> {
         const result = await this.findOne(key);
-        if (result === undefined) throw new RepositoryNotFoundError('effects');
+
+        if (result === undefined) {
+            throw new RepositoryNotFoundError('effects');
+        }
+
         return result;
     }
 

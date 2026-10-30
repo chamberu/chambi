@@ -23,6 +23,7 @@ function errorOf(fn: () => unknown): Error {
     } catch (error) {
         return error as Error;
     }
+
     throw new Error('expected a throw');
 }
 

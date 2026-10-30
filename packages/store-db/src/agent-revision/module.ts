@@ -24,12 +24,17 @@ export class DatabaseAgentRevisionRepository implements IAgentRevisionRepository
 
     async findOne(agent: string): Promise<AgentRevision | undefined> {
         const entity = await this.agentRevisions.findOneBy({ agent });
+
         return entity ? toAgentRevision(entity) : undefined;
     }
 
     async findOneOrFail(agent: string): Promise<AgentRevision> {
         const result = await this.findOne(agent);
-        if (result === undefined) throw new RepositoryNotFoundError('agent revisions');
+
+        if (result === undefined) {
+            throw new RepositoryNotFoundError('agent revisions');
+        }
+
         return result;
     }
 
@@ -47,12 +52,17 @@ export class DatabaseAgentRevisionRepository implements IAgentRevisionRepository
 
     async find(): Promise<AgentRevision[]> {
         const entities = await this.agentRevisions.find({ order: { agent: 'ASC' } });
+
         return entities.map((entity) => toAgentRevision(entity));
     }
 
     async findOrFail(): Promise<AgentRevision[]> {
         const result = await this.find();
-        if (result.length === 0) throw new RepositoryNotFoundError('agent revisions');
+
+        if (result.length === 0) {
+            throw new RepositoryNotFoundError('agent revisions');
+        }
+
         return result;
     }
 }

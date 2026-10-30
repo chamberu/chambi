@@ -100,6 +100,7 @@ export function createTestApp(overrides: TestAppOverrides = {}) {
         ...options,
         engine,
     });
+
     return {
         app,
         engine,
@@ -118,12 +119,21 @@ export type CallOptions = {
 
 export function call(app: App, method: string, path: string, options: CallOptions = {}): Promise<Response> {
     const headers = new Headers({ accept: 'application/json', ...options.headers });
-    if (options.token) headers.set('authorization', `Bearer ${options.token}`);
+
+    if (options.token) {
+        headers.set('authorization', `Bearer ${options.token}`);
+    }
+
     let body: string | undefined;
+
     if (options.body !== undefined) {
         body = JSON.stringify(options.body);
-        if (!headers.has('content-type')) headers.set('content-type', 'application/json');
+
+        if (!headers.has('content-type')) {
+            headers.set('content-type', 'application/json');
+        }
     }
+
     return app.fetch(new Request(`http://test${path}`, {
         method,
         headers,
@@ -164,6 +174,7 @@ export function deployTool() {
         inputSchema: z.object({}),
         execute: async (_input, { context }) => {
             const decision = await approve(context, { title: 'Deploy?', body: 'release 1.2' });
+
             return decision.approved ? 'deployed' : 'denied';
         },
     });
@@ -177,11 +188,12 @@ export function pickTool() {
             const decision = await approve(context, {
                 title: 'Pick?',
                 options: [{ id: 'a', label: 'A' }, {
-                    id: 'b', 
-                    label: 'B', 
-                    detail: 'diff', 
+                    id: 'b',
+                    label: 'B',
+                    detail: 'diff',
                 }],
             });
+
             return decision.approved ? `picked ${decision.selected?.join(',')}` : 'denied';
         },
     });
@@ -190,7 +202,11 @@ export function pickTool() {
 /** The approval id the run's current wait point waits on. */
 export async function approvalIdOf(store: IStore, runId: string): Promise<string> {
     const waiting = (await store.runs.findOne(runId))?.waiting;
-    if (!waiting) throw new Error(`run ${runId} is not waiting`);
+
+    if (!waiting) {
+        throw new Error(`run ${runId} is not waiting`);
+    }
+
     return waiting.approvalId;
 }
 
@@ -242,14 +258,20 @@ export function createRunTestApp(overrides: TestAppOverrides = {}) {
         agents: createRunAgents(),
         ...overrides,
     });
+
     return { ...setup, approvalIdOf: (runId: string) => approvalIdOf(setup.store, runId) };
 }
 
 /** An authenticator that maps `Bearer p:<a>,<b>` to a principal with those permissions. */
 export async function permissionsAuth(request: Request): Promise<Principal | undefined> {
     const match = /^Bearer p:(.*)$/.exec(request.headers.get('authorization') ?? '');
-    if (!match) return undefined;
+
+    if (!match) {
+        return undefined;
+    }
+
     const permissions = match[1] ? match[1].split(',') : [];
+
     return {
         id: `p:${match[1]}`,
         kind: 'token',
@@ -264,5 +286,7 @@ export function tokenFor(...permissions: string[]): string {
 
 /** Waits until every pending microtask and immediate ran. */
 export function flush(): Promise<void> {
-    return new Promise((resolve) => { setImmediate(resolve); });
+    return new Promise((resolve) => {
+        setImmediate(resolve);
+    });
 }

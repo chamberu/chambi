@@ -84,7 +84,9 @@ function build(options: Partial<AppOptions> = {}) {
         ...options,
         modules: [configModule(), storeModule({ store }), observe, ...options.modules ?? []],
     });
+
     apps.push(app);
+
     return {
         app,
         model,
@@ -96,6 +98,7 @@ function build(options: Partial<AppOptions> = {}) {
 
 async function environment(extra: Record<string, string> = {}) {
     const port = await freePort();
+
     return {
         port,
         env: {
@@ -109,7 +112,9 @@ async function environment(extra: Record<string, string> = {}) {
 
 async function folder() {
     const dir = await createTempDir();
+
     folders.push(dir);
+
     return dir.path;
 }
 
@@ -120,10 +125,13 @@ describe('app skills lifecycle', () => {
         });
         const ctx = build({ skills: [source] });
         const { env, port } = await environment();
+
         await expect(ctx.app.start({ env })).rejects.toBeInstanceOf(InvalidAgentDefinitionError);
         expect(ctx.events).toEqual([]);
         expect(ctx.model.doStreamCalls).toHaveLength(0);
+
         const probe = await listenOn(port);
+
         await closeServer(probe);
     });
 
@@ -146,6 +154,7 @@ describe('app skills lifecycle', () => {
         });
         const { env } = await environment();
         const job = ctx.app.runJob({ agent: 'job', env });
+
         await entered.promise;
         expect(ctx.events).toEqual([]);
         expect(model.doStreamCalls).toHaveLength(0);
@@ -172,15 +181,22 @@ describe('app skills lifecycle', () => {
             payload: {},
         });
         const starting = ctx.app.start({ env });
-        await Promise.race([entered.promise, starting.then(() => { throw new Error('source was skipped'); })]);
+
+        await Promise.race([entered.promise, starting.then(() => {
+            throw new Error('source was skipped');
+        })]);
         expect(ctx.events).toEqual([]);
         expect(ctx.model.doStreamCalls).toHaveLength(0);
+
         const probe = await listenOn(port);
+
         await closeServer(probe);
         release.resolve();
         await starting;
         expect(ctx.events).toEqual(['engineCreated', 'channel', 'started']);
+
         const engine = ctx.engine()!;
+
         await engine.idle();
         expect((await engine.getRun(runId))?.status).toBe('completed');
         expect(JSON.stringify(ctx.model.doStreamCalls[0]?.prompt)).toContain('review');
@@ -189,11 +205,16 @@ describe('app skills lifecycle', () => {
 
     it('adds app defaults to folder agents as well as code agents', async () => {
         const root = await folder();
+
         await writeTree(root, { 'folder/agent.ts': agentFile('Folder work', 'test/model', 'folder') });
+
         const ctx = build({ skills: [preparationInput()] });
         const { env } = await environment({ CHAMVI_AGENTS_DIR: root });
+
         await ctx.app.start({ env });
+
         const engine = ctx.engine()!;
+
         for (const agent of ['code', 'folder']) {
             const { runId } = await engine.dispatch({
                 agent,
@@ -201,10 +222,13 @@ describe('app skills lifecycle', () => {
                 trigger: 'http',
                 payload: {},
             });
+
             await engine.idle();
             expect((await engine.getRun(runId))?.status).toBe('completed');
         }
+
         expect(ctx.model.doStreamCalls).toHaveLength(2);
+
         for (const call of ctx.model.doStreamCalls) {
             expect(JSON.stringify(call.prompt)).toContain('review');
             expect(call.tools?.map((tool) => tool.name)).toContain('contributed');
@@ -215,6 +239,7 @@ describe('app skills lifecycle', () => {
         let calls = 0;
         const source = preparationInput(async () => {
             calls++;
+
             throw new Error('must stay static');
         });
         const ctx = build({
@@ -227,6 +252,7 @@ describe('app skills lifecycle', () => {
             })],
         });
         const { env } = await environment();
+
         await ctx.app[mode]({ env: { ...env, DATABASE_URL: 'postgres://u@127.0.0.1:1/x' } });
         expect(calls).toBe(0);
         expect(ctx.model.doStreamCalls).toHaveLength(0);
@@ -264,8 +290,11 @@ describe('app skills lifecycle', () => {
         const ctx = build({ modules: [gates] });
         const { env } = await environment();
         const started = rejectionOf(ctx.app.start({ env }));
+
         await entered.promise;
+
         const stopping = ctx.app.stop();
+
         release.resolve();
         expect((await started).code).toBe('app_stopped');
         await stopping;
@@ -285,10 +314,17 @@ describe('app skills lifecycle', () => {
         const { env, port } = await environment();
         const starting = ctx.app.start({ env });
         const started = rejectionOf(starting);
+
         void started.catch(() => {});
-        await Promise.race([entered.promise, starting.then(() => { throw new Error('source was skipped'); })]);
+        await Promise.race([entered.promise, starting.then(() => {
+            throw new Error('source was skipped');
+        })]);
+
         let stopped = false;
-        const stopping = ctx.app.stop().then(() => { stopped = true; });
+        const stopping = ctx.app.stop().then(() => {
+            stopped = true;
+        });
+
         await vi.waitFor(() => expect(sourceSignal?.aborted).toBe(true));
         expect(stopped).toBe(false);
         expect(ctx.events).toEqual([]);
@@ -297,7 +333,9 @@ describe('app skills lifecycle', () => {
         await stopping;
         expect(ctx.events).toEqual([]);
         expect(ctx.model.doStreamCalls).toHaveLength(0);
+
         const probe = await listenOn(port);
+
         await closeServer(probe);
     });
 });

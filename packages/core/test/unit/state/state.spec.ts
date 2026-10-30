@@ -46,6 +46,7 @@ function toolContext(store: ReturnType<typeof createMemoryStore>): ToolContext {
         } as RunContext['trigger'],
         signal: new AbortController().signal,
     };
+
     return {
         channels: {} as ToolContext['channels'],
         run,
@@ -56,12 +57,17 @@ function toolContext(store: ReturnType<typeof createMemoryStore>): ToolContext {
 
 async function call(tools: ToolSet, name: string, input: unknown, context?: ToolContext) {
     const t = tools[name];
+
     return (t?.execute as (i: unknown, o: unknown) => Promise<unknown>)(input, { ...callOpts, context });
 }
 
 const engines: Engine[] = [];
+
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -71,15 +77,19 @@ async function runOnce(store: ReturnType<typeof createMemoryStore>, agent: Param
         agents: [defineAgent(agent)],
         onError: () => {},
     });
+
     engines.push(engine);
     await engine.start();
+
     const { runId } = await engine.dispatch({
         agent: agent.name,
         trigger: 'http',
         channel: 'http',
         payload: {},
     });
+
     await engine.idle();
+
     return runId;
 }
 
@@ -118,11 +128,13 @@ describe('agent state', () => {
     it('list filters by where', async () => {
         const state = createAgentState('alpha', schema, createMemoryStore().state);
         const items = state.collection('items');
+
         await items.upsert('a', { title: 'one', done: true });
         await items.upsert('b', { title: 'two', done: false });
         await items.upsert('c', { title: 'three', done: true });
 
         const done = await items.list({ where: { done: true } });
+
         expect(done.map((d) => d.id).sort()).toEqual(['a', 'c']);
         expect(await items.list({ where: { done: true }, limit: 1 })).toHaveLength(1);
         expect(await items.list({ where: { title: 'two' } })).toEqual([{

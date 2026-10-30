@@ -34,7 +34,10 @@ import type { MockResponse } from '../../utils/mock-model.ts';
 const engines: Engine[] = [];
 
 afterEach(() => {
-    for (const e of engines) e.stop();
+    for (const e of engines) {
+        e.stop();
+    }
+
     engines.length = 0;
 });
 
@@ -81,8 +84,11 @@ function setup(s: Setup) {
         claimTtlMs: 30,
         onError: () => {},
     });
+
     engines.push(engine);
+
     const notifier = recordApprovals(engine);
+
     return {
         clock,
         store,
@@ -109,16 +115,19 @@ describe('invoker', () => {
         const { engine, store } = setup({ model: mockModel([]) });
         const invoker = { ...alice, permissions: [...alice.permissions] };
         const { runId } = await engine.dispatch(env(invoker));
+
         invoker.permissions.push('*');
         invoker.name = 'Mallory';
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.trigger.invoker).toEqual(alice);
     });
 
     it('keeps only the invoker fields', async () => {
         const { engine, store } = setup({ model: mockModel([]) });
         const { runId } = await engine.dispatch(env({ ...alice, token: 'secret-bearer' }));
+
         expect((await store.runs.findOne(runId))?.trigger.invoker).toEqual(alice);
     });
 
@@ -133,10 +142,13 @@ describe('invoker', () => {
         ['a non-string name', { ...alice, name: 42 }],
     ])('rejects %s before any write', async (_label, invoker) => {
         const { engine, store } = setup({ model: mockModel([]) });
+
         await expect(engine.dispatch(env(invoker, 'key-1'))).rejects.toBeInstanceOf(ValidationError);
         expect((await store.runs.find({})).data).toHaveLength(0);
+
         // the idempotency key was not claimed either
         const { runId, deduplicated } = await engine.dispatch(env(alice, 'key-1'));
+
         expect(deduplicated).toBe(false);
         expect((await store.runs.findOne(runId))?.trigger.invoker).toEqual(alice);
     });
@@ -145,6 +157,7 @@ describe('invoker', () => {
         const { engine, store } = setup({ model: mockModel([]) });
         const first = await engine.dispatch(env(alice, 'same'));
         const second = await engine.dispatch(env({ ...alice, permissions: [] }, 'same'));
+
         expect(second).toEqual({ runId: first.runId, deduplicated: true });
         expect((await store.runs.findOne(first.runId))?.trigger.invoker).toEqual(alice);
     });
@@ -158,6 +171,7 @@ describe('invoker', () => {
             permissions: ['*'],
         };
         const second = await engine.dispatch(env(bob, 'same'));
+
         expect(second.deduplicated).toBe(false);
         expect(second.runId).not.toBe(first.runId);
         expect((await store.runs.findOne(first.runId))?.trigger.invoker).toEqual(alice);
@@ -184,6 +198,7 @@ describe('invoker', () => {
             }, 'same')),
             await engine.dispatch(env(undefined, 'same')),
         ];
+
         expect(ids.map((r) => r.deduplicated)).toEqual([false, false, false, false]);
         expect(new Set(ids.map((r) => r.runId)).size).toBe(4);
         // without an invoker the key dedupes as before
@@ -194,8 +209,10 @@ describe('invoker', () => {
         const { engine, store } = setup({ model: mockModel([]) });
         const scopes: string[] = [];
         const claimKey = store.idempotency.claim.bind(store.idempotency);
+
         store.idempotency.claim = (scope, ...rest) => {
             scopes.push(scope);
+
             return claimKey(scope, ...rest);
         };
         await engine.dispatch(env({
@@ -214,6 +231,7 @@ describe('invoker', () => {
             model,
             tools: ({ run }) => {
                 seen.push(run.trigger.invoker);
+
                 return {
                     deploy: tool({
                         inputSchema: z.object({}),
@@ -224,12 +242,16 @@ describe('invoker', () => {
             hooks: {
                 beforeToolExecution(info, ctx) {
                     seen.push(ctx.run.trigger.invoker);
+
                     return info.input;
                 },
             },
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env(alice));
+
         await engine.idle();
         expect((await store.runs.findOne(runId))?.status).toBe('completed');
         expect(seen).toEqual([alice, alice]);
@@ -248,6 +270,7 @@ describe('tool policy', () => {
             state: { notes: z.object({ text: z.string() }) },
             toolPolicy: (name) => name === 'deploy' || name === 'state_notes_list',
         });
+
         await engine.start();
         await engine.dispatch(env(alice));
         await engine.idle();
@@ -262,6 +285,7 @@ describe('tool policy', () => {
             state: { notes: z.object({ text: z.string() }) },
             toolPolicy: requireToolPermission(),
         });
+
         await engine.start();
         await engine.dispatch(env(alice));
         await engine.idle();
@@ -282,11 +306,15 @@ describe('tool policy', () => {
             tools: () => ({ deploy }),
             toolPolicy: (_name, { run }) => {
                 contexts.push(run);
+
                 return true;
             },
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env(alice));
+
         await engine.idle();
         expect(contexts[0]).toMatchObject({
             runId,
@@ -306,6 +334,7 @@ describe('tool policy', () => {
                     inputSchema: z.object({}),
                     execute: async () => {
                         executed++;
+
                         return 'deployed';
                     },
                 }),
@@ -313,15 +342,21 @@ describe('tool policy', () => {
             // offered when the tool set is assembled, refused when the call executes
             toolPolicy: () => checks++ === 0,
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env(alice));
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('could not deploy');
         expect(executed).toBe(0);
+
         const prompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+
         expect(prompt).toContain('error-text');
         expect(prompt).toContain('not allowed');
     });
@@ -339,6 +374,7 @@ describe('tool policy', () => {
                     inputSchema: z.object({}),
                     execute: async () => {
                         executed++;
+
                         return 'deployed';
                     },
                 }),
@@ -349,18 +385,29 @@ describe('tool policy', () => {
             }),
             toolPolicy: (name) => name === 'rollback',
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env(alice));
+
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('completed');
         expect(executed).toBe(0);
+
         const step = (await store.steps.find(runId)).find((s) => s.kind === 'tool');
+
         expect(step?.name).toBe(toolName);
+
         const error = step?.error as { code: string; message: string } | undefined;
+
         expect(error?.code).toBe(code);
-        if (code === 'Error') expect(error?.message).toMatch(/unavailable tool/);
+
+        if (code === 'Error') {
+            expect(error?.message).toMatch(/unavailable tool/);
+        }
     });
 
     it('keeps the tool set stable across an approval resume and records the approver', async () => {
@@ -377,6 +424,7 @@ describe('tool policy', () => {
                     inputSchema: z.object({}),
                     execute: async () => {
                         deployed++;
+
                         return 'deployed';
                     },
                 }),
@@ -385,8 +433,11 @@ describe('tool policy', () => {
             toolPolicy: requireToolPermission(),
             hooks: gateTool('deploy'),
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env(alice));
+
         await engine.idle();
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');
 
@@ -395,6 +446,7 @@ describe('tool policy', () => {
             kind: 'user',
             permissions: ['agent:release:approve'],
         };
+
         await engine.approve(notifier.calls[0]!.runId, {
             approvalId: notifier.calls[0]!.approvalId,
             approved: true,
@@ -403,6 +455,7 @@ describe('tool policy', () => {
         await engine.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('completed');
         expect(run?.trigger.invoker).toEqual(alice);
         expect(deployed).toBe(1);
@@ -410,6 +463,7 @@ describe('tool policy', () => {
         expect(toolNames(model, 1)).toEqual(toolNames(model, 0));
 
         const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
+
         expect(wait?.output).toEqual({
             approvalId: expect.any(String),
             approved: true,
@@ -425,6 +479,7 @@ describe('tool policy', () => {
                 inputSchema: z.object({}),
                 execute: async () => {
                     deployed++;
+
                     return 'deployed';
                 },
             }),
@@ -441,8 +496,11 @@ describe('tool policy', () => {
             toolPolicy: () => true,
             hooks: gateTool('deploy'),
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env(alice));
+
         await engine.idle();
         expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         engine.stop();
@@ -462,16 +520,20 @@ describe('tool policy', () => {
             claimTtlMs: 30,
             onError: () => {},
         });
+
         engines.push(tightened);
         await tightened.start();
         await tightened.approve(notifier.calls[0]!.runId, { approvalId: notifier.calls[0]!.approvalId, approved: true });
         await tightened.idle();
 
         const run = await store.runs.findOne(runId);
+
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('could not deploy');
         expect(deployed).toBe(0);
+
         const prompt = JSON.stringify(model.doStreamCalls[1]?.prompt);
+
         expect(prompt).toContain('error-text');
         expect(prompt).toContain('not allowed');
         expect(toolNames(model, 1)).toEqual(['rollback']);
@@ -488,11 +550,15 @@ describe('tool policy', () => {
             tools: () => ({ deploy }),
             hooks: gateTool('deploy'),
         });
+
         await engine.start();
+
         const { runId } = await engine.dispatch(env(alice));
+
         await engine.idle();
 
         const { approvalId } = notifier.calls[0]!;
+
         await expect(engine.approve(runId, {
             approvalId,
             approved: true,
@@ -508,7 +574,9 @@ describe('tool policy', () => {
         // without an approver the wait step has none
         await engine.approve(runId, { approvalId, approved: true });
         await engine.idle();
+
         const wait = (await store.steps.find(runId)).find((s) => s.kind === 'wait');
+
         expect(wait?.output).not.toHaveProperty('approver');
     });
 });

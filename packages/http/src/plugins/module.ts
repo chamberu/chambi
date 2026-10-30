@@ -36,7 +36,9 @@ export function installPlugins(app: App, options: HttpAppOptions): void {
     const basePath = options.basePath ?? '';
     const routes = options.routes ?? [];
 
-    if (options.cors) app.use(cors(options.cors));
+    if (options.cors) {
+        app.use(cors(options.cors));
+    }
 
     const metricsPath = options.metrics === false ?
         undefined :
@@ -50,6 +52,7 @@ export function installPlugins(app: App, options: HttpAppOptions): void {
         const skip = generalLimit?.skip ?? ((event: IAppEvent) => event.method === 'OPTIONS' ||
             isOperationalPath(event, basePath, metricsPath ?? '') ||
             isUnlimitedRoute(event, basePath, routes));
+
         app.use(rateLimit({
             windowMs: DEFAULT_RATE_LIMIT_WINDOW_MS,
             max: DEFAULT_RATE_LIMIT_MAX,
@@ -64,7 +67,10 @@ export function installPlugins(app: App, options: HttpAppOptions): void {
     }
 
     for (const [name, policy] of channelPolicies) {
-        if (policy === false) continue;
+        if (policy === false) {
+            continue;
+        }
+
         app.use(rateLimit({
             windowMs: policy.windowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS,
             max: policy.max,

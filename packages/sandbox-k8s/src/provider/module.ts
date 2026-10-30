@@ -92,17 +92,28 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
     /** Resolves once the pod runs; SandboxError when it never will, takes too long or the signal fires. */
     async function waitForRunning(name: string, signal?: AbortSignal): Promise<void> {
         const started = clock.now().getTime();
+
         for (;;) {
-            if (signal?.aborted) throw abortedCreate();
+            if (signal?.aborted) {
+                throw abortedCreate();
+            }
+
             const state = podState(await client.read(name));
-            if (state.state === 'running') return;
+
+            if (state.state === 'running') {
+                return;
+            }
+
             if (state.state === 'failed') {
                 throw new SandboxError(`workspace pod ${name} cannot start: ${state.reason}`);
             }
+
             const remaining = started + startTimeoutMs - clock.now().getTime();
+
             if (remaining <= 0) {
                 throw new SandboxError(`workspace pod ${name} did not start within ${startTimeoutMs} ms.`);
             }
+
             await delay(clock, Math.min(pollMs, remaining), signal, () => abortedCreate());
         }
     }
@@ -130,7 +141,9 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                 live.delete(id);
             },
         };
+
         live.set(id, workspace);
+
         return workspace;
     }
 
@@ -139,12 +152,15 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
 
         async create(input) {
             assertCreateInput(input, { image: true });
+
             if (!isLabelValue(input.runId)) {
                 throw new ValidationError('runId must be a Kubernetes label value (at most 63 alphanumerics, `-`, `_` or `.`, starting and ending alphanumeric).');
             }
+
             if (input.signal?.aborted) {
                 throw abortedCreate();
             }
+
             const deployment = assertDeployment(input.deployment);
             const limits = resolveLimits(options.limits, input.limits);
 
@@ -175,9 +191,9 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
                 }));
                 await waitForRunning(name, input.signal);
                 await probeImage(transport, {
-                    image: info.image, 
-                    clock, 
-                    signal: input.signal, 
+                    image: info.image,
+                    clock,
+                    signal: input.signal,
                 });
                 // the commit and the default branch, each only when known
                 Object.assign(info, await prepareWorkspace(workspace, {
@@ -189,43 +205,69 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
             } catch (error) {
                 // deleting a pod that was never created is a 404, which is fine
                 await workspace.dispose().catch(() => undefined);
-                if (error instanceof ChamviError) throw error;
+
+                if (error instanceof ChamviError) {
+                    throw error;
+                }
+
                 throw new SandboxError(`cannot start workspace pod ${name}`, { cause: error });
             }
+
             return workspace;
         },
 
         async find(runId, findOptions = {}) {
             const deployment = assertDeployment(findOptions.deployment);
+
             // no pod can carry a run label that is no label value
-            if (!isLabelValue(runId)) return [];
+            if (!isLabelValue(runId)) {
+                return [];
+            }
+
             const pods = await guard(
                 'list the workspace pods',
                 () => client.list(`${MANAGED_SELECTOR},${DEPLOYMENT_LABEL}=${deployment},${RUN_LABEL}=${runId}`),
             );
             const now = clock.now().getTime();
             const found: IWorkspace[] = [];
+
             for (const pod of pods) {
                 const labels = pod.metadata?.labels ?? {};
                 const id = labels[WORKSPACE_LABEL] ?? '';
                 const held = live.get(id);
+
                 if (held) {
-                    if (!held.disposed && held.info.expiresAt.getTime() > now) found.push(held);
+                    if (!held.disposed && held.info.expiresAt.getTime() > now) {
+                        found.push(held);
+                    }
+
                     continue;
                 }
-                if (pod.metadata?.deletionTimestamp || podState(pod).state !== 'running') continue;
+
+                if (pod.metadata?.deletionTimestamp || podState(pod).state !== 'running') {
+                    continue;
+                }
+
                 const info = readWorkspaceInfo({ ...pod.metadata?.annotations, ...labels }, PROVIDER_NAME);
-                if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) continue;
+
+                if (!info || info.runId !== runId || info.expiresAt.getTime() <= now) {
+                    continue;
+                }
+
                 const workspace = open(id, info);
                 const checkout = await readCheckout(workspace, findOptions.signal, clock);
+
                 if (!checkout) {
                     // a create that died before its checkout finished: left to the collection
                     live.delete(id);
+
                     continue;
                 }
+
                 Object.assign(info, checkout);
                 found.push(workspace);
             }
+
             return found;
         },
 
@@ -237,27 +279,46 @@ export function createKubernetesSandbox(options: KubernetesSandboxOptions): ISan
             // one pod that cannot go never keeps the others
             const failures: unknown[] = [];
             const isSettled = createSettledCheck(gcOptions.isSettled);
+
             for (const pod of pods) {
                 const name = pod.metadata?.name;
-                if (!name) continue;
+
+                if (!name) {
+                    continue;
+                }
+
                 const phase = pod.status?.phase;
+
                 if (!isExpired(pod, now) && phase !== 'Failed' && phase !== 'Succeeded') {
                     const answer = await isSettled(pod.metadata?.labels?.[RUN_LABEL] ?? '');
-                    if (answer instanceof SandboxError) failures.push(answer);
-                    if (answer !== true) continue;
+
+                    if (answer instanceof SandboxError) {
+                        failures.push(answer);
+                    }
+
+                    if (answer !== true) {
+                        continue;
+                    }
                 }
 
                 // one open here is disposed, so its in-flight commands settle too
                 const workspace = live.get(pod.metadata?.labels?.[WORKSPACE_LABEL] ?? '');
+
                 try {
                     await guard(`delete workspace pod ${name}`, () => (workspace ? workspace.dispose() : client.delete(name)));
                 } catch (error) {
                     failures.push(error);
+
                     continue;
                 }
+
                 count++;
             }
-            if (failures.length > 0) throw collectionError(count, failures);
+
+            if (failures.length > 0) {
+                throw collectionError(count, failures);
+            }
+
             return count;
         },
     };

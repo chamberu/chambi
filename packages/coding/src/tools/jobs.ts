@@ -60,9 +60,11 @@ const JOB = {
 /** A job id, else a ValidationError. */
 function requireJob(value: unknown): string {
     const job = requireString(value, 'job');
+
     if (!JOB_ID_PATTERN.test(job)) {
         throw new ValidationError('job must be a job id from bash (12 hex characters).');
     }
+
     return job;
 }
 
@@ -71,19 +73,26 @@ function readState(job: string, result: ExecResult): JobState {
     if (result.exitCode === 3) {
         throw new ValidationError(`There is no job ${job} in this workspace.`);
     }
+
     const newline = result.stdout.indexOf('\n');
     const header = new RegExp(`^${JOB_HEADER} (\\d+) (running|exited|killed|lost) ([01]) ?(\\d*)$`)
         .exec(newline === -1 ? '' : result.stdout.slice(0, newline));
+
     if (result.exitCode !== 0 || !header) {
         throw new SandboxError(`cannot read job ${job}: exit code ${result.exitCode}${result.stderr ? `: ${result.stderr.trim()}` : ''}`);
     }
+
     const state: JobState = {
         size: Number(header[1]),
         status: header[2] as BashJobStatus,
         capped: header[3] === '1',
         rest: result.stdout.slice(newline + 1),
     };
-    if (header[4]) state.exitCode = Number(header[4]);
+
+    if (header[4]) {
+        state.exitCode = Number(header[4]);
+    }
+
     return state;
 }
 
@@ -102,16 +111,19 @@ export async function startJob(
         ['sh', '-c', JOB_START_SCRIPT, 'sh', JOB_INNER_SCRIPT, input.command, job, input.cwd ?? '', String(input.outputLogMaxBytes)],
         { signal: input.signal },
     );
+
     if (input.cwd !== undefined && result.stdout === `${CWD_MISSING}\n`) {
         throw new SandboxError(`cwd ${absoluteWorkspacePath(input.cwd)} is no directory in the workspace.`);
     }
+
     if (result.exitCode !== 0 || !result.stdout.startsWith(`${JOB_HEADER} `)) {
         throw new SandboxError(`cannot start the job: exit code ${result.exitCode}${result.stderr ? `: ${result.stderr.trim()}` : ''}`);
     }
+
     return {
-        job, 
-        status: 'running', 
-        outputLog: `~/.chamvi/jobs/${job}/output`, 
+        job,
+        status: 'running',
+        outputLog: `~/.chamvi/jobs/${job}/output`,
     };
 }
 
@@ -141,6 +153,7 @@ export function bashOutputTool(workspaces: CodingWorkspaces, outputLogMaxBytes: 
             );
             const state = readState(job, result);
             const bytes = new Uint8Array(Buffer.from(state.rest.replace(/\s/g, ''), 'base64'));
+
             // a character the byte limit split is read with the next offset
             const kept = bytes.length === JOB_OUTPUT_MAX_BYTES ? bytes.subarray(0, completeLength(bytes)) : bytes;
             const nextOffset = offset + kept.length;
@@ -155,7 +168,11 @@ export function bashOutputTool(workspaces: CodingWorkspaces, outputLogMaxBytes: 
                 truncated: nextOffset < state.size,
                 outputCapped: state.capped,
             };
-            if (state.exitCode !== undefined) answer.exitCode = state.exitCode;
+
+            if (state.exitCode !== undefined) {
+                answer.exitCode = state.exitCode;
+            }
+
             return answer;
         },
     });
@@ -174,7 +191,11 @@ export function bashKillTool(workspaces: CodingWorkspaces): Tool<JobInput, BashK
             const result = await workspace.exec(['sh', '-c', JOB_KILL_SCRIPT, 'sh', job], { signal: signalOf(abortSignal, context) });
             const state = readState(job, result);
             const answer: BashKillResult = { job, status: state.status };
-            if (state.exitCode !== undefined) answer.exitCode = state.exitCode;
+
+            if (state.exitCode !== undefined) {
+                answer.exitCode = state.exitCode;
+            }
+
             return answer;
         },
     });

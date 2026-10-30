@@ -57,12 +57,16 @@ import type {
 
 /** The `owner/name` of an API URL ending in `/repos/<owner>/<name>`. */
 function repoOfUrl(url: unknown): string {
-    if (typeof url !== 'string') return '';
+    if (typeof url !== 'string') {
+        return '';
+    }
+
     return url.split('/').slice(-2).join('/');
 }
 
 function decodeFile(path: string, data: Record<string, unknown>): GithubFile {
     const size = typeof data.size === 'number' ? data.size : 0;
+
     // GitHub sends no content (encoding 'none') for files above 1 MB
     if (data.encoding !== 'base64' || typeof data.content !== 'string') {
         return {
@@ -72,7 +76,9 @@ function decodeFile(path: string, data: Record<string, unknown>): GithubFile {
             truncated: size > 0,
         };
     }
+
     const text = Buffer.from(data.content, 'base64').toString('utf8');
+
     return {
         path,
         size,
@@ -83,6 +89,7 @@ function decodeFile(path: string, data: Record<string, unknown>): GithubFile {
 
 function releaseNote(data: Record<string, unknown>): GithubReleaseNote {
     const body = typeof data.body === 'string' ? cut(data.body, RELEASE_BODY_MAX_CHARS) : undefined;
+
     return {
         tag: String(data.tag_name),
         name: typeof data.name === 'string' && data.name.length > 0 ? data.name : null,
@@ -96,6 +103,7 @@ function releaseNote(data: Record<string, unknown>): GithubReleaseNote {
 
 function firstLine(message: unknown): string {
     const line = typeof message === 'string' ? (message.split('\n')[0] ?? '') : '';
+
     return cut(line, COMMIT_MESSAGE_MAX_CHARS).text;
 }
 
@@ -111,12 +119,14 @@ export function createReadTools(app: IGithubApp): ToolSet {
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const issueNumber = requireInteger(input.number, 'number', 1);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/issues/{issue_number}', {
                         owner,
                         repo,
                         issue_number: issueNumber,
                     });
+
                     return {
                         number: data.number,
                         title: data.title,
@@ -153,12 +163,14 @@ export function createReadTools(app: IGithubApp): ToolSet {
                 const limit = input.limit === undefined ?
                     SEARCH_DEFAULT_RESULTS :
                     requireInteger(input.limit, 'limit', 1, SEARCH_MAX_RESULTS);
+
                 return withOctokit(app, context, searchTarget(query), async (octokit) => {
                     const { data } = await octokit.request('GET /search/issues', {
                         q: query,
                         per_page: limit,
                         advanced_search: 'true',
                     });
+
                     return {
                         total: data.total_count,
                         items: data.items.map((item) => ({
@@ -178,12 +190,14 @@ export function createReadTools(app: IGithubApp): ToolSet {
             inputSchema: repoSchema(),
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const labels = await octokit.paginate('GET /repos/{owner}/{repo}/labels', {
                         owner,
                         repo,
                         per_page: 100,
                     });
+
                     return labels.map((label) => ({ name: label.name, description: label.description ?? null }));
                 });
             },
@@ -195,12 +209,14 @@ export function createReadTools(app: IGithubApp): ToolSet {
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const pullNumber = requireInteger(input.number, 'number', 1);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
                         owner,
                         repo,
                         pull_number: pullNumber,
                     });
+
                     return toPullRequest(data);
                 });
             },
@@ -225,6 +241,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const path = requireString(input.path, 'path').replace(/^\/+|\/+$/g, '');
                 const ref = input.ref === undefined ? undefined : requireString(input.ref, 'ref');
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/contents/{path}', {
                         owner,
@@ -232,6 +249,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                         path,
                         ...(ref !== undefined ? { ref } : {}),
                     });
+
                     if (Array.isArray(data)) {
                         return {
                             path,
@@ -242,6 +260,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                             })),
                         };
                     }
+
                     return decodeFile(path, data as unknown as Record<string, unknown>);
                 });
             },
@@ -252,9 +271,11 @@ export function createReadTools(app: IGithubApp): ToolSet {
             inputSchema: repoSchema(),
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     try {
                         const { data } = await octokit.request('GET /repos/{owner}/{repo}/releases/latest', { owner, repo });
+
                         return {
                             tag: data.tag_name,
                             name: data.name ?? null,
@@ -263,7 +284,10 @@ export function createReadTools(app: IGithubApp): ToolSet {
                             body: data.body ?? null,
                         };
                     } catch (error) {
-                        if (statusOf(error) === 404) return { none: true as const };
+                        if (statusOf(error) === 404) {
+                            return { none: true as const };
+                        }
+
                         throw error;
                     }
                 });
@@ -310,9 +334,11 @@ export function createReadTools(app: IGithubApp): ToolSet {
             execute: async (input, { context }) => {
                 const { owner, repo } = parseRepo(input.repo);
                 const tagPrefix = input.tagPrefix === undefined ? '' : requireString(input.tagPrefix, 'tagPrefix');
+
                 if (input.exhaustive !== undefined && typeof input.exhaustive !== 'boolean') {
                     throw new ValidationError('exhaustive must be a boolean.');
                 }
+
                 const exhaustive = input.exhaustive === true;
                 const from = versionBound(input.from, 'from', tagPrefix);
                 const to = versionBound(input.to, 'to', tagPrefix);
@@ -320,15 +346,35 @@ export function createReadTools(app: IGithubApp): ToolSet {
                 type Version = NonNullable<ReturnType<typeof versionOf>>;
                 type Match = { release: Record<string, unknown>, version: Version | undefined };
                 const pick = (release: Record<string, unknown>): Match | undefined => {
-                    if (release.draft === true || typeof release.tag_name !== 'string') return undefined;
+                    if (release.draft === true || typeof release.tag_name !== 'string') {
+                        return undefined;
+                    }
+
                     const version = versionOf(release.tag_name, tagPrefix);
-                    if (tagPrefix && !version) return undefined;
-                    if (!bounded) return { release, version };
-                    if (!version) return undefined;
-                    if (from && compareVersions(version, from) <= 0) return undefined;
-                    if (to && compareVersions(version, to) > 0) return undefined;
+
+                    if (tagPrefix && !version) {
+                        return undefined;
+                    }
+
+                    if (!bounded) {
+                        return { release, version };
+                    }
+
+                    if (!version) {
+                        return undefined;
+                    }
+
+                    if (from && compareVersions(version, from) <= 0) {
+                        return undefined;
+                    }
+
+                    if (to && compareVersions(version, to) > 0) {
+                        return undefined;
+                    }
+
                     return { release, version };
                 };
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     // Listed by publication date, newest first, so a backport of an older
                     // line can come before the wanted range. With from: read until a whole
@@ -343,15 +389,27 @@ export function createReadTools(app: IGithubApp): ToolSet {
                             .filter((version) => version !== undefined);
                         const below = (bound: Version) => versions.length > 0 &&
                             versions.every((version) => compareVersions(version, bound) <= 0);
-                        if (from !== undefined) return below(from);
-                        if (matching.length < RELEASES_MAX) return false;
-                        if (to === undefined) return true;
+
+                        if (from !== undefined) {
+                            return below(from);
+                        }
+
+                        if (matching.length < RELEASES_MAX) {
+                            return false;
+                        }
+
+                        if (to === undefined) {
+                            return true;
+                        }
+
                         const highest = matching
                             .map(({ version }) => version!)
                             .sort((a, b) => compareVersions(b, a));
+
                         return below(highest[RELEASES_MAX - 1]!);
                     };
                     let unread = false;
+
                     for (let page = 1; page <= RELEASE_PAGES_MAX; page++) {
                         const { data } = await octokit.request('GET /repos/{owner}/{repo}/releases', {
                             owner,
@@ -359,18 +417,30 @@ export function createReadTools(app: IGithubApp): ToolSet {
                             per_page: 100,
                             page,
                         });
+
                         for (const release of data as unknown as Array<Record<string, unknown>>) {
                             const match = pick(release);
-                            if (match) matching.push(match);
+
+                            if (match) {
+                                matching.push(match);
+                            }
                         }
-                        if (data.length < 100 || (!exhaustive && settled(data))) break;
+
+                        if (data.length < 100 || (!exhaustive && settled(data))) {
+                            break;
+                        }
+
                         unread = page === RELEASE_PAGES_MAX;
                     }
 
-                    if (bounded) matching.sort((a, b) => compareVersions(a.version!, b.version!));
-                    else matching.reverse();
+                    if (bounded) {
+                        matching.sort((a, b) => compareVersions(a.version!, b.version!));
+                    } else {
+                        matching.reverse();
+                    }
 
                     const selected = from === undefined ? matching.slice(-RELEASES_MAX) : matching.slice(0, RELEASES_MAX);
+
                     return {
                         releases: selected.map(({ release }) => releaseNote(release)),
                         truncated: unread || matching.length > selected.length,
@@ -400,6 +470,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                 const { owner, repo } = parseRepo(input.repo);
                 const base = requireRef(input.base, 'base');
                 const head = requireRef(input.head, 'head');
+
                 return withOctokit(app, context, { owner, repo }, async (octokit) => {
                     const { data } = await octokit.request('GET /repos/{owner}/{repo}/compare/{basehead}', {
                         owner,
@@ -411,6 +482,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
                     });
                     const commits = data.commits ?? [];
                     const files = data.files ?? [];
+
                     return {
                         status: data.status,
                         aheadBy: data.ahead_by,

@@ -29,6 +29,7 @@ export function createDigest(model: LanguageModel) {
                 inputSchema: z.object({}),
                 execute: async () => {
                     const open = await state.collection('loops').list({ where: { status: 'open' } });
+
                     return open.length;
                 },
             }),
@@ -48,6 +49,7 @@ export async function stateOutsideARun() {
     await state.get<number>('lastUid'); // 1042
 
     const loops = state.collection('loops');
+
     await loops.upsert('reply-anna', { title: 'Reply to Anna', status: 'open' });
     await loops.list({ where: { status: 'open' }, limit: 10 });
     // [{ id: 'reply-anna', title: 'Reply to Anna', status: 'open' }]
@@ -63,7 +65,9 @@ export async function invalidDocument() {
         await state.collection('loops').upsert('x', { title: 'Call Bob', status: 'later' as 'open' });
     } catch (error) {
         if (error instanceof ValidationError) {
-            for (const issue of error.issues) console.log(issue.path, issue.message);
+            for (const issue of error.issues) {
+                console.log(issue.path, issue.message);
+            }
         }
     }
     // #endregion invalid

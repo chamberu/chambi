@@ -29,11 +29,13 @@ function setup(storage = new MemoryStorage()) {
         client: () => fakeClient({
             me: async (token) => {
                 meCalls++;
+
                 return me(token);
             },
         }),
     });
     const router = createUiRouter(DEV_CONFIG, [createAuthGuard(session)], createMemoryHistory('/ui'));
+
     return {
         router,
         session,
@@ -44,6 +46,7 @@ function setup(storage = new MemoryStorage()) {
 describe('auth guard', () => {
     it('sends an unauthenticated visit to login with the return path', async () => {
         const { router } = setup();
+
         await router.push('/runs/abc?x=1');
         expect(router.currentRoute.value.name).toBe(RouteName.LOGIN);
         expect(router.currentRoute.value.query.redirect).toBe('/runs/abc?x=1');
@@ -51,12 +54,14 @@ describe('auth guard', () => {
 
     it('lets a public route through', async () => {
         const { router } = setup();
+
         await router.push('/login/callback?code=c&state=s');
         expect(router.currentRoute.value.name).toBe(RouteName.LOGIN_CALLBACK);
     });
 
     it('lets a signed-in principal through', async () => {
         const { router, session } = setup();
+
         await session.signInWithToken('good');
         await router.push('/schedules');
         expect(router.currentRoute.value.name).toBe(RouteName.SCHEDULES);
@@ -64,8 +69,11 @@ describe('auth guard', () => {
 
     it('restores once on the first navigation', async () => {
         const storage = new MemoryStorage();
+
         storage.setItem(TOKEN_STORAGE_KEY, 'good');
+
         const { router, meCalls } = setup(storage);
+
         await router.push('/schedules');
         await router.push('/approvals');
         await router.push('/runs');
@@ -75,18 +83,24 @@ describe('auth guard', () => {
 
     it('restores again on the next navigation after the server was unreachable', async () => {
         const storage = new MemoryStorage();
+
         storage.setItem(TOKEN_STORAGE_KEY, 'good');
+
         let up = false;
         const session = createSession(DEV_CONFIG, {
             storage,
             client: () => fakeClient({
                 me: async () => {
-                    if (!up) throw apiError(503, 'service_unavailable');
+                    if (!up) {
+                        throw apiError(503, 'service_unavailable');
+                    }
+
                     return ME;
                 },
             }),
         });
         const router = createUiRouter(DEV_CONFIG, [createAuthGuard(session)], createMemoryHistory('/ui'));
+
         await router.push('/schedules');
         expect(router.currentRoute.value.name).toBe(RouteName.LOGIN);
         expect(storage.getItem(TOKEN_STORAGE_KEY)).toBe('good');

@@ -32,6 +32,7 @@ describe('hashAgentFolder', () => {
     it('hashAgentFolder is stable across file order and changes with any byte or rename', async () => {
         const one = join(root.path, 'one');
         const two = join(root.path, 'two');
+
         await writeTree(one, {
             'agent.ts': 'a',
             'tools/x.ts': 'x',
@@ -44,6 +45,7 @@ describe('hashAgentFolder', () => {
         });
 
         const hash = await hashAgentFolder(one);
+
         expect(hash).toMatch(/^[0-9a-f]{64}$/);
         expect(await hashAgentFolder(two)).toBe(hash);
 
@@ -58,6 +60,7 @@ describe('hashAgentFolder', () => {
 
     it('skips dot entries and hashes path and bytes in POSIX path order', async () => {
         const dir = join(root.path, 'agent');
+
         await writeTree(dir, {
             'b.md': 'B',
             'a/c.md': 'C',
@@ -75,8 +78,11 @@ describe('hashAgentFolder', () => {
 
     it('skips docs and editor leftovers', async () => {
         const dir = join(root.path, 'agent');
+
         await writeTree(dir, { 'agent.ts': 'a' });
+
         const hash = await hashAgentFolder(dir);
+
         await writeTree(dir, {
             'README.md': 'r',
             'readme.txt': 'r',
@@ -97,10 +103,15 @@ describe('hashAgentFolder', () => {
 
     it('still hashes prompts and JSON', async () => {
         const dir = join(root.path, 'agent');
+
         await writeTree(dir, { 'agent.ts': 'a' });
+
         const hash = await hashAgentFolder(dir);
+
         await writeTree(dir, { 'prompt.md': 'p' });
+
         const withPrompt = await hashAgentFolder(dir);
+
         expect(withPrompt).not.toBe(hash);
         await writeTree(dir, { 'data.json': '{}' });
         expect(await hashAgentFolder(dir)).not.toBe(withPrompt);
@@ -108,10 +119,15 @@ describe('hashAgentFolder', () => {
 
     it('hashes importable files whose names match a doc pattern', async () => {
         const dir = join(root.path, 'agent');
+
         await writeTree(dir, { 'agent.ts': 'a' });
+
         const hash = await hashAgentFolder(dir);
+
         await writeTree(dir, { 'notes.ts': 'export {};' });
+
         const withNotes = await hashAgentFolder(dir);
+
         expect(withNotes).not.toBe(hash);
         await writeTree(dir, { 'license.json': '{}' });
         expect(await hashAgentFolder(dir)).not.toBe(withNotes);

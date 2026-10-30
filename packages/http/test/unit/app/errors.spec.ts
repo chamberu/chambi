@@ -25,10 +25,12 @@ function appThrowing(error: unknown, onError?: (error: unknown) => void) {
     // the app ends in a catch-all, so the throwing route goes in front of it
     const { app } = createTestApp({ onError });
     const outer = new App();
+
     outer.get('/boom', defineCoreHandler(() => {
         throw error;
     }));
     outer.use(app);
+
     return outer;
 }
 
@@ -39,6 +41,7 @@ async function bodyOf(response: Response) {
 describe('error handler', () => {
     it('maps RunNotFoundError to 404', async () => {
         const response = await call(appThrowing(new RunNotFoundError('r1')), 'GET', '/boom');
+
         expect(response.status).toBe(404);
         expect(response.headers.get('content-type')).toMatch(/application\/json/);
         expect(await bodyOf(response)).toEqual({
@@ -50,6 +53,7 @@ describe('error handler', () => {
 
     it('maps ArtifactNotFoundError to 404', async () => {
         const response = await call(appThrowing(new ArtifactNotFoundError('a1')), 'GET', '/boom');
+
         expect(response.status).toBe(404);
         expect(await bodyOf(response)).toEqual({
             status: 404,
@@ -60,6 +64,7 @@ describe('error handler', () => {
 
     it('maps InvalidRunStateError to 409', async () => {
         const response = await call(appThrowing(new InvalidRunStateError('nope')), 'GET', '/boom');
+
         expect(response.status).toBe(409);
         expect(await bodyOf(response)).toMatchObject({ code: 'invalid_run_state' });
     });
@@ -72,8 +77,11 @@ describe('error handler', () => {
             message: 'bad',
         };
         const response = await call(appThrowing(new ValidationError('bad', [issue])), 'GET', '/boom');
+
         expect(response.status).toBe(400);
+
         const body = await bodyOf(response);
+
         expect(body.code).toBe('validation_error');
         expect(body.issues).toHaveLength(1);
     });
@@ -100,10 +108,15 @@ describe('error handler', () => {
             issues: [{ ...big, path: ['c', 0] }],
         };
         const response = await call(appThrowing(new ValidationError('bad', [big, small, group])), 'GET', '/boom');
+
         expect(response.status).toBe(400);
+
         const text = await response.text();
+
         expect(text.length).toBeLessThan(1024);
+
         const body = JSON.parse(text);
+
         expect(body.issues[0]).toEqual({
             type: 'item',
             code: 'value_invalid',
@@ -116,6 +129,7 @@ describe('error handler', () => {
 
     it('maps an ebec HTTP error to its status and a lower-case code', async () => {
         const response = await call(appThrowing(new BadRequestError({ message: 'x' })), 'GET', '/boom');
+
         expect(response.status).toBe(400);
         expect(await bodyOf(response)).toEqual({
             status: 400,
@@ -131,6 +145,7 @@ describe('error handler', () => {
             message: 'no',
         };
         const withIssues = await call(appThrowing(new BadRequestError({ message: 'x', issues: [issue] })), 'GET', '/boom');
+
         expect(withIssues.status).toBe(400);
         expect(await bodyOf(withIssues)).toEqual({
             status: 400,
@@ -140,6 +155,7 @@ describe('error handler', () => {
         });
 
         const tooLarge = await call(appThrowing(new RequestEntityTooLargeError()), 'GET', '/boom');
+
         expect(tooLarge.status).toBe(413);
         expect(await bodyOf(tooLarge)).toMatchObject({ code: 'request_entity_too_large' });
     });
@@ -148,6 +164,7 @@ describe('error handler', () => {
         const error = new BadRequestError({ message: 'x', cause: new Error('inner secret') });
         const response = await call(appThrowing(error), 'GET', '/boom');
         const text = await response.text();
+
         expect(text).not.toContain('inner secret');
         expect(JSON.parse(text)).not.toHaveProperty('cause');
     });
@@ -158,8 +175,11 @@ describe('error handler', () => {
         const response = await call(appThrowing(error, (e) => {
             errors.push(e);
         }), 'GET', '/boom');
+
         expect(response.status).toBe(500);
+
         const text = await response.text();
+
         expect(text).not.toContain('secret detail');
         expect(JSON.parse(text)).toEqual({
             status: 500,
@@ -171,6 +191,7 @@ describe('error handler', () => {
 
     it('sets WWW-Authenticate on every 401', async () => {
         const response = await call(appThrowing(new UnauthorizedError({ message: 'no' })), 'GET', '/boom');
+
         expect(response.status).toBe(401);
         expect(response.headers.get('www-authenticate')).toBe('Bearer');
         expect(await bodyOf(response)).toMatchObject({ message: 'no' });
@@ -179,6 +200,7 @@ describe('error handler', () => {
     it('answers unknown routes with a JSON 404', async () => {
         const { app } = createTestApp();
         const response = await call(app, 'GET', '/nope');
+
         expect(response.status).toBe(404);
         expect(await bodyOf(response)).toEqual({
             status: 404,
@@ -190,6 +212,7 @@ describe('error handler', () => {
     it('answers unknown routes under basePath with a JSON 404', async () => {
         const { app } = createTestApp({ basePath: '/api' });
         const response = await call(app, 'GET', '/api/nope');
+
         expect(response.status).toBe(404);
         expect(await bodyOf(response)).toEqual({
             status: 404,
@@ -200,6 +223,7 @@ describe('error handler', () => {
 
     it('reads a basePath of "/" as no prefix', async () => {
         const { app } = createTestApp({ basePath: '/' });
+
         expect((await call(app, 'GET', '/healthz')).status).toBe(200);
     });
 
