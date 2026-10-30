@@ -1,4 +1,4 @@
-.DS_Repository
+.DS_Store
 dist
 node_modules
 .vscode

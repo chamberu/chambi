@@ -89,7 +89,7 @@ describe('hashAgentFolder', () => {
             'prompt.md.bak': 'b',
             'agent.ts.orig': 'o',
             'tools/README.md': 'r',
-            'tools/.DS_Repository': 'd',
+            'tools/.DS_Store': 'd',
             'Changelog.MD': 'c',
         });
         expect(await hashAgentFolder(dir)).toBe(hash);
