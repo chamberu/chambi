@@ -1,6 +1,6 @@
 # @chamvi/skills
 
-Optional filesystem verification and startup or setup/build preparation for explicitly selected Git skill sources. Requires Git and Node >=22.20; the runtime packages retain their existing Node floor.
+Optional skill types, validation, catalogs, runtime loading and filesystem verification, including startup or setup/build preparation for explicitly selected Git skill sources. Requires Node >=22.20, with Git for source preparation; core/app retain their existing Node floor.
 
 ```bash
 npm install @chamvi/skills @chamvi/core
@@ -8,16 +8,61 @@ npm install @chamvi/skills @chamvi/core
 
 ## Runtime contracts
 
-The passive contracts are exported by `@chamvi/core` (also through app):
+Skill data types and catalogs are exported by `@chamvi/skills`:
+
+```ts
+import type { ToolSet } from 'ai';
+
+export type SkillIdentity = Readonly<{
+    name: string;
+    version: string;
+    hash: string
+}>;
+export type SkillMetadata = SkillIdentity & Readonly<{ description: string; ignoredFields: readonly string[] }>;
+export type Skill = SkillMetadata & Readonly<{ body: string; references: Readonly<Record<string, string>> }>;
+export interface ISkillSource {
+    readonly skills: readonly SkillIdentity[];
+    load(options: { signal: AbortSignal }): Promise<readonly Skill[]>;
+}
+export type SkillCatalog = Readonly<{
+    skills: readonly SkillMetadata[];
+    instructions: string;
+    tools: ToolSet
+}>;
+export type LoadedSkill = {
+    name: string;
+    version: string;
+    hash: string;
+    reference: string | null;
+    content: string;
+    references: string[];
+};
+
+function createSkillCatalog(skills: readonly Skill[]): SkillCatalog;
+```
+
+Core exports only the generic integration protocol. It coordinates preparation, cancellation and contributed tools; the optional runtime owns content validation, catalogs, source caches and fingerprints. Core/app work without skills installed, and the skills main entry has no app dependency.
 
 <<< ../../../core/src/skill/types.ts{ts}
+
+For custom reviewed values or loaders, adapt the raw contract before using a `skills` array:
+
+```ts
+import type { SkillInput } from '@chamvi/core';
+import type { ISkillSource, Skill } from '@chamvi/skills';
+
+function defineSkill(value: Skill): Skill & SkillInput;
+function defineSkillSource(value: ISkillSource): ISkillSource & SkillInput;
+```
+
+Import both functions from `@chamvi/skills`. They validate/copy supplied values and attach the runtime without I/O or registration. They do not independently fetch or hash-verify supplied text; custom loaders own retrieval and verification against reviewed pins. `createSkillCatalog(rawSkills)` creates a standalone manual catalog, not a first-class engine input.
 
 ## gitSkills
 
 ```ts
 import { gitSkills } from '@chamvi/skills';
 
-function gitSkills(options: GitSkillsOptions): ISkillSource;
+function gitSkills(options: GitSkillsOptions): ISkillSource & SkillInput;
 ```
 
 <<< ../../../skills/src/source/types.ts{ts}
@@ -35,7 +80,7 @@ type ApprovedSkill = {
 };
 
 function hashSkillBundle(directory: string): string;
-function loadSkillBundle(approved: ApprovedSkill): Skill;
+function loadSkillBundle(approved: ApprovedSkill): Skill & SkillInput;
 function loadSkillBundles(approved: readonly ApprovedSkill[]): SkillCatalog;
 ```
 

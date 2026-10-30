@@ -403,6 +403,8 @@ Test helpers (`ControllableClock`, `describeStoreContract`) live in [`@chamvi/te
 
 ## Notes
 
+`EngineOptions.skills` supplies defaults for every agent; `AgentDefinition.skills` adds scoped extras. Both accept the generic `SkillInput` protocol from core. Import skill data types, `gitSkills`, `loadSkillBundle`, custom adapters (`defineSkill`, `defineSkillSource`) and catalogs from optional [`@chamvi/skills`](../skills/README.md). Its factory values carry the runtime automatically, with no module registration. Core coordinates preparation, cancellation and ordinary contributed-tool execution; the optional package owns validation, contents, catalogs and caches. Core works without skills installed.
+
 - **A tool error does not fail the run.** It goes back to the model as a tool error result. Throw `FatalToolError` to fail the run; the step budget caps retry loops.
 - **Budgets settle runs.** A run stopped by `maxSteps` or `maxTokens` while the model still wanted to call tools fails with code `BudgetExceeded`; a run that hits its timeout fails with code `Timeout`.
 - **Effects are recorded after they happen.** A crash between a tool's side effect and the store write repeats the effect on resume, unless `alreadyApplied` finds it.

@@ -1,13 +1,13 @@
 # Approved Skills
 
-Configure `createApp({ skills })` or `new Engine({ skills })` with reviewed defaults for every agent. An agent's `skills` adds extras. Inputs are immutable ready `Skill` snapshots or `ISkillSource` providers. The engine automatically adds metadata instructions and one scoped `load_skill` tool, so another agent's extras stay private. No user tools or state are required.
+Configure `createApp({ skills })` or `new Engine({ skills })` with reviewed defaults for every agent. An agent's `skills` adds extras. Use `gitSkills()` providers or `loadSkillBundle()` ready snapshots from optional `@chamvi/skills` directly. For custom `Skill` values or `ISkillSource` loaders, use that package's `defineSkill()` or `defineSkillSource()` adapters first. The engine automatically adds metadata instructions and one scoped `load_skill` tool, so another agent's extras stay private. No user tools or state are required.
 
 ## Review and pin
 
 1. Review every bundle's description, body, references and license. Metadata is instruction-bearing text too.
 2. Compute its digest separately with `hashSkillBundle(directory)` from `@chamvi/skills`. This validates supported passive files and identifies their bytes; computing a hash grants no approval.
 3. Record the exact name, version, full source commit and independently reviewed digest. Never compute expected pins dynamically at startup.
-4. Use `gitSkills()` for startup preparation, or `loadSkillBundle()` for an already deployed local snapshot. Filesystem helpers live in optional `@chamvi/skills`; core and app have no dependency on that package.
+4. Use `gitSkills()` for startup preparation, or `loadSkillBundle()` for an already deployed local snapshot. Skill types, validation, catalogs and filesystem helpers live in optional `@chamvi/skills`; core and app have no dependency on that package. Factories carry their runtime automatically, with no module registration.
 
 <<< ../snippets/skills.ts
 
@@ -16,6 +16,12 @@ The commit and digests above are illustrative. Replace them with reviewed pins. 
 For direct engine use, pass the same source and ready snapshot to core:
 
 <<< ../snippets/skills-engine.ts
+
+## Custom snapshots and sources
+
+Import `Skill`, `SkillIdentity`, `SkillMetadata`, `ISkillSource`, `SkillCatalog`, `LoadedSkill` and `createSkillCatalog()` from `@chamvi/skills`. Core provides only the generic `SkillInput` and preparation/contribution contracts; skills' main entry has no app dependency.
+
+Use `defineSkill(rawSkill)` for an already reviewed in-memory value, or `defineSkillSource(rawSource)` for a custom loader declaring exact identities. Both return immutable inputs usable in engine defaults and agent extras. They validate and copy the supplied contents/declarations and attach the runtime. They do not fetch or independently hash-verify caller-provided text: a custom loader must retrieve and verify its bytes against independently reviewed pins before returning `Skill` values. Prefer the built-in Git/local loaders for their filesystem verification. Raw objects alone are not engine inputs.
 
 ## Startup preparation
 
@@ -83,7 +89,7 @@ References are never followed automatically and Markdown URLs never fetch anythi
 
 ## Restart and deployment
 
-The engine privately snapshots verified bytes during preparation. Later disk edits cannot change an existing catalog. Recreating it after a restart or approval pause verifies the pin again; changed bytes under the old pin fail closed before newer content can be used. Upgrade by reviewing the new complete bundle and changing its tracked descriptor digest together with the deployed files.
+The skills runtime privately snapshots supplied contents during preparation; the built-in Git/local loaders verify their bytes against reviewed pins. Later disk edits cannot change an existing catalog. Recreating it after a restart or approval pause verifies the pin again; changed bytes under the old pin fail closed before newer content can be used. Upgrade by reviewing the new complete bundle and changing its tracked descriptor digest together with the deployed files.
 
 Keep source directories immutable and not attacker-writable during setup. Bounded no-follow reads, file identity checks and repeated inventories detect ordinary changes; portable filesystem checks do not provide a security boundary against a malicious concurrent host writer.
 

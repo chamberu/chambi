@@ -1,6 +1,6 @@
 # @chamvi/skills
 
-Verify passive skill bundles and prepare explicitly selected, commit-pinned sources for Chamvi agents. This optional package requires Git and Node >=22.20.
+Verify passive skill bundles and prepare explicitly selected, commit-pinned sources for Chamvi agents. This optional package requires Node >=22.20; Git is needed for source preparation.
 
 ```bash
 npm install @chamvi/skills @chamvi/core
@@ -31,9 +31,11 @@ const engine = new Engine({
 await engine.start();
 ```
 
-Replace the illustrative commit/digest with independently reviewed pins and `yourLanguageModel` with an AI SDK model. `gitSkills` copies configuration without I/O. Startup verifies required sources before recovery, channels and model work. The engine automatically appends metadata and supplies scoped `load_skill`; an agent's `skills` adds extras to defaults. `loadSkillBundle(descriptor)` returns a ready verified snapshot for the same arrays. Filesystem helpers belong to this package; no app module or `/module` entry is needed.
+Replace the illustrative commit/digest with independently reviewed pins and `yourLanguageModel` with an AI SDK model. `gitSkills` copies configuration without I/O. Startup verifies required sources before recovery, channels and model work. The engine automatically appends metadata and supplies scoped `load_skill`; an agent's `skills` adds extras to defaults. `loadSkillBundle(descriptor)` returns a ready verified snapshot for the same arrays. Skill data and behavior belong to this package; no app module or `/module` entry is needed. Among Chamvi packages, the main entry depends only on core, with no app dependency. Core/app remain usable without skills installed.
 
 Startup installation requires this package and Git in the runtime image, writable managed corpus/tmp paths, source network/credentials and startup probe time. The base Node 24 image does not include Git. Check/migrate do not invoke skill providers; check defers remote verification. Stop joins cleanup and may wait for a noncancelable clone. Prebuilt local snapshots avoid runtime Git/network requirements. Global pin upgrades do not change folder hashes: saved load results keep original bytes, while pending/future loads use current snapshots. Finish or cancel unsettled runs before global upgrades if mixed-version disclosure is unacceptable.
+
+`Skill`, `SkillIdentity`, `SkillMetadata`, `ISkillSource`, `SkillCatalog`, `LoadedSkill` and `createSkillCatalog()` are exported from `@chamvi/skills`. Core exports only the generic `SkillInput` and preparation/contribution contracts. For caller-provided values, use `defineSkill(rawSkill)` or `defineSkillSource(rawSource)` before placing them in a `skills` array. These adapters validate and copy contents/declarations and attach the runtime; they do not fetch or independently hash-verify caller-provided text. Custom loaders own retrieval and verification against their reviewed pins. `gitSkills()` and `loadSkillBundle()` already return adapted values.
 
 The manual catalog workflow remains supported:
 

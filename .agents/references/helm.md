@@ -69,3 +69,16 @@ Logs: `/tmp/chamvi-first-class-helm-{test,drift}.log`. Generation emitted only t
 warning. No live cluster, published-app fixture image, push or publication was performed.
 
 PR94 review follow-up: chart docs use the requested `hash` skill descriptor property (SHA-256 remains the algorithm), in downstream commit `4f2dba2`. Source/generated README agree; contract checks passed 40 cases with 2 existing image-gated skips. Image digest fields remain unchanged.
+
+## Skill runtime ownership check (2026-10-30, unreleased)
+
+Checked monorepo `de1f72e8`: all skill domain types (`Skill`, `SkillIdentity`, `SkillMetadata`, `ISkillSource`,
+`SkillCatalog`, `LoadedSkill`), `createSkillCatalog()`, validation, catalogs, `load_skill` and per-engine source
+caches/fingerprints now belong to `@chamvi/skills`. Core retains only the generic `SkillInput` preparation/contribution
+contract and lifecycle coordination; core/app have no skills dependency. Built-in factories remain direct inputs,
+with no module registration. Custom raw values/loaders use `defineSkill`/`defineSkillSource` from skills; custom
+loaders own retrieval and verification against reviewed pins. The skills main entry remains app-free.
+
+Downstream documentation commit `7247aa5873d39b5a8bc372bff0016a6f3bbabf6f` updates only ownership/import guidance. `caffeinate -is make docs` and the six `test_docs.py` documentation contract tests passed.
+Existing dependencies, images, manifests, CLI/env/routes, probe settings, RBAC and fixtures require no changes.
+No push, image build, live cluster or publication was performed in this scoped check.

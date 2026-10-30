@@ -65,3 +65,16 @@ Tests include the real CLI/app/HTTP and deployment documentation contracts with 
 Docker image build/smoke, push or publication was performed; remote skills are not enabled in the default smoke fixture.
 
 PR94 review follow-up: README and deployment guidance use the requested `hash` skill descriptor property (SHA-256 remains the algorithm), in downstream commit `72ec9a8`. README/deployment checks passed 12 tests; runtime dependencies and image digest fields remain unchanged.
+
+## Skill runtime ownership check (2026-10-30, unreleased)
+
+Checked monorepo `de1f72e8`: all skill domain types (`Skill`, `SkillIdentity`, `SkillMetadata`, `ISkillSource`,
+`SkillCatalog`, `LoadedSkill`), `createSkillCatalog()`, validation, catalogs, `load_skill` and per-engine source
+caches/fingerprints now belong to `@chamvi/skills`. Core retains only the generic `SkillInput` preparation/contribution
+contract and lifecycle coordination; core/app have no skills dependency. Built-in factories remain direct inputs,
+with no module registration. Custom raw values/loaders use `defineSkill`/`defineSkillSource` from skills; custom
+loaders own retrieval and verification against reviewed pins. The skills main entry remains app-free.
+
+Downstream documentation commit `8ba3f4eecd80c01865e424a51ad7f611a8e26b53` updates only ownership/import guidance. README/deployment checks passed 12 tests across two files.
+Existing dependencies, images, manifests, CLI/env/routes, probe settings, RBAC and fixtures require no changes.
+No push, image build, live cluster or publication was performed in this scoped check.
