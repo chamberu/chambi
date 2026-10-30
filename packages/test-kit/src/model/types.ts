@@ -18,4 +18,3 @@ export type MockResponse = {
     parts: MockPart[];
     usage?: { inputTokens: number; outputTokens: number };
 };
-
