@@ -15,7 +15,7 @@ import { z } from 'zod';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { assertMcpRunTool, http, httpChannel } from '@chamvi/http';
@@ -156,7 +156,7 @@ describe('mcp run_<agent>', () => {
             status: 'queued',
             deduplicated: false,
         });
-        expect((await store.getRun(content.runId))?.trigger).toMatchObject({
+        expect((await store.runs.findOne(content.runId))?.trigger).toMatchObject({
             agent: 'echo',
             trigger: 'http',
             channel: 'mcp',
@@ -177,7 +177,7 @@ describe('mcp run_<agent>', () => {
         });
 
         await call(app, 'POST', '/agents/echo/runs', { token: ADMIN_TOKEN, body: { idempotencyKey: 'k-1' } });
-        expect((await store.listRuns({ agent: 'echo' })).total).toBe(2);
+        expect((await store.runs.find({ agent: 'echo' })).total).toBe(2);
         await client.close();
     });
 
@@ -187,7 +187,7 @@ describe('mcp run_<agent>', () => {
         const result = await callTool(client, 'run_typed', { payload: { n: 'x' } });
         expect(result.isError).toBe(true);
         expect(textOf(result)).toContain('payload');
-        expect((await store.listRuns({ agent: 'typed' })).total).toBe(0);
+        expect((await store.runs.find({ agent: 'typed' })).total).toBe(0);
         await client.close();
     });
 
@@ -196,7 +196,7 @@ describe('mcp run_<agent>', () => {
         const client = await connectMcp(app, ADMIN_TOKEN);
         const result = await callTool(client, 'run_echo', { extra: 1 });
         expect(result.isError).toBe(true);
-        expect((await store.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
         await client.close();
     });
 
@@ -216,7 +216,7 @@ describe('mcp run_<agent>', () => {
         const result = await callTool(client, 'run_tree', { payload });
         expect(result.isError, textOf(result)).toBeFalsy();
         const { runId } = result.structuredContent as { runId: string };
-        expect((await store.getRun(runId))?.trigger.payload).toEqual(payload);
+        expect((await store.runs.findOne(runId))?.trigger.payload).toEqual(payload);
 
         const invalid = await callTool(client, 'run_tree', { payload: { root: { name: 'a', children: [{ name: 1 }] }, alias: payload.alias } });
         expect(invalid.isError).toBe(true);
@@ -263,7 +263,7 @@ describe('mcp run_<agent>', () => {
             channels: [http.on()],
         });
         const engine = new Engine({
-            store: new MemoryStore(), 
+            store: createMemoryStore(),
             agents: [], 
             channels: [httpChannel()],
         });

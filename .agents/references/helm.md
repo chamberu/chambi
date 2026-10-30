@@ -94,3 +94,18 @@ system block; manual `SkillCatalog.instructions` remains text. Existing string a
 Downstream commit `fc6bf888cc411ad544e86fc00dfd6587796a0394` updates only charts/agent-app/README.md.gotmpl and generated README.
 `caffeinate -is make docs` plus all six `test_docs.py` documentation contract checks passed. Existing sources, fixtures, dependencies, CLI/env, routes,
 images, values, manifests, probes and RBAC need no changes. No push or publication was performed.
+
+## Capability repositories compatibility check (2026-10-29)
+
+Checked current GitHub HEAD `482f7de3759e43d61a7faedeb00547e9b3fc5202` from a read-only source archive. Reviewed `ci/app/dist/index.mjs`, chart Deployment/CronJob/helpers, values and chart notes. The fixture imports `createApp`, `defineAgent`, `http` and `cron`; the chart uses env and CLI contracts. No executable consumer uses the removed store classes, aggregate interface, engine property, store module option or container token. Three prose/comment occurrences of the previous memory-store class name remain in CI values and NOTES; they do not affect rendering or runtime behavior.
+
+The monorepo now exposes `IStore`, `createMemoryStore()`, `createDatabaseStore()`, `Engine.store`, `storeModule({ store })` and `AppToken.STORE`; conversation storage is `store.conversations`, with authorization/limits kept in conversation policy. No downstream source migration is required for the usages above. CLI, env, route, image, model-format and chart contracts are unchanged. No downstream repository was modified, tested, or published for this check.
+
+
+## Repository API and database package naming check (2026-10-29)
+
+Rechecked the GitHub HEAD at that time against the source archive above: unchanged. The renamed persistence API (`IRunRepository`, `IStore`, `findOne`/`find` and their `OrFail` counterparts) and `@chamvi/store-db` package have no direct consumer in this downstream repository. Database environment settings and `config.store` remain unchanged; the app still supplies its backend by default. No downstream source migration is required for this refactor. This was a read-only source check, not a downstream build or test run.
+
+## Store aggregate compatibility recheck (2026-10-30)
+
+Fresh HEAD verification still reports `482f7de3759e43d61a7faedeb00547e9b3fc5202`, unchanged from the read-only archive check above. The chart has no direct consumer of `IStore`, `Engine.store`, `AppToken.STORE`, `storeModule()` or the store factories. The singular `store` aggregate leaves CLI, env, routes, image and chart contracts unchanged. No downstream source edit or PR is needed for this change; no chart tests were rerun.

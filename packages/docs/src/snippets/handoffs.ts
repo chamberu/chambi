@@ -2,8 +2,8 @@ import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
     Engine,
-    MemoryStore,
     agentChannel,
+    createMemoryStore,
     defineAgent,
     defineTool,
     handoff,
@@ -49,7 +49,7 @@ const maintainer = defineAgent({
 
 // #region engine
 export const engine = new Engine({
-    store: new MemoryStore(),
+    store: createMemoryStore(),
     agents: [maintainer],
     // a bare engine lists the agent channel; @chamvi/app contributes it
     channels: [cronChannel(), agentChannel()],

@@ -16,7 +16,7 @@ import {
     NAME_MAX_LENGTH,
     NAME_PATTERN,
 } from './constants.ts';
-import { assertNoNeedsApproval, assertToolsContext } from './asserts.ts';
+import { assertNoNeedsApproval, assertToolsContext, conversationKey } from './asserts.ts';
 import type { Agent, AgentDefinition } from './types.ts';
 
 export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefinition<S>): Agent<S> {
@@ -32,6 +32,8 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
 
     assertInstructions(def.instructions);
     assertConcurrencyMaxRuns(def.concurrencyMaxRuns, `Agent "${def.name}" concurrencyMaxRuns`);
+    conversationKey(def);
+
     const seen = new Set<string>();
     for (const subscription of def.channels ?? []) {
         assertConcurrencyMaxRuns(subscription.concurrencyMaxRuns, `Agent "${def.name}" subscription "${subscription.id}" concurrencyMaxRuns`);

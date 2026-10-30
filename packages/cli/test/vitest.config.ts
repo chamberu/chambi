@@ -6,7 +6,7 @@ const source = (path: string) => fileURLToPath(new URL(`../../${path}`, import.m
 
 export default defineConfig({
     plugins: [
-        // the store-typeorm entities use legacy decorators
+        // the store-db entities use legacy decorators
         swc.vite({
             jsc: {
                 parser: {
@@ -24,9 +24,10 @@ export default defineConfig({
         // the sources, not dist
         alias: [
             { find: /^@chamvi\/core$/, replacement: source('core/src/index.ts') },
+            { find: /^@chamvi\/core\/conversation\/persistence$/, replacement: source('core/src/conversation/persistence/index.ts') },
             { find: /^@chamvi\/http$/, replacement: source('http/src/index.ts') },
             { find: /^@chamvi\/channel-cron$/, replacement: source('channel-cron/src/index.ts') },
-            { find: /^@chamvi\/store-typeorm$/, replacement: source('store-typeorm/src/index.ts') },
+            { find: /^@chamvi\/store-db$/, replacement: source('store-db/src/index.ts') },
             { find: /^@chamvi\/test-kit$/, replacement: source('test-kit/src/index.ts') },
             { find: /^@chamvi\/github$/, replacement: source('github/src/index.ts') },
             { find: /^@chamvi\/github\/module$/, replacement: source('github/src/module/index.ts') },

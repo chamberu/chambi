@@ -52,7 +52,7 @@ export function idempotencyScope(envelope: Pick<TriggerEnvelope, 'agent' | 'chan
 /**
  * A stored envelope as the current shape: envelopes written before channels
  * hold `source` and `thread`, which fill `channel` and `address` when those
- * are absent. Both legacy keys are dropped; the input is not changed. Store
+ * are absent. Both legacy keys are dropped; the input is not changed. Repository
  * implementations call it on every envelope they read back.
  */
 export function normalizeEnvelope(raw: Record<string, unknown>): TriggerEnvelope {

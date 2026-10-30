@@ -43,6 +43,20 @@ function route(overrides: Partial<HttpRoute> = {}): HttpRoute {
 }
 
 describe('extra routes', () => {
+    it('returns 404 for a missing repository record in a custom route', async () => {
+        const { app } = createTestApp({
+            routes: [route({
+                handler: async (_request, ctx) => {
+                    const value = await ctx.engine.store.state.findOneOrFail('echo', 'missing');
+                    return { status: 200, body: { value } };
+                },
+            })],
+        });
+        const response = await send(app, '/extra');
+        expect(response.status).toBe(404);
+        expect(await response.json()).toMatchObject({ code: 'repository_not_found' });
+    });
+
     it('serves an extra route under basePath', async () => {
         const { app } = createTestApp({ basePath: '/api', routes: [route()] });
         const response = await send(app, '/api/extra');

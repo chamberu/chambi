@@ -6,22 +6,22 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { ILockStore } from '@chamvi/core';
-import { MemoryStore } from '@chamvi/core';
-import { createStoreScheduleLock } from '@chamvi/channel-cron';
+import type { ILockRepository } from '@chamvi/core';
+import { createMemoryStore } from '@chamvi/core';
+import { createRepositoryScheduleLock } from '@chamvi/channel-cron';
 import { ControllableClock } from '@chamvi/test-kit';
 
 const setup = () => {
     const clock = new ControllableClock(new Date('2026-03-01T08:00:00.000Z'));
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     return { clock, store };
 };
 
-describe('createStoreScheduleLock', () => {
+describe('createRepositoryScheduleLock', () => {
     it('first acquirer of a tick wins', async () => {
         const { store } = setup();
-        const a = createStoreScheduleLock(store, 'a');
-        const b = createStoreScheduleLock(store, 'b');
+        const a = createRepositoryScheduleLock(store.locks, 'a');
+        const b = createRepositoryScheduleLock(store.locks, 'b');
 
         expect(await a.acquire('cron:x:y:T', 600_000)).toBe(true);
         expect(await b.acquire('cron:x:y:T', 600_000)).toBe(false);
@@ -29,7 +29,7 @@ describe('createStoreScheduleLock', () => {
 
     it('different ticks do not block each other', async () => {
         const { store } = setup();
-        const lock = createStoreScheduleLock(store, 'a');
+        const lock = createRepositoryScheduleLock(store.locks, 'a');
 
         expect(await lock.acquire('cron:x:y:T1', 600_000)).toBe(true);
         expect(await lock.acquire('cron:x:y:T2', 600_000)).toBe(true);
@@ -37,8 +37,8 @@ describe('createStoreScheduleLock', () => {
 
     it('the lock is never released', async () => {
         const { clock, store } = setup();
-        const lock = createStoreScheduleLock(store, 'a');
-        const other = createStoreScheduleLock(store, 'b');
+        const lock = createRepositoryScheduleLock(store.locks, 'a');
+        const other = createRepositoryScheduleLock(store.locks, 'b');
 
         expect('release' in lock).toBe(false);
         expect(await lock.acquire('k', 600_000)).toBe(true);
@@ -50,7 +50,7 @@ describe('createStoreScheduleLock', () => {
 
     it('passes the owner to the store', async () => {
         const calls: [string, string, number][] = [];
-        const store: ILockStore = {
+        const store: ILockRepository = {
             async acquire(key, owner, ttlMs) {
                 calls.push([key, owner, ttlMs]);
                 return true;
@@ -58,7 +58,7 @@ describe('createStoreScheduleLock', () => {
             release: () => Promise.resolve(),
         };
 
-        await createStoreScheduleLock(store, 'replica-1').acquire('k', 1000);
+        await createRepositoryScheduleLock(store, 'replica-1').acquire('k', 1000);
 
         expect(calls).toEqual([['k', 'replica-1', 1000]]);
     });

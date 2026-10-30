@@ -22,6 +22,7 @@ import { assertNoNeedsApproval, assertToolsContext } from '../../agent/asserts.t
 import { toFilePart } from '../../artifact/helpers.ts';
 import { createRunArtifacts } from '../../artifact/module.ts';
 import { createToolChannels } from '../../channel/helpers.ts';
+import { checkConversation, conversationFor } from '../../conversation/context.ts';
 import { bindProvided } from '../../context/helpers.ts';
 import { validateToolInput } from '../../effect/helpers.ts';
 import { wrapToolsForRun } from '../../effect/wrap.ts';
@@ -51,11 +52,11 @@ export function renderTrigger(envelope: TriggerEnvelope): string {
 }
 
 /**
- * The run's first message: the rendered trigger, followed by a file part per
- * attachment that holds the artifact marker (hydrated to bytes for the model).
+ * The run's first message: accepted conversation text or the rendered trigger,
+ * followed by artifact markers for attachments (hydrated to bytes for the model).
  */
-export function initialMessage(envelope: TriggerEnvelope): ModelMessage {
-    const text = renderTrigger(envelope);
+export function initialMessage(envelope: TriggerEnvelope, acceptedText?: string): ModelMessage {
+    const text = acceptedText ?? renderTrigger(envelope);
     if (!envelope.attachments?.length) return { role: 'user', content: text };
     return {
         role: 'user',
@@ -147,8 +148,15 @@ export function assembleTools(
         state: schema,
         toolPolicy,
         toolsContext: agentToolsContext,
-        hooks,
+        hooks: agentHooks,
     } = ctx.agent.definition;
+    const hooks = conversationFor(runContext) ? {
+        ...agentHooks,
+        beforeToolExecution: async (...args: Parameters<NonNullable<NonNullable<typeof agentHooks>['beforeToolExecution']>>) => {
+            await checkConversation(runContext);
+            return agentHooks?.beforeToolExecution?.(...args);
+        },
+    } : agentHooks;
     if (!userTools && !schema && !Object.keys(ctx.skills?.tools ?? {}).length) {
         ctx.skills?.checkTools({});
         if (agentToolsContext) assertToolsContext(ctx.agent.name, {}, agentToolsContext);
@@ -156,9 +164,9 @@ export function assembleTools(
     }
     const toolContext: ToolContext = {
         run: runContext,
-        state: createAgentState(ctx.agent.name, schema, ctx.store),
-        artifacts: createRunArtifacts(ctx.store, { id: ctx.run.id, agent: ctx.run.agent }, ctx.clock),
-        channels: createToolChannels(runContext, ctx.store, ctx.engine),
+        state: createAgentState(ctx.agent.name, schema, ctx.store.state),
+        artifacts: createRunArtifacts(ctx.store.artifacts, { id: ctx.run.id, agent: ctx.run.agent }, ctx.clock),
+        channels: createToolChannels(runContext, ctx.store.effects, ctx.engine),
     };
     // before the factory, so inject() works there, in execute and in the effect hooks
     if (ctx.provided) bindProvided(toolContext, ctx.provided);
@@ -184,7 +192,7 @@ export function assembleTools(
 
     if (!toolPolicy) {
         return {
-            tools: wrapToolsForRun(tools, toolContext, ctx.store, {
+            tools: wrapToolsForRun(tools, toolContext, ctx.store.effects, {
                 hooks,
                 onSuspend,
                 stepIndex,
@@ -194,7 +202,7 @@ export function assembleTools(
     }
     const allow = (name: string) => toolPolicy(name, { run: runContext });
     return {
-        tools: wrapToolsForRun(tools, toolContext, ctx.store, {
+        tools: wrapToolsForRun(tools, toolContext, ctx.store.effects, {
             allow,
             hooks,
             onSuspend,
@@ -395,16 +403,6 @@ export async function executePendingCall(input: {
     } catch (error) {
         return { error };
     }
-}
-
-/** Rejects with the abort reason as soon as `signal` aborts, even if `work` ignores the signal. */
-export function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-    if (signal.aborted) return Promise.reject(signal.reason);
-    return new Promise<T>((resolve, reject) => {
-        const onAbort = () => reject(signal.reason);
-        signal.addEventListener('abort', onAbort, { once: true });
-        work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
-    });
 }
 
 /** Text of the last assistant message, '' when there is none. */

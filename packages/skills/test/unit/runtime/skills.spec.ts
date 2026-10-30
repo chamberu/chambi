@@ -14,8 +14,8 @@ import {
 } from 'vitest';
 import {
     Engine,
-    MemoryStore,
     approve,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -39,7 +39,7 @@ const agent = (skills: Parameters<typeof defineAgent>[0]['skills'] = []) => defi
     skills,
 });
 const engine = (skills: ConstructorParameters<typeof Engine>[0]['skills'] = [], agents = [agent()]) => new Engine({
-    store: new MemoryStore(),
+    store: createMemoryStore(),
     agents,
     skills,
     model: mockModel([]),
@@ -64,7 +64,7 @@ describe('first class skills', () => {
     it('contributes a separate metadata system block after the configured instruction array', async () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             skills: [skill()],
             agents: [defineAgent({
@@ -90,13 +90,13 @@ describe('first class skills', () => {
             expect(prompt.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'system', 'user']);
             expect(prompt[3]?.content).toContain('approved_skills');
             expect(JSON.stringify(prompt)).not.toContain('SECRET BODY');
-            expect(JSON.stringify(await e.store.latestCheckpoint(runId))).not.toContain('approved_skills');
+            expect(JSON.stringify(await e.store.checkpoints.findOne(runId))).not.toContain('approved_skills');
         } finally { await e.stop(); }
     });
     it('keeps string instructions and catalog metadata in distinct leading system blocks', async () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             skills: [skill()],
             agents: [agent()],
@@ -156,7 +156,7 @@ describe('first class skills', () => {
             }],
         }, { parts: [{ type: 'text', text: 'done' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             skills: [ready, defineSkillSource(source)],
             agents: [agent()],
@@ -174,7 +174,7 @@ describe('first class skills', () => {
             payload: {},
         });
         await e.idle();
-        const steps = (await e.store.listSteps(run.runId)).filter((step) => step.kind === 'tool');
+        const steps = (await e.store.steps.find(run.runId)).filter((step) => step.kind === 'tool');
         expect(steps[0]?.output).toMatchObject({ content: 'reference' });
         expect(steps[1]?.output).toMatchObject({ content: 'SECRET BODY' });
         await e.stop();
@@ -210,7 +210,7 @@ describe('first class skills', () => {
         }, { parts: [{ type: 'text', text: 'done' }] }]);
         const start = vi.fn(); const stop = vi.fn();
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             agents: [agent()],
             skills: [source],
             model,
@@ -237,7 +237,7 @@ describe('first class skills', () => {
         expect(instructions).toContain('approved_skills');
         expect(instructions).not.toContain('SECRET BODY');
         expect(instructions).toContain('\\\\u003c');
-        expect((await e.store.listSteps(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'SECRET BODY', references: ['references/a.md'] });
+        expect((await e.store.steps.find(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'SECRET BODY', references: ['references/a.md'] });
         await e.stop();
     });
     it('stop joins ignored provider cancellation and allows a deliberate restart', async () => {
@@ -261,7 +261,7 @@ describe('first class skills', () => {
         const entered = Promise.withResolvers<void>(); const deferred = Promise.withResolvers<void>();
         const stop = vi.fn();
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             agents: [agent()],
             model: mockModel([]),
             channels: [{
@@ -285,13 +285,13 @@ describe('first class skills', () => {
         const candidate = agent([defineSkillSource({ skills: [skill()], load: async () => [] })]);
         await expect(e.putAgent(candidate, { revision: 'new' })).rejects.toThrow(/skill/i);
         expect(e.getAgent('test')).toBe(old);
-        expect(await e.store.getAgentRevision('test')).toBeUndefined();
+        expect(await e.store.agentRevisions.findOne('test')).toBeUndefined();
         expect((await e.getRun(run.runId))?.status).toBe('queued');
     });
     it('cleans started channels on rejection without joining its own startup', async () => {
         const stop = vi.fn();
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             agents: [agent()],
             model: mockModel([]),
             channels: [{
@@ -310,7 +310,7 @@ describe('first class skills', () => {
         })])).toThrow(/load_skill/);
         const model = mockModel([{ parts: [{ type: 'text', text: 'must not run' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             agents: [defineAgent({
                 name: 'test',
                 instructions: '',
@@ -371,10 +371,13 @@ describe('first class skills', () => {
         expect(await preparing).toBeInstanceOf(Error);
     });
     it('keeps the captured corpus with a captured agent across replacement during a revision read', async () => {
-        const store = new MemoryStore();
+        const store = createMemoryStore();
         const entered = Promise.withResolvers<void>(); const deferred = Promise.withResolvers<void>();
-        const original = store.getAgentRevision.bind(store); let hold = false;
-        store.getAgentRevision = async (name) => { if (hold) { hold = false; entered.resolve(); await deferred.promise; } return original(name); };
+        const original = store.agentRevisions.findOne.bind(store.agentRevisions); let hold = false;
+        store.agentRevisions.findOne = async (name) => {
+            if (hold) { hold = false; entered.resolve(); await deferred.promise; }
+            return original(name);
+        };
         const model = mockModel([{
             parts: [{
                 type: 'tool-call',
@@ -396,7 +399,7 @@ describe('first class skills', () => {
             payload: {},
         }); await entered.promise;
         await e.putAgent(agent([defineSkill({ ...skill('common', 'NEW'), hash: 'b'.repeat(64) })]), { revision: 'same' }); deferred.resolve(); await e.idle();
-        expect((await store.listSteps(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'OLD' }); await e.stop();
+        expect((await store.steps.find(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'OLD' }); await e.stop();
     });
     it('scopes global and extra loads and keeps instructions passive for agents with no user tools', async () => {
         const model = mockModel([{
@@ -413,7 +416,7 @@ describe('first class skills', () => {
             }],
         }, { parts: [{ type: 'text', text: 'done' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             skills: [skill()],
             agents: [agent(), defineAgent({
@@ -428,12 +431,12 @@ describe('first class skills', () => {
             trigger: 'test',
             payload: {},
         }); await e.idle();
-        const calls = (await e.store.listSteps(run.runId)).filter((step) => step.kind === 'tool');
+        const calls = (await e.store.steps.find(run.runId)).filter((step) => step.kind === 'tool');
         expect(calls[0]?.error).toMatchObject({ message: 'Unknown approved skill.' }); expect(calls[1]?.output).toMatchObject({ name: 'common' });
         expect(JSON.stringify(model.doStreamCalls[0]?.tools)).not.toContain('private'); await e.stop();
     });
     it('runs load_skill through hooks and durable approval replay with a new prepared snapshot', async () => {
-        const store = new MemoryStore(); const before: string[] = []; const after: unknown[] = [];
+        const store = createMemoryStore(); const before: string[] = []; const after: unknown[] = [];
         const hooks = {
             beforeToolExecution: async (call: { toolName: string }, ctx: Parameters<typeof approve>[0]) => { before.push(call.toolName); await approve(ctx, { title: 'Read approved content?' }); },
             afterToolExecution: (call: { output: unknown }) => { after.push(call.output); },
@@ -487,7 +490,7 @@ describe('first class skills', () => {
             }],
         }, { parts: [{ type: 'text', text: 'done' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             agents: [defineAgent({
                 name: 'test',
@@ -502,7 +505,7 @@ describe('first class skills', () => {
             trigger: 'test',
             payload: {},
         }); await e.idle();
-        expect((await e.store.listSteps(run.runId)).find((step) => step.kind === 'tool')?.error).toMatchObject({ code: 'tool_not_allowed' }); await e.stop();
+        expect((await e.store.steps.find(run.runId)).find((step) => step.kind === 'tool')?.error).toMatchObject({ code: 'tool_not_allowed' }); await e.stop();
     });
     it('rejects conflicting ready snapshots synchronously and rejects malformed UTF-8 strings', () => {
         expect(() => agent([skill(), skill('common', 'DIFFERENT')])).toThrow(/conflicting content/i);
@@ -518,7 +521,7 @@ describe('first class skills', () => {
         }).toThrow(/skill/i);
     });
     it('verification rejects before recovery, channels or a model call', async () => {
-        const store = new MemoryStore(); const reads = vi.spyOn(store, 'listRuns'); const start = vi.fn();
+        const store = createMemoryStore(); const reads = vi.spyOn(store.runs, 'find'); const start = vi.fn();
         const error = new Error('verification failed'); const model = mockModel([]);
         const e = new Engine({
             store,
@@ -540,11 +543,11 @@ describe('first class skills', () => {
         expect(e.isDraining).toBe(true);
     });
     it('preserves startup cancellation during the final queue pump and cleans channels', async () => {
-        const store = new MemoryStore();
+        const store = createMemoryStore();
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
-        const listRuns = store.listRuns.bind(store);
-        store.listRuns = async (options) => {
+        const listRuns = store.runs.find.bind(store.runs);
+        store.runs.find = async (options) => {
             if (options?.status?.length === 1 && options.status[0] === 'queued') {
                 entered.resolve();
                 await release.promise;
@@ -577,11 +580,11 @@ describe('first class skills', () => {
         expect(stop).toHaveBeenCalledOnce();
     });
     it('canceled startup refuses queued admission after a deferred store read', async () => {
-        const store = new MemoryStore();
+        const store = createMemoryStore();
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
-        const listRuns = store.listRuns.bind(store);
-        store.listRuns = async (options) => {
+        const listRuns = store.runs.find.bind(store.runs);
+        store.runs.find = async (options) => {
             if (options?.status?.length === 1 && options.status[0] === 'queued') {
                 entered.resolve();
                 await release.promise;
@@ -615,12 +618,12 @@ describe('first class skills', () => {
         expect((await e.getRun(run.runId))?.status).toBe('queued');
     });
     it('stop joins deferred admission without launching it, and restart can run the released claim', async () => {
-        const store = new MemoryStore();
+        const store = createMemoryStore();
         const entered = Promise.withResolvers<void>();
         const release = Promise.withResolvers<void>();
-        const claimRun = store.claimRun.bind(store);
+        const claimRun = store.runs.claim.bind(store.runs);
         let hold = true;
-        store.claimRun = async (...args) => {
+        store.runs.claim = async (...args) => {
             if (hold) {
                 hold = false;
                 entered.resolve();
@@ -676,7 +679,7 @@ describe('first class skills', () => {
             }],
         }, { parts: [{ type: 'text', text: 'finished normally' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             agents: [defineAgent({
                 name: 'test',

@@ -35,9 +35,9 @@ export class ControllableClock implements IClock {
     /** Clock options (keepAlive) have no meaning without a real event loop and are ignored. */
     setTimeout(fn: () => void, ms: number): { clear(): void } {
         const timer: Timer = {
-            at: this.current + ms, 
-            seq: this.seq++, 
-            fn, 
+            at: this.current + ms,
+            seq: this.seq++,
+            fn,
         };
         this.timers.push(timer);
         return {

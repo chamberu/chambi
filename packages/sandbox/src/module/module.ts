@@ -18,7 +18,7 @@ import type {
     IContainer,
     IModule,
 } from '@chamvi/app';
-import { InvalidAgentDefinitionError, MemoryStore } from '@chamvi/core';
+import { InvalidAgentDefinitionError, MemoryRunRepository } from '@chamvi/core';
 import type { Engine, IClock } from '@chamvi/core';
 import { isObject } from 'smob';
 import { provideSandboxContext } from '../context/module.ts';
@@ -53,8 +53,8 @@ import type {
  * lifecycle hook that attaches the manager to the engine (in start mode also
  * starting the garbage collector on the engine's clock, every
  * `gcIntervalMs`) and closes it after the engine drained (the collector
- * stopped first; disposing the held workspaces too when the store is a
- * MemoryStore, whose runs no restart resumes); migrate mode does nothing.
+ * stopped first; disposing the held workspaces too when the engine uses
+ * a memory store, whose runs no restart resumes); migrate mode does nothing.
  */
 export class SandboxModule implements IModule {
     readonly name: string = SANDBOX_MODULE_NAME;
@@ -215,7 +215,7 @@ export class SandboxModule implements IModule {
                     detach = undefined;
                     // no run of a memory store resumes after this process: its
                     // workspaces would only wait for maxLifetimeMs
-                    await this.manager.close({ dispose: this.engine?.store instanceof MemoryStore });
+                    await this.manager.close({ dispose: this.engine?.store.runs instanceof MemoryRunRepository });
                 },
             },
         });

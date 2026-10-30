@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { Agent, AgentDefinition, ChannelSubscription } from '@chamvi/core';
@@ -60,10 +60,15 @@ describe('agent concurrency configuration', () => {
     describe.each(['agent', 'subscription'] as const)('hand-built %s caps', (level) => {
         it.each(invalid)('rejects %s at every registration boundary before store access', async (value) => {
             const accesses: PropertyKey[] = [];
-            const store = new Proxy(new MemoryStore(), {
+            const store = new Proxy(createMemoryStore(), {
                 get(target, key, receiver) {
-                    accesses.push(key);
-                    return Reflect.get(target, key, receiver);
+                    const capability = Reflect.get(target, key, receiver);
+                    return new Proxy(capability, {
+                        get(role, method, roleReceiver) {
+                            accesses.push(method);
+                            return Reflect.get(role, method, roleReceiver);
+                        },
+                    });
                 },
             });
             const agent: Agent = {

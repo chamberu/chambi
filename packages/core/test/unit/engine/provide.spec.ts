@@ -26,7 +26,7 @@ import {
 } from '@chamvi/core';
 import type { AgentDefinition, ContextKey, ToolContext } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
@@ -50,7 +50,7 @@ const callTool = (toolName: string, input: unknown = {}): MockResponse => ({
 
 function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const errors: unknown[] = [];
     const agent = defineAgent({
         name: 'ops',
@@ -75,7 +75,7 @@ function setup(model: LanguageModel, tools: AgentDefinition['tools']) {
     };
 }
 
-async function runOn(engine: Engine, store: MemoryStore) {
+async function runOn(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
     const { runId } = await engine.dispatch({
         agent: 'ops',
         trigger: 'http',
@@ -83,11 +83,11 @@ async function runOn(engine: Engine, store: MemoryStore) {
         payload: {},
     });
     await engine.idle();
-    return { runId, run: await store.getRun(runId) };
+    return { runId, run: await store.runs.findOne(runId) };
 }
 
-async function toolStep(store: MemoryStore, runId: string, name: string) {
-    return (await store.listSteps(runId)).find((s) => s.kind === 'tool' && s.name === name);
+async function toolStep(store: ReturnType<typeof createMemoryStore>, runId: string, name: string) {
+    return (await store.steps.find(runId)).find((s) => s.kind === 'tool' && s.name === name);
 }
 
 describe('engine.provide', () => {
@@ -342,9 +342,9 @@ describe('engine.provide', () => {
         expect(Reflect.ownKeys(ctx).map(String).sort()).toEqual(['artifacts', 'channels', 'run', 'state']);
         const secret = 'sekr3t-ctx-value';
         expect(JSON.stringify(ctx.run)).not.toContain(secret);
-        expect(JSON.stringify(await store.listSteps(runId))).not.toContain(secret);
-        expect(JSON.stringify(await store.latestCheckpoint(runId))).not.toContain(secret);
-        expect(JSON.stringify(await store.getRun(runId))).not.toContain(secret);
+        expect(JSON.stringify(await store.steps.find(runId))).not.toContain(secret);
+        expect(JSON.stringify(await store.checkpoints.findOne(runId))).not.toContain(secret);
+        expect(JSON.stringify(await store.runs.findOne(runId))).not.toContain(secret);
     });
 
     it('the same key on two engines', async () => {

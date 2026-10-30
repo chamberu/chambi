@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { bindConversationRun } from '../../conversation/context.ts';
 import { ToolLoopAgent, isStepCount } from 'ai';
 import type {
     LanguageModel,
@@ -24,6 +25,7 @@ import {
 import { assertTranscriptMessages, splitInstructions } from '../../message/helpers.ts';
 import { bindRunSnapshot } from '../../handoff/helpers.ts';
 import { toLanguageModel } from '../../model/asserts.ts';
+import { untilAborted } from '../../run/helpers.ts';
 import { RunStatus } from '../../run/constants.ts';
 import type { RunContext, Step, Usage } from '../../run/types.ts';
 import {
@@ -46,7 +48,6 @@ import {
     toToolResultPart,
     toValidationError,
     unansweredToolNames,
-    untilAborted,
     withToolResults,
     withoutPartialOutput,
     withoutResults,
@@ -69,9 +70,12 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         clock,
     } = ctx;
     const budget = resolveBudget(agent);
-    const checkpoint = await store.latestCheckpoint(run.id);
+    const checkpoint = await store.checkpoints.findOne(run.id);
     // stored form: file parts hold artifact markers; the model gets a hydrated copy
-    let initial: ModelMessage[] = checkpoint?.messages ?? [initialMessage(run.trigger)];
+    let initial: ModelMessage[] = checkpoint?.messages ?? [
+        ...(ctx.conversation?.snapshot.messages ?? []),
+        initialMessage(run.trigger, ctx.conversation ? run.conversation?.text : undefined),
+    ];
     let configured: ReturnType<typeof splitInstructions>;
     try {
         assertTranscriptMessages(initial);
@@ -83,7 +87,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
     }
     const usage: Usage = { ...run.usage };
     let stepIndex = checkpoint ? checkpoint.stepIndex + 1 : 0;
-    let stepSeq = (await store.listSteps(run.id)).length;
+    let stepSeq = (await store.steps.find(run.id)).length;
 
     // calls a suspended approve() left without a result: run before any model call
     const pending = checkpoint ? pendingToolCalls(checkpoint.messages) : [];
@@ -120,7 +124,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
 
     let prompt: ModelMessage[];
     try {
-        prompt = await hydrateMessages([...configured.messages, ...initial], store);
+        prompt = await hydrateMessages([...configured.messages, ...initial], store.artifacts);
     } catch (error) {
         if (!(error instanceof ArtifactNotFoundError)) throw error;
         await ctx.finish({ status: RunStatus.FAILED, error: toRunError(error) });
@@ -138,6 +142,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         signal,
     };
     bindRunSnapshot(runContext);
+    if (ctx.conversation) bindConversationRun(runContext, ctx.conversation.capability, run);
 
     // the calls approve() suspended in this execution, in the order they suspended
     const suspended: ApprovalRequest[] = [];
@@ -158,9 +163,9 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         return;
     }
     const {
-        tools, 
-        activeTools, 
-        toolsContext, 
+        tools,
+        activeTools,
+        toolsContext,
     } = assembled;
 
     const responseMessages: ModelMessage[] = [];
@@ -197,7 +202,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             runId: run.id,
             index: stepSeq,
         };
-        if (await guarded(() => store.appendStep(full))) {
+        if (await guarded(() => store.steps.insert(full))) {
             stepSeq++;
             ctx.onStepAppended(full);
         }
@@ -261,11 +266,17 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                     .sort((a, b) => order.indexOf(a.toolCallId) - order.indexOf(b.toolCallId))[0] ?? suspended[0];
             }
             responseMessages.push(...messages);
-            await guarded(() => store.saveCheckpoint({
+            await guarded(() => store.checkpoints.save({
                 runId: run.id,
                 stepIndex: stepIndex++,
                 messages: [...initial, ...responseMessages],
                 finishReason: step.finishReason,
+                ...(ctx.conversation ? {
+                    conversation: {
+                        scopeId: ctx.conversation.snapshot.scope.id,
+                        generation: ctx.conversation.snapshot.scope.generation,
+                    },
+                } : {}),
                 createdAt: finishedAt,
             }));
             usage.inputTokens += tokens.inputTokens;
@@ -313,11 +324,17 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 const part = await toToolResultPart(call, Object.hasOwn(tools, call.toolName) ? tools[call.toolName] : undefined, result);
                 initial = withToolResults(initial, [part]);
                 prompt = withToolResults(prompt, [part]);
-                await guarded(() => store.saveCheckpoint({
+                await guarded(() => store.checkpoints.save({
                     runId: run.id,
                     stepIndex: checkpoint!.stepIndex,
                     messages: initial,
                     ...(checkpoint!.finishReason !== undefined ? { finishReason: checkpoint!.finishReason } : {}),
+                    ...(ctx.conversation ? {
+                        conversation: {
+                            scopeId: ctx.conversation.snapshot.scope.id,
+                            generation: ctx.conversation.snapshot.scope.generation,
+                        },
+                    } : {}),
                     createdAt: finishedAt,
                 }));
                 await append({
@@ -363,15 +380,15 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
                 await ctx.finish({ status: RunStatus.CANCELLED, usage });
             } else if (timeout?.signal.aborted) {
                 await ctx.finish({
-                    status: RunStatus.FAILED, 
-                    usage, 
-                    error: toRunError(timeout.signal.reason), 
+                    status: RunStatus.FAILED,
+                    usage,
+                    error: toRunError(timeout.signal.reason),
                 });
             } else {
                 await ctx.finish({
-                    status: RunStatus.FAILED, 
-                    usage, 
-                    error: toRunError(error), 
+                    status: RunStatus.FAILED,
+                    usage,
+                    error: toRunError(error),
                 });
             }
             return;
@@ -382,9 +399,9 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
             timeout?.clear();
             if (outcome === 'failed' && fatal) {
                 await ctx.finish({
-                    status: RunStatus.FAILED, 
-                    usage, 
-                    error: toRunError(fatal.error), 
+                    status: RunStatus.FAILED,
+                    usage,
+                    error: toRunError(fatal.error),
                 });
             } else {
                 await ctx.pause(suspended[0]!, usage);
@@ -412,7 +429,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         toolsContext: toolsContext as never,
         stopWhen,
         // a tool result's artifact marker (artifactFilePart) gets its bytes per model call, never in a stored message
-        prepareStep: async ({ messages }) => ({ messages: await hydrateMessages(messages, store) }),
+        prepareStep: async ({ messages }) => ({ messages: await hydrateMessages(messages, store.artifacts) }),
         onLanguageModelCallEnd: () => {
             modelCallEnded = true;
         },
@@ -452,6 +469,8 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         }
         if (streamError) throw streamError.error;
         const [steps, finishReason, text] = await Promise.all([stream.steps, stream.finishReason, stream.text]);
+        // Keep normal sends alive until their journal settles; cancellation still exits via untilAborted.
+        await ctx.conversation?.capability.idle(run.id);
         return {
             stream,
             steps,

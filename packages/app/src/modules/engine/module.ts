@@ -84,6 +84,7 @@ export class EngineModule implements IModule {
 
         const engine = new Engine({
             store: container.resolve(AppToken.STORE),
+            ...(context.conversations !== undefined && { conversations: context.conversations }),
             agents: [...context.agents],
             ...(context.skills !== undefined && { skills: context.skills }),
             ...(this.model !== undefined && { model: this.model }),

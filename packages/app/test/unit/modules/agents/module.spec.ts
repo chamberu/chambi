@@ -11,7 +11,7 @@ import { join, relative } from 'node:path';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { Agent, IStore } from '@chamvi/core';
@@ -111,7 +111,7 @@ function build(options: {
 } = {}) {
     const clock = options.clock ?? new ControllableClock(START);
     const logger = createRecordingLogger(clock);
-    const store = options.store ?? new MemoryStore({ clock });
+    const store = options.store ?? createMemoryStore({ clock });
     const module = new AgentsModule();
     const dir = options.dir ?? root.path;
     const harness = buildHarness({
@@ -162,7 +162,7 @@ describe('agentsModule', () => {
     it('loads the folder at boot before the engine starts', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStore({ clock });
         const runId = await queueRun(store, clock, 'greeter');
 
         const { harness, engine } = build({
@@ -174,15 +174,15 @@ describe('agentsModule', () => {
         await engine().idle();
 
         expect(engine().agentRevision('greeter')).toBe(await hashAgentFolder(folder()));
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'from folder' });
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(await hashAgentFolder(folder()));
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'from folder' });
+        expect((await store.agentRevisions.findOne('greeter'))?.hash).toBe(await hashAgentFolder(folder()));
     });
 
     it('a folder change while stopped cancels the old runs at boot once', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStore({ clock });
+        await store.agentRevisions.save({
             agent: 'greeter',
             hash: 'h1',
             changedAt: START,
@@ -193,7 +193,7 @@ describe('agentsModule', () => {
         const first = build({ store, clock });
         await first.harness.setup();
         await first.engine().idle();
-        expect((await store.getRun(old))?.status).toBe('cancelled');
+        expect((await store.runs.findOne(old))?.status).toBe('cancelled');
         await first.harness.stop();
 
         clock.advance(1_000);
@@ -203,14 +203,14 @@ describe('agentsModule', () => {
         await second.harness.setup();
         await second.engine().idle();
 
-        expect(await store.getRun(later)).toMatchObject({ status: 'completed', output: 'from folder' });
+        expect(await store.runs.findOne(later)).toMatchObject({ status: 'completed', output: 'from folder' });
     });
 
     it('a normal boot cancels nothing', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStore({ clock });
+        await store.agentRevisions.save({
             agent: 'greeter',
             hash: await hashAgentFolder(folder()),
             changedAt: START,
@@ -222,7 +222,7 @@ describe('agentsModule', () => {
         await harness.setup();
         await engine().idle();
 
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
     });
 
     it('an upgrade from the full-folder hash moves the marker and cancels nothing', async () => {
@@ -235,8 +235,8 @@ describe('agentsModule', () => {
             legacy.update('\0');
         }
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStore({ clock });
+        await store.agentRevisions.save({
             agent: 'greeter',
             hash: legacy.digest('hex'),
             changedAt: START,
@@ -248,8 +248,8 @@ describe('agentsModule', () => {
         await harness.setup();
         await engine().idle();
 
-        expect((await store.getRun(runId))?.status).toBe('completed');
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(await hashAgentFolder(folder()));
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
+        expect((await store.agentRevisions.findOne('greeter'))?.hash).toBe(await hashAgentFolder(folder()));
     });
 
     it('a code agent wins a name clash and the folder is an issue', async () => {
@@ -309,8 +309,8 @@ describe('agentsModule', () => {
 
     it('a marker without a folder removes the agent\'s runs at boot', async () => {
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStore({ clock });
+        await store.agentRevisions.save({
             agent: 'gone',
             hash: 'h1',
             changedAt: START,
@@ -322,14 +322,14 @@ describe('agentsModule', () => {
         const { harness } = build({ store, clock });
         await harness.setup();
 
-        expect((await store.getRun(runId))?.status).toBe('cancelled');
-        expect(await store.getAgentRevision('gone')).toBeUndefined();
+        expect((await store.runs.findOne(runId))?.status).toBe('cancelled');
+        expect(await store.agentRevisions.findOne('gone')).toBeUndefined();
     });
 
     it('an empty agents dir (an unmounted volume) removes no marker at boot', async () => {
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStore({ clock });
+        await store.agentRevisions.save({
             agent: 'gone',
             hash: 'h1',
             changedAt: START,
@@ -339,28 +339,28 @@ describe('agentsModule', () => {
         const { harness, logger } = build({ store, clock });
         await harness.setup();
 
-        expect((await store.getRun(runId))?.status).toBe('queued');
-        expect(await store.getAgentRevision('gone')).toBeDefined();
+        expect((await store.runs.findOne(runId))?.status).toBe('queued');
+        expect(await store.agentRevisions.findOne('gone')).toBeDefined();
         expect(logger.entries.filter((entry) => entry.msg === 'the agents dir is empty; no agent is removed')).toHaveLength(1);
     });
 
     it('a marker of a code agent is left alone at boot', async () => {
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
-        await store.setAgentRevision({
+        const store = createMemoryStore({ clock });
+        await store.agentRevisions.save({
             agent: 'triage',
             hash: 'h1',
             changedAt: START,
         });
 
         const { harness } = build({
-            store, 
+            store,
             clock, 
             agents: [codeAgent('triage')], 
         });
         await harness.setup();
 
-        expect(await store.getAgentRevision('triage')).toBeDefined();
+        expect(await store.agentRevisions.findOne('triage')).toBeDefined();
     });
 
     it('the watcher applies a change only once it is stable for one poll', async () => {
@@ -381,19 +381,19 @@ describe('agentsModule', () => {
             channel: 'http',
             payload: {},
         });
-        await expect.poll(async () => (await store.getRun(runId))?.status).toBe('running');
+        await expect.poll(async () => (await store.runs.findOne(runId))?.status).toBe('running');
 
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
         const v2 = await hashAgentFolder(folder());
         await poll();
         expect(engine().agentRevision('greeter')).toBe(v1);
-        expect((await store.getRun(runId))?.status).toBe('running');
+        expect((await store.runs.findOne(runId))?.status).toBe('running');
 
         await poll();
         await engine().idle();
         expect(engine().agentRevision('greeter')).toBe(v2);
-        expect((await store.getRun(runId))?.status).toBe('cancelled');
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(v2);
+        expect((await store.runs.findOne(runId))?.status).toBe('cancelled');
+        expect((await store.agentRevisions.findOne('greeter'))?.hash).toBe(v2);
     });
 
     it('logs agent reloaded once with the cancelled run ids', async () => {
@@ -414,7 +414,7 @@ describe('agentsModule', () => {
             channel: 'http',
             payload: {},
         });
-        await expect.poll(async () => (await store.getRun(runId))?.status).toBe('running');
+        await expect.poll(async () => (await store.runs.findOne(runId))?.status).toBe('running');
 
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v2') });
         const v2 = await hashAgentFolder(folder());
@@ -429,7 +429,7 @@ describe('agentsModule', () => {
             revision: v2.slice(0, 12),
             cancelled: [runId],
         })]);
-        expect(await store.getRun(runId)).toMatchObject({ status: 'cancelled', error: { code: 'agent_replaced' } });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'cancelled', error: { code: 'agent_replaced' } });
     });
 
     it('logs agent removed', async () => {
@@ -506,7 +506,7 @@ describe('agentsModule', () => {
         await poll();
         await poll();
         expect(engine().agentRevision('greeter')).toBe(v1);
-        expect((await store.getAgentRevision('greeter'))?.hash).toBe(v1);
+        expect((await store.agentRevisions.findOne('greeter'))?.hash).toBe(v1);
         expect(issues()).toEqual([{
             agent: 'greeter',
             message: expect.stringMatching(/^greeter\/agent\.ts: /),
@@ -542,7 +542,7 @@ describe('agentsModule', () => {
 
         await poll();
         expect(engine().getAgent('greeter')).toBeUndefined();
-        expect(await store.getAgentRevision('greeter')).toBeUndefined();
+        expect(await store.agentRevisions.findOne('greeter')).toBeUndefined();
     });
 
     it('an agents dir left empty (an unmounted volume) keeps every agent and its runs', async () => {
@@ -570,8 +570,8 @@ describe('agentsModule', () => {
         await poll();
 
         expect(engine().getAgent('greeter')).toBeDefined();
-        expect(await store.getAgentRevision('greeter')).toBeDefined();
-        expect((await store.getRun(runId))?.status).not.toBe('cancelled');
+        expect(await store.agentRevisions.findOne('greeter')).toBeDefined();
+        expect((await store.runs.findOne(runId))?.status).not.toBe('cancelled');
         expect(logger.entries.filter((entry) => entry.msg === 'the agents dir is empty; no agent is removed')).toHaveLength(1);
     });
 
@@ -638,7 +638,7 @@ describe('agentsModule', () => {
 
             expect(loaded).toBe(true);
             expect(current.agentRevision('greeter')).toBe(v1);
-            expect((await store.getAgentRevision('greeter'))?.hash).toBe(v1);
+            expect((await store.agentRevisions.findOne('greeter'))?.hash).toBe(v1);
         } finally {
             release.resolve();
             vi.unstubAllGlobals();
@@ -667,7 +667,7 @@ describe('agentsModule', () => {
     it('job mode loads the folder and runs a folder agent\'s cron trigger', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1', 'test/model', 'greeter', [cronTrigger('0 9 * * *')]) });
         const clock = new ControllableClock(START);
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStore({ clock });
         const app = createApp({
             models: { test: provider() },
             modules: [configModule({ clock, logger: createRecordingLogger(clock) }), storeModule({ store })],
@@ -683,7 +683,7 @@ describe('agentsModule', () => {
         });
 
         expect(result).toMatchObject({ status: 'completed', exitCode: 0 });
-        expect((await store.getRun(result.runId as string))?.output).toBe('from folder');
+        expect((await store.runs.findOne(result.runId as string))?.output).toBe('from folder');
     });
 
     it('job mode starts no watcher', async () => {

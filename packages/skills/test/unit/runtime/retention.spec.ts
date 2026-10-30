@@ -11,7 +11,7 @@ import {
     it,
     vi,
 } from 'vitest';
-import { Engine, MemoryStore, defineAgent } from '@chamvi/core';
+import { Engine, createMemoryStore, defineAgent } from '@chamvi/core';
 import { SkillRuntime } from '../../../src/runtime/module.ts';
 import { skillRuntimeProvider } from '../../../src/runtime/provider.ts';
 import type { ISkillRuntimeProvider, SkillInput } from '@chamvi/core';
@@ -48,7 +48,7 @@ function engine() {
         create: () => runtime,
     };
     const e = new Engine({
-        store: new MemoryStore(),
+        store: createMemoryStore(),
         agents: [],
         model: mockModel([]),
         skills: [{ ...defineSkillSource({ skills: [], load: async () => [] }), runtime: provider }],

@@ -11,7 +11,6 @@ import type { App } from 'routup';
 import type { HttpContext } from '../app/types.ts';
 import { routeSubpath } from '../routes/helpers.ts';
 import { CHANNELS_SEGMENT } from './constants.ts';
-import { createChannelContext } from './helpers.ts';
 
 /**
  * Mounts `POST /channels/<name>` and `POST /channels/<name>/...` for each
@@ -25,7 +24,7 @@ import { createChannelContext } from './helpers.ts';
 export function registerChannelRoutes(app: App, ctx: HttpContext): void {
     for (const channel of ctx.channels) {
         const path = `/${CHANNELS_SEGMENT}/${channel.name}`;
-        const channelCtx = createChannelContext(ctx.engine, channel);
+        const channelCtx = ctx.engine.channelContext(channel);
         const handler = defineCoreHandler(async (event) => {
             try {
                 return await channel.in!({

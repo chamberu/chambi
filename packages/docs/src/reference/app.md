@@ -60,9 +60,9 @@ Read by `readConfig(env, { mode, dev })` once per lifecycle; the optional module
 | `CHAMVI_BASE_PATH` | http | empty or `^(?:\/[a-z0-9._~-]+)+$` | `''` (health at `/healthz`, UI at `/ui`) | never |
 | `CHAMVI_PUBLIC_URL` | http, ui, channels | absolute URL | unset | an approval link is wanted |
 | `CHAMVI_LOG_LEVEL` | config | `error`, `warn`, `info`, `debug` | `info` | never |
-| `DATABASE_URL` | store | `postgres://...` | unset: `MemoryStore` (warned outside dev) | `migrate`; any multi-replica or CronJob deployment |
+| `DATABASE_URL` | store | `postgres://...` | unset: `createMemoryStore()` (warned outside dev) | `migrate`; any multi-replica or CronJob deployment |
 | `CHAMVI_MIGRATE` | store | bool | `true` | never |
-| `CHAMVI_PURGE_INTERVAL_MS` | store | int, `0` disables | `3600000` (only with `TypeormStore`, on `engine.clock`) | never |
+| `CHAMVI_PURGE_INTERVAL_MS` | store | int, `0` disables | `3600000` (for purgeable capability repositories, on `engine.clock`) | never |
 | `CHAMVI_MAX_CONCURRENT_RUNS` | engine | int >= 1 | `4` | never |
 | `CHAMVI_SCHEDULER` | scheduler | bool | `true`; `false` starts no in-process cron (CronJob mode; `cron.on()` subscriptions still validate) | never |
 | `CHAMVI_AGENTS_DIR` | agents | path of a directory, relative to the working directory | unset: `./agents` when it is a directory, else no [agent folders](/guide/agent-folders) | |
@@ -134,7 +134,7 @@ Listing one of them in `createApp({ modules })` replaces the default instance. `
 
 `StoreModuleOptions` (`store` is used as is and never closed; `dataSource` must be initialized, is migrated like a built one and never destroyed; `url` wins over `DATABASE_URL`; a data source built from a URL waits at most 10 s for Postgres to accept the first connection):
 
-<<< ../../../app/src/modules/store/types.ts{ts}
+<<< ../../../app/src/modules/repository/types.ts{ts}
 
 <<< ../../../app/src/modules/static-tokens/types.ts{ts}
 

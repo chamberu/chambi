@@ -80,7 +80,7 @@ export function createWorkspaces(
 }
 ```
 
-Give the agent `workspaces.tools()` (and usually `codingTools(workspaces)` from `@chamvi/coding`). At shutdown, close the manager **after** the engine drained. It disposes nothing a live run holds: a run waiting for an approval or interrupted by the drain finds its workspaces again after the restart. With a store no run resumes from (a `MemoryStore`) call `close({ dispose: true })`, which disposes those too; `sandboxModule()` does that by itself.
+Give the agent `workspaces.tools()` (and usually `codingTools(workspaces)` from `@chamvi/coding`). At shutdown, close the manager **after** the engine drained. It disposes nothing a live run holds: a run waiting for an approval or interrupted by the drain finds its workspaces again after the restart. With a store no run resumes from (in-memory repositories from `createMemoryStore()`) call `close({ dispose: true })`, which disposes those too; `sandboxModule()` does that by itself.
 
 ```ts
 await engine.drain();

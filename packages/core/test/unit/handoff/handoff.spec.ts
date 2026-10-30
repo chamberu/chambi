@@ -31,12 +31,13 @@ import {
 import type {
     ChannelSubscription,
     HandoffInput,
+    IStore,
     Invoker,
     Run,
     ToolContext,
 } from '@chamvi/core';
 import { stableHash } from '../../../src/effect/helpers.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { MemoryEffectRepository, createMemoryStore } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockPart, MockResponse } from '../../utils/mock-model.ts';
@@ -83,22 +84,22 @@ afterEach(() => {
     engines.length = 0;
 });
 
-class LossyStore extends MemoryStore {
+class LossyRepository extends MemoryEffectRepository {
     lose = false;
 
-    override async getEffect(key: string) {
+    override async findOne(key: string) {
         if (this.lose && key.includes(':handoff:')) return undefined;
-        return super.getEffect(key);
+        return super.findOne(key);
     }
 }
 
 /** A store answering one read of a hand-off record late and stale, as a busy pool would: after the record landed, as missing. */
-function laggingStore(): MemoryStore {
-    const store = new MemoryStore({ clock: new ControllableClock(START) });
-    const read = store.getEffect.bind(store);
+function laggingRepository(): IStore {
+    const store = createMemoryStore({ clock: new ControllableClock(START) });
+    const read = store.effects.findOne.bind(store.effects);
     const tick = () => new Promise((resolve) => { setImmediate(resolve); });
     let reads = 0;
-    store.getEffect = async (key: string) => {
+    store.effects.findOne = async (key: string) => {
         if (!key.includes(':handoff:')) return read(key);
         reads += 1;
         if (reads !== 2) return read(key);
@@ -114,10 +115,10 @@ function setup(options: {
     child?: MockResponse[];
     subscription?: ChannelSubscription<any> | false;
     tools?: ToolSet;
-    store?: MemoryStore;
+    store?: IStore;
 }) {
     const clock = new ControllableClock(START);
-    const store = options.store ?? new MemoryStore({ clock });
+    const store = options.store ?? createMemoryStore({ clock });
     const errors: unknown[] = [];
     const agent = defineAgent({
         name: 'maintainer',
@@ -155,13 +156,13 @@ async function dispatchParent(engine: Engine, extra: { invoker?: Invoker } = {})
     return runId;
 }
 
-async function children(store: MemoryStore): Promise<Run[]> {
-    const { data } = await store.listRuns({ agent: 'maintainer' });
+async function children(store: IStore): Promise<Run[]> {
+    const { data } = await store.runs.find({ agent: 'maintainer' });
     return data.filter((run) => run.trigger.channel === 'agent');
 }
 
-async function toolSteps(store: MemoryStore, runId: string) {
-    return (await store.listSteps(runId)).filter((step) => step.kind === 'tool');
+async function toolSteps(store: IStore, runId: string) {
+    return (await store.steps.find(runId)).filter((step) => step.kind === 'tool');
 }
 
 const pr = {
@@ -196,7 +197,7 @@ describe('startHandoff()', () => {
         expect(child!.address).toBe('o/r#5');
         const [step] = await toolSteps(store, parentId);
         expect(step?.output).toEqual({ runId: child!.id, deduplicated: false });
-        expect((await store.getRun(parentId))?.status).toBe('completed');
+        expect((await store.runs.findOne(parentId))?.status).toBe('completed');
     });
 
     it("inherits the parent's invoker", async () => {
@@ -212,7 +213,7 @@ describe('startHandoff()', () => {
     });
 
     it('a second parent with the same key gets the existing child', async () => {
-        const store = new MemoryStore({ clock: new ControllableClock(START) });
+        const store = createMemoryStore({ clock: new ControllableClock(START) });
         const first = setup({ parent: [turn(call(pr)), text('done')], store });
         await dispatchParent(first.engine);
         first.engine.stop();
@@ -222,7 +223,7 @@ describe('startHandoff()', () => {
         expect(all).toHaveLength(1);
         const [step] = await toolSteps(store, secondId);
         expect(step?.output).toEqual({ runId: all[0]!.id, deduplicated: true });
-        expect(await store.getEffect(`handoff-count:${secondId}`)).toMatchObject({ result: { count: 1 } });
+        expect(await store.effects.findOne(`handoff-count:${secondId}`)).toMatchObject({ result: { count: 1 } });
     });
 
     it('the result is recorded', async () => {
@@ -235,7 +236,7 @@ describe('startHandoff()', () => {
             concurrencyKey: pr.concurrencyKey,
             address: pr.address,
         })}`;
-        expect(await store.getEffect(key)).toEqual({ result: { runId: child!.id, deduplicated: false } });
+        expect(await store.effects.findOne(key)).toEqual({ result: { runId: child!.id, deduplicated: false } });
     });
 
     it('a recorded call returns the record and starts nothing', async () => {
@@ -248,12 +249,12 @@ describe('startHandoff()', () => {
             { runId: all[0]!.id, deduplicated: false },
             { runId: all[0]!.id, deduplicated: false },
         ]);
-        expect(await store.getEffect(`handoff-count:${parentId}`)).toMatchObject({ result: { count: 1 } });
+        expect(await store.effects.findOne(`handoff-count:${parentId}`)).toMatchObject({ result: { count: 1 } });
     });
 
     it('a lost record still yields one child', async () => {
-        const store = new LossyStore({ clock: new ControllableClock(START) });
-        store.lose = true;
+        const store = { ...createMemoryStore({ clock: new ControllableClock(START) }), effects: new LossyRepository() };
+        store.effects.lose = true;
         const { engine } = setup({ parent: [turn(call(pr, 'c1')), turn(call(pr, 'c2')), text('done')], store });
         const parentId = await dispatchParent(engine);
         const all = await children(store);
@@ -267,11 +268,11 @@ describe('startHandoff()', () => {
         const { engine, store } = setup({ parent: [turn(call(pr, 'c1'), call(pr, 'c2')), text('done')] });
         const parentId = await dispatchParent(engine);
         expect(await children(store)).toHaveLength(1);
-        expect(await store.getEffect(`handoff-count:${parentId}`)).toMatchObject({ result: { count: 1 } });
+        expect(await store.effects.findOne(`handoff-count:${parentId}`)).toMatchObject({ result: { count: 1 } });
     });
 
     it('identical calls in one step share one hand-off on a store with latency', async () => {
-        const store = laggingStore();
+        const store = laggingRepository();
         const { engine } = setup({ parent: [turn(call(pr, 'c1'), call(pr, 'c2')), text('done')], store });
         const parentId = await dispatchParent(engine);
         const all = await children(store);
@@ -281,12 +282,12 @@ describe('startHandoff()', () => {
             { runId: all[0]!.id, deduplicated: false },
             { runId: all[0]!.id, deduplicated: false },
         ]);
-        expect(await store.getEffect(`handoff-count:${parentId}`)).toMatchObject({ result: { count: 1 } });
+        expect(await store.effects.findOne(`handoff-count:${parentId}`)).toMatchObject({ result: { count: 1 } });
     });
 
     it('a call whose record was lost redoes its hand-off at the limit', async () => {
-        const store = new LossyStore({ clock: new ControllableClock(START) });
-        store.lose = true;
+        const store = { ...createMemoryStore({ clock: new ControllableClock(START) }), effects: new LossyRepository() };
+        store.effects.lose = true;
         const { engine } = setup({
             parent: [turn(call(pr, 'c1')), turn(call(pr, 'c2')), text('done')],
             subscription: handoff.on({ maxPerRun: 1 }),
@@ -300,7 +301,7 @@ describe('startHandoff()', () => {
             { runId: all[0]!.id, deduplicated: false },
             { runId: all[0]!.id, deduplicated: true },
         ]);
-        expect(await store.getEffect(`handoff-count:${parentId}`)).toMatchObject({ result: { count: 1 } });
+        expect(await store.effects.findOne(`handoff-count:${parentId}`)).toMatchObject({ result: { count: 1 } });
     });
 
     it('ignores what tool code wrote to ctx.run', async () => {
@@ -378,7 +379,7 @@ describe('startHandoff()', () => {
     });
 
     it('without a key the default key is run-scoped', async () => {
-        const store = new MemoryStore({ clock: new ControllableClock(START) });
+        const store = createMemoryStore({ clock: new ControllableClock(START) });
         const first = setup({ parent: [turn(call({ payload: { pr: 'o/r#5' } })), text('done')], store });
         const firstId = await dispatchParent(first.engine);
         first.engine.stop();
@@ -403,9 +404,9 @@ describe('startHandoff()', () => {
         });
         const { engine, store } = setup({
             parent: [turn(call({ payload: { pr: 'a' } }, 'c1'), call({
-                payload: { pr: 'b' }, 
-                idempotencyKey: 'mine', 
-                concurrencyKey: 'own', 
+                payload: { pr: 'b' },
+                idempotencyKey: 'mine',
+                concurrencyKey: 'own',
             }, 'c2')), text('done')],
             subscription,
         });
@@ -446,11 +447,11 @@ describe('startHandoff()', () => {
             tools: { fan, gate },
         });
         const parentId = await dispatchParent(engine);
-        const paused = await store.getRun(parentId);
+        const paused = await store.runs.findOne(parentId);
         expect(paused?.status).toBe('waiting');
         await engine.approve(parentId, { approvalId: paused!.waiting!.approvalId, approved: true });
         await engine.idle();
-        expect((await store.getRun(parentId))?.status).toBe('completed');
+        expect((await store.runs.findOne(parentId))?.status).toBe('completed');
         expect(await children(store)).toHaveLength(3);
         const steps = (await toolSteps(store, parentId)).filter((s) => s.name === 'fan');
         expect(steps.at(-1)?.error).toMatchObject({ code: 'validation_error', message: expect.stringMatching(/reached its 3 hand-offs/) });

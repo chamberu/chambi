@@ -11,7 +11,7 @@ import {
     it,
     vi,
 } from 'vitest';
-import { Engine, MemoryStore, defineAgent } from '@chamvi/core';
+import { Engine, createMemoryStore, defineAgent } from '@chamvi/core';
 import { defineSkill, defineSkillSource } from '@chamvi/skills';
 import { mockModel } from '@chamvi/test-kit';
 import { SkillRuntime } from '../../../src/runtime/module.ts';
@@ -47,7 +47,7 @@ describe('runtime structural interchange', () => {
         expect(one.runtime.protocol).toBe(two.runtime.protocol);
         raw.load = async () => { throw new Error('changed loader must not run'); };
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model: mockModel([]),
             skills: [one],
             agents: [candidate([two, other.defineSkill(original)])],
@@ -102,7 +102,7 @@ describe('runtime structural interchange', () => {
             }],
         }, { parts: [{ type: 'text', text: 'done' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             agents: capture === 'constructor' ? [a] : [],
         });
@@ -124,14 +124,14 @@ describe('runtime structural interchange', () => {
             payload: {},
         });
         await e.idle(); await e.stop();
-        expect((await e.store.listSteps(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'content' });
+        expect((await e.store.steps.find(run.runId)).find((step) => step.name === 'load_skill')?.output).toMatchObject({ content: 'content' });
     });
     it('keeps an initially empty Agent scope when the first runtime is selected later in the same prepare pass', async () => {
         const empty = candidate([]);
         const original = ready();
         const model = mockModel([{ parts: [{ type: 'text', text: 'empty' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             agents: [empty],
         });
@@ -157,7 +157,7 @@ describe('runtime structural interchange', () => {
     it('retries corrected inputs on the same Agent after a synchronous composition rejection', () => {
         const original = ready();
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model: mockModel([]),
             skills: [original],
             agents: [],

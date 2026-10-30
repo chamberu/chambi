@@ -76,9 +76,9 @@ export default defineConfig({
                 activeMatch: '/guide/',
             },
             {
-                text: 'Stores',
-                link: '/stores/',
-                activeMatch: '/stores/',
+                text: 'Stores & repositories',
+                link: '/repositories/',
+                activeMatch: '/repositories/',
             },
             {
                 text: 'Deployment',
@@ -130,6 +130,7 @@ export default defineConfig({
                         { text: 'Approvals & Hooks', link: '/guide/approvals' },
                         { text: 'Hand-offs', link: '/guide/handoffs' },
                         { text: 'Agent State', link: '/guide/state' },
+                        { text: 'Conversation Memory', link: '/guide/conversations' },
                         { text: 'Workspaces & Coding', link: '/guide/workspaces' },
                     ],
                 },
@@ -148,14 +149,14 @@ export default defineConfig({
                     ],
                 },
             ],
-            '/stores/': [
+            '/repositories/': [
                 {
-                    text: 'Stores',
+                    text: 'Stores & repositories',
                     items: [
-                        { text: 'Store Contract', link: '/stores/' },
-                        { text: 'MemoryStore', link: '/stores/memory' },
-                        { text: 'Writing a Store', link: '/stores/writing-a-store' },
-                        { text: 'TypeORM', link: '/stores/typeorm' },
+                        { text: 'Repository Contract', link: '/repositories/' },
+                        { text: 'Memory store', link: '/repositories/memory' },
+                        { text: 'Writing a Repository', link: '/repositories/writing-a-repository' },
+                        { text: 'TypeORM', link: '/repositories/typeorm' },
                     ],
                 },
             ],

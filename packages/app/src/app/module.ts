@@ -76,6 +76,8 @@ export class App implements IApp {
 
     protected providers: Record<string, ProviderConfig> | undefined;
 
+    protected conversations: AppOptions['conversations'];
+
     protected used = false;
 
     protected lifecycle: Lifecycle | undefined;
@@ -93,6 +95,16 @@ export class App implements IApp {
         }
         if (options.providers !== undefined && !isObject(options.providers)) {
             throw new InvalidAgentDefinitionError('createApp\'s providers must be an object of provider configs by name.');
+        }
+
+        if (options.conversations !== undefined) {
+            if (!isObject(options.conversations) || typeof options.conversations.authorize !== 'function') {
+                throw new InvalidAgentDefinitionError('createApp conversations needs an authorize function.');
+            }
+            this.conversations = { ...options.conversations };
+            if (isObject(options.conversations.limits)) {
+                this.conversations.limits = { ...options.conversations.limits };
+            }
         }
 
         this.agents = Object.freeze([...options.agents ?? []]);
@@ -161,6 +173,7 @@ export class App implements IApp {
             signal: controller.signal,
             report,
             models: this.models,
+            ...(this.conversations !== undefined && { conversations: this.conversations }),
             ...(this.model !== undefined && { model: this.model }),
             ...(this.providers !== undefined && { providers: this.providers }),
             agents: this.agents,

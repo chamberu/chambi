@@ -31,15 +31,15 @@ import type {
     ToolContext,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { stableHash } from '../../../src/effect/helpers.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
 type Sent = {
-    message: ChannelMessage; 
-    address: string; 
-    opts: ChannelSendOptions 
+    message: ChannelMessage;
+    address: string;
+    opts: ChannelSendOptions
 };
 
 function recorder(name: string) {
@@ -49,9 +49,9 @@ function recorder(name: string) {
         name,
         async out(message, address, opts) {
             calls.push({
-                message, 
-                address, 
-                opts, 
+                message,
+                address,
+                opts,
             });
             if (state.failures > 0) {
                 state.failures -= 1;
@@ -60,9 +60,9 @@ function recorder(name: string) {
         },
     };
     return {
-        channel, 
-        calls, 
-        state, 
+        channel,
+        calls,
+        state,
     };
 }
 
@@ -90,13 +90,13 @@ function setup(
     model: LanguageModel,
     tools: AgentDefinition['tools'],
     opts: {
-        store?: MemoryStore; 
-        clock?: ControllableClock; 
-        channels?: IChannel[] 
+        store?: ReturnType<typeof createMemoryStore>;
+        clock?: ControllableClock;
+        channels?: IChannel[]
     } = {},
 ) {
     const clock = opts.clock ?? new ControllableClock(new Date(1_000_000));
-    const store = opts.store ?? new MemoryStore({ clock });
+    const store = opts.store ?? createMemoryStore({ clock });
     const slack = recorder('slack');
     const errors: unknown[] = [];
     const engine = new Engine({
@@ -125,7 +125,7 @@ function setup(
 }
 
 async function run(
-    ctx: { engine: Engine; store: MemoryStore },
+    ctx: { engine: Engine; store: ReturnType<typeof createMemoryStore> },
     envelope: { channel?: string; address?: string } = {},
 ) {
     await ctx.engine.start();
@@ -139,8 +139,8 @@ async function run(
     await ctx.engine.idle();
     return {
         runId,
-        run: await ctx.store.getRun(runId),
-        steps: await ctx.store.listSteps(runId),
+        run: await ctx.store.runs.findOne(runId),
+        steps: await ctx.store.steps.find(runId),
     };
 }
 
@@ -163,9 +163,9 @@ describe('channel outbound', () => {
         expect(sent.message).toEqual({
             kind: 'message',
             key: `${runId}:emit:slack:${stableHash({
-                address: 'C1', 
-                title: 't', 
-                body: 'b', 
+                address: 'C1',
+                title: 't',
+                body: 'b',
             })}`,
             runId,
             agent: 'ops',
@@ -183,15 +183,15 @@ describe('channel outbound', () => {
             {
                 parts: [
                     {
-                        type: 'tool-call', 
-                        toolName: 'notify', 
-                        input: { body: 'b' }, 
+                        type: 'tool-call',
+                        toolName: 'notify',
+                        input: { body: 'b' },
                         toolCallId: 'a',
                     },
                     {
-                        type: 'tool-call', 
-                        toolName: 'notify', 
-                        input: { body: 'b' }, 
+                        type: 'tool-call',
+                        toolName: 'notify',
+                        input: { body: 'b' },
                         toolCallId: 'b',
                     },
                 ],
@@ -207,20 +207,20 @@ describe('channel outbound', () => {
 
     it('identical emits in one step and after a recovery reach out once', async () => {
         const storeClock = new ControllableClock(new Date(1_000_000));
-        const store = new MemoryStore({ clock: storeClock });
+        const store = createMemoryStore({ clock: storeClock });
         const slack = recorder('slack');
         const parallel: MockResponse = {
             parts: [
                 {
-                    type: 'tool-call', 
-                    toolName: 'notify', 
-                    input: { body: 'b' }, 
+                    type: 'tool-call',
+                    toolName: 'notify',
+                    input: { body: 'b' },
                     toolCallId: 'a',
                 },
                 {
-                    type: 'tool-call', 
-                    toolName: 'notify', 
-                    input: { body: 'b' }, 
+                    type: 'tool-call',
+                    toolName: 'notify',
+                    input: { body: 'b' },
                     toolCallId: 'b',
                 },
             ],
@@ -262,7 +262,7 @@ describe('channel outbound', () => {
             channels: [slack.channel, web],
         });
         await b.engine.start();
-        await vi.waitFor(async () => expect((await store.getRun(runId))?.status).toBe('completed'));
+        await vi.waitFor(async () => expect((await store.runs.findOne(runId))?.status).toBe('completed'));
         expect(slack.calls).toHaveLength(1);
     });
 

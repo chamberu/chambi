@@ -10,7 +10,7 @@ import type { ChannelSubscription } from '@chamvi/core';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import {
@@ -27,7 +27,7 @@ const T_ISO = '2026-03-01T08:00:00.000Z';
 
 function setup(subscription: ChannelSubscription = cron.on('*/5 * * * *')) {
     const clock = new ControllableClock(T);
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const agent = defineAgent({
         name: 'sweep',
         model: textModel(),
@@ -55,9 +55,9 @@ function setup(subscription: ChannelSubscription = cron.on('*/5 * * * *')) {
     };
 }
 
-async function runOf(store: MemoryStore, result: Awaited<ReturnType<typeof fireCronSubscription>>) {
+async function runOf(store: ReturnType<typeof createMemoryStore>, result: Awaited<ReturnType<typeof fireCronSubscription>>) {
     if (!result.dispatched) throw new Error('not dispatched');
-    const run = await store.getRun(result.runId);
+    const run = await store.runs.findOne(result.runId);
     if (!run) throw new Error('run missing');
     return run;
 }
@@ -146,7 +146,7 @@ describe('fireCronSubscription', () => {
         await fire(T);
         await fire(new Date(T.getTime() + 300_000));
 
-        expect((await store.listRuns({ agent: 'sweep' })).total).toBe(2);
+        expect((await store.runs.find({ agent: 'sweep' })).total).toBe(2);
     });
 
     it('a second firing of the same tick is deduplicated', async () => {
@@ -160,7 +160,7 @@ describe('fireCronSubscription', () => {
             deduplicated: true,
             runId: first.dispatched ? first.runId : undefined,
         });
-        expect((await store.listRuns({ agent: 'sweep' })).total).toBe(1);
+        expect((await store.runs.find({ agent: 'sweep' })).total).toBe(1);
     });
 });
 

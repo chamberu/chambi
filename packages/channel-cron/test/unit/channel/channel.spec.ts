@@ -17,7 +17,7 @@ import type { ChannelSubscription, IChannel } from '@chamvi/core';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { CronChannelOptions } from '@chamvi/channel-cron';
@@ -37,7 +37,7 @@ describe('cronChannel', () => {
     const make = (
         channels: IChannel<any, any>[],
         agents: ReturnType<typeof agentWith>[],
-        store = new MemoryStore(),
+        store = createMemoryStore(),
     ) => {
         const engine = new Engine({
             store,
@@ -51,7 +51,7 @@ describe('cronChannel', () => {
 
     const quiet = (options: CronChannelOptions = {}) => cronChannel({ onError: () => {}, ...options });
 
-    const runs = async (store: MemoryStore) => (await store.listRuns({})).data;
+    const runs = async (store: ReturnType<typeof createMemoryStore>) => (await store.runs.find({})).data;
 
     beforeEach(() => {
         vi.useFakeTimers({ now: new Date('2026-03-01T07:59:30Z') });
@@ -164,9 +164,9 @@ describe('cronChannel', () => {
 
     it('reports a failing lock with agent and subscription and keeps ticking', async () => {
         const error = new Error('lock store down');
-        const store = new MemoryStore();
-        const acquire = store.acquire.bind(store);
-        vi.spyOn(store, 'acquire')
+        const store = createMemoryStore();
+        const acquire = store.locks.acquire.bind(store.locks);
+        vi.spyOn(store.locks, 'acquire')
             .mockRejectedValueOnce(error)
             .mockImplementation(acquire);
         const onError = vi.fn();
@@ -186,7 +186,7 @@ describe('cronChannel', () => {
     });
 
     it('two replicas on one store dispatch once per tick', async () => {
-        const store = new MemoryStore();
+        const store = createMemoryStore();
         const agent = agentWith([cron.on('* * * * *', { overlap: 'allow' })]);
         const a = make([quiet({ owner: 'a' })], [agent], store);
         const b = make([quiet({ owner: 'b' })], [agent], store);

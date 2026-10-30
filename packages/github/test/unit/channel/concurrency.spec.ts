@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -38,7 +38,7 @@ describe('GitHub burst admission', () => {
     it('persists signed bursts before replying while nested caps leave room for another agent', async () => {
         const { gh, clock } = createGithubFixture();
         const channel = githubChannel({ app: gh, clock });
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStore({ clock });
         const errors: unknown[] = [];
         const entered: string[] = [];
         const releases = new Map<string, () => void>();
@@ -116,24 +116,24 @@ describe('GitHub burst admission', () => {
             const result = await response.json() as { runs: Array<{ runId: string }> };
             const id = result.runs[0]!.runId;
             ids.push(id);
-            expect(await store.getRun(id)).toMatchObject({ id, agent: 'triage' });
+            expect(await store.runs.findOne(id)).toMatchObject({ id, agent: 'triage' });
         }
         await vi.waitFor(() => expect(entered).toHaveLength(1));
-        expect((await store.listRuns({ agent: 'triage', status: ['queued'] })).total).toBe(4);
+        expect((await store.runs.find({ agent: 'triage', status: ['queued'] })).total).toBe(4);
         const side = await engine.dispatch({
             agent: 'other',
             channel: 'github',
             trigger: 'manual',
             payload: {},
         });
-        await vi.waitFor(async () => expect((await store.getRun(side.runId))?.status).toBe('completed'));
+        await vi.waitFor(async () => expect((await store.runs.findOne(side.runId))?.status).toBe('completed'));
         for (let i = 0; i < ids.length; i++) {
             await vi.waitFor(() => expect(entered).toHaveLength(i + 1));
             releases.get(entered[i]!)!();
-            await vi.waitFor(async () => expect((await store.getRun(entered[i]!))?.status).toBe('completed'));
+            await vi.waitFor(async () => expect((await store.runs.findOne(entered[i]!))?.status).toBe('completed'));
         }
         expect(peak).toBe(1);
-        expect((await store.listRuns({ agent: 'triage', status: ['completed'] })).total).toBe(5);
+        expect((await store.runs.find({ agent: 'triage', status: ['completed'] })).total).toBe(5);
         const invalid = await deliver(app, {
             event: 'issues',
             delivery: 'invalid',
@@ -141,7 +141,7 @@ describe('GitHub burst admission', () => {
             secret: 'wrong-secret',
         });
         expect(invalid.status).toBe(401);
-        expect((await store.listRuns({ agent: 'triage' })).total).toBe(5);
+        expect((await store.runs.find({ agent: 'triage' })).total).toBe(5);
         expect(errors).toEqual([]);
     });
 });

@@ -4,9 +4,9 @@ import { z } from 'zod';
 import { cron, cronChannel } from '@chamvi/channel-cron';
 import {
     Engine,
-    MemoryStore,
     ValidationError,
     consoleChannel,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -40,7 +40,7 @@ export async function dispatchExamples(model: LanguageModel, auth: Authenticator
     });
 
     const engine = new Engine({
-        store: new MemoryStore(),
+        store: createMemoryStore(),
         agents: [triage],
         // every subscribed channel must be registered (InvalidAgentDefinitionError otherwise)
         channels: [httpChannel(), webhookChannel({ auth }), cronChannel()],
@@ -109,7 +109,7 @@ export const resolve = defineTool({
 
 export function createEngine(model: LanguageModel) {
     return new Engine({
-        store: new MemoryStore(),
+        store: createMemoryStore(),
         agents: [defineAgent({
             name: 'fixer',
             model,

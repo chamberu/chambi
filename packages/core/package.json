@@ -21,6 +21,10 @@
         ".": {
             "types": "./dist/index.d.mts",
             "import": "./dist/index.mjs"
+        },
+        "./conversation/persistence": {
+            "types": "./dist/conversation/persistence.d.mts",
+            "import": "./dist/conversation/persistence.mjs"
         }
     },
     "files": [

@@ -49,6 +49,7 @@ const CORE_STATUS: Record<string, number> = {
     [ErrorCode.AGENT_NOT_FOUND]: 404,
     [ErrorCode.RUN_NOT_FOUND]: 404,
     [ErrorCode.ARTIFACT_NOT_FOUND]: 404,
+    [ErrorCode.REPOSITORY_NOT_FOUND]: 404,
     [ErrorCode.INVALID_RUN_STATE]: 409,
 };
 

@@ -5,7 +5,12 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { Agent, ModelRef, SkillInput } from '@chamvi/core';
+import type {
+    Agent,
+    ConversationOptions,
+    ModelRef,
+    SkillInput,
+} from '@chamvi/core';
 import type { AgentIssue } from '@chamvi/http';
 import type { IModule } from 'orkos';
 import type { Env } from '../env/types.ts';
@@ -17,6 +22,8 @@ export type AppOptions = {
     agents?: Agent[];
     /** Additive skill defaults for every code and folder agent, verified before serving. */
     skills?: readonly SkillInput[];
+    /** Optional conversation recall and notes; the default store follows the app's selected data source. */
+    conversations?: ConversationOptions;
     /** Extra modules; one named like a built-in (`ModuleName`) replaces it. */
     modules?: IModule[];
     /** The default model of agents without one; CHAMVI_MODEL and the config file win. */

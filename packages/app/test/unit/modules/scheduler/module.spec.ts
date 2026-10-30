@@ -83,7 +83,7 @@ async function setup(options: { mode?: AppMode; env?: Record<string, string> } =
 }
 
 async function runs(harness: Harness) {
-    return (await harness.container.resolve(AppToken.STORE).listRuns({ agent: 'sweep' })).data;
+    return (await harness.container.resolve(AppToken.STORE).runs.find({ agent: 'sweep' })).data;
 }
 
 describe('schedulerModule', () => {
@@ -128,6 +128,6 @@ describe('schedulerModule', () => {
 
         await settle(harness.stop());
         await vi.advanceTimersByTimeAsync(180_000);
-        expect((await store.listRuns({ agent: 'sweep' })).data).toHaveLength(1);
+        expect((await store.runs.find({ agent: 'sweep' })).data).toHaveLength(1);
     });
 });

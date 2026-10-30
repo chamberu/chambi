@@ -29,7 +29,7 @@ import type {
     Invoker,
     ToolContext,
 } from '@chamvi/core';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
 import type { MockPart, MockResponse } from '../../utils/mock-model.ts';
@@ -82,7 +82,7 @@ function createDeploy(recorder: Recorder, schema: z.ZodType = z.object({ env: z.
 }
 
 function createEngine(
-    store: MemoryStore,
+    store: ReturnType<typeof createMemoryStore>,
     clock: ControllableClock,
     model: LanguageModel,
     definition: Partial<AgentDefinition>,
@@ -110,7 +110,7 @@ function createEngine(
 
 function setup(model: LanguageModel, definition: Partial<AgentDefinition>) {
     const clock = new ControllableClock(new Date(START));
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     return {
         clock,
         store,
@@ -118,7 +118,7 @@ function setup(model: LanguageModel, definition: Partial<AgentDefinition>) {
     };
 }
 
-async function dispatch(engine: Engine, store: MemoryStore) {
+async function dispatch(engine: Engine, store: ReturnType<typeof createMemoryStore>) {
     await engine.start();
     const { runId } = await engine.dispatch({
         agent: 'release',
@@ -127,13 +127,13 @@ async function dispatch(engine: Engine, store: MemoryStore) {
         payload: {},
     });
     await engine.idle();
-    return { runId, run: await store.getRun(runId) };
+    return { runId, run: await store.runs.findOne(runId) };
 }
 
 const newRecorder = (): Recorder => ({
-    started: [], 
-    deployed: [], 
-    decisions: [], 
+    started: [],
+    deployed: [],
+    decisions: [],
 });
 const promptOf = (model: ReturnType<typeof mockModel>, i: number) => JSON.stringify(model.doStreamCalls[i]?.prompt);
 
@@ -168,9 +168,9 @@ describe('durable approve()', () => {
         expect(recorder.deployed).toEqual([]);
 
         // no tool step for the suspended call, and its result is not in the checkpoint
-        const steps = await store.listSteps(runId);
+        const steps = await store.steps.find(runId);
         expect(steps.map((s) => s.kind)).toEqual(['llm']);
-        const checkpoint = await store.latestCheckpoint(runId);
+        const checkpoint = await store.checkpoints.findOne(runId);
         expect(JSON.stringify(checkpoint?.messages)).toContain('"toolCallId":"c1"');
         expect(resultIds(checkpoint!.messages)).toEqual([]);
     });
@@ -188,14 +188,14 @@ describe('durable approve()', () => {
         });
         await engine.idle();
 
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
         expect(model.doStreamCalls).toHaveLength(2);
         expect(recorder.started).toEqual(['prod', 'prod']);
         expect(recorder.decisions).toEqual([{ approved: true, approver }]);
         expect(recorder.deployed).toEqual(['prod']);
         expect(promptOf(model, 1)).toContain('deployed prod');
 
-        const steps = await store.listSteps(runId);
+        const steps = await store.steps.find(runId);
         expect(steps.map((s) => s.kind)).toEqual(['llm', 'wait', 'tool', 'llm']);
         expect(steps[1]).toMatchObject({
             name: 'deploy',
@@ -210,7 +210,7 @@ describe('durable approve()', () => {
             input: { env: 'prod' },
             output: 'deployed prod',
         });
-        const checkpoint = await store.latestCheckpoint(runId);
+        const checkpoint = await store.checkpoints.findOne(runId);
         expect(resultIds(checkpoint!.messages)).toEqual(['c1']);
     });
 
@@ -227,7 +227,7 @@ describe('durable approve()', () => {
         });
         await engine.idle();
 
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'skipped' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'skipped' });
         expect(recorder.decisions).toEqual([{ approved: false, reason: 'not today' }]);
         expect(recorder.deployed).toEqual([]);
         expect(promptOf(model, 1)).toContain('denied: not today');
@@ -252,19 +252,19 @@ describe('durable approve()', () => {
 
         expect(run?.waiting?.approvalId).toBe('0:c2:0');
         expect(fast).toBe(1);
-        expect((await store.listSteps(runId)).map((s) => s.name ?? s.kind)).toEqual(['mock-model-id', 'quick']);
-        expect(resultIds((await store.latestCheckpoint(runId))!.messages)).toEqual(['c1']);
+        expect((await store.steps.find(runId)).map((s) => s.name ?? s.kind)).toEqual(['mock-model-id', 'quick']);
+        expect(resultIds((await store.checkpoints.findOne(runId))!.messages)).toEqual(['c1']);
 
         await engine.approve(runId, { approvalId: '0:c2:0', approved: true });
         await engine.idle();
 
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
         expect(fast).toBe(1);
         expect(recorder.deployed).toEqual(['prod']);
         const prompt = promptOf(model, 1);
         expect(prompt).toContain('quick done');
         expect(prompt).toContain('deployed prod');
-        expect(resultIds((await store.latestCheckpoint(runId))!.messages).sort()).toEqual(['c1', 'c2']);
+        expect(resultIds((await store.checkpoints.findOne(runId))!.messages).sort()).toEqual(['c1', 'c2']);
     });
 
     it('two suspending calls in one step pause one at a time, first in call order', async () => {
@@ -279,21 +279,21 @@ describe('durable approve()', () => {
 
         await engine.approve(runId, { approvalId: '0:c1:0', approved: true });
         await engine.idle();
-        const second = await store.getRun(runId);
+        const second = await store.runs.findOne(runId);
         expect(second?.status).toBe('waiting');
         expect(second?.waiting).toMatchObject({ approvalId: '0:c2:0', title: 'Deploy eu?' });
         expect(second?.waiting?.approvalId).not.toBe(run?.waiting?.approvalId);
         // paused again without a model call
         expect(model.doStreamCalls).toHaveLength(1);
         expect(recorder.deployed).toEqual(['prod']);
-        expect(resultIds((await store.latestCheckpoint(runId))!.messages)).toEqual(['c1']);
+        expect(resultIds((await store.checkpoints.findOne(runId))!.messages)).toEqual(['c1']);
 
         await engine.approve(runId, { approvalId: '0:c2:0', approved: true });
         await engine.idle();
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'both done' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'both done' });
         expect(recorder.deployed).toEqual(['prod', 'eu']);
         expect(model.doStreamCalls).toHaveLength(2);
-        const steps = await store.listSteps(runId);
+        const steps = await store.steps.find(runId);
         expect(steps.map((s) => s.kind)).toEqual(['llm', 'wait', 'tool', 'wait', 'tool', 'llm']);
     });
 
@@ -313,13 +313,13 @@ describe('durable approve()', () => {
 
         await engine.approve(runId, { approvalId: '0:c1:0', approved: true });
         await engine.idle();
-        expect((await store.getRun(runId))?.waiting).toMatchObject({ approvalId: '0:c1:1', title: 'second' });
+        expect((await store.runs.findOne(runId))?.waiting).toMatchObject({ approvalId: '0:c1:1', title: 'second' });
         expect(model.doStreamCalls).toHaveLength(1);
 
         await engine.approve(runId, { approvalId: '0:c1:1', approved: false });
         await engine.idle();
-        expect((await store.getRun(runId))?.status).toBe('completed');
-        const tools = (await store.listSteps(runId)).filter((s) => s.kind === 'tool');
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
+        const tools = (await store.steps.find(runId)).filter((s) => s.kind === 'tool');
         expect(tools.map((s) => s.output)).toEqual([[true, false]]);
     });
 
@@ -360,7 +360,7 @@ describe('durable approve()', () => {
         await engine.approve(runId, { approvalId: '0:c1:0', approved: true });
         await engine.idle();
         expect(commands).toEqual(['ls']);
-        expect((await store.getRun(runId))?.waiting).toMatchObject({ approvalId: '1:c2:0', title: 'Run rm -rf /?' });
+        expect((await store.runs.findOne(runId))?.waiting).toMatchObject({ approvalId: '1:c2:0', title: 'Run rm -rf /?' });
 
         await engine.approve(runId, {
             approvalId: '1:c2:0',
@@ -369,8 +369,8 @@ describe('durable approve()', () => {
         });
         await engine.idle();
         expect(commands).toEqual(['ls']);
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done' });
-        const tools = (await store.listSteps(runId)).filter((s) => s.kind === 'tool');
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
+        const tools = (await store.steps.find(runId)).filter((s) => s.kind === 'tool');
         expect(tools[1]).toMatchObject({ name: 'bash', error: { code: 'tool_denied', message: 'bash refused: no' } });
         expect(promptOf(model, 2)).toContain('bash refused: no');
     });
@@ -379,9 +379,9 @@ describe('durable approve()', () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('not allowed, stopping')]);
         const {
-            store, 
-            clock, 
-            engine, 
+            store,
+            clock,
+            engine,
         } = setup(model, { tools: { deploy: createDeploy(recorder) } });
         const { runId } = await dispatch(engine, store);
         engine.stop();
@@ -394,21 +394,21 @@ describe('durable approve()', () => {
         await tightened.start();
         await tightened.idle();
 
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'not allowed, stopping' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'not allowed, stopping' });
         expect(recorder.started).toEqual(['prod']);
-        const tools = (await store.listSteps(runId)).filter((s) => s.kind === 'tool');
+        const tools = (await store.steps.find(runId)).filter((s) => s.kind === 'tool');
         expect(tools).toHaveLength(1);
         expect(tools[0]).toMatchObject({ name: 'deploy', error: { code: 'tool_not_allowed' } });
-        expect(resultIds((await store.latestCheckpoint(runId))!.messages)).toEqual(['c1']);
+        expect(resultIds((await store.checkpoints.findOne(runId))!.messages)).toEqual(['c1']);
     });
 
     it('a pending call with an input that no longer parses is a ValidationError result', async () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('bad input')]);
         const {
-            store, 
-            clock, 
-            engine, 
+            store,
+            clock,
+            engine,
         } = setup(model, { tools: { deploy: createDeploy(recorder) } });
         const { runId } = await dispatch(engine, store);
         engine.stop();
@@ -418,9 +418,9 @@ describe('durable approve()', () => {
         await changed.start();
         await changed.idle();
 
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'bad input' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'bad input' });
         expect(recorder.started).toEqual(['prod']);
-        const tools = (await store.listSteps(runId)).filter((s) => s.kind === 'tool');
+        const tools = (await store.steps.find(runId)).filter((s) => s.kind === 'tool');
         expect(tools[0]).toMatchObject({ name: 'deploy', error: { code: 'validation_error' } });
     });
 
@@ -436,9 +436,9 @@ describe('durable approve()', () => {
         });
         const model = mockModel([turn(call('deploy', {}, 'c1')), text('timed out')]);
         const {
-            store, 
-            clock, 
-            engine, 
+            store,
+            clock,
+            engine,
         } = setup(model, { tools: { deploy } });
         const { runId, run } = await dispatch(engine, store);
         expect(run?.waiting?.expiresAt).toEqual(new Date(START + 1000));
@@ -446,13 +446,13 @@ describe('durable approve()', () => {
 
         clock.advance(999);
         await engine.tick();
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         clock.advance(1);
         await engine.tick();
         await engine.start();
         await engine.idle();
 
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'timed out' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'timed out' });
         expect(decisions).toEqual([{ approved: false, reason: 'approval timed out' }]);
         expect(promptOf(model, 1)).toContain('denied: approval timed out');
     });
@@ -500,17 +500,17 @@ describe('durable approve()', () => {
         const { store, engine } = setup(model, { tools: { stream } as ToolSet });
         const { runId, run } = await dispatch(engine, store);
         expect(run).toMatchObject({ status: 'completed', output: 'done' });
-        const tools = (await store.listSteps(runId)).filter((s) => s.kind === 'tool');
+        const tools = (await store.steps.find(runId)).filter((s) => s.kind === 'tool');
         expect(tools[0]).toMatchObject({ name: 'stream', error: { code: 'invalid_run_state' } });
     });
 
-    it('restart while waiting: a fresh Engine on the same MemoryStore resumes from the stored pending checkpoint', async () => {
+    it('restart while waiting: a fresh Engine on the same memory store resumes from the stored pending checkpoint', async () => {
         const recorder = newRecorder();
         const model = mockModel([turn(call('deploy', { env: 'prod' }, 'c1')), text('done after restart')]);
         const {
-            store, 
-            clock, 
-            engine, 
+            store,
+            clock,
+            engine,
         } = setup(model, { tools: { deploy: createDeploy(recorder) } });
         const { runId } = await dispatch(engine, store);
         engine.stop();
@@ -521,7 +521,7 @@ describe('durable approve()', () => {
         await restarted.approve(runId, { approvalId: '0:c1:0', approved: true });
         await restarted.idle();
 
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done after restart' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done after restart' });
         expect(fresh.deployed).toEqual(['prod']);
         expect(fresh.decisions).toEqual([{ approved: true }]);
     });
@@ -538,7 +538,7 @@ describe('durable approve()', () => {
         await engine.approve(runId, { approvalId: '0:c1:0', approved: true });
         await engine.idle();
         expect(recorder.deployed).toEqual(['prod']);
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
     });
 
     it('ChannelHandle.approve() records the channel and address on the wait point', async () => {
@@ -560,7 +560,7 @@ describe('durable approve()', () => {
         });
         const model = mockModel([turn(call('ask', {}, 'c1')), text('done')]);
         const clock = new ControllableClock(new Date(START));
-        const store = new MemoryStore({ clock });
+        const store = createMemoryStore({ clock });
         const { engine } = createEngine(store, clock, model, { tools: { ask } }, [slack]);
         const { runId, run } = await dispatch(engine, store);
         expect(run?.waiting).toMatchObject({
@@ -572,7 +572,7 @@ describe('durable approve()', () => {
 
         await engine.approve(runId, { approvalId: '0:c1:0', approved: true });
         await engine.idle();
-        const tools = (await store.listSteps(runId)).filter((s) => s.kind === 'tool');
+        const tools = (await store.steps.find(runId)).filter((s) => s.kind === 'tool');
         expect(tools[0]?.output).toEqual(['validation_error', true]);
     });
 
@@ -594,9 +594,9 @@ describe('durable approve()', () => {
             },
         };
         const {
-            store, 
-            clock, 
-            engine, 
+            store,
+            clock,
+            engine,
         } = setup(model, {
             tools: { third },
             toolsContext: { third: { token: 't' } },
@@ -610,7 +610,7 @@ describe('durable approve()', () => {
         await changed.approve(runId, { approvalId: '0:c1:0', approved: true });
         await changed.start();
         await changed.idle();
-        const failed = await store.getRun(runId);
+        const failed = await store.runs.findOne(runId);
         expect(failed?.status).toBe('failed');
         expect(failed?.error).toMatchObject({ code: 'validation_error' });
         expect(failed?.error?.message).toContain('tool context (third)');

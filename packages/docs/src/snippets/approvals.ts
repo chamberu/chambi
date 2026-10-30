@@ -3,11 +3,11 @@ import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import {
     Engine,
-    MemoryStore,
     RunStatus,
     ToolDeniedError,
     approve,
     consoleChannel,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -129,7 +129,7 @@ export async function approvalFlow(model: LanguageModel) {
     });
 
     const engine = new Engine({
-        store: new MemoryStore(),
+        store: createMemoryStore(),
         agents: [deployer],
         channels: [consoleChannel()],
     });

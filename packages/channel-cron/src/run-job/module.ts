@@ -81,7 +81,7 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
                     if (settled) return;
                     const candidate = await engine.getRun(runId);
                     if (settled) return;
-                    if (candidate && (SETTLING.includes(candidate.status) || await isQueuedBehindApproval(store, candidate))) {
+                    if (candidate && (SETTLING.includes(candidate.status) || await isQueuedBehindApproval(store.runs, candidate))) {
                         done(candidate);
                         return;
                     }

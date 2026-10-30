@@ -6,6 +6,7 @@
  */
 
 import type { ApprovalDecision, ApprovalOption, ApprovalRequestInput } from '../approval/types.ts';
+import type { ConversationTarget } from '../conversation/types.ts';
 import type { Engine } from '../engine/module.ts';
 import type { DispatchEnvelope } from '../engine/types.ts';
 import type { TriggerEnvelope } from '../trigger/types.ts';
@@ -29,6 +30,8 @@ export type ChannelContext = {
     engine: Engine;
     /** engine.dispatch with `channel` set to this channel's name (a channel cannot dispatch as another). */
     dispatch(envelope: ChannelDispatchEnvelope): Promise<DispatchResult>;
+    /** Trusted, registered-channel intake; the channel supplies canonical identity and accepted text. */
+    dispatchConversation(envelope: ChannelDispatchEnvelope, target: ConversationTarget): Promise<DispatchResult>;
 };
 
 /** One outbound message; `key` is stable per logical message and the transport's dedupe key. */

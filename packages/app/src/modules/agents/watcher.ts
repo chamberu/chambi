@@ -189,7 +189,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
      */
     const checkMarkers = async (): Promise<void> => {
         if (applied.size === 0) return;
-        const markers = new Map((await engine.store.listAgentRevisions()).map((marker) => [marker.agent, marker.hash]));
+        const markers = new Map((await engine.store.agentRevisions.find()).map((marker) => [marker.agent, marker.hash]));
         for (const [name, hash] of applied) {
             if (seen.get(name) !== hash) continue;
             const marker = markers.get(name);
@@ -337,7 +337,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
                 return;
             }
             const folders = new Set(names);
-            for (const marker of await engine.store.listAgentRevisions()) {
+            for (const marker of await engine.store.agentRevisions.find()) {
                 if (folders.has(marker.agent) || codeNames.has(marker.agent)) continue;
                 await engine.removeAgent(marker.agent);
             }

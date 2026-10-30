@@ -14,9 +14,9 @@ import { hasToolContext } from '../../../src/tool/helpers.ts';
 describe('toolContextSchema', () => {
     it('validate returns the given context by identity', () => {
         const ctx = {
-            run: {}, 
-            state: {}, 
-            artifacts: {}, 
+            run: {},
+            state: {},
+            artifacts: {},
         };
         const result = toolContextSchema['~standard'].validate(ctx);
         expect(result).toEqual({ value: ctx });
@@ -37,9 +37,9 @@ describe('defineTool', () => {
     it('sets the marker schema and keeps every other field', () => {
         const execute = async () => 'ok';
         const t = defineTool({
-            description: 'd', 
-            inputSchema: z.object({}), 
-            execute, 
+            description: 'd',
+            inputSchema: z.object({}),
+            execute,
         });
         expect(t.contextSchema).toBe(toolContextSchema);
         expect(t.description).toBe('d');

@@ -10,8 +10,8 @@ import { join } from 'node:path';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
     approve,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { gitSkills, hashSkillBundle } from '@chamvi/skills';
@@ -35,7 +35,7 @@ it('installs Git defaults and agent extras at startup and scopes real load_skill
         'skills/private/SKILL.md': '---\nname: private\ndescription: Maintainer guidance\n---\nPRIVATE BODY\n',
     });
     const engines: Engine[] = [];
-    const store = new MemoryStore();
+    const store = createMemoryStore();
     const pin = (name: string) => ({
         name,
         version: '1.0.0',
@@ -81,8 +81,8 @@ it('installs Git defaults and agent extras at startup and scopes real load_skill
         await engine.start();
         await engine.idle();
         expect(start).toHaveBeenCalledOnce();
-        expect((await store.getRun(queued.runId))?.status).toBe('completed');
-        const readerSteps = (await store.listSteps(queued.runId)).filter((step) => step.kind === 'tool');
+        expect((await store.runs.findOne(queued.runId))?.status).toBe('completed');
+        const readerSteps = (await store.steps.find(queued.runId)).filter((step) => step.kind === 'tool');
         expect(readerSteps).toMatchObject([
             { error: { message: 'Unknown approved skill.' } },
             { output: { ...pin('common'), content: 'COMMON BODY\n' } },
@@ -98,7 +98,7 @@ it('installs Git defaults and agent extras at startup and scopes real load_skill
             payload: {},
         });
         await engine.idle();
-        expect((await store.listSteps(run.runId)).find((step) => step.kind === 'tool')?.output).toMatchObject({ ...pin('private'), content: 'PRIVATE BODY\n' });
+        expect((await store.steps.find(run.runId)).find((step) => step.kind === 'tool')?.output).toMatchObject({ ...pin('private'), content: 'PRIVATE BODY\n' });
     } finally {
         for (const engine of engines) {
             await engine.stop();
@@ -114,7 +114,7 @@ it('rejects changed Git bytes under an old content pin before recovery and prese
         'skills/audit/references/checks.md': 'ORIGINAL REFERENCE\n',
     });
     const engines: Engine[] = [];
-    const store = new MemoryStore();
+    const store = createMemoryStore();
     const directory = join(fixture.path, 'prepared');
     const oldPin = {
         name: 'audit',
@@ -155,10 +155,10 @@ it('rejects changed Git bytes under an old content pin before recovery and prese
             payload: {},
         });
         await first.idle();
-        const paused = await store.getRun(runId);
+        const paused = await store.runs.findOne(runId);
         expect(paused?.status).toBe('waiting');
-        const checkpoint = await store.latestCheckpoint(runId);
-        const steps = await store.listSteps(runId);
+        const checkpoint = await store.checkpoints.findOne(runId);
+        const steps = await store.steps.find(runId);
         expect(steps.filter((step) => step.kind === 'tool').map((step) => step.output)).toMatchObject([
             {
                 ...oldPin,
@@ -188,9 +188,9 @@ it('rejects changed Git bytes under an old content pin before recovery and prese
         await expect(failed.start()).rejects.toThrow(InvalidAgentDefinitionError);
         expect(start).not.toHaveBeenCalled();
         expect(resumedModel.doStreamCalls).toHaveLength(0);
-        expect(await store.latestCheckpoint(runId)).toEqual(checkpoint);
-        expect(await store.listSteps(runId)).toEqual(steps);
-        expect((await store.getRun(runId))?.status).toBe('waiting');
+        expect(await store.checkpoints.findOne(runId)).toEqual(checkpoint);
+        expect(await store.steps.find(runId)).toEqual(steps);
+        expect((await store.runs.findOne(runId))?.status).toBe('waiting');
         expect(await fs.readFile(join(directory, 'audit/SKILL.md'), 'utf8')).toContain('ORIGINAL BODY');
         await failed.stop();
         const newPin = {
@@ -213,8 +213,8 @@ it('rejects changed Git bytes under an old content pin before recovery and prese
         expect(resumedModel.doStreamCalls).toHaveLength(0);
         await restarted.approve(runId, { approvalId: paused!.waiting!.approvalId, approved: true });
         await restarted.idle();
-        expect((await store.getRun(runId))?.status).toBe('completed');
-        const outputs = (await store.listSteps(runId)).filter((step) => step.kind === 'tool').map((step) => step.output);
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
+        const outputs = (await store.steps.find(runId)).filter((step) => step.kind === 'tool').map((step) => step.output);
         expect(outputs).toMatchObject([
             {
                 ...oldPin,
@@ -228,7 +228,7 @@ it('rejects changed Git bytes under an old content pin before recovery and prese
             },
         ]);
         const prompt = JSON.stringify(resumedModel.doStreamCalls[0]!.prompt);
-        const saved = JSON.stringify(await store.latestCheckpoint(runId));
+        const saved = JSON.stringify(await store.checkpoints.findOne(runId));
         for (const output of outputs) {
             expect(prompt).toContain(JSON.stringify(output));
             expect(saved).toContain(JSON.stringify(output));

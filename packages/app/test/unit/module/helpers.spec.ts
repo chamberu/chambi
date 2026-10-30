@@ -198,6 +198,11 @@ describe('reportingModule', () => {
 });
 
 describe('module constants', () => {
+    it('names the aggregate store token chamvi.store', () => {
+        expect(AppToken.STORE.name).toBe('chamvi.store');
+        expect(AppToken).not.toHaveProperty('REPOSITORIES');
+    });
+
     it('names every token chamvi.<token>', () => {
         for (const [key, token] of Object.entries(AppToken)) {
             expect(token.name).toBe(`chamvi.${key.toLowerCase().replace(/_/g, '-')}`);

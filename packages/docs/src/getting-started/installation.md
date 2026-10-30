@@ -17,10 +17,10 @@ npm install @ai-sdk/anthropic zod
 For durable runs and more than one replica, add the TypeORM store with `typeorm` and the `pg` driver (PostgreSQL):
 
 ```bash
-npm install @chamvi/store-typeorm typeorm pg
+npm install @chamvi/store-db typeorm pg
 ```
 
-See [TypeORM store](/stores/typeorm).
+See [TypeORM store](/repositories/typeorm).
 
 ## Testing helpers
 
@@ -30,7 +30,7 @@ See [TypeORM store](/stores/typeorm).
 npm install --save-dev @chamvi/test-kit vitest
 ```
 
-See [Writing a Store](/stores/writing-a-store) and the [test-kit reference](/reference/test-kit).
+See [Writing a Repository](/repositories/writing-a-repository) and the [test-kit reference](/reference/test-kit).
 
 ## Workspaces and coding tools
 
@@ -72,7 +72,7 @@ npm install --save-dev tsdown   # only for chamvi build
 | `@chamvi/core` | Shipped (0.x) |
 | `@chamvi/test-kit` | Shipped (0.x), test helpers |
 | `@chamvi/channel-cron` | Shipped (0.x), the cron channel, one tick across replicas |
-| `@chamvi/store-typeorm` | Shipped (0.x), TypeORM store (PostgreSQL) |
+| `@chamvi/store-db` | Shipped (0.x), TypeORM store (PostgreSQL) |
 | `@chamvi/http` | Shipped (0.x), REST, SSE, MCP, the webhook channel and the `/channels/<name>` mount |
 | `@chamvi/github` | Shipped (0.x), the GitHub channel (deliveries in, comments out) and tools |
 | `@chamvi/sandbox`, `@chamvi/sandbox-local`, `@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s` | Shipped (0.x), disposable workspaces |

@@ -69,7 +69,7 @@
         "@chamvi/channel-cron": "^0.3.1",
         "@chamvi/core": "^0.3.1",
         "@chamvi/http": "^0.3.1",
-        "@chamvi/store-typeorm": "^0.3.1",
+        "@chamvi/store-db": "^0.3.1",
         "eldin": "^1.3.0",
         "envix": "^1.5.0",
         "jiti": "^2.7.0",

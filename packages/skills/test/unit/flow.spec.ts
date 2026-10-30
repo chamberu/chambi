@@ -8,7 +8,7 @@
 import { join } from 'node:path';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/app';
 import { hashSkillBundle } from '@chamvi/skills';
@@ -27,7 +27,7 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
     const directory = join(fixture.path, 'prepared');
     const hash = hashSkillBundle(join(fixture.path, 'skills/audit'));
     const clock = new ControllableClock();
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     let turn = 0;
     const model = new MockLanguageModelV4({
         doStream: async () => {
@@ -117,13 +117,13 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
             payload: {},
         });
         await engine.idle();
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
         const initial = JSON.stringify(model.doStreamCalls[0]!.prompt);
         expect(initial).toContain(hash);
         expect(initial).toContain('Review code');
         expect(initial).not.toContain('PRIVATE');
         expect(initial).not.toContain(directory);
-        const tools = (await store.listSteps(runId)).filter((step) => step.kind === 'tool');
+        const tools = (await store.steps.find(runId)).filter((step) => step.kind === 'tool');
         expect(tools.map((step) => step.output)).toMatchObject([
             {
                 hash,
@@ -138,7 +138,7 @@ it('prepares reviewed bytes for metadata-only initial context and body/reference
                 content: 'PRIVATE REFERENCE\n',
             },
         ]);
-        expect(JSON.stringify(await store.latestCheckpoint(runId))).toContain('PRIVATE REFERENCE');
+        expect(JSON.stringify(await store.checkpoints.findOne(runId))).toContain('PRIVATE REFERENCE');
         await expect(prepareCatalog(options, { audit: '0'.repeat(64) })).rejects.toThrow();
         expect(hashSkillBundle(join(directory, 'audit'))).toBe(hash);
     } finally {

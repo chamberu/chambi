@@ -21,6 +21,7 @@ import type {
     IShutdown,
 } from '@chamvi/http';
 import type { DataSource } from 'typeorm';
+import type { AppOptions } from '../app/types.ts';
 import type { AppConfig } from '../config/types.ts';
 import type { Env } from '../env/types.ts';
 import type { ILogger } from '../logger/types.ts';
@@ -34,6 +35,8 @@ export type AppMode = 'start' | 'job' | 'migrate';
 
 export type AppContext = {
     mode: AppMode;
+    /** Explicit createApp conversation capability; absent by default. */
+    conversations?: AppOptions['conversations'];
     dev: boolean;
     env: Env;
     /** Aborts with the app_stopped ChamviError once stop() is called. */

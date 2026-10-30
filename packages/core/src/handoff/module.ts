@@ -113,7 +113,7 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
         const value: HandoffResult = { runId: result.runId, deduplicated: result.deduplicated };
         // the child exists: a failing record must not fail the call (dispatch dedupes a redo)
         try {
-            await host.effects.putEffect(effectKey, value);
+            await host.effects.save(effectKey, value);
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error('[chamvi] recording a hand-off failed', error);
@@ -122,14 +122,14 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
     };
 
     const promise = (async (): Promise<HandoffResult> => {
-        const recorded = await host.effects.getEffect(effectKey);
+        const recorded = await host.effects.findOne(effectKey);
         if (recorded) return recorded.result as HandoffResult;
         return host.serial(run.runId, async (): Promise<HandoffResult> => {
             // again behind the run's earlier calls: one of them may have recorded it meanwhile
-            const again = await host.effects.getEffect(effectKey);
+            const again = await host.effects.findOne(effectKey);
             if (again) return again.result as HandoffResult;
             const countKey = `handoff-count:${run.runId}`;
-            const stored = await host.effects.getEffect(countKey);
+            const stored = await host.effects.findOne(countKey);
             const { count, calls } = readCount(stored?.result);
             // a call that already spent its slot (its record lost) redoes the deduplicating dispatch
             if (calls.includes(callHash)) return dispatch();
@@ -137,7 +137,7 @@ export async function startHandoff<S extends StateSchema = StateSchema>(
                 throw new ValidationError(`Run ${run.runId} reached its ${maxPerRun} hand-offs (handoff.on({ maxPerRun })).`);
             }
             // counted before the dispatch: a crash in between spends the call's slot, a redo reuses it
-            await host.effects.putEffect(countKey, { count: count + 1, calls: [...calls, callHash] });
+            await host.effects.save(countKey, { count: count + 1, calls: [...calls, callHash] });
             return dispatch();
         });
     })();

@@ -26,7 +26,7 @@ import type {
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
-import { MemoryStore } from '../../../src/store/index.ts';
+import { createMemoryStore } from '../../../src/repository/index.ts';
 
 const NO_MODEL = 'Agent "triage" has no model and the engine sets no default (EngineOptions.model; CHAMVI_MODEL in @chamvi/app).';
 const SHAPE = 'Agent "triage": model must be a "<provider>/<model>" string or a LanguageModel object.';
@@ -64,7 +64,7 @@ afterEach(() => {
 
 function make(opts: Partial<EngineOptions> = {}) {
     const clock = new ControllableClock(new Date(1_000_000));
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const engine = new Engine({
         store,
         clock,
@@ -145,8 +145,8 @@ describe('model registration', () => {
         await expect(engine.putAgent(withModel('bad/model'), { revision: 'h1' })).rejects.toThrow(InvalidAgentDefinitionError);
         await expect(engine.putAgent(withModel(undefined))).rejects.toThrow(NO_MODEL);
 
-        expect(await store.listAgentRevisions()).toEqual([]);
-        expect((await store.getRun(runId))?.status).toBe('queued');
+        expect(await store.agentRevisions.find()).toEqual([]);
+        expect((await store.runs.findOne(runId))?.status).toBe('queued');
         expect(changes).toEqual([]);
         expect(engine.getAgent('triage')?.definition.model).toBe('good/model');
     });

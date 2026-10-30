@@ -7,7 +7,7 @@
 
 /**
  * Longest `idempotencyKey`, `concurrencyKey` and `address` of an envelope:
- * the width of `@chamvi/store-typeorm`'s `runs.thread` and
+ * the width of `@chamvi/store-db`'s `runs.thread` and
  * `runs.concurrency_key` columns.
  */
 export const TRIGGER_KEY_MAX_LENGTH = 255;

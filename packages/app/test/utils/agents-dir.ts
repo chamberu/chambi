@@ -7,7 +7,7 @@
 
 import {
     Engine,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { Agent, IStore } from '@chamvi/core';
@@ -98,7 +98,7 @@ export type AgentsDirHarnessOptions = {
 export function buildAgentsDirHarness(options: AgentsDirHarnessOptions) {
     const clock = options.clock ?? new ControllableClock(START);
     const logger = createRecordingLogger(clock);
-    const store = options.store ?? new MemoryStore({ clock });
+    const store = options.store ?? createMemoryStore({ clock });
     const module = new AgentsModule();
     const harness: Harness = buildHarness({
         mode: options.mode,

@@ -10,7 +10,7 @@ import { pid } from 'node:process';
 import type { Agent, AgentChange } from '@chamvi/core';
 import { defineScheduledComponent } from 'hubwire';
 import { CRON_CHANNEL_NAME } from '../channel/constants.ts';
-import { createStoreScheduleLock } from '../lock/index.ts';
+import { createRepositoryScheduleLock } from '../lock/index.ts';
 import { readCronOptions } from '../tick/index.ts';
 import { SCHEDULE_LOCK_TTL_MS } from './constants.ts';
 import { buildAgentComponents, cronSubscriptionsOf, toDefinitionError } from './helpers.ts';
@@ -55,7 +55,7 @@ export function createScheduler(opts: SchedulerOptions): IScheduler {
     const ctx = {
         engine,
         dispatch: opts.dispatch,
-        lock: createStoreScheduleLock(engine.store, opts.owner ?? `${hostname()}-${pid}`),
+        lock: createRepositoryScheduleLock(engine.store.locks, opts.owner ?? `${hostname()}-${pid}`),
         lockTtlMs: opts.lockTtlMs ?? SCHEDULE_LOCK_TTL_MS,
         // eslint-disable-next-line no-console
         onError: opts.onError ?? ((error, errorCtx) => console.error('[chamvi]', error, errorCtx)),

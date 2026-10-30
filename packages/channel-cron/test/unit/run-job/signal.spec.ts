@@ -14,7 +14,7 @@ import {
 } from 'vitest';
 import {
     Engine,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import type { SkillInput } from '@chamvi/core';
@@ -39,7 +39,7 @@ function hangingModel() {
 
 function setup(skills?: SkillInput[]) {
     const clock = new ControllableClock(T);
-    const store = new MemoryStore({ clock });
+    const store = createMemoryStore({ clock });
     const agent = defineAgent({
         name: 'sweep',
         model: hangingModel(),
@@ -76,7 +76,7 @@ async function abortWhileRunning(ctx: ReturnType<typeof setup>) {
     });
 
     await vi.waitFor(async () => {
-        const { data } = await ctx.store.listRuns({ agent: 'sweep' });
+        const { data } = await ctx.store.runs.find({ agent: 'sweep' });
         expect(data[0]?.status).toBe('running');
     });
     controller.abort();
@@ -142,7 +142,7 @@ describe('runJob with a signal', () => {
         const result = await abortWhileRunning(ctx);
 
         expect(result).toMatchObject({ status: 'interrupted', exitCode: 0 });
-        const run = await ctx.store.getRun(result.runId as string);
+        const run = await ctx.store.runs.findOne(result.runId as string);
         expect(run?.status).toBe('interrupted');
     });
 
@@ -160,7 +160,7 @@ describe('runJob with a signal', () => {
 
     it('fires nothing and never starts the engine for an aborted signal', async () => {
         const ctx = setup();
-        const listRuns = vi.spyOn(ctx.store, 'listRuns');
+        const listRuns = vi.spyOn(ctx.store.runs, 'find');
         const start = vi.spyOn(ctx.engine, 'start');
         const controller = new AbortController();
         controller.abort();
@@ -175,7 +175,7 @@ describe('runJob with a signal', () => {
         expect(start).not.toHaveBeenCalled();
         expect(listRuns).not.toHaveBeenCalled();
         listRuns.mockRestore();
-        const { total } = await ctx.store.listRuns({});
+        const { total } = await ctx.store.runs.find({});
         expect(total).toBe(0);
     });
 

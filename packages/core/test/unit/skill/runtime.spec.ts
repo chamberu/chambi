@@ -10,7 +10,7 @@ import { jsonSchema } from 'ai';
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -23,7 +23,7 @@ const agent = (input?: ReturnType<typeof fakeSkillRuntime>['input']) => defineAg
     skills: input ? [input] : [],
 });
 const engine = (agents: ReturnType<typeof agent>[] = []) => new Engine({
-    store: new MemoryStore(),
+    store: createMemoryStore(),
     model: mockModel([]),
     agents,
 });
@@ -68,7 +68,7 @@ describe('skill runtime integration', () => {
         const model = mockModel([{ parts: [{ type: 'text', text: 'empty' }] }, { parts: [{ type: 'text', text: 'contributed' }] }]);
         const empty = defineAgent({ name: 'empty', instructions: 'empty role' });
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             agents: [empty],
             model,
         });
@@ -102,7 +102,7 @@ describe('skill runtime integration', () => {
             skills: [{} as never],
         })).toThrow(/runtime provider/i);
         expect(() => new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             agents: [],
             skills: [{
                 runtime: {
@@ -129,7 +129,7 @@ describe('skill runtime integration', () => {
             }],
         }, { parts: [{ type: 'text', text: 'done' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             agents: [defineAgent({
                 name: 'test',
@@ -146,7 +146,7 @@ describe('skill runtime integration', () => {
             trigger: 'test',
             payload: {},
         }); await e.idle();
-        expect((await e.store.listSteps(run.runId)).find((step) => step.name === 'contributed')?.output).toBe('test');
+        expect((await e.store.steps.find(run.runId)).find((step) => step.name === 'contributed')?.output).toBe('test');
         expect(events).toEqual(['check', 'before', 'after']);
         expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain('custom contribution');
         await e.stop();
@@ -177,7 +177,7 @@ describe('skill runtime integration', () => {
         });
         const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             agents: [agent(fake.input)],
         });
@@ -212,7 +212,7 @@ describe('skill runtime integration', () => {
     it('prepares global inputs even when no agents are registered', async () => {
         const fake = fakeSkillRuntime();
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             agents: [],
             skills: [fake.input],
         });
@@ -233,7 +233,7 @@ describe('skill runtime integration', () => {
         Object.assign(a.definition, { skills: inputs });
         const model = mockModel([{ parts: [{ type: 'text', text: 'original' }] }]);
         const e = new Engine({
-            store: new MemoryStore(),
+            store: createMemoryStore(),
             model,
             agents: capture === 'constructor' ? [a] : [],
         });

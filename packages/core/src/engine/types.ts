@@ -9,10 +9,11 @@ import type { Agent } from '../agent/types.ts';
 import type { ArtifactInput } from '../artifact/types.ts';
 import type { IChannel } from '../channel/types.ts';
 import type { IClock } from '../clock/index.ts';
+import type { ConversationOptions } from '../conversation/types.ts';
 import type { IModelResolver, ModelRef } from '../model/types.ts';
 import type { Run, Step } from '../run/types.ts';
 import type { SkillInput } from '../skill/types.ts';
-import type { IStore } from '../store/types.ts';
+import type { IStore } from '../repository/types.ts';
 import type { Invoker, TriggerEnvelope } from '../trigger/types.ts';
 
 /**
@@ -79,6 +80,11 @@ export type EngineOptions = {
      * an `InvalidAgentDefinitionError`.
      */
     models?: IModelResolver;
+    /**
+     * The conversation capability agents with `conversation: true` need: the
+     * authorizer and the limits. Persistence comes from `store.conversations`.
+     */
+    conversations?: ConversationOptions;
     /** Default `${hostname}-${pid}`. */
     owner?: string;
     /** Default 4. */

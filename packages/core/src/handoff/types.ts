@@ -9,7 +9,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { Agent } from '../agent/types.ts';
 import type { ChannelSubscription, DispatchResult } from '../channel/types.ts';
 import type { DispatchEnvelope } from '../engine/types.ts';
-import type { IEffectStore } from '../store/types.ts';
+import type { IEffectRepository } from '../repository/types.ts';
 import type { Invoker, TriggerParent } from '../trigger/types.ts';
 
 export type HandoffSubscriptionOptions<P = unknown> = {
@@ -56,7 +56,7 @@ export type HandoffRunSnapshot = {
 /** The engine side of startHandoff() (internal, provided under HANDOFF_CONTEXT). */
 export type HandoffHost = {
     getAgent(name: string): Agent | undefined;
-    effects: IEffectStore;
+    effects: IEffectRepository;
     /** Creates the run with `parent` as its lineage (dispatch() never sets one). */
     dispatch(envelope: DispatchEnvelope, parent: TriggerParent): Promise<DispatchResult>;
     /** Runs `fn` after every earlier call of the same run settled (the count read-check-write). */

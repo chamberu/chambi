@@ -20,7 +20,7 @@
         "packages/sandbox-k8s": {"component": "sandbox-k8s"},
         "packages/sandbox-local": {"component": "sandbox-local"},
         "packages/skills": {"component": "skills"},
-        "packages/store-typeorm": {"component": "store-typeorm"},
+        "packages/store-db": {"component": "store-db"},
         "packages/test-kit": {"component": "test-kit"},
         "packages/tool-web": {"component": "tool-web"},
         "packages/ui": {"component": "ui"}
@@ -45,7 +45,7 @@
                 "sandbox-k8s",
                 "sandbox-local",
                 "skills",
-                "store-typeorm",
+                "store-db",
                 "test-kit",
                 "tool-web",
                 "ui"

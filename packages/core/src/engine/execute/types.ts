@@ -5,6 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { Conversations } from '../../conversation/module.ts';
+import type { ConversationSnapshot } from '../../conversation/types.ts';
 import type { Agent } from '../../agent/types.ts';
 import type { ApprovalOption } from '../../approval/types.ts';
 import type { IClock } from '../../clock/index.ts';
@@ -12,13 +14,14 @@ import type { ContextKey } from '../../context/types.ts';
 import type { IModelResolver, ModelRef } from '../../model/types.ts';
 import type { Run, Step, Usage } from '../../run/types.ts';
 import type { SkillContribution } from '../../skill/types.ts';
-import type { IStore } from '../../store/types.ts';
+import type { IStore } from '../../repository/types.ts';
 import type { Engine } from '../module.ts';
 import type { RunDelta } from '../types.ts';
 
 export type ExecuteContext = {
     /** The executing engine, handed to the execution's ToolContext as `engine`. */
     engine: Engine;
+    conversation?: { capability: Conversations; snapshot: ConversationSnapshot };
     run: Run;
     agent: Agent;
     skills?: SkillContribution;
@@ -26,7 +29,7 @@ export type ExecuteContext = {
     model: ModelRef | undefined;
     /** Resolves a string model at execution start; without one a string goes to the AI SDK as is. */
     models?: IModelResolver;
-    store: IStore;
+    store: Pick<IStore, 'steps' | 'checkpoints' | 'effects' | 'state' | 'artifacts'>;
     clock: IClock;
     /** Aborted by engine.cancel(). */
     signal: AbortSignal;

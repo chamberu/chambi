@@ -60,7 +60,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
         const { runId, deduplicated } = await response.json() as Accepted;
         expect(deduplicated).toBe(false);
 
-        const run = await store.getRun(runId);
+        const run = await store.runs.findOne(runId);
         expect(run?.status).toBe('queued');
         expect(run?.concurrencyKey).toBe('7');
         expect(run?.trigger.invoker).toBeUndefined();
@@ -77,7 +77,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
         const { app, store } = setup();
         const response = await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: 'x'.repeat(256) } });
         expect(response.status).toBe(400);
-        expect((await store.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
     });
 
     it('dedupes a retried delivery by the subscription key', async () => {
@@ -85,7 +85,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
         const first = await (await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: '7' } })).json() as Accepted;
         const second = await (await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: '7' } })).json() as Accepted;
         expect(second).toEqual({ runId: first.runId, deduplicated: true });
-        expect((await store.listRuns({ agent: 'intake' })).total).toBe(1);
+        expect((await store.runs.find({ agent: 'intake' })).total).toBe(1);
     });
 
     it('creates one run for parallel deliveries with one Idempotency-Key', async () => {
@@ -102,7 +102,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
         expect(bodies.map((b) => b.deduplicated).sort()).toEqual([false, true]);
         expect(bodies[0]!.runId).toBe(bodies[1]!.runId);
 
-        const { data, total } = await store.listRuns({ agent: 'intake' });
+        const { data, total } = await store.runs.find({ agent: 'intake' });
         expect(total).toBe(1);
         expect(data[0]?.trigger.idempotencyKey).toBe('d-1');
     });
@@ -112,7 +112,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
         const response = await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: 7 } });
         expect(response.status).toBe(400);
         expect((await response.json()).issues[0].path).toEqual(['id']);
-        expect((await store.listRuns({ agent: 'intake' })).total).toBe(0);
+        expect((await store.runs.find({ agent: 'intake' })).total).toBe(0);
     });
 
     it('needs a JSON body', async () => {
@@ -144,7 +144,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
         const response = await call(app, 'POST', RAW, { token: ADMIN_TOKEN, body });
         expect(response.status).toBe(202);
         const { runId } = await response.json() as Accepted;
-        expect((await store.getRun(runId))?.trigger.payload).toEqual(body);
+        expect((await store.runs.findOne(runId))?.trigger.payload).toEqual(body);
     });
 
     it('never reads the body of an unauthenticated request', async () => {
@@ -184,7 +184,7 @@ describe('POST /channels/webhook/:agent/<path>', () => {
         const response = await call(app, 'POST', path, { token: ADMIN_TOKEN, body: {} });
         expect(response.status).toBe(202);
         const { runId } = await response.json() as Accepted;
-        expect((await store.getRun(runId))?.trigger.trigger).toBe(trigger);
+        expect((await store.runs.findOne(runId))?.trigger.trigger).toBe(trigger);
     });
 
     it('needs agent:<agent>:run', async () => {
@@ -232,7 +232,7 @@ describe('webhookChannel()', () => {
         const response = await call(app, 'POST', '/channels/hooks/raw/raw', { token: ADMIN_TOKEN, body: { a: 1 } });
         expect(response.status).toBe(202);
         const { runId } = await response.json() as Accepted;
-        expect((await store.getRun(runId))?.trigger).toMatchObject({ channel: 'hooks', trigger: 'webhook:/raw' });
+        expect((await store.runs.findOne(runId))?.trigger).toMatchObject({ channel: 'hooks', trigger: 'webhook:/raw' });
     });
 
     it('answers 413 above its bodyLimit', async () => {
@@ -240,7 +240,7 @@ describe('webhookChannel()', () => {
         const response = await call(app, 'POST', '/channels/hooks/raw/raw', { token: ADMIN_TOKEN, body: { blob: 'x'.repeat(64) } });
         expect(response.status).toBe(413);
         expect((await response.json()).code).toBe('request_entity_too_large');
-        expect((await store.listRuns({})).total).toBe(0);
+        expect((await store.runs.find({})).total).toBe(0);
     });
 
     it('needs authenticators', () => {

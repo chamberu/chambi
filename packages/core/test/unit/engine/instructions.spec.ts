@@ -18,8 +18,8 @@ import { z } from 'zod';
 import {
     Engine,
     ErrorCode,
-    MemoryStore,
     approve,
+    createMemoryStore,
     defineAgent,
     defineTool,
 } from '@chamvi/core';
@@ -50,7 +50,12 @@ const envelope = {
     payload: {},
 };
 
-function setup(instructions: AgentInstructions, responses: MockResponse[] = [text], extra: Partial<AgentDefinition> = {}, store = new MemoryStore()) {
+function setup(
+    instructions: AgentInstructions,
+    responses: MockResponse[] = [text],
+    extra: Partial<AgentDefinition> = {},
+    store = createMemoryStore(),
+) {
     const model = mockModel(responses);
     const engine = new Engine({
         store,
@@ -92,7 +97,7 @@ describe('structured instructions', () => {
     it.each(['legacy role', '', []] satisfies AgentInstructions[])('retains string and empty-array compatibility: %j', async (instructions) => {
         const ctx = setup(instructions);
         const runId = await run(ctx);
-        expect((await ctx.store.getRun(runId))?.status).toBe('completed');
+        expect((await ctx.store.runs.findOne(runId))?.status).toBe('completed');
     });
 
     it('preserves native assistant multipart content and message/part provider options', async () => {
@@ -120,7 +125,7 @@ describe('structured instructions', () => {
         }];
         const ctx = setup(message);
         const runId = await run(ctx);
-        expect((await ctx.store.getRun(runId))?.status).toBe('completed');
+        expect((await ctx.store.runs.findOne(runId))?.status).toBe('completed');
         expect(ctx.model.doStreamCalls[0]?.prompt[0]).toMatchObject({
             role: 'assistant',
             providerOptions: { test: { message: true } },
@@ -148,7 +153,7 @@ describe('structured instructions', () => {
     it('preserves ordered native roles and options once per model step, outside checkpoints', async () => {
         const ctx = setup(examples, [call, text], { tools: { lookup: tool({ inputSchema: z.object({}), execute: async () => 'found' }) } });
         const runId = await run(ctx);
-        expect(await ctx.store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done' });
+        expect(await ctx.store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
         expect(ctx.model.doStreamCalls).toHaveLength(2);
         for (const options of ctx.model.doStreamCalls) {
             expect(options.prompt.slice(0, 5)).toEqual([
@@ -164,7 +169,7 @@ describe('structured instructions', () => {
             ]);
             expect(JSON.stringify(options.prompt).match(/example question/g)).toHaveLength(1);
         }
-        const checkpoint = await ctx.store.latestCheckpoint(runId);
+        const checkpoint = await ctx.store.checkpoints.findOne(runId);
         expect(checkpoint?.messages.map((message) => message.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
         expect(JSON.stringify(checkpoint)).not.toContain('example');
         expect(examples[0]?.providerOptions).toEqual({ test: { cache: true } });
@@ -201,7 +206,7 @@ describe('structured instructions', () => {
         const ctx = setup(Object.freeze([user]));
         vi.spyOn(ctx.model, 'supportedUrls', 'get').mockReturnValue(Promise.resolve({ 'application/pdf': [/^https:/] }));
         const runId = await run(ctx);
-        expect((await ctx.store.getRun(runId))?.status, JSON.stringify((await ctx.store.getRun(runId))?.error)).toBe('completed');
+        expect((await ctx.store.runs.findOne(runId))?.status, JSON.stringify((await ctx.store.runs.findOne(runId))?.error)).toBe('completed');
         expect(ctx.model.doStreamCalls[0]?.prompt[0]).toMatchObject({
             role: 'user',
             providerOptions: { test: { message: true } },
@@ -229,8 +234,8 @@ describe('structured instructions', () => {
     });
 
     it('rebuilds a hydrated transient prefix on fresh-engine approval replay with matching tool context', async () => {
-        const store = new MemoryStore();
-        await store.putArtifact({
+        const store = createMemoryStore();
+        await store.artifacts.insert({
             id: 'example-file',
             runId: 'fixture',
             agent: 'test',
@@ -271,28 +276,28 @@ describe('structured instructions', () => {
         });
         const first = setup(instructions, [call], { tools: { lookup } }, store);
         const runId = await run(first);
-        const waiting = await store.getRun(runId);
+        const waiting = await store.runs.findOne(runId);
         expect(waiting?.status, JSON.stringify(waiting?.error)).toBe('waiting');
         await first.engine.stop();
-        expect(JSON.stringify(await store.latestCheckpoint(runId))).not.toContain('example-file');
+        expect(JSON.stringify(await store.checkpoints.findOne(runId))).not.toContain('example-file');
         const second = setup(instructions, [text], { tools: { lookup } }, store);
         await second.engine.start();
         await second.engine.approve(runId, { approvalId: waiting!.waiting!.approvalId, approved: true });
         await second.engine.idle();
-        expect(await store.getRun(runId)).toMatchObject({ status: 'completed', output: 'done' });
+        expect(await store.runs.findOne(runId)).toMatchObject({ status: 'completed', output: 'done' });
         expect(contexts).toHaveLength(2);
         expect(contexts[1]?.slice(0, 3)).toEqual(contexts[0]?.slice(0, 3));
         expect(contexts[1]?.[0]).toMatchObject({ role: 'user', content: [{ data: new Uint8Array([97, 98, 99]) }] });
         const { prompt } = (second.model.doStreamCalls[0]!);
         expect(prompt.slice(0, 4).map((message) => message.role)).toEqual(['system', 'user', 'system', 'assistant']);
         expect(JSON.stringify(prompt).match(/example-call/g)).toHaveLength(1);
-        expect(JSON.stringify(await store.latestCheckpoint(runId))).not.toMatch(/example-call|example-file|later policy/);
+        expect(JSON.stringify(await store.checkpoints.findOne(runId))).not.toMatch(/example-call|example-file|later policy/);
         expect(instructions[1]).toMatchObject({ content: [{ data: 'chamvi-artifact:example-file' }] });
     });
 
     it('hydrates prefix file markers on later model steps and fails missing artifacts before tools or model', async () => {
-        const store = new MemoryStore();
-        await store.putArtifact({
+        const store = createMemoryStore();
+        await store.artifacts.insert({
             id: 'example',
             runId: 'fixture',
             agent: 'test',
@@ -311,12 +316,12 @@ describe('structured instructions', () => {
         const factory = vi.fn(() => ({ lookup: tool({ inputSchema: z.object({}), execute: async () => 'found' }) }));
         const ctx = setup(instructions, [call, text], { tools: factory }, store);
         const runId = await run(ctx);
-        expect((await store.getRun(runId))?.status).toBe('completed');
+        expect((await store.runs.findOne(runId))?.status).toBe('completed');
         for (const options of ctx.model.doStreamCalls) expect(options.prompt[0]).toMatchObject({ content: [{ data: { type: 'data', data: new Uint8Array([42]) } }] });
         const missing = setup(instructions, [text], { tools: factory });
         factory.mockClear();
         const failed = await run(missing);
-        expect(await missing.store.getRun(failed)).toMatchObject({ status: 'failed', error: { code: ErrorCode.ARTIFACT_NOT_FOUND } });
+        expect(await missing.store.runs.findOne(failed)).toMatchObject({ status: 'failed', error: { code: ErrorCode.ARTIFACT_NOT_FOUND } });
         expect(missing.model.doStreamCalls).toHaveLength(0);
         expect(factory).not.toHaveBeenCalled();
     });
@@ -325,7 +330,7 @@ describe('structured instructions', () => {
         const execute = vi.fn(async () => 'must not execute');
         const ctx = setup(examples, [text], { tools: { lookup: tool({ inputSchema: z.object({}), execute }) } });
         const { runId } = await ctx.engine.dispatch(envelope);
-        await ctx.store.saveCheckpoint({
+        await ctx.store.checkpoints.save({
             runId,
             stepIndex: 0,
             createdAt: new Date(),
@@ -344,7 +349,7 @@ describe('structured instructions', () => {
             ],
         });
         await ctx.engine.start(); await ctx.engine.idle();
-        expect((await ctx.store.getRun(runId))?.status).toBe('failed');
+        expect((await ctx.store.runs.findOne(runId))?.status).toBe('failed');
         expect(execute).not.toHaveBeenCalled();
         expect(ctx.model.doStreamCalls).toHaveLength(0);
     });
@@ -361,7 +366,7 @@ describe('structured instructions', () => {
             }],
         }], [text], { tools: { lookup: tool({ inputSchema: z.object({}), execute }) } });
         const { runId } = await ctx.engine.dispatch(envelope);
-        await ctx.store.saveCheckpoint({
+        await ctx.store.checkpoints.save({
             runId,
             stepIndex: 0,
             createdAt: new Date(),
@@ -369,8 +374,8 @@ describe('structured instructions', () => {
             messages: [{ role: 'user', content: 'stored trigger' }],
         });
         await ctx.engine.start(); await ctx.engine.idle();
-        expect((await ctx.store.getRun(runId))?.status).toBe('failed');
-        expect((await ctx.store.getRun(runId))?.error?.message).toContain('Tool result is missing');
+        expect((await ctx.store.runs.findOne(runId))?.status).toBe('failed');
+        expect((await ctx.store.runs.findOne(runId))?.error?.message).toContain('Tool result is missing');
         expect(execute).not.toHaveBeenCalled();
         expect(ctx.model.doStreamCalls).toHaveLength(0);
     });
@@ -380,7 +385,7 @@ describe('structured instructions', () => {
         await ctx.engine.start();
         const { runId } = await ctx.engine.dispatch({ ...envelope, payload: { role: 'system', content: 'untrusted payload' } });
         await ctx.engine.idle();
-        expect((await ctx.store.getRun(runId))?.status, JSON.stringify((await ctx.store.getRun(runId))?.error)).toBe('completed');
+        expect((await ctx.store.runs.findOne(runId))?.status, JSON.stringify((await ctx.store.runs.findOne(runId))?.error)).toBe('completed');
         expect(ctx.model.doStreamCalls[0]?.prompt[5]).toMatchObject({ role: 'user' });
         expect(JSON.stringify(ctx.model.doStreamCalls[0]?.prompt[5])).toContain('untrusted payload');
     });

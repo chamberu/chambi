@@ -48,7 +48,7 @@ These message types are the native AI SDK types. System content is a string; use
 
 The engine sends the longest leading system prefix through SDK `instructions`. It keeps the rest, including any later system messages, in authored order before the run transcript. First-class [skills](/guide/skills) append a separate metadata-only system block after the configured instructions. For example, a string role plus skills produces two system blocks; an example conversation followed by skills keeps the catalog after those examples.
 
-Configured messages are trusted operator inputs. They are rebuilt once for each execution and appear once per model prompt, including after an approval pause. They are never stored in checkpoints or replayed as pending tool calls. Artifact file markers in examples hydrate for model and tool context without changing configuration or checkpoints. A restored run transcript containing a system role is rejected before replay or model work; role-like text in a trigger payload stays user content.
+Configured messages are trusted operator inputs. They are rebuilt once for each execution and appear once per model prompt, including after an approval pause. They are never stored in checkpoints or conversation history, or replayed as pending tool calls. Recalled conversation messages follow this configured prefix; approval resume uses the captured conversation snapshot. Artifact file markers in examples hydrate for model and tool context without changing configuration or checkpoints. A restored run transcript containing a system role is rejected before replay or model work; role-like text in a trigger payload stays user content.
 
 ## Tools and their context
 
@@ -83,7 +83,7 @@ The `ToolLoopAgent` gets your `Output` with one change: its `parsePartialOutput`
 
 ## Files
 
-A run can start with files ([attachments](/guide/channels#attachments)) and tools can store files of their own. Both are artifacts of the run: metadata (`id`, `runId`, `agent`, `mediaType`, `filename?`, `size`, `createdAt`) plus the bytes, kept in the store's `IArtifactStore`. The `artifacts` of the tool context is scoped to the run: `put({ mediaType, filename?, data })` stores a `Uint8Array` and returns the `Artifact`, `get(id)` returns `{ artifact, data }` (or `undefined`, also for another run's artifact) and `list()` returns the run's artifacts by `createdAt` (attachments in the order they were given, ids `<runId>.0000`, ...; tool files get random UUIDs).
+A run can start with files ([attachments](/guide/channels#attachments)) and tools can store files of their own. Both are artifacts of the run: metadata (`id`, `runId`, `agent`, `mediaType`, `filename?`, `size`, `createdAt`) plus the bytes, kept in the store's `IArtifactRepository`. The `artifacts` of the tool context is scoped to the run: `put({ mediaType, filename?, data })` stores a `Uint8Array` and returns the `Artifact`, `get(id)` returns `{ artifact, data }` (or `undefined`, also for another run's artifact) and `list()` returns the run's artifacts by `createdAt` (attachments in the order they were given, ids `<runId>.0000`, ...; tool files get random UUIDs).
 
 <<< @/snippets/agents.ts#artifacts
 

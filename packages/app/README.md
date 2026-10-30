@@ -86,6 +86,8 @@ export default createApp({
 
 `env` defaults to `process.env`. An app runs one lifecycle (`check` counts as one); a second one rejects with `app_in_use`. `isApp(value)` recognizes an app, also one of another installed copy of the package.
 
+Agent `instructions` also accept an ordered readonly array of native system/user/assistant messages. `AgentInstructions`, `SystemModelMessage`, `UserModelMessage`, `AssistantModelMessage` and the native content types are exported by `@chamvi/core` and re-exported by this package. Strings remain compatible. See the [typed instructions example](https://chamvi.dev/guide/agents#instructions) for role-specific content, provider options and transient checkpoint behavior.
+
 ## Approved local skills
 
 Use `createApp({ skills: [common] })` for additive defaults on every code and folder agent. Each `defineAgent({ skills: [...] })` adds scoped extras. The engine appends metadata and provides `load_skill` automatically; user tools named `load_skill` are rejected. This example reuses the `triage` agent from Usage above.
@@ -131,9 +133,9 @@ Every variable is read once per lifecycle. An empty string counts as unset, inte
 | `CHAMVI_BASE_PATH` | http | empty or `^(?:\/[a-z0-9._~-]+)+$` | `''` (health at `/healthz`, UI at `/ui`) |
 | `CHAMVI_PUBLIC_URL` | ui, channels | absolute URL | unset; set it for approval links (`<url><basePath>/ui/approvals?run=<runId>&approval=<approvalId>`) |
 | `CHAMVI_LOG_LEVEL` | config | `error`, `warn`, `info`, `debug` | `info` |
-| `DATABASE_URL` | store | `postgres://...` | unset: `MemoryStore` (warned outside `--dev`); required for `migrate` and any multi-replica or CronJob deployment |
+| `DATABASE_URL` | store | `postgres://...` | unset: `createMemoryStore()` (warned outside `--dev`); required for `migrate` and any multi-replica or CronJob deployment |
 | `CHAMVI_MIGRATE` | store | bool | `true` (`start` and `run-job` migrate, advisory-locked) |
-| `CHAMVI_PURGE_INTERVAL_MS` | store | int, `0` disables | `3600000` (only with `TypeormStore`) |
+| `CHAMVI_PURGE_INTERVAL_MS` | store | int, `0` disables | `3600000` (for purgeable capability repositories) |
 | `CHAMVI_MAX_CONCURRENT_RUNS` | engine | int >= 1 | `4` |
 | `CHAMVI_SCHEDULER` | scheduler | bool | `true`; `false` starts no in-process cron (CronJob mode; `cron.on()` subscriptions still validate) |
 | `CHAMVI_READINESS_DELAY_MS` | http shutdown | int | `0` |
@@ -174,7 +176,7 @@ Modules are orkos `IModule`s on an eldin container. The built-in ones are always
 | Module | Name | Entry | Does |
 |---|---|---|---|
 | `configModule()` | `chamvi:config` | `@chamvi/app` | reads the config, registers `CONFIG`, `CLOCK`, `LOGGER` |
-| `storeModule({ url?, store?, dataSource? })` | `chamvi:store` | `@chamvi/app` | `TypeormStore` over `DATABASE_URL` (migrated), else `MemoryStore`; the purge timer |
+| `storeModule({ url?, store?, dataSource? })` | `chamvi:store` | `@chamvi/app` | `createDatabaseStore()` over `DATABASE_URL` (migrated), else `createMemoryStore()`; registers `AppToken.STORE` and schedules purgeable roles |
 | `staticTokensModule({ tokens? })` | `chamvi:static-tokens` | `@chamvi/app` | the static-token authenticator from `CHAMVI_TOKENS` |
 | `engineModule({ owner?, claimTtlMs? })` | `chamvi:engine` | `@chamvi/app` | checks the model strings, builds the `Engine` with every contributed channel (`CHANNELS`) and starts it (which starts the channels) |
 | `schedulerModule({ owner?, lockTtlMs? })` | `chamvi:scheduler` | `@chamvi/app` | the `cron` channel (`cronChannel()` of `@chamvi/channel-cron`; in start mode it fires only with `CHAMVI_SCHEDULER`) |
@@ -314,5 +316,3 @@ See [Pick a Model](https://chamvi.dev/guide/models) for providers, secrets, gate
 ## License
 
 Published under [Apache License 2.0](./LICENSE).
-
-Agent `instructions` also accept an ordered readonly array of native system/user/assistant messages. `AgentInstructions`, `SystemModelMessage`, `UserModelMessage`, `AssistantModelMessage` and the native content types are exported by `@chamvi/core` and re-exported by this package. Strings remain compatible. See the [typed instructions example](https://chamvi.dev/guide/agents#instructions) for role-specific content, provider options and transient checkpoint behavior.

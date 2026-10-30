@@ -53,22 +53,22 @@ describe('defineAgent', () => {
 
     it('keeps budget overrides', () => {
         const agent = defineAgent({
-            ...base, 
-            name: 'a', 
-            budget: { maxSteps: 3, maxTokens: 10 }, 
+            ...base,
+            name: 'a',
+            budget: { maxSteps: 3, maxTokens: 10 },
         });
         expect(agent.definition.budget).toEqual({
-            maxSteps: 3, 
-            maxTokens: 10, 
-            timeoutMs: 900_000, 
+            maxSteps: 3,
+            maxTokens: 10,
+            timeoutMs: 900_000,
         });
     });
 
     it('rejects duplicate subscription ids', () => {
         const on = (channel: string, id: string): ChannelSubscription => ({
-            channel, 
-            id, 
-            options: {}, 
+            channel,
+            id,
+            options: {},
         });
         expect(() => defineAgent({
             ...base,
@@ -103,9 +103,9 @@ describe('defineAgent', () => {
     it('accepts a plain tool set', () => {
         const tools = { lookup: defineTool({ inputSchema: z.object({}), execute: async () => 'ok' }) };
         expect(defineAgent({
-            ...base, 
-            name: 'a', 
-            tools, 
+            ...base,
+            name: 'a',
+            tools,
         }).definition.tools).toBe(tools);
     });
 
@@ -130,5 +130,33 @@ describe('defineAgent', () => {
             tools: () => ({}),
             toolsContext: { missing: {} },
         })).not.toThrow();
+    });
+
+    it('agent_opt_in_validated', () => {
+        expect(defineAgent({ ...base, name: 'a' }).definition.conversation).toBeUndefined();
+        expect(defineAgent({
+            ...base,
+            name: 'a',
+            conversation: false,
+        }).definition.conversation).toBe(false);
+        expect(defineAgent({
+            ...base,
+            name: 'a',
+            conversation: true,
+        }).definition.conversation).toBe(true);
+        expect(defineAgent({
+            ...base,
+            name: 'a',
+            conversation: { key: 'stable-helper' },
+        }).definition.conversation).toEqual({ key: 'stable-helper' });
+        for (const value of ['true', 1, 0, null, {}, [], { key: '' }, { key: ' ' }, { key: 3 }, { key: 'x'.repeat(256) }, { key: 'bad\u0000key' }, { key: '\ud800' }]) {
+            expect(() => defineAgent({
+                ...base,
+                name: 'a',
+                conversation: value as never,
+            }), String(value))
+                .toThrow(InvalidAgentDefinitionError);
+        }
+        expectTypeOf<AgentDefinition['conversation']>().toEqualTypeOf<boolean | { key: string } | undefined>();
     });
 });

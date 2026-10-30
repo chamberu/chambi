@@ -41,12 +41,12 @@ ESM only, Node.js `>=22`. `@chamvi/core` and `@chamvi/http` are peer dependencie
 `uiRoutes()` returns extra routes for `createHttpApp({ routes })`:
 
 ```typescript
-import { Engine, MemoryStore } from '@chamvi/core';
+import { Engine, createMemoryStore } from '@chamvi/core';
 import { createHttpApp, staticTokens } from '@chamvi/http';
 import { uiRoutes } from '@chamvi/ui';
 
 const engine = new Engine({
-    store: new MemoryStore(),
+    store: createMemoryStore(),
     agents: [],
 });
 

@@ -95,7 +95,7 @@ describe('folder skill verification', () => {
         const setup = build();
         await expect(setup.harness.setup()).rejects.toThrow(/skill/i);
         expect(setup.engine().getAgent('greeter')).toBeUndefined();
-        expect(await setup.store.getAgentRevision('greeter')).toBeUndefined();
+        expect(await setup.store.agentRevisions.findOne('greeter')).toBeUndefined();
     });
 
     it('keeps static definition failures tolerant and never loads their source', async () => {
@@ -111,7 +111,7 @@ describe('folder skill verification', () => {
         const setup = build(true);
         await setup.harness.setup();
         expect(setup.issues()).toEqual([]);
-        expect(await setup.store.getAgentRevision('greeter')).toBeUndefined();
+        expect(await setup.store.agentRevisions.findOne('greeter')).toBeUndefined();
     });
 
     it('hot reload retains the old agent, marker and queued run when verification fails', async () => {
@@ -120,14 +120,14 @@ describe('folder skill verification', () => {
         await setup.harness.setup();
         await setup.watch();
         const previous = setup.engine().getAgent('greeter');
-        const marker = await setup.store.getAgentRevision('greeter');
+        const marker = await setup.store.agentRevisions.findOne('greeter');
         const runId = await queueRun(setup.store, setup.clock, 'greeter');
         await writeTree(join(root.path, 'greeter'), { 'agent.ts': sourceAgent('v2') });
         await setup.poll();
         await setup.poll();
         expect(setup.engine().getAgent('greeter')).toBe(previous);
-        expect(await setup.store.getAgentRevision('greeter')).toEqual(marker);
-        expect((await setup.store.getRun(runId))?.status).toBe('queued');
+        expect(await setup.store.agentRevisions.findOne('greeter')).toEqual(marker);
+        expect((await setup.store.runs.findOne(runId))?.status).toBe('queued');
         expect(setup.issues()).toMatchObject([{ agent: 'greeter', message: expect.stringMatching(/skill/i) }]);
     });
 

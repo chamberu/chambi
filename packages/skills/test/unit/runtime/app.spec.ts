@@ -8,9 +8,9 @@
 import { expect, it } from 'vitest';
 import {
     AppToken,
-    MemoryStore,
     ModuleName,
     createApp,
+    createMemoryStore,
     defineAgent,
     storeModule,
 } from '@chamvi/app';
@@ -41,7 +41,7 @@ it('prepares real app defaults before engineCreated and combines factory extras 
         },
         { parts: [{ type: 'text', text: 'done' }] },
     ]);
-    const store = new MemoryStore();
+    const store = createMemoryStore();
     const app = createApp({
         agents: [defineAgent({
             name: 'reviewer',
@@ -69,8 +69,8 @@ it('prepares real app defaults before engineCreated and combines factory extras 
             payload: {},
         });
         await engine!.idle();
-        expect((await store.getRun(run.runId))?.status).toBe('completed');
-        const tools = (await store.listSteps(run.runId)).filter((step) => step.kind === 'tool');
+        expect((await store.runs.findOne(run.runId))?.status).toBe('completed');
+        const tools = (await store.steps.find(run.runId)).filter((step) => step.kind === 'tool');
         expect(tools.map((step) => step.output)).toMatchObject([{ content: 'DEFAULT BODY' }, { content: 'EXTRA BODY' }]);
         const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
         expect(prompt).toContain('common'); expect(prompt).toContain('extra'); expect(prompt).not.toContain('BODY');

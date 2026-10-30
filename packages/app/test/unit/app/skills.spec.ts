@@ -8,7 +8,7 @@
 import {
     Engine,
     InvalidAgentDefinitionError,
-    MemoryStore,
+    createMemoryStore,
     defineAgent,
 } from '@chamvi/core';
 import { preparationInput } from '../../utils/skill-runtime.ts';
@@ -46,7 +46,7 @@ afterEach(async () => {
 
 function build(options: Partial<AppOptions> = {}) {
     const model = mockModel([{ parts: [{ type: 'text', text: 'done' }] }, { parts: [{ type: 'text', text: 'done' }] }]);
-    const store = new MemoryStore();
+    const store = createMemoryStore();
     let engine: Engine | undefined;
     const events: string[] = [];
     const observe: IModule = {

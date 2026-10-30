@@ -179,7 +179,7 @@ describe('acceptance flows', () => {
 
         const last = await deliver();
         expect(await last.json()).toMatchObject({ deduplicated: true });
-        const { data, total } = await store.listRuns({ agent: 'intake' });
+        const { data, total } = await store.runs.find({ agent: 'intake' });
         expect(total).toBe(1);
         expect(data[0]?.status).toBe('completed');
         await engine.drain();

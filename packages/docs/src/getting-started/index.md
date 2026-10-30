@@ -5,7 +5,7 @@ chamvi is a TypeScript framework for **self-hosted, channel-driven AI agents**. 
 The LLM side is the [Vercel AI SDK](https://ai-sdk.dev) v7. chamvi adds what the AI SDK leaves out on purpose: channels, a run queue, persistence, concurrency control, approvals and a graceful shutdown.
 
 ::: info Status
-chamvi is pre-1.0. [`@chamvi/core`](/reference/), the cron channel [`@chamvi/channel-cron`](/reference/channel-cron), the HTTP and MCP API [`@chamvi/http`](/reference/http), the [TypeORM store](/stores/typeorm), the GitHub channel and tools [`@chamvi/github`](/reference/github), [sandboxes and coding tools](/guide/workspaces), the web tools [`@chamvi/tool-web`](/reference/tool-web), the OpenClaw channel [`@chamvi/channel-openclaw`](/reference/channel-openclaw), the [dashboard](/guide/ui), the app and CLI [`@chamvi/app`](/reference/app) and [`@chamvi/cli`](/reference/cli) and the test helpers, [`@chamvi/test-kit`](/reference/test-kit), exist today. The base image, the Helm chart and the template repository are planned; the [roadmap](/roadmap) lists them. Pages about planned work carry a <Badge type="warning" text="Planned" /> badge.
+chamvi is pre-1.0. [`@chamvi/core`](/reference/), the cron channel [`@chamvi/channel-cron`](/reference/channel-cron), the HTTP and MCP API [`@chamvi/http`](/reference/http), the [TypeORM store](/repositories/typeorm), the GitHub channel and tools [`@chamvi/github`](/reference/github), [sandboxes and coding tools](/guide/workspaces), the web tools [`@chamvi/tool-web`](/reference/tool-web), the OpenClaw channel [`@chamvi/channel-openclaw`](/reference/channel-openclaw), the [dashboard](/guide/ui), the app and CLI [`@chamvi/app`](/reference/app) and [`@chamvi/cli`](/reference/cli) and the test helpers, [`@chamvi/test-kit`](/reference/test-kit), exist today. The base image, the Helm chart and the template repository are planned; the [roadmap](/roadmap) lists them. Pages about planned work carry a <Badge type="warning" text="Planned" /> badge.
 :::
 
 ## Why chamvi?
@@ -33,9 +33,9 @@ That usually means a hosted orchestrator, or a lot of glue code. chamvi is that 
 
 - **Channels first.** Every run comes from a [channel](/guide/channels) and starts from one normalized envelope. Deduplication and concurrency are decided at intake, before any model call; outbound is tool-driven, so the engine never posts on its own.
 - **Self-hosted.** Agents run in your process, on your cluster, with your provider keys. Nothing phones home and there is no paid console.
-- **No orchestrator server.** Runs, leases, locks and idempotency keys live in a [pluggable store](/stores/). Replicas coordinate through that store; Redis is never required.
+- **No orchestrator server.** Runs, leases, locks and idempotency keys live in a [pluggable store](/repositories/). Replicas coordinate through that store; Redis is never required.
 - **Built on the AI SDK, not around it.** `LanguageModel`, `ModelMessage` and `ToolSet` pass through unchanged. If you know `tool()` and `ToolLoopAgent`, you know how to write a chamvi tool.
-- **A small concept surface.** About ten concepts: App, Agent, Channel, Run, Step, State, Tool, Workspace, Store. The core ships Agent, Channel, Run, Step, State, Tool and Store.
+- **A small concept surface.** About ten concepts: App, Agent, Channel, Run, Step, State, Tool, Workspace, Repository. The core ships Agent, Channel, Run, Step, State, Tool and Repository.
 - **No spam.** Retries and restarts must not repeat comments, pushes or notifications. That is what [effect tools](/guide/effect-tools) and the message keys of channel `emit()` are for.
 
 ## How it compares
@@ -59,7 +59,7 @@ Each of these is a better fit in some setups: if you already run Inngest or Trig
 - [`defineAgent()`](/guide/agents) with [channel subscriptions](/guide/channels) and agent hooks
 - the [`Engine`](/reference/#runengine): dispatch, scheduling, execution, checkpoints, budgets, durable [approvals](/guide/approvals), cancel, drain and recovery
 - [effect tools](/guide/effect-tools) and [agent state](/guide/state)
-- the [store contract](/stores/) and [`MemoryStore`](/stores/memory)
+- the [store contract](/repositories/) and [`createMemoryStore()`](/repositories/memory)
 - the [`IChannel`](/guide/channels) contract, `ToolContext.channels` and `consoleChannel()`
 
 `@chamvi/test-kit` adds the store contract suite and a controllable clock for tests.

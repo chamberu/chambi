@@ -5,26 +5,26 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { IStateStore } from '../store/types.ts';
+import type { IStateRepository } from '../repository/types.ts';
 import { validate } from './helpers.ts';
 import type { IAgentState, Infer, StateSchema } from './types.ts';
 
 /**
- * Store-backed IAgentState scoped to one agent. With a schema, collection
+ * Repository-backed IAgentState scoped to one agent. With a schema, collection
  * documents are validated (and stored as the schema's output) on upsert, and
  * only declared collections are writable; without one, nothing is validated.
  */
 export function createAgentState<S extends StateSchema = StateSchema>(
     agent: string,
     schema: S | undefined,
-    store: IStateStore,
+    store: IStateRepository,
 ): IAgentState<S> {
     return {
-        get: async <T = unknown>(key: string) => await store.kvGet(agent, key) as T | undefined,
-        set: (key, value) => store.kvSet(agent, key, value),
+        get: async <T = unknown>(key: string) => await store.findOne(agent, key) as T | undefined,
+        set: (key, value) => store.set(agent, key, value),
         collection: <K extends keyof S & string>(name: K) => ({
             list: async (q?: { where?: Partial<Infer<S[K]>>; limit?: number }) => {
-                const rows = await store.docList(agent, name, {
+                const rows = await store.findDocuments(agent, name, {
                     where: q?.where as Record<string, unknown> | undefined,
                     limit: q?.limit,
                 });
@@ -32,9 +32,9 @@ export function createAgentState<S extends StateSchema = StateSchema>(
             },
             upsert: async (id: string, doc: Infer<S[K]>) => {
                 const value = await validate(agent, name, schema, doc);
-                await store.docUpsert(agent, name, id, value);
+                await store.upsertDocument(agent, name, id, value);
             },
-            remove: (id: string) => store.docDelete(agent, name, id),
+            remove: (id: string) => store.deleteDocument(agent, name, id),
         }),
     };
 }
