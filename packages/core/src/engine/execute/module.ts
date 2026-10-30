@@ -20,7 +20,9 @@ import {
     FatalToolError,
     IncompleteResponseError,
     InvalidAgentDefinitionError,
+    ValidationError,
 } from '../../errors/index.ts';
+import { assertTranscriptMessages, splitInstructions } from '../../message/helpers.ts';
 import { bindRunSnapshot } from '../../handoff/helpers.ts';
 import { toLanguageModel } from '../../model/asserts.ts';
 import { untilAborted } from '../../run/helpers.ts';
@@ -74,6 +76,15 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         ...(ctx.conversation?.snapshot.messages ?? []),
         initialMessage(run.trigger, ctx.conversation ? run.conversation?.text : undefined),
     ];
+    let configured: ReturnType<typeof splitInstructions>;
+    try {
+        assertTranscriptMessages(initial);
+        configured = splitInstructions(agent.definition.instructions, ctx.skills?.instructions ?? []);
+    } catch (error) {
+        if (!(error instanceof ValidationError || error instanceof InvalidAgentDefinitionError)) throw error;
+        await ctx.finish({ status: RunStatus.FAILED, error: toRunError(error) });
+        return;
+    }
     const usage: Usage = { ...run.usage };
     let stepIndex = checkpoint ? checkpoint.stepIndex + 1 : 0;
     let stepSeq = (await store.steps.find(run.id)).length;
@@ -113,7 +124,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
 
     let prompt: ModelMessage[];
     try {
-        prompt = await hydrateMessages(initial, store.artifacts);
+        prompt = await hydrateMessages([...configured.messages, ...initial], store.artifacts);
     } catch (error) {
         if (!(error instanceof ArtifactNotFoundError)) throw error;
         await ctx.finish({ status: RunStatus.FAILED, error: toRunError(error) });
@@ -201,6 +212,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         const complete = modelCallEnded;
         modelCallEnded = false;
         try {
+            assertTranscriptMessages(step.response.messages);
             const finishedAt = clock.now();
             const tokens = stepTokens(step);
             await append({
@@ -409,7 +421,8 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
 
     const loop = new ToolLoopAgent({
         model,
-        instructions: agent.definition.instructions,
+        instructions: configured.instructions,
+        allowSystemInMessages: configured.messages.some((message) => message.role === 'system'),
         tools,
         activeTools,
         // the AI SDK types toolsContext from a concrete tool set; a ToolSet infers none

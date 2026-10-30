@@ -39,6 +39,7 @@
         "@chamvi/sandbox-docker": "*",
         "@chamvi/sandbox-k8s": "*",
         "@chamvi/sandbox-local": "*",
+        "@chamvi/skills": "^0.3.1",
         "@chamvi/store-db": "*",
         "@chamvi/test-kit": "*",
         "@chamvi/tool-web": "*",

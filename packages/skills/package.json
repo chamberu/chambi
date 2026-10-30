@@ -1,0 +1,74 @@
+{
+    "name": "@chamvi/skills",
+    "version": "0.3.1",
+    "type": "module",
+    "description": "Prepare pinned, app-selected skill sources for verified Chamvi runtime loading.",
+    "author": {
+        "name": "Peter Placzek",
+        "email": "contact@tada5hi.net",
+        "url": "https://github.com/tada5hi"
+    },
+    "homepage": "https://chamvi.dev",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/chamvi/chamvi.git",
+        "directory": "packages/skills"
+    },
+    "main": "dist/index.mjs",
+    "types": "dist/index.d.mts",
+    "exports": {
+        "./package.json": "./package.json",
+        ".": {
+            "types": "./dist/index.d.mts",
+            "import": "./dist/index.mjs"
+        }
+    },
+    "files": [
+        "dist",
+        "NOTICE"
+    ],
+    "engines": {
+        "node": ">=22.20.0"
+    },
+    "scripts": {
+        "build:types": "tsc --noEmit -p tsconfig.build.json",
+        "build:js": "tsdown",
+        "build": "npm run build:types && npm run build:js",
+        "typecheck": "tsc --noEmit -p tsconfig.json",
+        "test": "vitest --config test/vitest.config.ts --run",
+        "test:coverage": "vitest --config test/vitest.config.ts --run --coverage"
+    },
+    "nx": {
+        "targets": {
+            "test": {
+                "dependsOn": [
+                    "build"
+                ]
+            }
+        }
+    },
+    "keywords": [
+        "chamvi",
+        "skills",
+        "agents"
+    ],
+    "publishConfig": {
+        "access": "public"
+    },
+    "license": "Apache-2.0",
+    "dependencies": {
+        "skills": "git+https://github.com/tada5hi/skills-cli.git#6c80a94543b91a27df7445f40dfea7a61e0a5e9f",
+        "smob": "^1.6.2",
+        "yaml": "~2.9.1"
+    },
+    "devDependencies": {
+        "@chamvi/app": "^0.3.1",
+        "@chamvi/core": "^0.3.1",
+        "@chamvi/test-kit": "^0.3.1",
+        "ai": "^7.0.146"
+    },
+    "peerDependencies": {
+        "@chamvi/core": "^0.3.1",
+        "ai": "^7"
+    }
+}

@@ -21,7 +21,7 @@ npm run lint
 - **Package manager**: npm (workspaces)
 - **Build orchestration**: nx (`nx run-many`), packages built with tsdown (ESM only)
 
-Packages live in `packages/*`. `@chamvi/app`, `@chamvi/channel-cron`, `@chamvi/channel-openclaw`, `@chamvi/cli`, `@chamvi/coding`, `@chamvi/core`, `@chamvi/github`, `@chamvi/http`, `@chamvi/sandbox`, `@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s`, `@chamvi/sandbox-local`, `@chamvi/store-db`, `@chamvi/test-kit`, `@chamvi/tool-web` and `@chamvi/ui` exist today (container images in `images/*`); the others are planned (see [Project Structure](.agents/structure.md)).
+Packages live in `packages/*`. `@chamvi/app`, `@chamvi/channel-cron`, `@chamvi/channel-openclaw`, `@chamvi/cli`, `@chamvi/coding`, `@chamvi/core`, `@chamvi/github`, `@chamvi/http`, `@chamvi/sandbox`, `@chamvi/sandbox-docker`, `@chamvi/sandbox-k8s`, `@chamvi/sandbox-local`, `@chamvi/skills`, `@chamvi/store-db`, `@chamvi/test-kit`, `@chamvi/tool-web` and `@chamvi/ui` exist today (container images in `images/*`); the others are planned (see [Project Structure](.agents/structure.md)).
 
 ## Detailed Guides
 

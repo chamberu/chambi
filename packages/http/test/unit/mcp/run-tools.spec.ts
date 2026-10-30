@@ -74,6 +74,41 @@ function typedAgent() {
 }
 
 describe('mcp run_<agent>', () => {
+    it('describes structured instructions using only the first nonblank system line', async () => {
+        const agents = [defineAgent({
+            name: 'structured',
+            model: textModel(),
+            channels: [http.on()],
+            instructions: [
+                { role: 'user', content: 'private example' },
+                { role: 'system', content: '  \n ' },
+                { role: 'assistant', content: 'private answer' },
+                { role: 'system', content: '\n  Structured runs.  \nMore.' },
+            ],
+        }), defineAgent({
+            name: 'examples',
+            model: textModel(),
+            channels: [http.on()],
+            instructions: [
+                {
+                    role: 'user',
+                    content: [{
+                        type: 'image',
+                        image: new Uint8Array([1]),
+                        mediaType: 'image/png',
+                    }],
+                },
+                { role: 'assistant', content: 'private answer' },
+            ],
+        })];
+        const { app } = createRunTestApp({ agents });
+        const client = await connectMcp(app, ADMIN_TOKEN);
+        const { tools } = await client.listTools();
+        expect(tools.find((entry) => entry.name === 'run_structured')?.description).toBe('Structured runs.');
+        expect(tools.find((entry) => entry.name === 'run_examples')?.description).toBe('Starts a run of agent "examples".');
+        await client.close();
+    });
+
     it('lists one tool per agent with an http subscription', async () => {
         const { app } = createRunTestApp();
         const client = await connectMcp(app, ADMIN_TOKEN);

@@ -17,11 +17,17 @@ const DEFAULT_MAX_STEPS: 20;
 const DEFAULT_TIMEOUT_MS: 900_000; // 15 minutes
 ```
 
-Throws `InvalidAgentDefinitionError` for an invalid name, duplicate subscription ids, a tool with `needsApproval` or a `toolsContext` entry naming a chamvi tool or no tool of a plain tool set (both in a plain tool set; a tools factory fails the run instead). See [Agents](/guide/agents).
+Throws `InvalidAgentDefinitionError` for an invalid name, instruction outer shape or role, duplicate subscription ids, a tool with `needsApproval` or a `toolsContext` entry naming a chamvi tool or no tool of a plain tool set (both in a plain tool set; a tools factory fails the run instead). See [Agents](/guide/agents).
 
 A folder agent's `agent.ts` default-exports `defineAgent()`'s result, named like its folder; `AgentRevision` is the store's revision marker of a folder agent (see [Agent Folders](/guide/agent-folders)):
 
 <<< ../../../core/src/agent/types.ts{ts}
+
+## Native messages and instructions
+
+Core exports the unchanged native SDK types `SystemModelMessage`, `UserModelMessage`, `AssistantModelMessage`, `ModelMessage`, `UserContent`, `AssistantContent`, `TextPart`, `ImagePart` and `FilePart`. App re-exports these through its normal core barrel. System content is a string; user/assistant multipart content and provider options retain their native SDK types.
+
+`AgentInstruction` is the union of native system/user/assistant messages; `AgentInstructions` accepts a string or readonly array of that union. Tool roles and a single-object shorthand are refused. Leading system blocks use SDK instructions; all remaining configured messages stay ordered in a transient prefix. Skills runtime metadata adds a separate system block, while manual catalog metadata stays a string. Prefixes hydrate files without entering checkpoints or pending-tool replay; restored transcript system roles are rejected. See the [typed instructions example](/guide/agents#instructions).
 
 ## Permissions
 
@@ -68,7 +74,7 @@ class Engine {
     listAgents(): Agent[];
     getChannel(name: string): IChannel | undefined;
     listChannels(): IChannel[];
-    putAgent(agent: Agent, options?: { revision?: string; formerRevision?: string; reload?: boolean }): Promise<'added' | 'replaced' | 'unchanged'>;
+    putAgent(agent: Agent, options?: { revision?: string; formerRevision?: string; reload?: boolean; signal?: AbortSignal }): Promise<'added' | 'replaced' | 'unchanged'>;
     checkAgent(agent: Agent): void;
     removeAgent(name: string): Promise<boolean>;
     agentRevision(name: string): string | undefined;
@@ -96,7 +102,7 @@ class Engine {
 | `store`, `clock` | The store and clock the engine was built with (`clock` defaults to `systemClock`) | |
 | `getAgent`, `listAgents` | One registered agent by name; all of them in registration order (a new array), read at call time | |
 | `getChannel`, `listChannels` | One registered channel by name; all of them in registration order | [Channels](/guide/channels) |
-| `putAgent` | Registers an agent or replaces the one of the same name in place (a new one goes last); refuses a subscription to an unknown channel like the constructor. Replacing cancels the agent's unsettled runs created before now. With a `revision` (a folder's content hash) the store's marker is brought to it under the lock `agents:<name>` instead, cancelling once across replicas and only when a marker existed (swept before and again after the marker write; no run of the agent starts on this engine meanwhile). Each cancelled run stores `agent_replaced` as its `error` ([Errors](/guide/errors#run-errors)), and the sweep emits `agents.cancelled`. With `reload: false` (a process that never reloads, a job) nothing is cancelled: a missing marker is written, a different one moved only while the agent has no unsettled run, else `InvalidRunStateError` and the agent stays unregistered. A marker at `formerRevision` (the same content hashed by an earlier algorithm) counts as equal and is moved to `revision` without a cancel. Resolves `unchanged` (no event) for the same agent object at the same revision | [Agent Folders](/guide/agent-folders) |
+| `putAgent` | Registers an agent or replaces the one of the same name in place (a new one goes last); refuses a subscription to an unknown channel like the constructor. Replacing cancels the agent's unsettled runs created before now. With a `revision` (a folder's content hash) the store's marker is brought to it under the lock `agents:<name>` instead, cancelling once across replicas and only when a marker existed (swept before and again after the marker write; no run of the agent starts on this engine meanwhile). Each cancelled run stores `agent_replaced` as its `error` ([Errors](/guide/errors#run-errors)), and the sweep emits `agents.cancelled`. With `reload: false` (a process that never reloads, a job) nothing is cancelled: a missing marker is written, a different one moved only while the agent has no unsettled run, else `InvalidRunStateError` and the agent stays unregistered. A marker at `formerRevision` (the same content hashed by an earlier algorithm) counts as equal and is moved to `revision` without a cancel. Optional `signal` cancels preparation and rejects with its reason before registry mutation, retaining the previous agent, marker and runs. Once the registry operation starts, cancellation waits for consistent completion and local publication. Resolves `unchanged` (no event) for the same agent object at the same revision | [Agent Folders](/guide/agent-folders) |
 | `checkAgent` | What `putAgent` refuses before any store access (a model that does not resolve, a subscription to an unknown channel), as `InvalidAgentDefinitionError`; registers and writes nothing | [Agent Folders](/guide/agent-folders) |
 | `removeAgent` | Unregisters the agent here first (no further dispatch), then under the same lock cancels its unsettled runs and deletes its marker (when it has one, unless this engine had it at another revision: a newer one registered elsewhere stays), or without a marker cancels the runs of an agent registered here; each cancelled run stores `agent_removed` ([Errors](/guide/errors#run-errors)) and the sweep emits `agents.cancelled`; resolves whether it was registered here | [Agent Folders](/guide/agent-folders) |
 | `agentRevision` | The revision an agent was registered at; `undefined` for a code agent | |

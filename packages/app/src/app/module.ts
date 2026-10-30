@@ -6,7 +6,7 @@
  */
 
 import { InvalidAgentDefinitionError } from '@chamvi/core';
-import type { Agent, ModelRef } from '@chamvi/core';
+import type { Agent, ModelRef, SkillInput } from '@chamvi/core';
 import { runJob } from '@chamvi/channel-cron';
 import { Container } from 'eldin';
 import type { IContainer } from 'eldin';
@@ -70,6 +70,8 @@ export class App implements IApp {
 
     protected models: ModelProviders | undefined;
 
+    protected skills: readonly SkillInput[] | undefined;
+
     protected model: ModelRef | undefined;
 
     protected providers: Record<string, ProviderConfig> | undefined;
@@ -108,6 +110,7 @@ export class App implements IApp {
         this.agents = Object.freeze([...options.agents ?? []]);
         this.modules = buildModules(options.modules);
         this.models = options.models;
+        this.skills = options.skills;
         this.model = options.model;
         this.providers = options.providers;
     }
@@ -174,6 +177,7 @@ export class App implements IApp {
             ...(this.model !== undefined && { model: this.model }),
             ...(this.providers !== undefined && { providers: this.providers }),
             agents: this.agents,
+            ...(this.skills !== undefined && { skills: this.skills }),
             ...extra,
         };
         container.register(AppToken.CONTEXT, { useValue: context });

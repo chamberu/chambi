@@ -13,7 +13,7 @@ import {
     defineAgent,
 } from '@chamvi/core';
 import { http } from '@chamvi/http';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, textModel } from '@chamvi/test-kit';
 import type { IModule } from 'orkos';
 import {
     afterEach,
@@ -38,7 +38,6 @@ import {
     rejectionOf,
 } from '../../utils/app.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { textModel } from '../../utils/model.ts';
 import { closeServer, freePort, listenOn } from '../../utils/port.ts';
 
 const agent = defineAgent({

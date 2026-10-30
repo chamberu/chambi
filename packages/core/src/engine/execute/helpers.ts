@@ -157,7 +157,8 @@ export function assembleTools(
             return agentHooks?.beforeToolExecution?.(...args);
         },
     } : agentHooks;
-    if (!userTools && !schema) {
+    if (!userTools && !schema && !Object.keys(ctx.skills?.tools ?? {}).length) {
+        ctx.skills?.checkTools({});
         if (agentToolsContext) assertToolsContext(ctx.agent.name, {}, agentToolsContext);
         return { tools: {}, toolsContext: {} };
     }
@@ -173,6 +174,9 @@ export function assembleTools(
         ...(schema ? createStateTools(schema) : {}),
         ...(typeof userTools === 'function' ? userTools(toolContext) : userTools),
     };
+
+    ctx.skills?.checkTools(tools);
+    Object.assign(tools, ctx.skills?.tools);
 
     // a factory's set is only known here: refused like defineAgent refuses a plain one
     assertNoNeedsApproval(ctx.agent.name, tools);

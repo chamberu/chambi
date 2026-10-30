@@ -7,6 +7,8 @@
 
 import { assertConcurrencyMaxRuns } from '../channel/concurrency.ts';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
+import { assertInstructions } from '../message/helpers.ts';
+import { snapshotSkillInputs } from '../skill/helpers.ts';
 import type { StateSchema } from '../state/types.ts';
 import {
     DEFAULT_MAX_STEPS,
@@ -28,19 +30,27 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
         );
     }
 
+    assertInstructions(def.instructions);
     assertConcurrencyMaxRuns(def.concurrencyMaxRuns, `Agent "${def.name}" concurrencyMaxRuns`);
     conversationKey(def);
 
     const seen = new Set<string>();
     for (const subscription of def.channels ?? []) {
         assertConcurrencyMaxRuns(subscription.concurrencyMaxRuns, `Agent "${def.name}" subscription "${subscription.id}" concurrencyMaxRuns`);
+
         if (seen.has(subscription.id)) {
             throw new InvalidAgentDefinitionError(
                 `Agent "${def.name}" has duplicate subscription id "${subscription.id}".`,
             );
         }
+
         seen.add(subscription.id);
     }
+
+    const skills = snapshotSkillInputs(
+        def.skills,
+        typeof def.tools === 'function' ? {} : def.tools ?? {}
+    );
 
     // a factory's set is only known per execution, the engine checks it there
     if (typeof def.tools !== 'function') {
@@ -52,6 +62,7 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
         name: def.name,
         definition: {
             ...def,
+            ...(def.skills !== undefined && { skills }),
             budget: {
                 maxSteps: DEFAULT_MAX_STEPS,
                 timeoutMs: DEFAULT_TIMEOUT_MS,

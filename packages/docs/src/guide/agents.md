@@ -9,6 +9,7 @@ An agent is a typed config object passed to `defineAgent()`. It names a model, i
 `defineAgent()` validates the definition and returns `{ name, definition }` with defaults applied. It throws `InvalidAgentDefinitionError` when:
 
 - the name does not match `^[a-z0-9]+(-[a-z0-9]+)*$` (lowercase words joined by single hyphens), or is longer than 64 characters,
+- instructions are neither a string nor an array of native system/user/assistant messages (tool roles are refused),
 - two subscriptions of the agent share an id,
 - the agent's or a subscription's `concurrencyMaxRuns` is neither `undefined`, `false` nor a positive safe integer,
 - a tool of a plain tool set declares the AI SDK's `needsApproval` (use [`approve()`](/guide/approvals) instead),
@@ -24,7 +25,7 @@ The engine checks the rest when you construct it: agent names must be unique wit
 |---|---|---|---|
 | `name` | `string` | required | Unique per engine, lowercase words joined by `-`, at most 64 characters |
 | `model` | `ModelRef` | `EngineOptions.model` | A `'<provider>/<model id>'` string resolved through `EngineOptions.models`, or any AI SDK `LanguageModel` |
-| `instructions` | `string` | required | System instructions |
+| `instructions` | `AgentInstructions` | required | A string or an ordered readonly array of native system/user/assistant messages |
 | `concurrencyMaxRuns` | `number \| false` | none | Shared-store ceiling for this agent's running runs; positive safe integer, or `false` for no additional ceiling |
 | `channels` | `ChannelSubscription[]` | none | From `http.on()`, `webhook.on()`, `cron.on()`, `github.on()`. See [Channels](/guide/channels) |
 | `tools` | `ToolSet \| (ctx) => ToolSet` | none | A plain tool set, or a factory called for each execution. See [Tools and their context](#tools-and-their-context) |
@@ -36,6 +37,18 @@ The engine checks the rest when you construct it: agent names must be unique wit
 | `output` | `Output` | none | AI SDK structured output, e.g. `Output.object({ schema })`. See [Structured output](#structured-output) |
 
 The budget you pass is merged over the defaults, so `budget: { maxSteps: 5 }` keeps the 15 minute timeout.
+
+## Instructions
+
+A string remains shorthand for one system message. For structured instructions, import `AgentInstructions`, `SystemModelMessage`, `UserModelMessage` and `AssistantModelMessage` from `@chamvi/core` (also re-exported by `@chamvi/app`):
+
+<<< @/snippets/instructions.ts#instructions
+
+These message types are the native AI SDK types. System content is a string; user and assistant content retain their respective SDK multipart unions, including file data, URLs and provider options. Core also exports native `ModelMessage`, `UserContent`, `AssistantContent`, `TextPart`, `ImagePart` and `FilePart`. Provider support and SDK content validation still apply. The installed AI SDK deprecates `image` content parts in favor of `file` parts with an image media type; native `ImagePart` remains available for compatibility.
+
+The engine sends the longest leading system prefix through SDK `instructions`. It keeps the rest, including any later system messages, in authored order before the run transcript. First-class [skills](/guide/skills) append a separate metadata-only system block after the configured instructions. For example, a string role plus skills produces two system blocks; an example conversation followed by skills keeps the catalog after those examples.
+
+Configured messages are trusted operator inputs. They are rebuilt once for each execution and appear once per model prompt, including after an approval pause. They are never stored in checkpoints or conversation history, or replayed as pending tool calls. Recalled conversation messages follow this configured prefix; approval resume uses the captured conversation snapshot. Artifact file markers in examples hydrate for model and tool context without changing configuration or checkpoints. A restored run transcript containing a system role is rejected before replay or model work; role-like text in a trigger payload stays user content.
 
 ## Tools and their context
 
@@ -85,3 +98,5 @@ One engine runs any number of agents. They share the store, the engine's local c
 `dispatch()` names the agent per run. An agent the engine does not hold throws `AgentNotFoundError` (`agent_not_found`, 404 over HTTP).
 
 The set can change while the engine runs: `engine.putAgent(agent)` adds an agent or replaces the one of the same name, `engine.removeAgent(name)` removes it, and both emit `agents.changed` (`{ name, kind: 'added' | 'replaced' | 'removed' }`), which the cron channel and `@chamvi/http` follow. Replacing or removing an agent first cancels its unsettled runs. An app loads such agents from a folder: see [Agent Folders](/guide/agent-folders).
+
+Pass `engine.putAgent(agent, { signal })` to cancel candidate preparation before registry changes. Cancellation leaves the previous registration, revision marker and unsettled runs intact. Once a registry operation starts, it finishes with local publication even if the caller or engine stops, keeping the registration and durable state consistent. Folder loading forwards the app shutdown signal through preparation and publication.

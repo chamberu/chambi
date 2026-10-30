@@ -13,6 +13,7 @@ import {
     it,
 } from 'vitest';
 import * as core from '@chamvi/core';
+import type * as sdk from 'ai';
 import * as persistence from '@chamvi/core/conversation/persistence';
 
 describe('public api', () => {
@@ -51,6 +52,24 @@ describe('public api', () => {
             expect(persistence[name as keyof typeof persistence]).toBeTypeOf('function');
             expect(core).not.toHaveProperty(name);
         }
+    });
+
+    it('exports native message aliases and role-specific instruction types', () => {
+        expectTypeOf<core.SystemModelMessage>().toEqualTypeOf<sdk.SystemModelMessage>();
+        expectTypeOf<core.UserModelMessage>().toEqualTypeOf<sdk.UserModelMessage>();
+        expectTypeOf<core.AssistantModelMessage>().toEqualTypeOf<sdk.AssistantModelMessage>();
+        expectTypeOf<core.ModelMessage>().toEqualTypeOf<sdk.ModelMessage>();
+        expectTypeOf<core.SystemModelMessage['content']>().toEqualTypeOf<string>();
+        expectTypeOf<core.UserContent>().toEqualTypeOf<sdk.UserContent>();
+        expectTypeOf<core.AssistantContent>().toEqualTypeOf<sdk.AssistantContent>();
+        expectTypeOf<core.TextPart>().toEqualTypeOf<sdk.TextPart>();
+        expectTypeOf<core.FilePart>().toEqualTypeOf<sdk.FilePart>();
+        expectTypeOf<core.AgentInstruction>().toEqualTypeOf<sdk.SystemModelMessage | sdk.UserModelMessage | sdk.AssistantModelMessage>();
+        expectTypeOf<core.AgentDefinition['instructions']>().toEqualTypeOf<string | readonly core.AgentInstruction[]>();
+        expectTypeOf<core.SkillContribution['instructions']>().toEqualTypeOf<core.AgentInstructions>();
+        expectTypeOf<sdk.ToolModelMessage>().not.toExtend<core.AgentInstruction>();
+        expect(core).not.toHaveProperty('normalizeInstructions');
+        expect(core).not.toHaveProperty('splitInstructions');
     });
 
     it.each([
@@ -101,6 +120,15 @@ describe('public api', () => {
     ])('exports %s', (name) => {
         expect(core).toHaveProperty(name);
         expect(core[name as keyof typeof core]).toBeTypeOf('function');
+    });
+
+    it('exports passive skill contracts', () => {
+        expectTypeOf<core.AgentDefinition['skills']>().toEqualTypeOf<readonly core.SkillInput[] | undefined>();
+        expectTypeOf<core.EngineOptions['skills']>().toEqualTypeOf<readonly core.SkillInput[] | undefined>();
+        expectTypeOf<core.SkillInput['runtime']>().toEqualTypeOf<core.ISkillRuntimeProvider>();
+        expectTypeOf<ReturnType<core.ISkillRuntimeProvider['create']>>().toEqualTypeOf<core.ISkillRuntime>();
+        expect(core).not.toHaveProperty('createSkillCatalog');
+        expectTypeOf<core.Engine['prepare']>().parameter(0).toEqualTypeOf<{ signal?: AbortSignal; agents?: readonly core.Agent[] } | undefined>();
     });
 
     it('keeps the artifact uri prefix internal', () => {
@@ -278,7 +306,7 @@ describe('public api', () => {
         expectTypeOf<core.IChannel>().toHaveProperty('name').toEqualTypeOf<string>();
         expectTypeOf<core.TriggerEnvelope>().toHaveProperty('channel').toEqualTypeOf<string>();
         expectTypeOf<core.Run>().toHaveProperty('address').toEqualTypeOf<string | undefined>();
-        expectTypeOf<core.EngineStartOptions>().toEqualTypeOf<{ channels?: boolean }>();
+        expectTypeOf<core.EngineStartOptions>().toEqualTypeOf<{ channels?: boolean; signal?: AbortSignal }>();
         expectTypeOf<core.EmitMessage>().toEqualTypeOf<{
             title?: string;
             body: string;

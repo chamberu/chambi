@@ -16,7 +16,7 @@ import { jsonSchema } from 'ai';
 import { defineAgent, defineTool, memoryTools } from '@chamvi/core';
 import type { IChannel } from '@chamvi/core';
 import { DatabaseConversationRepository, STORE_ENTITIES, STORE_MIGRATIONS } from '@chamvi/store-db';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, mockModel, textModel  } from '@chamvi/test-kit';
 import {
     AppToken,
     configModule,
@@ -28,7 +28,6 @@ import { buildModuleHarness } from '@chamvi/app/testing';
 import { TOKENS, deferred } from '../../utils/app.ts';
 import { createTestDatabaseUrl, describePostgres } from '../../utils/database.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { mockModel, textModel } from '../../utils/model.ts';
 
 const identity = {
     agent: 'helper',

@@ -58,6 +58,14 @@ import { assertHandoffSubscription } from '../handoff/helpers.ts';
 import { MODEL_CONTEXT } from '../model/constants.ts';
 import { checkAgentModel, checkDefaultModel } from '../model/module.ts';
 import type { IModelResolver, ModelContext, ModelRef } from '../model/types.ts';
+import { EMPTY_SKILL_CONTRIBUTION } from '../skill/constants.ts';
+import { selectSkillProvider, snapshotSkillInputs } from '../skill/helpers.ts';
+import type {
+    ISkillRuntime,
+    ISkillRuntimeProvider,
+    SkillContribution,
+    SkillInput,
+} from '../skill/types.ts';
 import type { IStore } from '../repository/types.ts';
 import { idempotencyScope, toInvoker } from '../trigger/helpers.ts';
 import { assertTriggerKey } from '../trigger/key.ts';
@@ -167,7 +175,32 @@ export class Engine implements IContextProvider {
     /** Values tools reach through inject(ctx, key), by reference. */
     protected readonly provided = new Map<ContextKey<unknown>, unknown>();
 
+    protected readonly skills: readonly SkillInput[];
+
+    protected skillProvider?: ISkillRuntimeProvider;
+
+    protected skillRuntime?: ISkillRuntime;
+
+    protected readonly agentSkillInputs = new WeakMap<Agent, readonly SkillInput[]>();
+
+    protected readonly preparedSkills = new WeakMap<Agent, SkillContribution>();
+
+    protected readonly preparing = new Set<Promise<void>>();
+
+    protected preparationController = new AbortController();
+
+    protected startup?: {
+        controller: AbortController;
+        signal: AbortSignal;
+        done: Promise<void>
+    };
+
+    protected stopping?: Promise<void>;
+
     constructor(opts: EngineOptions) {
+        this.skills = snapshotSkillInputs(opts.skills);
+        this.skillProvider = selectSkillProvider(this.skills);
+        this.skillRuntime = this.skillProvider?.create(this.skills);
         this.store = opts.store;
         if (opts.conversations !== undefined) {
             if (!opts.store.conversations) {
@@ -208,51 +241,81 @@ export class Engine implements IContextProvider {
             models: this.models,
             agentModel: (name: string) => this.agents.get(name)?.definition.model,
         } satisfies ModelContext);
+
         this.provided.set(HANDOFF_CONTEXT, this.createHandoffHost());
-        bindConversationIntake(this, async (channel, envelope, target) => {
-            if (this.channels.get(channel.name) !== channel) throw new ValidationError('Conversation intake needs the registered channel object.');
-            const capability = this.conversationCapability();
-            const copied = structuredClone(target);
-            const input = structuredClone(envelope);
-            const agent = this.agents.get(input.agent);
-            const key = agent && conversationKey(agent.definition);
-            if (key === undefined) throw new ValidationError('The agent has not enabled conversations.');
-            const identity: ConversationIdentity = {
-                agent: key,
-                channel: channel.name,
-                account: copied?.account,
-                chat: copied?.chat,
-                audience: copied?.audience,
-            };
-            assertConversationIdentity(identity);
-            assertConversationText(copied?.text, capability.limits.maxItemBytes);
-            for (const field of ['id', 'idempotencyKey', 'concurrencyKey', 'address'] as const) {
-                if (input[field] !== undefined) assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
-            }
-            const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
-            await capability.allow(ConversationOperation.DISPATCH, identity, input.agent, invoker);
-            // Validate caller keys before resolve can create any conversation rows.
-            assertTriggerKey('idempotency key', input.idempotencyKey);
-            assertTriggerKey('concurrency key', input.concurrencyKey);
-            const current = await capability.repository.findOne(identity);
-            const proposed = current ?? {
-                id: identityId(identity),
-                generation: 0,
-                identity,
-            };
-            if (input.concurrencyKey !== undefined && input.concurrencyKey !== conversationConcurrencyKey(proposed)) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
-            const scope = await capability.repository.resolve(identity);
-            const concurrencyKey = conversationConcurrencyKey(scope);
-            if (input.concurrencyKey !== undefined && input.concurrencyKey !== concurrencyKey) throw new ValidationError('The conversation concurrency key conflicts with its scope.');
-            return this.createRun({
-                ...input,
-                channel: channel.name,
-                concurrencyKey,
-            }, undefined, { scope, text: copied.text });
-        });
-        for (const agent of opts.agents) this.assertRegistrable(agent);
+
+        bindConversationIntake(
+            this,
+            async (channel, envelope, target) => {
+                if (this.channels.get(channel.name) !== channel) {
+                    throw new ValidationError('Conversation intake needs the registered channel object.');
+                }
+
+                const capability = this.conversationCapability();
+                const copied = structuredClone(target);
+                const input = structuredClone(envelope);
+                const agent = this.agents.get(input.agent);
+                const key = agent && conversationKey(agent.definition);
+
+                if (key === undefined) {
+                    throw new ValidationError('The agent has not enabled conversations.');
+                }
+
+                const identity: ConversationIdentity = {
+                    agent: key,
+                    channel: channel.name,
+                    account: copied?.account,
+                    chat: copied?.chat,
+                    audience: copied?.audience,
+                };
+
+                assertConversationIdentity(identity);
+                assertConversationText(copied?.text, capability.limits.maxItemBytes);
+
+                for (const field of ['id', 'idempotencyKey', 'concurrencyKey', 'address'] as const) {
+                    if (input[field] !== undefined) assertConversationText(input[field], Number.MAX_SAFE_INTEGER);
+                }
+
+                const invoker = input.invoker === undefined ? undefined : toInvoker(input.invoker);
+                await capability.allow(ConversationOperation.DISPATCH, identity, input.agent, invoker);
+
+                // Validate caller keys before resolve can create any conversation rows.
+                assertTriggerKey('idempotency key', input.idempotencyKey);
+                assertTriggerKey('concurrency key', input.concurrencyKey);
+
+                const current = await capability.repository.findOne(identity);
+                const proposed = current ?? {
+                    id: identityId(identity),
+                    generation: 0,
+                    identity,
+                };
+
+                if (input.concurrencyKey !== undefined && input.concurrencyKey !== conversationConcurrencyKey(proposed)) {
+                    throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+                }
+
+                const scope = await capability.repository.resolve(identity);
+                const concurrencyKey = conversationConcurrencyKey(scope);
+
+                if (input.concurrencyKey !== undefined && input.concurrencyKey !== concurrencyKey) {
+                    throw new ValidationError('The conversation concurrency key conflicts with its scope.');
+                }
+
+                return this.createRun({
+                    ...input,
+                    channel: channel.name,
+                    concurrencyKey,
+                }, undefined, { scope, text: copied.text });
+            },
+        );
+
+        for (const agent of opts.agents) {
+            this.assertRegistrable(agent);
+        }
+
         // eslint-disable-next-line no-console
         this.onError = opts.onError ?? ((error) => console.error('[chamvi]', error));
+
         this.queue = new RunQueue({
             store: this.store,
             getAgent: (name) => this.getAgent(name),
@@ -498,16 +561,24 @@ export class Engine implements IContextProvider {
      * A marker at `formerRevision` (the same content hashed by an earlier
      * algorithm) counts as equal: it is moved to `revision` and nothing is
      * cancelled, so a hash change of the loader never cancels runs.
+     *
+     * `signal` cancels preparation and prevents registry mutation. Once a
+     * registry operation starts, it finishes with local publication even if
+     * the caller or engine stops, keeping registration and durable state aligned.
      */
     async putAgent(
         agent: Agent,
         options: {
             revision?: string;
             formerRevision?: string;
-            reload?: boolean
+            reload?: boolean;
+            signal?: AbortSignal
         } = {},
     ): Promise<'added' | 'replaced' | 'unchanged'> {
         this.assertRegistrable(agent);
+        await this.prepare({ agents: [agent], signal: options.signal });
+        const preparationSignal = AbortSignal.any([this.preparationController.signal, ...(options.signal ? [options.signal] : [])]);
+        preparationSignal.throwIfAborted();
         const { name } = agent;
         const {
             revision,
@@ -540,6 +611,7 @@ export class Engine implements IContextProvider {
                 runIds: cancelled,
             });
         }
+        // Finish a registry operation already started, keeping its marker and local publication consistent.
         const kind = this.agents.has(name) ? 'replaced' : 'added';
         this.agents.set(name, agent);
         this.revisions.set(name, revision);
@@ -608,47 +680,187 @@ export class Engine implements IContextProvider {
         return this.draining;
     }
 
+    /** Prepare registered agents and optional candidates without registering or writing to the store. */
+    prepare(options: { signal?: AbortSignal; agents?: readonly Agent[] } = {}): Promise<void> {
+        if (this.stopping) {
+            return this.stopping.then(() => this.prepare(options));
+        }
+
+        if (this.preparationController.signal.aborted) {
+            this.preparationController = new AbortController();
+        }
+
+        const signal = AbortSignal.any([this.preparationController.signal, ...(options.signal ? [options.signal] : [])]);
+
+        const run = async () => {
+            signal.throwIfAborted();
+            const agents = [...new Set([...this.agents.values(), ...(options.agents ?? [])])];
+            const runtimeBeforeChecks = this.skillRuntime;
+
+            for (const agent of agents) {
+                this.checkAgentSkills(agent);
+            }
+
+            // A first runtime selected late in the pass must also receive earlier empty captures.
+            if (this.skillRuntime !== runtimeBeforeChecks) {
+                for (const agent of agents) this.checkAgentSkills(agent);
+            }
+
+            const unprepared = agents.filter((agent) => !this.preparedSkills.has(agent));
+
+            if (this.skillRuntime) {
+                const pending = await this.skillRuntime.prepare(unprepared, { signal });
+                signal.throwIfAborted();
+                const prepared = pending.commit();
+                for (const { agent, contribution } of prepared) {
+                    this.preparedSkills.set(agent, contribution);
+                }
+            } else {
+                signal.throwIfAborted();
+                for (const agent of unprepared) this.preparedSkills.set(agent, EMPTY_SKILL_CONTRIBUTION);
+            }
+        };
+
+        // Register ownership before run() can invoke external provider code.
+        const done = Promise.resolve().then(run);
+        this.preparing.add(done);
+        void done.then(() => this.preparing.delete(done), () => this.preparing.delete(done));
+        return done;
+    }
+
     /**
      * Recovers abandoned runs, starts every channel (in registration order,
      * unless `channels: false`), then starts executing queued runs and
      * polling. A throwing channel start rejects after the channels already
      * started were stopped and polling stopped.
      */
-    async start(options: EngineStartOptions = {}): Promise<void> {
-        this.draining = false;
-        this.started = true;
-        this.queue.resume();
-        this.queue.startPolling();
-        // like a failing pass, a failing recovery is reported; the next poll retries it
-        await this.recover().catch((error: unknown) => this.onError(error));
-        if (options.channels ?? true) await this.startChannels();
-        await this.queue.pump();
-    }
+    start(options: EngineStartOptions = {}): Promise<void> {
+        if (this.stopping) {
+            return this.stopping.then(() => this.start(options));
+        }
 
-    /**
-     * Stops the poll for newly runnable work at once, and the channels
-     * started last (their stop errors go to onError); resolves once every
-     * channel stopped (e.g. the cron ticks in flight finished). Dispatch and
-     * running runs are unaffected.
-     */
-    stop(): Promise<void> {
-        this.started = false;
-        this.queue.stopPolling();
-        return this.stopChannels();
-    }
+        if (this.startup && !this.startup.controller.signal.aborted) {
+            const attempt = this.startup;
+            if (options.signal) {
+                const { signal } = options;
+                const abort = () => attempt.controller.abort(signal.reason);
+                if (signal.aborted) {
+                    abort();
+                } else {
+                    signal.addEventListener('abort', abort, { once: true });
+                }
 
-    protected async startChannels(): Promise<void> {
-        // a channel left over from an earlier start must stop before it starts again
-        await this.stopChannels();
-        for (const channel of this.channels.values()) {
-            if (!channel.start) continue;
-            try {
-                await channel.start(createChannelContext(this, channel));
-            } catch (error) {
-                await this.stop();
-                throw error;
+                const remove = () => signal.removeEventListener('abort', abort);
+                void attempt.done.then(remove, remove);
             }
+            return attempt.done;
+        }
+        if (this.startup) {
+            return this.startup.done.catch(() => {}).then(() => this.start(options));
+        }
+
+        if (options.signal?.aborted) {
+            return Promise.reject(options.signal.reason);
+        }
+
+        if (this.started) {
+            return Promise.resolve();
+        }
+
+        const controller = new AbortController();
+        const signal = AbortSignal.any([controller.signal, ...(options.signal ? [options.signal] : [])]);
+        const attempt = {
+            controller,
+            signal,
+            done: Promise.resolve(),
+        };
+
+        attempt.done = Promise.resolve()
+            .then(async () => {
+                try {
+                    signal.throwIfAborted();
+                    await this.prepare({ signal });
+                    signal.throwIfAborted();
+                    this.draining = false;
+                    this.started = true;
+                    this.queue.resume();
+                    // Verification failures above propagate; ordinary recovery keeps its existing reporting behavior.
+                    await this.recover().catch((error: unknown) => this.onError(error));
+                    signal.throwIfAborted();
+                    if (options.channels ?? true) {
+                        await this.startChannels(signal);
+                    }
+
+                    signal.throwIfAborted();
+                    this.queue.startPolling();
+                    await this.queue.pump();
+                    signal.throwIfAborted();
+                } catch (error) {
+                    this.started = false;
+                    await this.queue.halt();
+                    await this.stopChannels();
+                    throw error;
+                } finally {
+                    if (this.startup === attempt) {
+                        this.startup = undefined;
+                    }
+                }
+            });
+
+        this.startup = attempt;
+
+        return attempt.done;
+    }
+
+    /** Abort admission immediately, then join actual provider and channel work before returning. */
+    stop(): Promise<void> {
+        if (this.stopping) {
+            return this.stopping;
+        }
+
+        this.started = false;
+        const admission = this.queue.halt();
+        this.preparationController.abort();
+        this.startup?.controller.abort();
+
+        const startup = this.startup?.done;
+
+        const done = (async () => {
+            if (startup) {
+                await startup.catch(() => {});
+            }
+
+            while (this.preparing.size) {
+                await Promise.allSettled([...this.preparing]);
+            }
+
+            await admission;
+            await this.stopChannels();
+        })();
+
+        this.stopping = done;
+
+        void done.then(() => {
+            if (this.stopping === done) {
+                this.stopping = undefined;
+            }
+        });
+
+        return done;
+    }
+
+    protected async startChannels(signal: AbortSignal): Promise<void> {
+        await this.stopChannels();
+        signal.throwIfAborted();
+        for (const channel of this.channels.values()) {
+            if (!channel.start) {
+                continue;
+            }
+
+            await channel.start(createChannelContext(this, channel));
+            // Record even a late success: startup's internal cleanup must own its stop.
             this.startedChannels.push(channel);
+            signal.throwIfAborted();
         }
     }
 
@@ -881,6 +1093,7 @@ export class Engine implements IContextProvider {
      */
     async tick(): Promise<void> {
         const now = this.clock.now().getTime();
+        let resumed = false;
         const { data } = await this.store.runs.find({ status: [RunStatus.WAITING] });
         for (const listed of data) {
             if (!listed.waiting) continue;
@@ -898,12 +1111,18 @@ export class Engine implements IContextProvider {
                     { approved: false, reason: APPROVAL_TIMED_OUT },
                     () => new InvalidRunStateError(`Run "${run.id}" moved on to another approval.`),
                 );
+                resumed = true;
             } catch (error) {
                 // answered meanwhile (approve, another replica)
                 if (!(error instanceof InvalidRunStateError)) {
                     this.onError(error, listed);
                 }
             }
+        }
+
+        // A one-shot job may drain next; finish admission of resumed approvals first.
+        if (resumed && this.started) {
+            await this.queue.pump();
         }
     }
 
@@ -1117,7 +1336,8 @@ export class Engine implements IContextProvider {
             return;
         }
         const agent = this.agents.get(run.agent);
-        if (!agent || !await this.isCurrent(run.agent)) {
+        const skills = agent ? this.preparedSkills.get(agent) : undefined;
+        if (!agent || !skills || !await this.isCurrent(run.agent)) {
             // removed or replaced since the claim: left for a replica that runs the agent's current revision
             // guarded by status and owner (`expectStatus: [RUNNING]`, `expectOwner`): a taken-over run is left alone
             const released = await this.ownedUpdate(run.id, {
@@ -1157,6 +1377,7 @@ export class Engine implements IContextProvider {
             conversation,
             run,
             agent,
+            skills,
             model: agent.definition.model ?? this.model,
             models: this.models,
             store: this.store,
@@ -1189,8 +1410,23 @@ export class Engine implements IContextProvider {
             new Map((await this.store.agentRevisions.find()).map((marker) => [marker.agent, marker.hash])) :
             new Map<string, string>();
         return (run) => {
-            if (run.cancelRequested) return true;
-            if (!this.agents.has(run.agent) || this.syncing.has(run.agent)) return false;
+            if (!this.started || this.startup?.signal.aborted) {
+                return false;
+            }
+
+            if (run.cancelRequested) {
+                return true;
+            }
+
+            const agent = this.agents.get(run.agent);
+            if (!agent || !this.preparedSkills.has(agent)) {
+                return false;
+            }
+
+            if (!this.agents.has(run.agent) || this.syncing.has(run.agent)) {
+                return false;
+            }
+
             const revision = this.revisions.get(run.agent);
             return revision === undefined || revision === markers.get(run.agent);
         };
@@ -1332,6 +1568,21 @@ export class Engine implements IContextProvider {
         }
         assertHandoffSubscription(agent);
         if (conversationKey(agent.definition) !== undefined && !this.conversations) throw new InvalidAgentDefinitionError('The agent enables conversations but the engine has no conversation capability.');
+        this.checkAgentSkills(agent);
+    }
+
+    protected checkAgentSkills(agent: Agent): void {
+        const captured = this.agentSkillInputs.get(agent);
+        const supplied = captured ?? agent.definition.skills ?? [];
+        const provider = selectSkillProvider(supplied, this.skillProvider);
+        const tools = typeof agent.definition.tools === 'function' ? {} : agent.definition.tools ?? {};
+        const inputs = captured ?? provider?.snapshot(supplied, tools) ?? Object.freeze([]);
+        const runtime = this.skillRuntime ?? provider?.create(this.skills);
+        runtime?.checkAgent(agent, inputs);
+        // A rejected candidate must neither select the first runtime nor capture failed inputs.
+        if (!captured) this.agentSkillInputs.set(agent, inputs);
+        this.skillProvider = provider;
+        this.skillRuntime = runtime;
     }
 
     protected registry(): RegistryContext {

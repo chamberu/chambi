@@ -164,6 +164,10 @@ describe('public api', () => {
         expect(app.createApp({})).not.toHaveProperty('inspect');
     });
 
+    it.each(['createSkillCatalog', 'defineSkill', 'defineSkillSource', 'hashSkillBundle', 'loadSkillBundle', 'loadSkillBundles', 'gitSkills', 'readSkillBundle', 'parseSkillDocument', 'SKILL_MAX_BUNDLES'])('keeps skill internal %s private', (name) => {
+        expect(app).not.toHaveProperty(name);
+    });
+
     it('exports the app brand', () => {
         expect(app.APP_BRAND).toBe(Symbol.for('chamvi.app'));
     });

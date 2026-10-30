@@ -81,6 +81,13 @@ describe('workspace dependency graph', () => {
         expect(findCycles(graph)).toEqual([]);
     });
 
+    it('keeps core and app independent of the optional skill runtime', () => {
+        const graph = releaseGraph();
+        expect(graph.get('@chamvi/core')).not.toContain('@chamvi/skills');
+        expect(graph.get('@chamvi/app')).not.toContain('@chamvi/skills');
+        expect(graph.get('@chamvi/skills')).toContain('@chamvi/core');
+    });
+
     it('holds the channel packages and not the ones they replaced', () => {
         const graph = releaseGraph();
         expect(graph.keys().toArray()).toEqual(expect.arrayContaining([

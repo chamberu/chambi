@@ -25,6 +25,14 @@ const model = {} as LanguageModel;
 const base = { model, instructions: 'do things' };
 
 describe('defineAgent', () => {
+    it.each([null, undefined, 42, {}, { role: 'system', content: 'single' }, [null], ['text'], new Array(1), [{ role: 'tool', content: [] }], [{ role: 'developer', content: 'no' }]].map((instructions) => [instructions]))('rejects invalid instruction outer shapes and roles: %j', (instructions) => {
+        expect(() => defineAgent({
+            ...base,
+            name: 'a',
+            instructions: instructions as unknown as AgentDefinition['instructions'],
+        })).toThrow(InvalidAgentDefinitionError);
+    });
+
     it('rejects invalid names', () => {
         for (const name of ['Triage', 'a--b', 'a'.repeat(65), '', '-a', 'a-']) {
             expect(() => defineAgent({ ...base, name })).toThrow(InvalidAgentDefinitionError);

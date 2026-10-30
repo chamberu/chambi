@@ -33,7 +33,7 @@ import {
 import { createHarness } from '../../utils/harness.ts';
 import type { Harness } from '../../utils/harness.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { textModel } from '../../utils/model.ts';
+import { textModel } from '@chamvi/test-kit';
 import { freePort } from '../../utils/port.ts';
 
 const AUTHUP_ENV = {

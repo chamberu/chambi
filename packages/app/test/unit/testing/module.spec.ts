@@ -7,7 +7,7 @@
 
 import { defineAgent } from '@chamvi/core';
 import type { Agent, Engine } from '@chamvi/core';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, textModel } from '@chamvi/test-kit';
 import {
     afterEach,
     describe,
@@ -26,7 +26,6 @@ import { buildModuleHarness, createModuleHarness } from '@chamvi/app/testing';
 import type { ModuleHarness } from '@chamvi/app/testing';
 import { recording, rejectionOf } from '../../utils/app.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { textModel } from '../../utils/model.ts';
 
 function triage(): Agent {
     return defineAgent({

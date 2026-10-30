@@ -152,7 +152,7 @@ Sources, highest first: **env**, then **the config file**, then **`createApp()` 
 
 ## Check before you deploy
 
-`chamvi start --check` runs the start path of the built entry up to the start itself and exits: it reads the same settings (env, config file, code), builds the providers, connects to the store, sets every module up and loads every [agent folder](/guide/agent-folders) with the checks a start runs (the model, the channels an agent subscribes to, the built-in scheduler's cron subscriptions, the built-in http module's MCP tool unless `mcp: false`). Code agents get the same checks. It starts no engine, channel or server, runs nothing and writes nothing to the store: no migration, no revision marker, no cancel. Of a module's lifecycle hooks only `engineCreated` and `drained` run (never `started` or `stopping`).
+`chamvi start --check` runs the start path of the built entry up to the start itself and exits: it reads the same settings (env, config file, code), builds the providers, connects to the store, sets every module up and loads every [agent folder](/guide/agent-folders) with the checks a start runs (the model, the channels an agent subscribes to, the built-in scheduler's cron subscriptions, the built-in http module's MCP tool unless `mcp: false`). Code agents get the same checks. It starts no engine, channel or server, runs nothing and writes nothing to the store: no migration, no revision marker, no cancel. Skill headers are checked statically; skill sources are never loaded and remote content verification is deferred until startup. Of a module's lifecycle hooks only `engineCreated` and `drained` run (never `started` or `stopping`).
 
 ```bash
 npx chamvi build && npx chamvi start --check

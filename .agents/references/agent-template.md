@@ -38,6 +38,59 @@ Documentation follow-up in chamvi/agent-template: show `httpModule({ channelRate
 
 Reviewed local template commit 0374e2b. `.env.example:49-50` advertises CHAMVI_GIT_CREDENTIAL_MODE and dedicated Git tools; remove those lines when consuming #59. Keep token and author configuration. No source/test consumer found. Downstream follow-up is separate from the monorepo PR.
 
+## Approved local skills compatibility check (2026-10-28, unreleased)
+
+Scoped check against refreshed downstream base `a720d7a6caae5ad7ea8ab84ad92bf8478386d6e4` and monorepo implementation `556173d9` (`packages/app/src/skills/{bundle,module,tools,types}.ts`). The additive `hashSkillBundle`/`loadSkillBundles` API uses explicit reviewed local passive bundles; no CLI, env, routes, chart values, RBAC or existing agent API requires migration. This does not replace the broader historical verification above.
+
+The current starter adopts this only after a release exports both helpers. Bundles need an explicit final-image `COPY` at their configured absolute paths, readable by uid 1000; the existing Dockerfile copies JS/dependencies only. Documentation follow-up `a43c6da631ff40203a7ee02454f7fd8c454aafcf` updates `README.md` and `.agents/deployment.md`. Both explain reviewing and updating bytes/pins together and restart mismatch behavior.
+
+Verification recorded in the isolated downstream handoff: `npm ci`, lint fix, build, test (13 files/51 tests), typecheck and lint passed; the embedded README fixture stayed unchanged. No provider calls or publication. After independent audit, the documentation follow-up is open as [chamvi/agent-template#8](https://github.com/chamvi/agent-template/pull/8); it is not a released contract.
+
+## First-class skills deployment requirements (2026-10-29, unreleased)
+
+The filesystem helpers move from app to optional `@chamvi/skills`; `gitSkills` is exported from its main entry, with no `/module` entry or app dependency. `createApp({ skills })` forwards defaults to every code/folder agent and prepares globals/code sources before `engineCreated`, then folder extras before channels/HTTP/model execution. `start --check` skips skill providers, installation and remote content verification. Manual prebuilt catalogs remain supported.
+
+Startup Git sources change the optional deployment path: install `@chamvi/skills` and Git in the runtime image (the base Node 24 image has no Git), use Node >=22.20, provide writable corpus/tmp mounts under uid 1000, source network access/credentials, and startup-probe time for clone/verification latency. Stop joins a noncancelable clone before cleanup, so size termination grace accordingly. A read-only root can use an explicit directory on the writable `/tmp` volume. Deployment and CronJob configurations must agree. Prebuilt local snapshots remain compatible with readable assets only. This remains an unreleased optional integration, not a newly published downstream contract.
+
+Delivery check against monorepo `ffec9bdc` and starter follow-up `03de2648faf87a60316a41c03dd5f1aab23eab8c`
+(local continuation of [PR 8](https://github.com/chamvi/agent-template/pull/8)): reviewed `README.md`,
+`.agents/deployment.md`, `Dockerfile`, `package.json`, `scripts/image-smoke.sh`, and the existing Flux/kind values.
+Docs now show main-entry imports and runtime installation, App globals/agent extras, the optional Node >=22.20 floor,
+Git installation after the pinned runtime FROM with final uid 1000, writable `/tmp` corpora, source/auth app egress,
+startup budget (existing probe values), static preflight, cleanup ownership and reviewed upgrades. Default source,
+dependency lockfile, Dockerfile, manifests and embedded agent example stay unchanged because adoption is opt-in.
+`npm run lint:fix`, build, test (13 files/51 tests), typecheck and lint passed against the existing installed lockfile
+(no reinstall was needed). Logs: `/tmp/chamvi-first-class-template-{lint-fix,build,test,typecheck,lint}.log`.
+Tests include the real CLI/app/HTTP and deployment documentation contracts with fake models. No live cluster,
+Docker image build/smoke, push or publication was performed; remote skills are not enabled in the default smoke fixture.
+
+PR94 review follow-up: README and deployment guidance use the requested `hash` skill descriptor property (SHA-256 remains the algorithm), in downstream commit `72ec9a8`. README/deployment checks passed 12 tests; runtime dependencies and image digest fields remain unchanged.
+
+## Skill runtime ownership check (2026-10-30, unreleased)
+
+Checked monorepo `de1f72e8`: all skill domain types (`Skill`, `SkillIdentity`, `SkillMetadata`, `ISkillSource`,
+`SkillCatalog`, `LoadedSkill`), `createSkillCatalog()`, validation, catalogs, `load_skill` and per-engine source
+caches/fingerprints now belong to `@chamvi/skills`. Core retains only the generic `SkillInput` preparation/contribution
+contract and lifecycle coordination; core/app have no skills dependency. Built-in factories remain direct inputs,
+with no module registration. Custom raw values/loaders use `defineSkill`/`defineSkillSource` from skills; custom
+loaders own retrieval and verification against reviewed pins. The skills main entry remains app-free.
+
+Downstream documentation commit `8ba3f4eecd80c01865e424a51ad7f611a8e26b53` updates only ownership/import guidance. README/deployment checks passed 12 tests across two files.
+Existing dependencies, images, manifests, CLI/env/routes, probe settings, RBAC and fixtures require no changes.
+No push, image build, live cluster or publication was performed in this scoped check.
+
+## Structured instructions compatibility check (2026-10-30, unreleased)
+
+Core `src/message/types.ts` now exports native SDK message/content types; `src/agent/types.ts` adds
+`AgentInstruction` and string-or-readonly-array `AgentInstructions`. App's existing core barrel re-exports them.
+`src/engine/execute/module.ts` maps only leading system blocks to SDK instructions, retaining later configured
+blocks in order as a transient prefix outside checkpoints and pending replay. Skills runtime metadata is a separate
+system block; manual `SkillCatalog.instructions` remains text. Existing string agents remain compatible.
+
+Downstream commit `858f89bef52f6d369015f6a2b00ac2cb2fcbd2a2` updates only README and agent conventions.
+the eight README contract tests passed. Existing sources, fixtures, dependencies, CLI/env, routes,
+images, values, manifests, probes and RBAC need no changes. No push or publication was performed.
+
 ## Capability repositories compatibility check (2026-10-29)
 
 Checked current GitHub HEAD `a720d7a6caae5ad7ea8ab84ad92bf8478386d6e4` from a read-only source archive. Reviewed `src/index.ts`, `src/modules.ts`, `src/agents/example.ts`, app/example/entry/env tests and the README. Its `createApp({ model, agents, modules, models? })` use remains valid. No consumer supplies custom repositories or conversation options, uses the removed store classes/aggregate interface, or reads the removed engine property/container tokens. Tests reading `config.store.url` and `config.store.migrate` use the unchanged environment configuration shape.

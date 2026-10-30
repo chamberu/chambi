@@ -42,6 +42,59 @@ Documentation follow-up in chamvi/helm: explain known-source app `trustProxy` (I
 
 Reviewed local helm commit a8bf3b3: charts use generic env/envFrom and do not reference credential modes or dedicated Git tools. #59/#72 require no chart template change.
 
+## Approved local skills compatibility check (2026-10-28, unreleased)
+
+Scoped check against refreshed downstream base `482f7de3759e43d61a7faedeb00547e9b3fc5202` and monorepo implementation `556173d9` (`packages/app/src/skills/{bundle,module,tools,types}.ts`). The additive `hashSkillBundle`/`loadSkillBundles` API uses explicit reviewed local passive bundles; no CLI, env, routes, chart values, RBAC or existing agent API requires migration. This does not replace the broader historical verification above.
+
+The shared Deployment/CronJob image, uid 1000 and read-only root remain compatible when bundles are included in the image at pinned absolute paths. The chart adds no mounts, installation, discovery or permissions. Documentation follow-up `68b84271ee2a3559e4abefa223c28a576037ab72` updates `charts/agent-app/README.md.gotmpl` and generated `README.md`, `.agents/references/chamvi.md`. Both explain reviewing and updating bytes/pins together and restart mismatch behavior.
+
+Verification recorded in the isolated downstream handoff: `make generate`, `make test` and post-commit `make drift` passed. Helm checks: 15 suites/82 tests, Python 40 passed/2 existing fixture-gated skips (no `AGENT_APP_CI_IMAGE`), five render configurations and 59-path values coverage. No provider calls or publication. After independent audit, the documentation follow-up is open as [chamvi/helm#10](https://github.com/chamvi/helm/pull/10); it is not a released contract.
+
+## First-class skills deployment requirements (2026-10-29, unreleased)
+
+The filesystem helpers move from app to optional `@chamvi/skills`; `gitSkills` is exported from its main entry, with no `/module` entry or app dependency. `createApp({ skills })` forwards defaults to every code/folder agent and prepares globals/code sources before `engineCreated`, then folder extras before channels/HTTP/model execution. `start --check` skips skill providers, installation and remote content verification. Manual prebuilt catalogs remain supported.
+
+Startup Git sources change the optional deployment path: install `@chamvi/skills` and Git in the runtime image (the base Node 24 image has no Git), use Node >=22.20, provide writable corpus/tmp mounts under uid 1000, source network access/credentials, and startup-probe time for clone/verification latency. Stop joins a noncancelable clone before cleanup, so size termination grace accordingly. A read-only root can use an explicit directory on the writable `/tmp` volume. Deployment and CronJob configurations must agree. Prebuilt local snapshots remain compatible with readable assets only. This remains an unreleased optional integration, not a newly published downstream contract.
+
+Delivery check against monorepo `ffec9bdc` and Helm follow-up `2354ffb54977c1c2224092981c1a477310b573de`
+(local continuation of [PR 10](https://github.com/chamvi/helm/pull/10)): reviewed
+`charts/agent-app/templates/{_helpers.tpl,deployment.yaml,cronjob.yaml,sandbox-networkpolicy.yaml}`,
+`values.yaml` probe fields, README source/generated docs and `.agents/references/chamvi.md`.
+The docs now show main-entry `gitSkills`, globals/extras, explicit runtime Git installation while restoring uid 1000,
+distinct `/tmp/chamvi-skills/{common,maintainer}` corpora, source/auth app egress, existing startup probe timing
+(example 150 failures at 2 seconds), read-only preflight and clone-settlement shutdown. No template/schema/value
+changes were needed. `make generate`, `make test` and post-commit `make drift` passed: 15 Helm suites/82 tests,
+42 Python cases (40 passed, 2 existing `AGENT_APP_CI_IMAGE`-gated skips), five renders and 59 referenced values paths.
+Logs: `/tmp/chamvi-first-class-helm-{test,drift}.log`. Generation emitted only the existing amd64-on-arm64 image
+warning. No live cluster, published-app fixture image, push or publication was performed.
+
+PR94 review follow-up: chart docs use the requested `hash` skill descriptor property (SHA-256 remains the algorithm), in downstream commit `4f2dba2`. Source/generated README agree; contract checks passed 40 cases with 2 existing image-gated skips. Image digest fields remain unchanged.
+
+## Skill runtime ownership check (2026-10-30, unreleased)
+
+Checked monorepo `de1f72e8`: all skill domain types (`Skill`, `SkillIdentity`, `SkillMetadata`, `ISkillSource`,
+`SkillCatalog`, `LoadedSkill`), `createSkillCatalog()`, validation, catalogs, `load_skill` and per-engine source
+caches/fingerprints now belong to `@chamvi/skills`. Core retains only the generic `SkillInput` preparation/contribution
+contract and lifecycle coordination; core/app have no skills dependency. Built-in factories remain direct inputs,
+with no module registration. Custom raw values/loaders use `defineSkill`/`defineSkillSource` from skills; custom
+loaders own retrieval and verification against reviewed pins. The skills main entry remains app-free.
+
+Downstream documentation commit `7247aa5873d39b5a8bc372bff0016a6f3bbabf6f` updates only ownership/import guidance. `caffeinate -is make docs` and the six `test_docs.py` documentation contract tests passed.
+Existing dependencies, images, manifests, CLI/env/routes, probe settings, RBAC and fixtures require no changes.
+No push, image build, live cluster or publication was performed in this scoped check.
+
+## Structured instructions compatibility check (2026-10-30, unreleased)
+
+Core `src/message/types.ts` now exports native SDK message/content types; `src/agent/types.ts` adds
+`AgentInstruction` and string-or-readonly-array `AgentInstructions`. App's existing core barrel re-exports them.
+`src/engine/execute/module.ts` maps only leading system blocks to SDK instructions, retaining later configured
+blocks in order as a transient prefix outside checkpoints and pending replay. Skills runtime metadata is a separate
+system block; manual `SkillCatalog.instructions` remains text. Existing string agents remain compatible.
+
+Downstream commit `fc6bf888cc411ad544e86fc00dfd6587796a0394` updates only charts/agent-app/README.md.gotmpl and generated README.
+`caffeinate -is make docs` plus all six `test_docs.py` documentation contract checks passed. Existing sources, fixtures, dependencies, CLI/env, routes,
+images, values, manifests, probes and RBAC need no changes. No push or publication was performed.
+
 ## Capability repositories compatibility check (2026-10-29)
 
 Checked current GitHub HEAD `482f7de3759e43d61a7faedeb00547e9b3fc5202` from a read-only source archive. Reviewed `ci/app/dist/index.mjs`, chart Deployment/CronJob/helpers, values and chart notes. The fixture imports `createApp`, `defineAgent`, `http` and `cron`; the chart uses env and CLI contracts. No executable consumer uses the removed store classes, aggregate interface, engine property, store module option or container token. Three prose/comment occurrences of the previous memory-store class name remain in CI values and NOTES; they do not affect rendering or runtime behavior.

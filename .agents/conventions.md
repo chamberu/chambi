@@ -19,6 +19,7 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 ## Code Style
 
 - ESM only (`"type": "module"`), Node >= 22.
+- Configured agent/contributed instructions use core `AgentInstructions`; preserve native SDK role-specific content and provider options. Only the leading system run goes into SDK `instructions`; later configured blocks stay transient and ordered. Manual skills catalog instructions remain strings.
 - `@chamvi/ui`'s app ships to Vite's default browser target (Safari 16.4, Firefox 114), which esbuild does not polyfill: no ES2025 iterator helpers (`map.entries().toArray()`; use `Array.from`), enforced by a `no-restricted-syntax` rule in `eslint.config.js`.
 - 4-space indent (also JSON and YAML), LF, UTF-8, final newline, trailing whitespace trimmed except in Markdown (see `.editorconfig`).
 - Single quotes, semicolons (enforced by ESLint).
@@ -76,6 +77,7 @@ The `@tada5hi/*` config packages are the source of truth for lint, TS and commit
 - After changes run `npm run build && npm run test && npm run typecheck && npm run lint`. Run `npm run lint:fix` before hand-fixing formatting.
 - Never edit `dist/` (generated, git-ignored). Never hand-edit `.release-please-manifest.json` or package versions; release-please owns them.
 - Keep runtime `dependencies` minimal (the house libraries `@ebec/core`, `smob`, `validup` are fine); tooling belongs in `devDependencies`, and the AI SDK (`ai`) stays a peer dependency.
+- Host-local Git metadata in skills preparation and the test-kit fixture uses bounded `execFile`: raw stdout, rejection on nonzero exits or signals, and the default independent 1 MiB stdout/stderr limits with SIGTERM termination. Metadata has an absolute 30 second timeout; fixture commands retain their isolated environment and have no timeout. Sandbox Git stays on `workspace.exec`; the SDK owns cloning. See [simple-git.md](references/simple-git.md) for the evaluated library's incompatible failure/termination behavior.
 - New package: add `packages/<name>` (copy `packages/test-kit` layout), a path alias in the root `tsconfig.json`, aliases in its `test/vitest.config.ts` for itself and every workspace package it imports, an entry in `release-please-config.json` (`packages` and the `linked-versions` components) and in `.release-please-manifest.json` at the current version.
 - Errors extend `ChamviError` (`@ebec/core` `BaseError`) and live in `src/errors/`, one file each (see File Organization); never throw a bare `Error` from library code.
 - A new public export goes through its folder's `index.ts` (reached from `src/index.ts`) and must be added to the package's `test/unit/exports.spec.ts`.
@@ -115,4 +117,7 @@ Current references:
 
 - [helm.md](references/helm.md): chamvi/helm, the `agent-app` chart; contract map from the CLI, env, routes, image and sandbox to the chart's templates (see [Downstream Repos](../AGENTS.md#downstream-repos)).
 - [agent-template.md](references/agent-template.md): chamvi/agent-template, the starter app; contract map from the public API, CLI, env and chart values to the template's files and tests.
+- [simple-git.md](references/simple-git.md): host-local process bounds and the evaluated library behavior that requires retaining `execFile`.
+- Skill domain imports (`Skill`, `SkillIdentity`, `SkillMetadata`, `ISkillSource`, `SkillCatalog`, `LoadedSkill`, `createSkillCatalog`) belong to `@chamvi/skills`. Core/app expose only the generic `SkillInput` preparation/contribution seam and never import skills, including in tests. Use `defineSkill`/`defineSkillSource` for custom raw inputs; built-in factories already carry their runtime, without app registration.
+- [vercel-skills.md](references/vercel-skills.md): Vercel Skills source/install SDK, temporary fork root API and optional `@chamvi/skills` ownership, migration tracked in issue 97.
 - [eve.md](references/eve.md): Vercel's eve agent framework (and `@vercel/agent-runs`), the closest competitor; concept map for durability, approvals, channels, sandboxes, coding tools, tracing, evals and compaction.

@@ -21,6 +21,7 @@
 **Table of Contents**
 - [Installation](#installation)
 - [Usage](#usage)
+- [Approved local skills](#approved-local-skills)
 - [Environment](#environment)
 - [Modules](#modules)
 - [Lifecycle](#lifecycle)
@@ -84,6 +85,42 @@ export default createApp({
 | `check({ env?, dev? })` | `chamvi start --check` | the start path up to its start steps (config, store connection, model settings, every module, the agent folders' load and checks), then the teardown; writes nothing to the store, starts nothing, runs nothing (of the lifecycle hooks only `engineCreated` and `drained` run); `{ issues }` (the agent folders' load issues) |
 
 `env` defaults to `process.env`. An app runs one lifecycle (`check` counts as one); a second one rejects with `app_in_use`. `isApp(value)` recognizes an app, also one of another installed copy of the package.
+
+Agent `instructions` also accept an ordered readonly array of native system/user/assistant messages. `AgentInstructions`, `SystemModelMessage`, `UserModelMessage`, `AssistantModelMessage` and the native content types are exported by `@chamvi/core` and re-exported by this package. Strings remain compatible. See the [typed instructions example](https://chamvi.dev/guide/agents#instructions) for role-specific content, provider options and transient checkpoint behavior.
+
+## Approved local skills
+
+Use `createApp({ skills: [common] })` for additive defaults on every code and folder agent. Each `defineAgent({ skills: [...] })` adds scoped extras. The engine appends metadata and provides `load_skill` automatically; user tools named `load_skill` are rejected. This example reuses the `triage` agent from Usage above.
+
+```ts
+import { createApp } from '@chamvi/app';
+import { gitSkills } from '@chamvi/skills';
+
+const common = gitSkills({
+    source: 'https://github.com/tada5hi/skills.git',
+    revision: '0123456789abcdef0123456789abcdef01234567', // replace with reviewed commit
+    directory: '/tmp/chamvi-skills/common',
+    approved: [{
+        name: 'ponytail',
+        version: '1.0.0',
+        hash: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', // reviewed digest
+    }],
+});
+
+export default createApp({
+    model: 'anthropic/claude-sonnet-5-5',
+    agents: [triage],
+    skills: [common],
+});
+```
+
+Replace illustrative pins after independently reviewing all bundle text. `gitSkills` is a pure factory from the skills main entry. Startup prepares globals and code-agent sources before `engineCreated`; folder-agent extras prepare afterward, before channels, HTTP or model work. Verification failures abort startup; failed skill hot reloads retain the old agent, record an agent issue and retry with bounded exponential backoff. Folder edits reset the delay; successful recovery clears the issue. `app.check()` validates static headers without loading providers or installing sources, so remote verification is deferred. Migrate skips preparation.
+
+For already deployed files, `loadSkillBundle(descriptor)` returns a ready snapshot. `hashSkillBundle(directory)` is a separate review aid, never approval. The manual `loadSkillBundles(approved)` catalog remains supported: append its instructions and compose its tools explicitly, checking for a `load_skill` collision. The skill types, catalogs and adapters (`defineSkill`, `defineSkillSource`) also belong to `@chamvi/skills`, with no compatibility app exports. Factories already carry their runtime; no module registration is needed. Core/app accept the generic `SkillInput` contract and have no dependency on skills.
+
+Runtime Git sources require `@chamvi/skills`, Node >=22.20, Git (absent from the base Node 24 image), writable managed directories/tmp, source credentials/network and startup probe time for cloning and verification. Stop joins cleanup and may wait for a noncancelable clone. Prebuilt snapshots need readable runtime assets only.
+
+Snapshots are immutable. Saved load results retain original checkpoint bytes; pending/future loads after a pin upgrade use the current verified snapshot. Global changes do not change folder hashes: finish or cancel unsettled runs before upgrades when mixed-version disclosure is unacceptable. Tracked agent extra-pin edits use existing revision cancellation. Skills grant no tools, script execution, subagents or permissions. See [Approved Skills](https://chamvi.dev/guide/skills) and the [skills API](https://chamvi.dev/reference/skills).
 
 ## Environment
 

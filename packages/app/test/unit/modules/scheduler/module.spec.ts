@@ -28,7 +28,7 @@ import type { AppMode } from '@chamvi/app';
 import { createHarness } from '../../../utils/harness.ts';
 import type { Harness } from '../../../utils/harness.ts';
 import { createRecordingLogger } from '../../../utils/logger.ts';
-import { mockModel } from '../../../utils/model.ts';
+import { mockModel } from '@chamvi/test-kit';
 
 
 function sweep(): Agent {

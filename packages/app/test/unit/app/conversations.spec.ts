@@ -7,7 +7,7 @@
 
 import { MemoryConversationRepository, createMemoryStore, defineAgent } from '@chamvi/core';
 import type { Engine, IConversationRepository } from '@chamvi/core';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, textModel  } from '@chamvi/test-kit';
 import type { IContainer } from 'eldin';
 import {
     afterEach,
@@ -24,7 +24,6 @@ import {
 import type { AppOptions, IApp } from '@chamvi/app';
 import { TOKENS } from '../../utils/app.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { textModel } from '../../utils/model.ts';
 
 const identity = {
     agent: 'helper',

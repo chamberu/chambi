@@ -12,6 +12,7 @@ import type { IClock } from '../clock/index.ts';
 import type { ConversationOptions } from '../conversation/types.ts';
 import type { IModelResolver, ModelRef } from '../model/types.ts';
 import type { Run, Step } from '../run/types.ts';
+import type { SkillInput } from '../skill/types.ts';
 import type { IStore } from '../repository/types.ts';
 import type { Invoker, TriggerEnvelope } from '../trigger/types.ts';
 
@@ -62,6 +63,7 @@ export type EngineEvent = RunEvent | AgentChange | AgentRunsCancelled;
 export type EngineOptions = {
     store: IStore;
     agents: Agent[];
+    readonly skills?: readonly SkillInput[];
     /**
      * The channels runs come from and talk to; names unique. start() starts
      * them after the first recover, drain() and stop() stop them first.
@@ -117,6 +119,7 @@ export type ApprovalAnswer = {
 };
 
 export type EngineStartOptions = {
+    signal?: AbortSignal;
     /** Default true; false starts no channel (a one-shot job never starts schedules or sockets). */
     channels?: boolean;
 };

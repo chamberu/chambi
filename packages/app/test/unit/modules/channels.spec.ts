@@ -9,7 +9,7 @@ import { cron } from '@chamvi/channel-cron';
 import { InvalidAgentDefinitionError, createMemoryStore, defineAgent } from '@chamvi/core';
 import type { Agent, IChannel } from '@chamvi/core';
 import { http, webhook } from '@chamvi/http';
-import { ControllableClock } from '@chamvi/test-kit';
+import { ControllableClock, textModel } from '@chamvi/test-kit';
 import type { IModule } from 'orkos';
 import {
     afterEach,
@@ -32,7 +32,6 @@ import { TOKEN, TOKENS } from '../../utils/app.ts';
 import { buildHarness } from '../../utils/harness.ts';
 import type { Harness } from '../../utils/harness.ts';
 import { createRecordingLogger } from '../../utils/logger.ts';
-import { textModel } from '../../utils/model.ts';
 import { freePort } from '../../utils/port.ts';
 
 let harnesses: Harness[] = [];

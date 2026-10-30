@@ -21,9 +21,10 @@ import {
     defineTool,
 } from '@chamvi/core';
 import { jsonSchema } from 'ai';
-import type { IClock } from '@chamvi/core';
+import type { AgentDefinition, IClock, ModelMessage } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
+import { fakeSkillRuntime } from '../../utils/skill-runtime.ts';
 
 const identity = {
     agent: 'helper',
@@ -46,6 +47,8 @@ const envelope = {
 const engines: Engine[] = [];
 afterEach(async () => { const pending = engines.map((engine) => engine.stop()); engines.length = 0; await Promise.all(pending); });
 function setup(options: {
+    instructions?: AgentDefinition['instructions'];
+    skills?: AgentDefinition['skills'];
     clock?: IClock;
     store?: ReturnType<typeof createMemoryStore>;
     conversations?: MemoryConversationRepository;
@@ -64,7 +67,8 @@ function setup(options: {
         model,
         conversation: true,
         concurrencyMaxRuns: options.agentConcurrencyMaxRuns,
-        instructions: 'help',
+        instructions: options.instructions ?? 'help',
+        skills: options.skills,
         tools: options.tools,
         budget: { maxSteps: options.maxSteps ?? 5 },
     });
@@ -95,6 +99,117 @@ async function run(s: ReturnType<typeof setup>, text = 'current') {
 }
 
 describe('conversation execution admission', () => {
+    it('keeps mixed instructions and skills before recalled history across fresh-engine approval resume', async () => {
+        const instructions: AgentDefinition['instructions'] = [
+            { role: 'system', content: 'configured base' },
+            {
+                role: 'user',
+                content: [{
+                    type: 'file',
+                    mediaType: 'text/plain',
+                    data: 'chamvi-artifact:prefix-file',
+                }],
+            },
+            { role: 'assistant', content: 'configured example' },
+            { role: 'system', content: 'configured later policy' },
+        ];
+        const contexts: ModelMessage[][] = [];
+        let applied = 0;
+        const action = defineTool({
+            inputSchema: jsonSchema<{}>({ type: 'object' }),
+            execute: async (_input, options) => {
+                contexts.push(options.messages);
+                await approve(options.context, { title: 'continue?' });
+                applied++;
+                return 'done';
+            },
+        });
+        const skill = fakeSkillRuntime({
+            contribution: {
+                instructions: [{ role: 'system', content: 'skill catalog metadata' }],
+                tools: { action },
+                checkTools: () => {},
+            },
+        });
+        const s = setup({
+            instructions,
+            skills: [skill.input],
+            model: mockModel([{ parts: [{ type: 'text', text: 'earlier answer' }] }, {
+                parts: [{
+                    type: 'tool-call',
+                    toolName: 'action',
+                    input: {},
+                }],
+            }]),
+        });
+        await s.store.artifacts.insert({
+            id: 'prefix-file',
+            runId: 'fixture',
+            agent: 'helper',
+            mediaType: 'text/plain',
+            size: 3,
+            createdAt: new Date(),
+        }, new Uint8Array([97, 98, 99]));
+        await run(s, 'earlier conversation input');
+        const id = await run(s);
+        const waiting = (await s.store.runs.findOne(id))!;
+        expect(waiting.status, JSON.stringify(waiting.error)).toBe('waiting');
+        await s.engine.stop();
+        const resumed = setup({
+            store: s.store,
+            conversations: s.conversations,
+            instructions,
+            skills: [skill.input],
+            model: mockModel([{ parts: [{ type: 'text', text: 'finished' }] }]),
+        });
+        await resumed.engine.start();
+        await resumed.engine.approve(id, { approvalId: waiting.waiting!.approvalId, approved: true });
+        await resumed.engine.idle();
+        expect(await s.store.runs.findOne(id)).toMatchObject({ status: 'completed', output: 'finished' });
+        expect(applied).toBe(1);
+        expect(contexts).toHaveLength(2);
+        for (const model of [s.model.doStreamCalls[1], resumed.model.doStreamCalls[0]]) {
+            const { prompt } = (model!);
+            expect(prompt.map((message) => message.role).slice(0, 7)).toEqual([
+                'system',
+                'user',
+                'assistant',
+                'system',
+                'system',
+                'user',
+                'user',
+            ]);
+            const serialized = JSON.stringify(prompt);
+            const ordered = ['configured base', 'configured example', 'configured later policy', 'skill catalog metadata', 'earlier conversation input', 'current'];
+            for (let i = 1; i < ordered.length; i++) expect(serialized.indexOf(ordered[i - 1]!)).toBeLessThan(serialized.indexOf(ordered[i]!));
+            expect(serialized.match(/configured example/g)).toHaveLength(1);
+        }
+        for (const messages of contexts) {
+            expect(messages[0]).toMatchObject({ role: 'user', content: [{ type: 'file', data: new Uint8Array([97, 98, 99]) }] });
+            expect(messages.map((message) => message.role).slice(0, 6)).toEqual(['user', 'assistant', 'system', 'system', 'user', 'user']);
+        }
+        const checkpoint = await s.store.checkpoints.findOne(id);
+        const scope = (await s.conversations.findOne(identity))!;
+        expect(checkpoint?.conversation).toEqual({ scopeId: scope.id, generation: scope.generation });
+        const persisted = JSON.stringify([
+            checkpoint,
+            await s.conversations.findItems(scope, { limit: 100, offset: 0 }),
+            await s.conversations.beginTurn(scope, 'next-snapshot', 'next', {
+                maxItems: 20,
+                maxHistoryBytes: 32768,
+                maxNotesBytes: 8192,
+                maxItemBytes: 16384,
+                retentionMs: 999999,
+                maxStoredItems: 1000,
+            }),
+        ]);
+        expect(persisted).toContain('earlier conversation input');
+        expect(persisted).not.toMatch(/configured|skill catalog metadata|prefix-file|97,98,99/);
+        await s.conversations.endTurn(scope, 'next-snapshot', []);
+        expect(s.errors).toEqual([]);
+        expect(resumed.errors).toEqual([]);
+    });
+
     it.each([false, true])('uses accepted conversation text as the current input, keeping attachments (%s)', async (withAttachment) => {
         const s = setup();
         const text = 'What is 2 + 2?';

@@ -20,7 +20,7 @@ import {
 import { createModelResolver } from '../../../src/models/resolver.ts';
 import { readModelSettings } from '../../../src/models/settings.ts';
 import type { ModelSettings, ProviderConfig } from '../../../src/models/types.ts';
-import { textModel } from '../../utils/model.ts';
+import { textModel } from '@chamvi/test-kit';
 
 function notFound(specifier: string): Error {
     const error = new Error(`Cannot find package '${specifier}' imported from /app/node_modules/@chamvi/app/dist/index.mjs`);

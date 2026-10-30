@@ -19,6 +19,9 @@ export const NO_DIRECTORY_MESSAGE = 'CHAMVI_AGENTS_DIR must name a directory.';
 /** How often the boot loads a folder that changes while it is read before it leaves it to the watcher. */
 export const BOOT_LOAD_ATTEMPTS = 3;
 
+/** Maximum delay between failed skill preparations, unless the configured poll interval is longer. */
+export const SKILL_PREPARATION_RETRY_MAX_MS = 60_000;
+
 /** Logged once when the agents dir has no entry at all (an unmounted volume's mount point). */
 export const EMPTY_ROOT_MESSAGE = 'the agents dir is empty; no agent is removed';
 

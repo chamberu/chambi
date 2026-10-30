@@ -51,10 +51,12 @@
     },
     "license": "Apache-2.0",
     "devDependencies": {
-        "@chamvi/core": "^0.3.1"
+        "@chamvi/core": "^0.3.1",
+        "ai": "^7.0.150"
     },
     "peerDependencies": {
         "@chamvi/core": "^0.3.1",
+        "ai": "^7",
         "vitest": "^5"
     }
 }

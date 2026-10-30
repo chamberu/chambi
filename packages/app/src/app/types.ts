@@ -9,6 +9,7 @@ import type {
     Agent,
     ConversationOptions,
     ModelRef,
+    SkillInput,
 } from '@chamvi/core';
 import type { AgentIssue } from '@chamvi/http';
 import type { IModule } from 'orkos';
@@ -19,6 +20,8 @@ import type { APP_BRAND } from './constants.ts';
 export type AppOptions = {
     /** The code agents; may be omitted or empty when CHAMVI_AGENTS_DIR names an agents folder. */
     agents?: Agent[];
+    /** Additive skill defaults for every code and folder agent, verified before serving. */
+    skills?: readonly SkillInput[];
     /** Optional conversation recall and notes; the default store follows the app's selected data source. */
     conversations?: ConversationOptions;
     /** Extra modules; one named like a built-in (`ModuleName`) replaces it. */
@@ -82,7 +85,8 @@ export interface IApp {
      * The start path up to its start steps (`context.check`, mode `start`):
      * config, store connection, model settings, every module's setup and
      * onReady and the agent folders' load and checks, then the teardown; no
-     * engine or channel start, no server, no run, no store write (no
+     * engine or channel start, no server, no run, no skill provider calls or
+     * content verification, no store write (no
      * migration, marker, cancel or lock). Resolves the agent folders' load
      * issues; the lifecycle hooks `engineCreated` and `drained` run, never
      * `started` or `stopping`. A configuration error rejects (`invalid_agent_definition`), a

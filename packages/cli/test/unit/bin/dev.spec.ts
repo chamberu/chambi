@@ -56,7 +56,7 @@ describe('bin dev', () => {
         await waitForOk(`http://127.0.0.1:${port}/readyz`);
 
         process.kill(-cli.child.pid!, 'SIGINT');
-        expect(await cli.exited(15_000)).toEqual({ code: 0, signal: null });
+        expect(await cli.exited(15_000), `child stdout: ${cli.stdout()}\nchild stderr: ${cli.stderr()}`).toEqual({ code: 0, signal: null });
         expect(count(cli.stderr(), 'received SIGINT, stopping')).toBe(1);
         expect(cli.stderr()).not.toContain('forced exit');
     });
