@@ -260,6 +260,29 @@ describe('githubChannel persistent comments', () => {
         expect(fake.requests.filter((r) => r.method === 'PATCH')).toHaveLength(1);
     });
 
+    it('updates a slot in a new run even when the caller key is fixed', async () => {
+        const {
+            send,
+            fake,
+            patches,
+        } = setupPersistent();
+
+        await send({
+            ...STATUS_APPROVAL,
+            key: 'status',
+            body: 'First run',
+        });
+        await send({
+            ...STATUS_APPROVAL,
+            key: 'status',
+            runId: 'r2',
+            body: 'Second run',
+        });
+
+        expect(patches()).toHaveLength(1);
+        expect(fake.comments.get(ADDRESS)?.[0]?.body).toContain('Second run');
+    });
+
     it('finds an old slot comment on a later page without a since filter', async () => {
         const {
             send,

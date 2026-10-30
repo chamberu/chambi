@@ -167,7 +167,7 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
                     request.request = { ...request.request, signal };
                 });
 
-                const deliveryKey = slotKey ? createHash('sha256').update(JSON.stringify([slotKey, message.key])).digest('hex') : message.key;
+                const deliveryKey = slotKey ? createHash('sha256').update(JSON.stringify([slotKey, message.runId, message.key])).digest('hex') : message.key;
                 const marker = effectMarker(markerKey(deliveryKey));
                 const stableMarker = slotKey ? `<!-- chamvi:comment=${slotKey.slice('github:comment:'.length)} -->` : undefined;
                 const since = new Date(new Date(opts.trigger.receivedAt).getTime() - RECONCILE_SKEW_MS).toISOString();
