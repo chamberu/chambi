@@ -40,6 +40,7 @@ const RUN_PROPERTIES: ReadonlySet<string> = new Set([
     'error',
     'usage',
     'waiting',
+    'taint',
     'cancelRequested',
     'createdAt',
     'updatedAt',
@@ -218,6 +219,10 @@ export function toRun(entity: RunEntity): Run {
 
     if (entity.waiting !== null) {
         run.waiting = reviveWaiting(entity.waiting);
+    }
+
+    if (entity.taint !== null) {
+        run.taint = { ...entity.taint, at: new Date(entity.taint.at) };
     }
 
     if (entity.claimOwner !== null) {

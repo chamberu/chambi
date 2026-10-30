@@ -119,6 +119,14 @@ watch(() => props.highlight, reveal);
         <div class="callout-body">
             <div>
                 <p
+                    v-if="run.taint"
+                    class="taint-warning"
+                    role="note"
+                    data-testid="approval-untrusted-content"
+                >
+                    This run consumed untrusted content. Review this request carefully before approving.
+                </p>
+                <p
                     v-if="run.waiting.body"
                     class="callout-text"
                     data-testid="approval-body"

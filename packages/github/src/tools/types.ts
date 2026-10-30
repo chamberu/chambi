@@ -10,6 +10,13 @@ import type { GithubMergeMethod } from '../app/types.ts';
 /** The input of a tool on a repository. */
 export type RepoInput = { repo: string };
 
+/** `github_propose_change`: replacement content for one allowlisted file. */
+export type GithubProposeChangeInput = RepoInput & {
+    path: string;
+    content: string;
+    reason: string;
+};
+
 /** The input of a tool on an issue or pull request. */
 export type NumberInput = RepoInput & { number: number };
 

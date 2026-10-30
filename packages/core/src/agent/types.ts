@@ -17,7 +17,7 @@ import type { ModelRef } from '../model/types.ts';
 import type { Budget, RunContext } from '../run/types.ts';
 import type { StateSchema } from '../state/types.ts';
 import type { SkillInput } from '../skill/types.ts';
-import type { ToolContext } from '../tool/types.ts';
+import type { AgentTrust, ToolContext } from '../tool/types.ts';
 
 /** The factory's argument: the same ToolContext the run's chamvi tools get. */
 export type ToolFactoryContext<S extends StateSchema = StateSchema> = ToolContext<S>;
@@ -102,6 +102,8 @@ export type AgentDefinition<S extends StateSchema = StateSchema> = {
      * context as `context` in `execute`.
      */
     tools?: ToolSet | ((ctx: ToolContext<S>) => ToolSet);
+
+    trust?: AgentTrust;
 
     /**
      * Per tool name, the context of a tool that is not chamvi's (e.g. a

@@ -7,6 +7,7 @@
 
 import { isObject } from 'smob';
 import { currentToolCall } from '../effect/frame.ts';
+import { stableHash } from '../effect/helpers.ts';
 import type { ApprovalRequest } from '../engine/execute/types.ts';
 import {
     ChamviError,
@@ -76,7 +77,7 @@ function assertRequest(request: unknown): Pick<ApprovalRequest, 'options' | 'mul
  * is stashed on the frame and a SuspendSignal thrown). Sends nothing.
  */
 export async function requestApproval(
-    request: ApprovalRequestInput,
+    request: ApprovalRequestInput & { binding?: string; notification?: string },
     target: { channel?: string; address?: string } = {},
 ): Promise<ApprovalDecision> {
     const frame = currentToolCall();
@@ -92,8 +93,15 @@ export async function requestApproval(
     }
 
     const choice = assertRequest(request);
+
     // taken before any await, so the ordinals follow the order of the calls
-    const approvalId = `${frame.stepIndex}:${frame.toolCallId}:${frame.approvals++}`;
+    frame.boundApprovals ??= 0;
+
+    const ordinal = request.binding ? frame.boundApprovals++ : frame.approvals++;
+    // Bound automatic ids regardless of provider call-id length; ordinary replay ids stay unchanged.
+    const approvalId = request.binding ?
+        `bound:${stableHash([frame.stepIndex, frame.toolCallId, ordinal, request.binding])}` :
+        `${frame.stepIndex}:${frame.toolCallId}:${ordinal}`;
     const recorded = await frame.effects.findOne(approvalDecisionKey(frame.runId, approvalId));
 
     if (recorded) {
@@ -106,6 +114,7 @@ export async function requestApproval(
         toolCallId: frame.toolCallId,
         title: request.title,
         ...(request.body !== undefined ? { body: request.body } : {}),
+        ...(request.notification !== undefined ? { notification: request.notification } : {}),
         ...choice,
         ...(target.channel !== undefined ? { channel: target.channel } : {}),
         ...(target.address !== undefined ? { address: target.address } : {}),

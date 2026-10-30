@@ -40,6 +40,7 @@ const REFSPEC_PATTERN = /^\+?refs\/[\w./*+-]+(:refs\/[\w./*+-]+)?$/;
 type Target = {
     workspace: IWorkspace;
     url: string;
+    isOrigin: boolean;
     /** `origin` for the workspace's own repository, else the repository path. */
     name: string;
 };
@@ -120,6 +121,7 @@ export function createGitTools(context: GitToolsContext): ToolSet {
             return {
                 workspace,
                 url: own,
+                isOrigin: true,
                 name: 'origin',
             };
         }
@@ -131,6 +133,7 @@ export function createGitTools(context: GitToolsContext): ToolSet {
         return {
             workspace,
             url,
+            isOrigin: isOwn,
             name: isOwn ? 'origin' : remoteName(url),
         };
     };
@@ -227,6 +230,10 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 },
                 workspace: workspaceSchema(),
             }),
+            trust: {
+                taint: true,
+                guardWhenTainted: async (input, ctx) => !(await target(inputObject(input), ctx, 'git_fetch')).isOrigin,
+            },
             execute: async (input, { context: ctx }) => {
                 const body = inputObject(input);
                 const refspec = optionalString(body.refspec, 'refspec');
@@ -256,6 +263,10 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 rebase: { type: 'boolean', description: 'Rebase the current branch onto it instead of merging. Default false.' },
                 workspace: workspaceSchema(),
             }),
+            trust: {
+                taint: true,
+                guardWhenTainted: async (input, ctx) => !(await target(inputObject(input), ctx, 'git_pull')).isOrigin,
+            },
             execute: async (input, { context: ctx }) => {
                 const body = inputObject(input);
                 const rebase = optionalBoolean(body.rebase, 'rebase') ?? false;
@@ -294,6 +305,7 @@ export function createGitTools(context: GitToolsContext): ToolSet {
             setUpstream?: boolean;
             workspace?: string;
         }, GitPushResult>({
+            trust: { taint: true, guardWhenTainted: true },
             description: 'Push a branch (default: the current one) to the workspace\'s repository with the run\'s git credentials. ' +
                 'A rejected push (the remote moved) comes back with pushed: false; fetch and merge or rebase, then push again. ' +
                 'The repository\'s default branch is refused unless the operator allows it.',

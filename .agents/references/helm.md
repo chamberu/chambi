@@ -5,6 +5,10 @@
 - **Verified against:** `agent-app` 0.1.1 (`root-0.1.1`, commit `312eba4`, 2026-10-25), with `@chamvi/*` 0.2.1.
 - **How to maintain:** when a monorepo change touches a row below, update the chart in the same breath (a PR to chamvi/helm) and correct the row here; pin the chart version.
 
+## Untrusted-content compatibility check (2026-10-30)
+
+Read-only check at `482f7de3759e43d61a7faedeb00547e9b3fc5202` (`agent-app` 0.1.2): chart values, Deployment/CronJob/helpers, RBAC/readiness templates and README. Plan 030 changes no CLI/env/route/image/RBAC/model-string contract, but its upgrade must not use a rolling deployment. Stop all old ingress, workers and approval pollers across every replica and scheduled job, wait for process exit, migrate/backfill, then start only new binaries. Old pollers can publish a new gate's private argument-bearing body to its source channel; old workers can create untainted runs after the one-time backfill. Draining executions alone is insufficient. Chart upgrade guidance needs this explicit stop/migrate/start constraint. Existing unfinished runs are conservatively tainted and can require outbound approval after resume. Shell execution remains outside this gate.
+
 ## Model-settings follow-up (2026-10-28, unreleased)
 
 Checked the `feat/model-settings` worktree against chart base `79850ef` (0.1.2) and chamvi 0.3.1. `values.yaml` adds `model` and named `providers`; `templates/_helpers.tpl` maps them to `CHAMVI_MODEL` and `CHAMVI_PROVIDER_<NAME>_*` on both Deployment and CronJobs. API keys and credential headers use Secret references only. `templates/_model-validations.tpl` checks settings without echoing rejected values; generated env names cannot collide with generic `env`. The readiness hook receives no model settings or credentials. Coverage lives in `tests/models_test.yaml` and `scripts/tests/test_models.py`. This is a proposed downstream change, not a published chart contract.

@@ -126,6 +126,7 @@ export function webhookChannel(options: WebhookChannelOptions): WebhookChannel {
 
     const channel: WebhookChannel = {
         name,
+        untrusted: true,
         in: receive,
         on: (path, subscriptionOptions) => createWebhookSubscription(name, path, subscriptionOptions),
     };

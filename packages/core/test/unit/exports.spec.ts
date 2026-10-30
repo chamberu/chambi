@@ -124,6 +124,7 @@ describe('public api', () => {
         'AgentNotFoundError',
         'checkAgentModel',
         'resolveModel',
+        'extract',
         'agentChannel',
         'startHandoff',
     ])('exports %s', (name) => {

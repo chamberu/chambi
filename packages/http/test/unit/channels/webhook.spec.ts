@@ -54,6 +54,10 @@ function setup() {
 type Accepted = { runId: string; deduplicated: boolean };
 
 describe('POST /channels/webhook/:agent/<path>', () => {
+    it('classifies authenticated webhook payloads as untrusted', () => {
+        expect(webhookChannel({ auth: [testAuth] }).untrusted).toBe(true);
+    });
+
     it('dispatches through the webhook subscription without executing', async () => {
         const { app, store } = setup();
         const response = await call(app, 'POST', ISSUES, { token: ADMIN_TOKEN, body: { id: '7' } });

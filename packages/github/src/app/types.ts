@@ -23,6 +23,13 @@ export type GithubAppOptions = {
     baseUrl?: string;
     clock?: IClock;
     fetch?: typeof globalThis.fetch;
+    /** Opt in to file proposals, limited to these repositories and repository-relative globs. */
+    proposals?: GithubProposalsOptions;
+};
+
+/** The allowlist for `github_propose_change`; `.github/**` is always forbidden. */
+export type GithubProposalsOptions = {
+    repos: Record<string, { paths: readonly string[] }>;
 };
 
 /** An Octokit (`@octokit/core` with `paginate`). */

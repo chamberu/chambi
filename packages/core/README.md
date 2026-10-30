@@ -237,6 +237,30 @@ await engine.approve(runId, { approvalId, approved: true });
 - `engine.approve(runId, { approvalId, approved, reason?, approver? })` answers the current wait point, for a caller that authorized the approver itself. An answer is single use.
 - An approval not answered within its `timeoutMs` (default 24 hours) is denied with the reason `approval timed out`.
 
+### Untrusted content
+
+Tools can declare `trust: { taint: true, guardWhenTainted: true }` on `defineTool()` or `defineEffectTool()`. `taint` marks the run before a result or execution error is exposed to the model; `guardWhenTainted` requires approval or denies execution when the run is already tainted. Each flag accepts a boolean or an `(input, ctx) => boolean | Promise<boolean>` predicate. A channel with `untrusted: true` starts tainted runs. Third-party tools are trusted by default; classify them by name with the agent's `trust.tools` overrides.
+
+```typescript
+trust: {
+    onTainted: 'approve', // default; use 'deny' to refuse outbound calls
+    tools: {
+        externalSearch: { taint: true },
+        publish: { guardWhenTainted: true },
+    },
+},
+```
+
+The first exposure is persisted as `run.taint: { at: Date, source: string }` before the result reaches the model. It survives checkpoints and restarts; handoffs inherit it and conversation recall conservatively taints the receiving run. Custom stores must preserve this optional field. The database migration also marks pre-existing unfinished runs as tainted because their checkpoints may already contain external content.
+
+**Upgrade with downtime, not a rolling deployment:** stop all old ingress, workers and approval pollers across every replica and scheduled job, wait for them to exit, then migrate/backfill, then start only new binaries. Do not mix old and new runtimes on the same store. Old pollers can disclose a new automatic approval's private argument-bearing body to its source channel; old workers can create untainted runs after the one-time backfill. Draining executions alone is not sufficient. Custom stores need the same stop/backfill/start sequence. See [Multiple replicas](https://chamvi.dev/deployment/replicas#upgrading-to-untrusted-content-gates).
+
+After exposure, outbound tools require durable approval (or are denied). The gate runs on the final validated input after `beforeToolExecution`, before effect lookup; changing the arguments requires a new decision. Full arguments stay in the approval inbox/API. Automatic source-channel notifications contain only a generic review request. Direct channel emits are gated too, except sends to the source address on the same channel or a code-configured default address. These are **fixed-destination exceptions**, not guarantees about the message body.
+
+`extract(ctx, { schema, content, instructions?, model? })` calls a separate model with structured output and no tools. Acquire raw content in trusted tool code and return only the extraction; an ordinary untrusted read followed by extraction does not undo taint. Only conservative constrained schemas avoid taint: literal constants (including `null`), booleans/null, numbers, fixed enums, closed objects, arrays bounded to 10 items, and patterned strings bounded to 200 characters. Free text, references, combinators and unknown schema features taint the run. Results are effect-cached; extraction never clears existing taint. The caller still owns authorization and semantic validation of extracted values.
+
+**Limits:** this is not a prompt-injection-proof sandbox. Enabled shell execution can bypass outbound-tool gates, including through scripts and nested processes. Shell command policies and the optional permission classifier are separate work. State provenance, provider-executed tools, sandbox network egress and disclosure to the model provider are outside this boundary. Source replies/default-address sends and unclassified third-party tools remain trusted capabilities. GitHub read tools send model-selected queries, paths and refs to the GitHub API without an outbound gate; classify those tools as outbound with `trust.tools` if the API operator or its logs must not receive arbitrary run data without approval.
+
 ### Invokers and tool access
 
 A run can carry its invoker: who started it, as an authenticator resolved it (`@chamvi/http` sets it from the request's principal). `toolPolicy` decides per tool whether the run may use it; a refused tool is not offered to the model.

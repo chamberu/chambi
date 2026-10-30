@@ -12,6 +12,7 @@ import type {
     ToolContext,
     TriggerEnvelope,
 } from '@chamvi/core';
+import { bindTrust } from '../../../core/src/trust/module.ts';
 import { START } from './app.ts';
 
 const NO_ARTIFACTS: IRunArtifacts = {
@@ -55,7 +56,7 @@ export function toolContext(input: ToolContextInput = {}): ToolContext {
         receivedAt: input.receivedAt ?? START,
     };
 
-    return {
+    const ctx: ToolContext = {
         // these tools reach no channel
         channels: {} as ToolContext['channels'],
         run: {
@@ -67,6 +68,11 @@ export function toolContext(input: ToolContextInput = {}): ToolContext {
         state: createAgentState('triage', undefined, createMemoryStore().state),
         artifacts: NO_ARTIFACTS,
     };
+
+    // Unit calls bypass the engine; bind its per-execution trust state without persistence.
+    bindTrust(ctx.run, { now: () => START, persist: async () => undefined });
+
+    return ctx;
 }
 
 export type CallInput = {

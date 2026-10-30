@@ -64,6 +64,7 @@ describePostgres('DatabaseRunRepository runs', () => {
         const run = makeRun('r1', {
             concurrencyKey: 'ck',
             address: 'th',
+            taint: { at: new Date('2026-10-30T12:34:56.789Z'), source: 'tool:web_fetch' },
             output: { ok: true },
             error: { code: 'X', message: 'm' },
             waiting: {
@@ -95,6 +96,7 @@ describePostgres('DatabaseRunRepository runs', () => {
 
         expect(got).toEqual(run);
         expect(got!.trigger.receivedAt).toBeInstanceOf(Date);
+        expect(got!.taint!.at).toBeInstanceOf(Date);
         expect(got!.waiting!.expiresAt).toBeInstanceOf(Date);
         expect(got!.waiting!.notifiedAt).toBeInstanceOf(Date);
         expect(got!.createdAt).toBeInstanceOf(Date);
@@ -123,9 +125,31 @@ describePostgres('DatabaseRunRepository runs', () => {
 
         const keys = Object.keys(gotMinimal!);
 
-        for (const key of ['output', 'error', 'waiting', 'claim', 'cancelRequested', 'concurrencyKey', 'address', 'startedAt', 'finishedAt']) {
+        for (const key of ['output', 'error', 'waiting', 'taint', 'claim', 'cancelRequested', 'concurrencyKey', 'address', 'startedAt', 'finishedAt']) {
             expect(keys).not.toContain(key);
         }
+    });
+
+    it('revives taint dates in update results and preserves taint through unrelated updates', async () => {
+        const taint = { at: new Date('2026-10-30T12:34:56.789Z'), source: 'tool:web_fetch' };
+
+        await store.insert(makeRun('r1'));
+        expect((await store.findOneOrFail('r1')).taint).toBeUndefined();
+
+        const tainted = await store.update('r1', { taint });
+
+        expect(tainted.taint).toEqual(taint);
+        expect(tainted.taint!.at).toBeInstanceOf(Date);
+
+        const updated = await store.update('r1', { status: 'running' });
+
+        expect(updated.taint).toEqual(taint);
+        expect(updated.taint!.at).toBeInstanceOf(Date);
+
+        const stored = await store.findOneOrFail('r1');
+
+        expect(stored.taint).toEqual(taint);
+        expect(stored.taint!.at).toBeInstanceOf(Date);
     });
 
     it('revives trigger.attachments[].createdAt as Date', async () => {

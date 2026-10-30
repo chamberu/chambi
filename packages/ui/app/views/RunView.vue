@@ -17,6 +17,7 @@ import NavIcon from '../components/nav-icon/NavIcon.vue';
 import StatusChip from '../components/status-chip/StatusChip.vue';
 import StepItem from '../components/step-item/StepItem.vue';
 import { errorText } from '../components/step-item/helpers.ts';
+import UntrustedChip from '../components/untrusted-chip/UntrustedChip.vue';
 import UsageMeter from '../components/usage-meter/UsageMeter.vue';
 import { useAppContext } from '../context/module.ts';
 import { RouteName } from '../router/constants.ts';
@@ -155,6 +156,7 @@ async function onCancel(): Promise<void> {
                         Run <span class="mono">{{ shortId(run.id) }}</span>
                     </h1>
                     <StatusChip :status="run.status" />
+                    <UntrustedChip :taint="run.taint" />
                     <VCButton
                         v-if="cancellable"
                         class="btn btn-danger"
