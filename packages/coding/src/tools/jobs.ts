@@ -130,7 +130,7 @@ export async function startJob(
 
 export function bashOutputTool(workspaces: CodingWorkspaces, outputLogMaxBytes: number): Tool<JobOutputInput, BashOutputResult> {
     return defineTool<JobOutputInput, BashOutputResult>({
-        trust: { untrustedResult: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
+        trust: { taint: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
         description: 'Read the output (stdout and stderr together) and status of a background job of bash: ' +
             `at most ${JOB_OUTPUT_MAX_BYTES} bytes from offset (default 0); pass nextOffset to read on. ` +
             `A job whose output passes ${outputLogMaxBytes} bytes is killed with its processes (status killed, outputCapped: true). ` +

@@ -28,7 +28,7 @@ export function assertAgentTrust(trust: AgentTrust | undefined, tools?: ToolSet)
     }
 
     for (const [name, flags] of Object.entries(trust.tools)) {
-        const invalid = !isObject(flags) || Object.entries(flags).some(([key, value]) => !['untrustedResult', 'outbound'].includes(key) || typeof value !== 'boolean');
+        const invalid = !isObject(flags) || Object.entries(flags).some(([key, value]) => !['taint', 'guardWhenTainted'].includes(key) || typeof value !== 'boolean');
 
         if ((tools && !Object.hasOwn(tools, name)) || invalid) {
             throw new InvalidAgentDefinitionError(`Invalid trust classification for tool "${name}".`);

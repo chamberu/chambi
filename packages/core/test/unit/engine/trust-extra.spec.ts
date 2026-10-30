@@ -113,7 +113,7 @@ it.each(['generator', 'iterable factory'] as const)('persists taint before a str
 
     const reader = defineTool({
         inputSchema: z.object({}),
-        trust: { untrustedResult: true },
+        trust: { taint: true },
         execute: kind === 'generator' ? chunks : () => chunks(),
     });
     const wrapped = wrapToolsForRun({ reader }, context, store.effects);
@@ -166,7 +166,7 @@ it('taints a streaming Engine reader before its result hook and denies the next 
         tools: {
             reader: defineTool({
                 inputSchema: z.object({}),
-                trust: { untrustedResult: true },
+                trust: { taint: true },
                 async *execute () {
                     yield 'first';
                     yield 'last';
@@ -174,7 +174,7 @@ it('taints a streaming Engine reader before its result hook and denies the next 
             }),
             send: defineEffectTool({
                 inputSchema: z.object({}),
-                trust: { outbound: true },
+                trust: { guardWhenTainted: true },
                 execute: send,
             }),
         },
@@ -218,12 +218,12 @@ it.each(['cached', 'reconciled'] as const)('taints %s untrusted effect results e
                 inputSchema: z.object({}),
                 effectKey: () => 'external-read',
                 alreadyApplied: reconcile,
-                trust: { untrustedResult: true },
+                trust: { taint: true },
                 execute,
             }),
             send: defineEffectTool({
                 inputSchema: z.object({}),
-                trust: { outbound: true },
+                trust: { guardWhenTainted: true },
                 execute: send,
             }),
         },
@@ -265,7 +265,7 @@ it('shares the first taint persistence across parallel readers and retains its s
     const reader = () => defineTool({
         inputSchema: z.object({}),
         trust: {
-            untrustedResult: () => {
+            taint: () => {
                 classifications++;
 
                 if (classifications === 2) {
@@ -290,7 +290,7 @@ it('shares the first taint persistence across parallel readers and retains its s
             second: reader(),
             send: defineEffectTool({
                 inputSchema: z.object({}),
-                trust: { outbound: true },
+                trust: { guardWhenTainted: true },
                 execute: send,
             }),
         },
@@ -325,7 +325,7 @@ it('applies agent trust overrides to foreign tools without replacing their own c
     const { engine, store } = setup({
         trust: {
             onTainted: 'deny',
-            tools: { foreign: { untrustedResult: true }, send: { outbound: true } },
+            tools: { foreign: { taint: true }, send: { guardWhenTainted: true } },
         },
         model: mockModel([call('foreign'), call('send'), done]),
         toolsContext: { foreign: context, send: context },
@@ -383,13 +383,13 @@ it('inherits a tainted parent into a handoff run and blocks child outbound effec
         tools: {
             reader: defineTool({
                 inputSchema: z.object({}),
-                trust: { untrustedResult: true },
+                trust: { taint: true },
                 execute: async () => 'external text',
             }),
             fan: defineTool({ inputSchema: z.object({}), execute: async (_input, { context }) => startHandoff(context, { payload: 'child task' }) }),
             send: defineEffectTool({
                 inputSchema: z.object({}),
-                trust: { outbound: true },
+                trust: { guardWhenTainted: true },
                 execute: send,
             }),
         },
@@ -448,7 +448,7 @@ it('taints conversation recall before the next model call and gates outbound too
             tools: {
                 send: defineEffectTool({
                     inputSchema: z.object({}),
-                    trust: { outbound: true },
+                    trust: { guardWhenTainted: true },
                     execute: send,
                 }),
             },

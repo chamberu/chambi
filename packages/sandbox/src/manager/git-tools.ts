@@ -231,8 +231,8 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 workspace: workspaceSchema(),
             }),
             trust: {
-                untrustedResult: true,
-                outbound: async (input, ctx) => !(await target(inputObject(input), ctx, 'git_fetch')).isOrigin,
+                taint: true,
+                guardWhenTainted: async (input, ctx) => !(await target(inputObject(input), ctx, 'git_fetch')).isOrigin,
             },
             execute: async (input, { context: ctx }) => {
                 const body = inputObject(input);
@@ -264,8 +264,8 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 workspace: workspaceSchema(),
             }),
             trust: {
-                untrustedResult: true,
-                outbound: async (input, ctx) => !(await target(inputObject(input), ctx, 'git_pull')).isOrigin,
+                taint: true,
+                guardWhenTainted: async (input, ctx) => !(await target(inputObject(input), ctx, 'git_pull')).isOrigin,
             },
             execute: async (input, { context: ctx }) => {
                 const body = inputObject(input);
@@ -305,7 +305,7 @@ export function createGitTools(context: GitToolsContext): ToolSet {
             setUpstream?: boolean;
             workspace?: string;
         }, GitPushResult>({
-            trust: { outbound: true },
+            trust: { guardWhenTainted: true },
             description: 'Push a branch (default: the current one) to the workspace\'s repository with the run\'s git credentials. ' +
                 'A rejected push (the remote moved) comes back with pushed: false; fetch and merge or rebase, then push again. ' +
                 'The repository\'s default branch is refused unless the operator allows it.',

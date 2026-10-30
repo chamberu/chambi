@@ -239,14 +239,14 @@ await engine.approve(runId, { approvalId, approved: true });
 
 ### Untrusted content
 
-Tools can declare `trust: { untrustedResult: true, outbound: true }` on `defineTool()` or `defineEffectTool()`. Each flag also accepts an async `(input, ctx) => boolean` predicate. A channel with `untrusted: true` starts tainted runs. Third-party tools are trusted by default; classify them by name with the agent's `trust.tools` overrides.
+Tools can declare `trust: { taint: true, guardWhenTainted: true }` on `defineTool()` or `defineEffectTool()`. `taint` marks the run before a result or execution error is exposed to the model; `guardWhenTainted` requires approval or denies execution when the run is already tainted. Each flag also accepts an async `(input, ctx) => boolean` predicate. A channel with `untrusted: true` starts tainted runs. Third-party tools are trusted by default; classify them by name with the agent's `trust.tools` overrides.
 
 ```typescript
 trust: {
     onTainted: 'approve', // default; use 'deny' to refuse outbound calls
     tools: {
-        externalSearch: { untrustedResult: true },
-        publish: { outbound: true },
+        externalSearch: { taint: true },
+        publish: { guardWhenTainted: true },
     },
 },
 ```

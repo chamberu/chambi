@@ -27,7 +27,7 @@ type GitDiffInput = {
 
 export function gitDiffTool(workspaces: CodingWorkspaces): Tool<GitDiffInput, GitDiffResult> {
     return defineTool<GitDiffInput, GitDiffResult>({
-        trust: { untrustedResult: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
+        trust: { taint: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
         description: 'Show the changes in the workspace: git status --short (untracked files as ??) and the unified diff of the working tree ' +
             'against the index, or of the index against HEAD with staged: true.',
         inputSchema: objectSchema<GitDiffInput>({

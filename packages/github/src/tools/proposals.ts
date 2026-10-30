@@ -328,7 +328,7 @@ async function checkDiff(octokit: GithubOctokit, target: RepoTarget, base: strin
 export function createProposalTools(app: IGithubApp, policy: GithubProposalsOptions): ToolSet {
     return {
         github_propose_change: defineEffectTool<GithubProposeChangeInput, GithubCreatedPullRequest>({
-            trust: { outbound: true },
+            trust: { guardWhenTainted: true },
             description: 'Propose replacement file content in an allowlisted repository/path. Creates or updates one stable branch and open PR for this agent and path. Never merges; .github paths are forbidden.',
             inputSchema: objectSchema<GithubProposeChangeInput>({
                 repo: REPO_PROPERTY,

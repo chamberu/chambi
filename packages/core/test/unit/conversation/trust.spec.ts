@@ -140,7 +140,7 @@ it.each(['memory_get', 'memory_list'])('taints explicit %s retrieval even when r
                 ...memoryTools(),
                 send: defineTool({
                     inputSchema: z.object({}),
-                    trust: { outbound: true },
+                    trust: { guardWhenTainted: true },
                     execute: send,
                 }),
             },

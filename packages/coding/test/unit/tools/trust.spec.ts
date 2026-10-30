@@ -29,9 +29,9 @@ describe('coding tool trust classification', () => {
         for (const name of READERS) {
             const { trust } = (tools[name] as Tool & { trust: ToolTrust });
 
-            expect(trust.outbound).toBeUndefined();
+            expect(trust.guardWhenTainted).toBeUndefined();
 
-            const classify = trust.untrustedResult;
+            const classify = trust.taint;
 
             if (typeof classify !== 'function') {
                 throw new TypeError(`${name} needs a workspace trust classifier`);

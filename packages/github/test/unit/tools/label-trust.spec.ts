@@ -13,13 +13,13 @@ import { toolContext } from '../../utils/tools.ts';
 
 function setup() {
     const { gh, fake } = createGithubFixture();
-    const { outbound } = (gh.writeTools().github_add_labels as Tool & { trust: ToolTrust }).trust;
+    const { guardWhenTainted } = (gh.writeTools().github_add_labels as Tool & { trust: ToolTrust }).trust;
 
-    if (typeof outbound !== 'function') {
+    if (typeof guardWhenTainted !== 'function') {
         throw new TypeError('expected a label trust classifier');
     }
 
-    const classify = (labels: string[], ctx: ToolContext, repo = 'octo/demo') => outbound({
+    const classify = (labels: string[], ctx: ToolContext, repo = 'octo/demo') => guardWhenTainted({
         repo,
         number: 5,
         labels,

@@ -68,7 +68,7 @@ it.each(['plain', 'effect', 'reconciliation', 'generator', 'iterable factory'] a
         const classify = vi.fn(async (input: { external: boolean }) => input.external);
         const definition = {
             inputSchema: z.object({ external: z.boolean() }),
-            trust: { untrustedResult: classify },
+            trust: { taint: classify },
             execute: async (input: { external: boolean }) => {
                 input.external = false;
 
@@ -101,7 +101,7 @@ it.each(['plain', 'effect', 'reconciliation', 'generator', 'iterable factory'] a
                 read: reader,
                 send: defineTool({
                     inputSchema: z.object({}),
-                    trust: { outbound: true },
+                    trust: { guardWhenTainted: true },
                     execute: send,
                 }),
             },
@@ -132,7 +132,7 @@ it.each(['plain', 'effect', 'reconciliation', 'generator', 'iterable factory'] a
         }
         const definition = {
             inputSchema: z.object({ external: z.boolean() }),
-            trust: { untrustedResult: classify },
+            trust: { taint: classify },
             execute: fail,
         };
         let reader;
@@ -156,7 +156,7 @@ it.each(['plain', 'effect', 'reconciliation', 'generator', 'iterable factory'] a
                 read: reader,
                 send: defineTool({
                     inputSchema: z.object({}),
-                    trust: { outbound: true },
+                    trust: { guardWhenTainted: true },
                     execute: send,
                 }),
             },
@@ -172,7 +172,7 @@ it.each(['plain', 'effect', 'reconciliation', 'generator', 'iterable factory'] a
     },
 );
 
-it.each(['outbound', 'untrustedResult'] as const)('refuses an unbound %s tool before executing it', async (flag) => {
+it.each(['guardWhenTainted', 'taint'] as const)('refuses an unbound %s tool before executing it', async (flag) => {
     const execute = vi.fn(async () => 'result');
     const context = {
         run: {
@@ -212,7 +212,7 @@ it('keeps the execution trust identity when a tool replaces public ToolContext.r
         tools: {
             read: defineTool({
                 inputSchema: z.object({}),
-                trust: { untrustedResult: true },
+                trust: { taint: true },
                 execute: async () => 'external instructions',
             }),
             replace: defineTool({
@@ -225,7 +225,7 @@ it('keeps the execution trust identity when a tool replaces public ToolContext.r
             }),
             send: defineTool({
                 inputSchema: z.object({}),
-                trust: { outbound: true },
+                trust: { guardWhenTainted: true },
                 execute: send,
             }),
         },
@@ -245,12 +245,12 @@ it('replays an ordinary approval after parallel taint adds an automatic gate on 
         tools: {
             read: defineTool({
                 inputSchema: z.object({}),
-                trust: { untrustedResult: true },
+                trust: { taint: true },
                 execute: async () => 'external instructions',
             }),
             send: defineTool({
                 inputSchema: z.object({}),
-                trust: { outbound: true },
+                trust: { guardWhenTainted: true },
                 execute: async (_, { context }) => {
                     const decision = await approve(context, { title: 'Manual send approval' });
 

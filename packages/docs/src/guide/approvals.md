@@ -4,7 +4,7 @@ A tool call can wait for a human. The tool calls `approve()`, the run pauses in 
 
 ## Automatic outbound gates
 
-A tool classified with `trust.outbound` also pauses automatically when its run has encountered [untrusted content](/guide/tools#untrusted-content-and-outbound-tools). `AgentDefinition.trust.onTainted` defaults to `'approve'`; `'deny'` rejects the operation with `ToolDeniedError` instead. Third-party tools are trusted until explicitly classified. Shell execution and provider-executed tools are outside this local gate.
+A tool classified with `trust.guardWhenTainted` also pauses automatically when its run has encountered [untrusted content](/guide/tools#untrusted-content-and-outbound-tools). `AgentDefinition.trust.onTainted` defaults to `'approve'`; `'deny'` rejects the operation with `ToolDeniedError` instead. Third-party tools are trusted until explicitly classified. Shell execution and provider-executed tools are outside this local gate.
 
 The gate runs after `beforeToolExecution` and validation of rewritten input, but before effect lookup or execution. Its decision is bound to the operation and final arguments, not just the tool-call id: replay with changed arguments asks again. Ordinary `approve()` calls keep their ordinal identity described below.
 

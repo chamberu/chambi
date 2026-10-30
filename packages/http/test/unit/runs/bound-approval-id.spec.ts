@@ -35,7 +35,7 @@ describe('automatic approvals with long provider call ids', () => {
                 tools: {
                     send: defineTool({
                         inputSchema: z.object({ text: z.string() }),
-                        trust: { outbound: true },
+                        trust: { guardWhenTainted: true },
                         execute: async () => {
                             writes++;
 

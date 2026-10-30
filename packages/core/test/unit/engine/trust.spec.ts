@@ -42,7 +42,7 @@ it('rejects invalid trust policies rather than silently allowing outbound calls'
         name: 'test',
         instructions: 'test',
         tools: {},
-        trust: { tools: { missing: { outbound: true } } },
+        trust: { tools: { missing: { guardWhenTainted: true } } },
     })).toThrow('missing');
 });
 
@@ -52,7 +52,7 @@ it.each([undefined, {}])('rejects unknown trust names without dynamic tools (%j)
         instructions: 'test',
         tools,
         skills: [],
-        trust: { tools: { missing: { outbound: true } } },
+        trust: { tools: { missing: { guardWhenTainted: true } } },
     })).toThrow('missing');
 });
 
@@ -68,14 +68,14 @@ it.each(['state', 'skill', 'factory'] as const)('defers %s tool names but always
 
     expect(() => defineAgent({
         ...definition,
-        trust: { tools: { deferred: { outbound: true, untrustedResult: false } } },
+        trust: { tools: { deferred: { guardWhenTainted: true, taint: false } } },
     })).not.toThrow();
     expect(() => defineAgent({
         ...definition,
         trust: { onTainted: 'allow' as never },
     })).toThrow('trust.onTainted');
 
-    for (const flags of [{ outbound: 'true' }, { untrustedResult: () => true }, { unknown: true }]) {
+    for (const flags of [{ guardWhenTainted: 'true' }, { taint: () => true }, { unknown: true }]) {
         expect(() => defineAgent({
             ...definition,
             trust: { tools: { deferred: flags as never } },
@@ -109,7 +109,7 @@ it.each(['state', 'skill'] as const)('classifies assembled %s tools and rejects 
     const agent = defineAgent({
         ...definition,
         model: mockModel([call(toolName), done]),
-        trust: { tools: { [toolName]: { untrustedResult: true } } },
+        trust: { tools: { [toolName]: { taint: true } } },
     });
     const engine = new Engine({ store, agents: [agent] });
 
@@ -137,7 +137,7 @@ it.each(['state', 'skill'] as const)('classifies assembled %s tools and rejects 
         agents: [defineAgent({
             ...definition,
             model: invalidModel,
-            trust: { tools: { missing: { outbound: true } } },
+            trust: { tools: { missing: { guardWhenTainted: true } } },
         })],
     });
 
@@ -171,12 +171,12 @@ it('persists untrusted result taint and denies subsequent outbound effects', asy
         tools: {
             read: defineTool({
                 inputSchema: z.object({}),
-                trust: { untrustedResult: true },
+                trust: { taint: true },
                 execute: async () => 'external text',
             }),
             send: defineEffectTool({
                 inputSchema: z.object({}),
-                trust: { outbound: true },
+                trust: { guardWhenTainted: true },
                 execute: async () => {
                     writes++;
 
@@ -227,7 +227,7 @@ it('binds automatic approval to final input and keeps arguments out of channel n
             tools: {
                 send: defineEffectTool({
                     inputSchema: z.object({ text: z.string() }),
-                    trust: { outbound: true },
+                    trust: { guardWhenTainted: true },
                     execute: async () => {
                         writes++;
 
@@ -271,7 +271,7 @@ it.each(['plain', 'effect', 'reconciliation', 'stream'] as const)('taints extern
     };
     const definition = {
         inputSchema: z.object({}),
-        trust: { untrustedResult: true },
+        trust: { taint: true },
         execute: fail,
     };
     let reader;
@@ -305,7 +305,7 @@ it.each(['plain', 'effect', 'reconciliation', 'stream'] as const)('taints extern
                 read: reader,
                 send: defineEffectTool({
                     inputSchema: z.object({}),
-                    trust: { outbound: true },
+                    trust: { guardWhenTainted: true },
                     execute: async () => {
                         writes++;
 
@@ -353,7 +353,7 @@ it('does not expose content or checkpoint it when persisting taint fails', async
             tools: {
                 read: defineTool({
                     inputSchema: z.object({}),
-                    trust: { untrustedResult: true },
+                    trust: { taint: true },
                     execute: async () => 'sensitive external content',
                 }),
             },
@@ -391,7 +391,7 @@ it('rechecks approval after a hook changes the final input on resume', async () 
             tools: {
                 send: defineEffectTool({
                     inputSchema: z.object({ text: z.string() }),
-                    trust: { outbound: true },
+                    trust: { guardWhenTainted: true },
                     execute: async () => {
                         writes++;
 

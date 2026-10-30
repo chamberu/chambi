@@ -60,7 +60,7 @@ describe('web_fetch', () => {
     it('classifies page contents as untrusted and request URLs as outbound', () => {
         const tool = webTools().web_fetch as Tool & { trust: ToolTrust };
 
-        expect(tool.trust).toEqual({ untrustedResult: true, outbound: true });
+        expect(tool.trust).toEqual({ taint: true, guardWhenTainted: true });
     });
 
     it('returns a page as markdown with its title', async () => {

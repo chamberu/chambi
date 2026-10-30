@@ -39,7 +39,7 @@ export type ToolCallFrame = {
     /** Automatic bound approvals never consume ordinary approve() ordinals. */
     boundApprovals?: number;
     /** The final-input classification captured before the tool can mutate its input. */
-    untrustedResult?: boolean;
+    taint?: boolean;
     /** Where approve() reads the recorded decisions. */
     effects: IEffectRepository;
     /** Set by the approve() that suspended the call; the wrapper answers it with a placeholder. */

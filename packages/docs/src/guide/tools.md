@@ -8,12 +8,12 @@ chamvi tools are AI SDK tools. Build them with `tool()` from `ai`, or with `defi
 
 ```ts
 trust: {
-    untrustedResult: true,
-    outbound: async (input, ctx) => input.destination !== ctx.run.trigger.address,
+    taint: true,
+    guardWhenTainted: async (input, ctx) => input.destination !== ctx.run.trigger.address,
 }
 ```
 
-Each flag accepts a boolean or `(input, ctx) => boolean | Promise<boolean>`. `untrustedResult` marks content returned by an external reader; `outbound` marks an operation that can send content to another destination. The engine evaluates predicates against the final input after `beforeToolExecution` and input validation. An effect tool is not automatically outbound, and a third-party tool is **trusted by default** until classified.
+Each flag accepts a boolean or `(input, ctx) => boolean | Promise<boolean>`. `taint` marks the run before a tool result or execution error is exposed to the model; `guardWhenTainted` requires approval or denies execution when the run is already tainted. The engine evaluates predicates against the final input after `beforeToolExecution` and input validation. An effect tool is not automatically guarded, and a third-party tool is **trusted by default** until classified.
 
 Classify third-party tools or override a tool's flags by its name in the agent's tool set:
 
@@ -21,15 +21,15 @@ Classify third-party tools or override a tool's flags by its name in the agent's
 trust: {
     onTainted: 'approve', // default; use 'deny' to reject outbound calls
     tools: {
-        external_search: { untrustedResult: true },
-        send_report: { outbound: true },
+        external_search: { taint: true },
+        send_report: { guardWhenTainted: true },
     },
 }
 ```
 
-Agent overrides accept **booleans only**, including `false` to replace a tool's classification. `IChannel.untrusted: true` opts an input channel into the same boundary; GitHub and the generic webhook channel opt in. The first exposure is persisted as optional `Run.taint: { at: Date, source: string }` before an untrusted result reaches the model. It survives approval replay and recovery, propagates to handoff children, and is conservatively set when conversation messages or notes are recalled. Failed taint persistence fails execution rather than returning unrecorded content.
+Agent overrides accept **booleans only**, including `false` to replace a tool's classification. `IChannel.untrusted: true` opts an input channel into the same boundary; GitHub and the generic webhook channel opt in. The first exposure is persisted as optional `Run.taint: { at: Date, source: string }` before a tainted result or execution error reaches the model. It survives approval replay and recovery, propagates to handoff children, and is conservatively set when conversation messages or notes are recalled. Failed taint persistence fails execution rather than returning unrecorded content.
 
-Once tainted, an outbound call requires a durable approval by default, or becomes a `ToolDeniedError` with `onTainted: 'deny'`. The check runs before effect lookup/execution. Decisions bind the final arguments, so changed arguments need another approval. Full arguments stay in the private inbox/API; source-channel notifications contain only a generic review notice. See [Automatic outbound gates](/guide/approvals#automatic-outbound-gates).
+Once tainted, a call classified with `guardWhenTainted` requires durable approval by default, or becomes a `ToolDeniedError` with `onTainted: 'deny'`. The check runs before effect lookup or execution. Decisions bind the final arguments, so changed arguments need another approval. Full arguments stay in the private inbox/API; source-channel notifications contain only a generic review notice. See [Automatic outbound gates](/guide/approvals#automatic-outbound-gates).
 
 Channel sends to the run's original source destination or a configured `defaultAddress` are exempt. This fixes the **destination**, not the content: it does not sanitize a message or prevent sensitive data from being sent there.
 
@@ -79,7 +79,7 @@ A recovered run repeats the step that was in progress when the process died. A p
 
 <<< @/snippets/tool-web.ts#agent
 
-Everything the tool returns is written by strangers, and a page can carry instructions aimed at the model. `web_fetch` declares `trust.untrustedResult: true`, so its results taint the run. Say so in the instructions too, and classify outbound tools or keep side effects behind [approvals](/guide/approvals) when an agent reads the web.
+Everything the tool returns is written by strangers, and a page can carry instructions aimed at the model. `web_fetch` declares `trust.taint: true`, so its results and execution errors taint the run. Say so in the instructions too, and classify outbound tools or keep side effects behind [approvals](/guide/approvals) when an agent reads the web.
 
 ## Restricting tools per invoker
 

@@ -20,8 +20,8 @@ import { toolContext } from '../../utils/context.ts';
 import { mockModel } from '../../utils/model.ts';
 import { createFakeProvider } from '../../utils/provider.ts';
 
-async function untrustedResult(tools: ToolSet, name: string, input: unknown): Promise<boolean | undefined> {
-    const { untrustedResult: classify } = (tools[name] as Tool & { trust: ToolTrust }).trust;
+async function taint(tools: ToolSet, name: string, input: unknown): Promise<boolean | undefined> {
+    const { taint: classify } = (tools[name] as Tool & { trust: ToolTrust }).trust;
 
     return typeof classify === 'function' ? classify(input, toolContext('r1')) : classify;
 }
@@ -34,13 +34,13 @@ describe('workspace tool trust classification', () => {
         const { workspace: empty } = await manager.acquire('r1', {});
 
         try {
-            expect(await untrustedResult(tools, 'create_workspace', { repo: 'octo/demo' })).toBe(true);
-            expect(await untrustedResult(tools, 'create_workspace', {})).toBe(false);
-            expect(await untrustedResult(tools, 'read_repository_instructions', { workspace: repo.id })).toBe(true);
-            expect(await untrustedResult(tools, 'read_repository_instructions', { workspace: empty.id })).toBe(false);
-            expect(await untrustedResult(tools, 'git_fetch', {})).toBe(true);
-            expect(await untrustedResult(tools, 'git_pull', {})).toBe(true);
-            expect((tools.git_push as Tool & { trust: ToolTrust }).trust).toEqual({ outbound: true });
+            expect(await taint(tools, 'create_workspace', { repo: 'octo/demo' })).toBe(true);
+            expect(await taint(tools, 'create_workspace', {})).toBe(false);
+            expect(await taint(tools, 'read_repository_instructions', { workspace: repo.id })).toBe(true);
+            expect(await taint(tools, 'read_repository_instructions', { workspace: empty.id })).toBe(false);
+            expect(await taint(tools, 'git_fetch', {})).toBe(true);
+            expect(await taint(tools, 'git_pull', {})).toBe(true);
+            expect((tools.git_push as Tool & { trust: ToolTrust }).trust).toEqual({ guardWhenTainted: true });
         } finally {
             await manager.release('r1');
         }
@@ -103,7 +103,7 @@ describe('workspace tool trust classification', () => {
                     }),
                     send: defineTool({
                         inputSchema: z.object({}),
-                        trust: { outbound: true },
+                        trust: { guardWhenTainted: true },
                         execute: async () => {
                             writes++;
 
@@ -190,7 +190,7 @@ describe('workspace tool trust classification', () => {
                         ...manager.tools(),
                         read: defineTool({
                             inputSchema: z.object({}),
-                            trust: { untrustedResult: true },
+                            trust: { taint: true },
                             execute: async () => 'untrusted instructions',
                         }),
                     },
@@ -293,7 +293,7 @@ describe('workspace tool trust classification', () => {
         const manager = createWorkspaceManager({ provider: createFakeProvider(), repositoryInstructions: false });
         const tools = manager.tools();
 
-        expect(await untrustedResult(tools, 'create_workspace', { repo: 'octo/demo' })).toBe(false);
+        expect(await taint(tools, 'create_workspace', { repo: 'octo/demo' })).toBe(false);
         expect(tools.read_repository_instructions).toBeUndefined();
     });
 });

@@ -32,7 +32,7 @@ describe('GitHub trust classification', () => {
         expect(channel.untrusted).toBe(true);
 
         for (const tool of Object.values(gh.readTools())) {
-            expect((tool as Tool & { trust: ToolTrust }).trust).toEqual({ untrustedResult: true });
+            expect((tool as Tool & { trust: ToolTrust }).trust).toEqual({ taint: true });
         }
     });
 
@@ -40,20 +40,20 @@ describe('GitHub trust classification', () => {
         const { trust } = setup();
 
         for (const name of ['github_create_issue', 'github_create_pull_request', 'github_merge_pull_request']) {
-            expect(trust(name)).toEqual({ outbound: true });
+            expect(trust(name)).toEqual({ guardWhenTainted: true });
         }
 
-        expect(trust('github_add_labels').outbound).toBeTypeOf('function');
-        expect(trust('github_close_issue')).toEqual({ outbound: false });
+        expect(trust('github_add_labels').guardWhenTainted).toBeTypeOf('function');
+        expect(trust('github_close_issue')).toEqual({ guardWhenTainted: false });
     });
 
     it('exempts only a comment on the same canonical issue of this app’s channel', async () => {
         const { trust } = setup();
-        const { outbound } = trust('github_create_comment');
+        const { guardWhenTainted } = trust('github_create_comment');
 
-        expect(outbound).toBeTypeOf('function');
+        expect(guardWhenTainted).toBeTypeOf('function');
 
-        if (typeof outbound !== 'function') {
+        if (typeof guardWhenTainted !== 'function') {
             throw new TypeError('expected a comment trust classifier');
         }
 
@@ -61,37 +61,37 @@ describe('GitHub trust classification', () => {
 
         ctx.run.trigger.address = 'Octo/Demo#5';
 
-        expect(await outbound({
+        expect(await guardWhenTainted({
             repo: 'octo/demo',
             number: 5,
             body: 'reply',
         }, ctx)).toBe(false);
-        expect(await outbound({
+        expect(await guardWhenTainted({
             repo: 'octo/demo',
             number: 6,
             body: 'elsewhere',
         }, ctx)).toBe(true);
-        expect(await outbound({
+        expect(await guardWhenTainted({
             repo: 'other/demo',
             number: 5,
             body: 'elsewhere',
         }, ctx)).toBe(true);
 
         ctx.run.trigger.channel = 'webhook';
-        expect(await outbound({
+        expect(await guardWhenTainted({
             repo: 'octo/demo',
             number: 5,
             body: 'spoofed address',
         }, ctx)).toBe(true);
         ctx.run.trigger.channel = 'project-github';
         delete ctx.run.trigger.address;
-        expect(await outbound({
+        expect(await guardWhenTainted({
             repo: 'octo/demo',
             number: 5,
             body: 'no source',
         }, ctx)).toBe(true);
         ctx.run.trigger.address = 'https://github.com/octo/demo/issues/5';
-        expect(await outbound({
+        expect(await guardWhenTainted({
             repo: 'octo/demo',
             number: 5,
             body: 'not canonical',

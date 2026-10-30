@@ -107,7 +107,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
     return {
         github_add_labels: defineEffectTool<LabelsInput, GithubIssueLabels>({
             trust: {
-                outbound: async (input, ctx) => {
+                guardWhenTainted: async (input, ctx) => {
                     const { owner, repo } = parseRepo(input.repo.toLowerCase());
                     const labels = requireLabels(input.labels);
                     let repositories = repositoryLabels.get(ctx);
@@ -169,7 +169,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
 
         github_create_comment: defineEffectTool<CommentInput, GithubComment>({
             trust: {
-                outbound: (input, ctx) => {
+                guardWhenTainted: (input, ctx) => {
                     const { channel, address } = ctx.run.trigger;
                     const source = parseAddress(address);
                     const { owner, repo } = parseRepo(input.repo);
@@ -242,7 +242,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
         }),
 
         github_close_issue: defineEffectTool<CloseInput, GithubClosedIssue>({
-            trust: { outbound: false },
+            trust: { guardWhenTainted: false },
             description: 'Close an issue, as completed or not planned.',
             inputSchema: numberSchema<CloseInput>('issue', {
                 reason: {
@@ -297,7 +297,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
         }),
 
         github_create_issue: defineEffectTool<IssueInput, GithubCreatedIssue>({
-            trust: { outbound: true },
+            trust: { guardWhenTainted: true },
             description: 'Open an issue, e.g. a report or a question for the maintainers. Applied at most once per run for the same input.',
             inputSchema: objectSchema<IssueInput>({
                 repo: REPO_PROPERTY,

@@ -58,7 +58,7 @@ export function createWorkspaceTools(manager: IWorkspaceManager, options: { imag
             image?: string
         }, WorkspaceToolResult>({
             trust: {
-                untrustedResult: (input) => options.repositoryInstructions &&
+                taint: (input) => options.repositoryInstructions &&
                     optionalString(inputObject(input).repo, 'repo') !== undefined,
             },
             description: 'Create a disposable workspace for this run, mounted at /workspace: a checkout of a git repository at a ref with its history (a branch tracks origin, the default branch is fetched as origin/<defaultBranch>), or an empty git repository without one. ' +
@@ -106,7 +106,7 @@ export function createWorkspaceTools(manager: IWorkspaceManager, options: { imag
         ...(options.repositoryInstructions && {
             read_repository_instructions: defineTool<{ paths?: string[]; workspace?: string }, RepositoryInstructions>({
                 trust: {
-                    untrustedResult: async (input, ctx) => {
+                    taint: async (input, ctx) => {
                         const body = inputObject(input);
                         const workspace = await manager.get(ctx.run.runId, optionalString(body.workspace, 'workspace'));
 

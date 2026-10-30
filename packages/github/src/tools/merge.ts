@@ -132,7 +132,7 @@ function pullRequestKey(input: CreatePullRequestInput, ctx: ToolContext): string
 export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMethod: GithubMergeMethod }): ToolSet {
     return {
         github_create_pull_request: defineEffectTool<CreatePullRequestInput, GithubCreatedPullRequest>({
-            trust: { outbound: true },
+            trust: { guardWhenTainted: true },
             description: 'Open a pull request from a pushed branch (`branch`, or `owner:branch` for a fork) into `base` (default the repository\'s default branch). ' +
                 'Applied at most once per run for the same input; GitHub refuses a second open pull request for the same head and base.',
             inputSchema: objectSchema<CreatePullRequestInput>({
@@ -215,7 +215,7 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
         }),
 
         github_merge_pull_request: defineEffectTool<MergeInput, GithubMergeResult>({
-            trust: { outbound: true },
+            trust: { guardWhenTainted: true },
             description: 'Merge a pull request at the head commit you checked (`sha`, from github_get_pull_request or github_get_pull_request_checks). ' +
                 'Refused while the head moved, it is a draft or closed, GitHub has not computed its mergeability, it conflicts, is blocked or behind, ' +
                 'a required check is not green or has not reported yet, the required checks cannot be read, no check reported at all, ' +

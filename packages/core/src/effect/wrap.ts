@@ -162,12 +162,12 @@ export function wrapToolsForRun(
             }
         };
         const trust: ToolTrust = { ...(def as { trust?: ToolTrust }).trust, ...options.trust?.tools?.[name] };
-        const classified = trust.untrustedResult || trust.outbound;
-        const matches = async (flag: ToolTrust['outbound'], input: unknown) => (typeof flag === 'function' ? flag(input, ctx) : flag === true);
+        const classified = trust.taint || trust.guardWhenTainted;
+        const matches = async (flag: ToolTrust['guardWhenTainted'], input: unknown) => (typeof flag === 'function' ? flag(input, ctx) : flag === true);
         const untrusted = async () => {
             const frame = currentToolCall();
 
-            if (!frame?.suspended && frame?.untrustedResult) {
+            if (!frame?.suspended && frame?.taint) {
                 await markUntrusted(execution, `tool:${name}`);
             }
         };
@@ -200,9 +200,9 @@ export function wrapToolsForRun(
             const final = next === undefined || next === input ? input : await validateToolInput(name, def.inputSchema, next);
             const frame = currentToolCall()!;
 
-            frame.untrustedResult = await matches(trust.untrustedResult, final);
+            frame.taint = await matches(trust.taint, final);
 
-            if (await matches(trust.outbound, final)) {
+            if (await matches(trust.guardWhenTainted, final)) {
                 await gateOutbound(execution, name, final);
             }
 
@@ -259,7 +259,7 @@ export function wrapToolsForRun(
 
                         const iterable = readIterable(execute.call(def, final, callOptions) as AsyncIterable<unknown>);
 
-                        if (!hooks.afterToolExecution && !trust.untrustedResult) {
+                        if (!hooks.afterToolExecution && !trust.taint) {
                             yield* iterable;
 
                             return;

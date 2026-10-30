@@ -345,7 +345,7 @@ describe('github_propose_change', () => {
 
         expect(plain.writeTools()).not.toHaveProperty('github_propose_change');
         expect(gh.readTools()).not.toHaveProperty('github_propose_change');
-        expect((gh.writeTools().github_propose_change as Tool & { trust: ToolTrust }).trust).toEqual({ outbound: true });
+        expect((gh.writeTools().github_propose_change as Tool & { trust: ToolTrust }).trust).toEqual({ guardWhenTainted: true });
     });
 
     it('is contributed through githubModule write tools', async () => {

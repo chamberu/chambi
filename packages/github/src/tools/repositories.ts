@@ -85,7 +85,7 @@ function toIssueSummary(data: Record<string, unknown>): GithubIssueSummary {
 export function createRepositoryTools(app: IGithubApp): ToolSet {
     return {
         github_list_repositories: defineTool<{ includeArchived?: boolean }, GithubRepositoryList>({
-            trust: { untrustedResult: true },
+            trust: { taint: true },
             description: 'List every repository the GitHub App is installed on, over all of its installations (accounts and organizations), sorted by name.',
             inputSchema: objectSchema({
                 includeArchived: {
@@ -156,7 +156,7 @@ export function createRepositoryTools(app: IGithubApp): ToolSet {
         }),
 
         github_list_issues: defineTool<ListIssuesInput, GithubIssueList>({
-            trust: { untrustedResult: true },
+            trust: { taint: true },
             description: 'List the open issues of a repository (pull requests left out), most recently updated first.',
             inputSchema: objectSchema({
                 repo: REPO_PROPERTY,

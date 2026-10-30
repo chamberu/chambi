@@ -175,7 +175,7 @@ export function grepResult(result: ExecResult, limit: number, logPath: string | 
 
 export function grepTool(workspaces: CodingWorkspaces): Tool<GrepInput, GrepResult> {
     return defineTool<GrepInput, GrepResult>({
-        trust: { untrustedResult: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
+        trust: { taint: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
         description: 'Search the text files of the workspace for a regular expression: ripgrep syntax when the image has ripgrep, else ' +
             'POSIX extended (git grep -E, grep -E); the result names the engine. Tracked, untracked and hidden files, git-ignored ones ' +
             `only with includeIgnored. Returns path, 1-based line and the line text (cut at ${LINE_MAX_CHARS} characters). ` +
@@ -266,7 +266,7 @@ async function listFiles(
 
 export function listFilesTool(workspaces: CodingWorkspaces): Tool<ListFilesInput, ListFilesResult> {
     return defineTool<ListFilesInput, ListFilesResult>({
-        trust: { untrustedResult: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
+        trust: { taint: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
         description: 'List the files of the workspace (tracked and untracked; git-ignored ones only with includeIgnored), sorted, below an optional path.',
         inputSchema: objectSchema<ListFilesInput>({
             path: PATH,
@@ -304,7 +304,7 @@ function requirePattern(value: unknown): string {
 
 export function globTool(workspaces: CodingWorkspaces): Tool<GlobInput, GlobResult> {
     return defineTool<GlobInput, GlobResult>({
-        trust: { untrustedResult: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
+        trust: { taint: (input, ctx) => untrustedWorkspaceResult(workspaces, input, ctx) },
         description: 'Find files of the workspace by a glob pattern relative to path (default the root): * and ? never cross a /, ' +
             '**/ matches any number of directories, e.g. "**/*.ts" or "src/*/index.js". Tracked and untracked files; git-ignored ones only ' +
             'with includeIgnored. Sorted.',

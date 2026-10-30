@@ -10,15 +10,20 @@ import type { ToolChannels } from '../channel/types.ts';
 import type { RunContext } from '../run/types.ts';
 import type { IAgentState, StateSchema } from '../state/types.ts';
 
-/** Operator-authored classifications, evaluated on the final validated input. */
+/** Run-level trust flags, evaluated on final validated input; omitted flags are false. */
 export type ToolTrust<I = any, S extends StateSchema = StateSchema> = {
-    untrustedResult?: boolean | ((input: I, ctx: ToolContext<S>) => boolean | Promise<boolean>);
-    outbound?: boolean | ((input: I, ctx: ToolContext<S>) => boolean | Promise<boolean>);
+    /** Taint the whole run before exposing this call's potentially untrusted result or execution error. */
+    taint?: boolean | ((input: I, ctx: ToolContext<S>) => boolean | Promise<boolean>);
+
+    /** Apply the agent's approval-or-deny policy before execution if the run is already tainted. */
+    guardWhenTainted?: boolean | ((input: I, ctx: ToolContext<S>) => boolean | Promise<boolean>);
 };
 
 export type AgentTrust = {
+    /** Policy for guarded calls in tainted runs; defaults to 'approve'. */
     onTainted?: 'approve' | 'deny';
-    tools?: Record<string, { untrustedResult?: boolean; outbound?: boolean }>;
+    /** Boolean overrides by tool name; false disables the corresponding tool flag. */
+    tools?: Record<string, { taint?: boolean; guardWhenTainted?: boolean }>;
 };
 
 /**
