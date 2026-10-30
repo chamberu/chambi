@@ -236,8 +236,7 @@ async function pullHasEffect(
     target: RepoTarget,
     pull: ProposalPull,
     marker: string,
-    budget: { remaining: number },
-): Promise<boolean> {
+): Promise<{ found: boolean; commits: number }> {
     // GitHub retains PR commits after merge/deletion. Comparing today's base SHA
     // to the head instead can erase the very commits needed for reconciliation.
     const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/pulls/{pull_number}/commits', {
@@ -246,22 +245,25 @@ async function pullHasEffect(
         per_page: 100,
     });
     let inspected = 0;
-    let found = false;
 
     for await (const page of pages) {
         inspected += page.data.length;
-        budget.remaining -= page.data.length;
 
-        // The PR endpoint silently caps results at 250 commits.
-        if (inspected >= MAX_HISTORY_COMMITS || budget.remaining < 0) {
-            throw new ValidationError('Proposal history limit exceeded; manual review is required.');
+        // Positive evidence is sufficient even if the remaining history is capped.
+        const found = page.data.some((commit) => commit.commit.message.includes(marker) &&
+            commit.commit.message.includes(`<!-- chamvi:proposal=${pull.head.ref} -->`));
+
+        if (found) {
+            return { found: true, commits: inspected };
         }
 
-        found ||= page.data.some((commit) => commit.commit.message.includes(marker) &&
-            commit.commit.message.includes(`<!-- chamvi:proposal=${pull.head.ref} -->`));
+        // The PR endpoint silently caps results at 250 commits. Never infer absence there.
+        if (inspected >= MAX_HISTORY_COMMITS) {
+            throw new ValidationError('Proposal history limit exceeded; manual review is required.');
+        }
     }
 
-    return found;
+    return { found: false, commits: inspected };
 }
 
 async function orphanHasEffect(
@@ -347,7 +349,6 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
 
                 return withOctokit(app, ctx, target, async (octokit) => {
                     const pulls = await findPulls(octokit, target, root);
-                    const budget = { remaining: MAX_HISTORY_COMMITS };
 
                     for (const pull of pulls) {
                         if (!pull.body?.includes(`<!-- chamvi:proposal=${pull.head.ref} -->`)) {
@@ -356,7 +357,7 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
 
                         // A later run replaces the body and tip marker, but not commit ancestry.
                         // The PR head SHA also survives merge and deletion of its branch.
-                        if (await pullHasEffect(octokit, target, pull, effectMarker(key), budget)) {
+                        if ((await pullHasEffect(octokit, target, pull, effectMarker(key))).found) {
                             if (pull.state === 'open') {
                                 const base = await headOf(octokit, target, pull.base.ref);
 
@@ -421,13 +422,20 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
                         throw new ValidationError('Existing proposal branch is not proposal-owned.');
                     }
 
+                    if (!pull && !diff.merge_base_commit?.sha) {
+                        throw new ValidationError('Proposal merge base is unavailable; manual review is required.');
+                    }
+
                     // Finish publication after a lost checkpoint without overwriting a later run.
-                    const applied = pull ?
-                        await pullHasEffect(octokit, target, pull, effect, { remaining: MAX_HISTORY_COMMITS }) :
-                        await orphanHasEffect(octokit, target, head, baseSha, effect, branch);
+                    const history = pull ? await pullHasEffect(octokit, target, pull, effect) : undefined;
+                    const applied = history?.found ?? await orphanHasEffect(octokit, target, head, diff.merge_base_commit.sha, effect, branch);
                     const file = await readFile(octokit, target, input.path, head);
 
                     if (!applied) {
+                        if (history && history.commits >= MAX_HISTORY_COMMITS - 1) {
+                            throw new ValidationError('Proposal PR is at its history capacity; close or merge it before proposing another update.');
+                        }
+
                         if (!pull && diff.status === 'identical' && file.content === input.content) {
                             throw new ValidationError('Proposal content already matches the base; no pull request is needed.');
                         }

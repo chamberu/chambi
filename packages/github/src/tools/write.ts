@@ -107,6 +107,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
     return {
         github_add_labels: defineEffectTool<LabelsInput, GithubIssueLabels>({
             trust: {
+                taint: true,
                 guardWhenTainted: async (input, ctx) => {
                     const { owner, repo } = parseRepo(input.repo.toLowerCase());
                     const labels = requireLabels(input.labels);

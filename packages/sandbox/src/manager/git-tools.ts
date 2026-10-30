@@ -305,7 +305,7 @@ export function createGitTools(context: GitToolsContext): ToolSet {
             setUpstream?: boolean;
             workspace?: string;
         }, GitPushResult>({
-            trust: { guardWhenTainted: true },
+            trust: { taint: true, guardWhenTainted: true },
             description: 'Push a branch (default: the current one) to the workspace\'s repository with the run\'s git credentials. ' +
                 'A rejected push (the remote moved) comes back with pushed: false; fetch and merge or rebase, then push again. ' +
                 'The repository\'s default branch is refused unless the operator allows it.',

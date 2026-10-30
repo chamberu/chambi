@@ -43,7 +43,7 @@ describe('GitHub trust classification', () => {
             expect(trust(name)).toEqual({ guardWhenTainted: true });
         }
 
-        expect(trust('github_add_labels').guardWhenTainted).toBeTypeOf('function');
+        expect(trust('github_add_labels')).toEqual({ taint: true, guardWhenTainted: expect.any(Function) });
         expect(trust('github_close_issue')).toEqual({ guardWhenTainted: false });
     });
 

@@ -170,7 +170,9 @@ function setup(policy = POLICY) {
         const changed = new Set([...before.keys(), ...after.keys()]);
         const files = Array.from(changed).filter((path) => JSON.stringify(before.get(path)) !== JSON.stringify(after.get(path)))
             .map((filename) => ({ filename }));
+        const baseAncestors = new Set(ancestors(base!).map((commit) => commit.sha));
         const result = {
+            merge_base_commit: ancestors(head!).find((commit) => baseAncestors.has(commit.sha)),
             files: diffFiles ?? files,
             ahead_by: head === base ? 0 : ancestors(head!).length - ancestors(base!).length,
             status: head === base ? 'identical' : 'ahead',
@@ -573,6 +575,26 @@ describe('github_propose_change', () => {
         expect(fixture.pulls).toHaveLength(2);
     });
 
+    it('recovers an unpublished branch after the base advances independently', async () => {
+        const fixture = setup();
+
+        fixture.failNextCreate();
+        await expect(replay(fixture, 'r1')).rejects.toThrow();
+        fixture.history.set('advanced-base', {
+            ...fixture.history.get('base-sha')!,
+            message: 'Independent base commit',
+            parents: ['base-sha'],
+        });
+        fixture.refs.set('heads/main', 'advanced-base');
+
+        const recovered = await replay(fixture, 'r2', { ...INPUT, content: 'later' });
+
+        expect(fixture.current()).toMatchObject({ commits: 2, posts: 2 });
+        expect(fixture.branchFiles().get(INPUT.path)?.content).toBe('later');
+        expect(await replay(fixture, 'r1')).toMatchObject({ number: recovered.number });
+        expect(fixture.current()).toMatchObject({ commits: 2, posts: 2 });
+    });
+
     it('does not publish an orphaned marker commit after its content reaches the base', async () => {
         const fixture = setup();
 
@@ -693,13 +715,110 @@ describe('github_propose_change', () => {
 
         const before = fixture.fake.requests.length;
 
-        await expect(replay(fixture, 'r1')).rejects.toThrow(/history limit/);
+        await expect(replay(fixture, 'new-run')).rejects.toThrow(/history limit/);
         expect(fixture.fake.requests.slice(before).filter((request) => request.path.endsWith('/pulls/12/commits'))).toHaveLength(3);
         expect(fixture.current()).toMatchObject({
             commits: 1,
             posts: 1,
             patches: 0,
         });
+    });
+
+    it('returns a marker match without reading later history pages', async () => {
+        const fixture = setup();
+
+        await fixture.call();
+
+        const branch = fixture.current().pull!.head.ref;
+        let parent = 'commit-1';
+
+        for (let index = 0; index < 250; index += 1) {
+            const sha = `owned-${index}`;
+
+            fixture.history.set(sha, {
+                tree: fixture.history.get(parent)!.tree,
+                message: `Other run\n<!-- chamvi:proposal=${branch} -->`,
+                parents: [parent],
+            });
+            parent = sha;
+        }
+
+        fixture.refs.set(`heads/${branch}`, parent);
+
+        const before = fixture.fake.requests.length;
+
+        expect(await replay(fixture, 'r1')).toMatchObject({ number: 12 });
+        expect(fixture.fake.requests.slice(before).filter((request) => request.path.endsWith('/pulls/12/commits'))).toHaveLength(1);
+        expect(fixture.current()).toMatchObject({
+            commits: 1,
+            posts: 1,
+            patches: 0,
+        });
+    });
+
+    it('keeps historical generations independent instead of sharing a lifetime budget', async () => {
+        const fixture = setup();
+
+        for (let index = 0; index < 3; index += 1) {
+            await replay(fixture, `generation-${index}`);
+
+            const branch = fixture.current().pull!.head.ref;
+            let parent = fixture.refs.get(`heads/${branch}`)!;
+
+            for (let commit = 0; commit < 100; commit += 1) {
+                const sha = `generation-${index}-${commit}`;
+
+                fixture.history.set(sha, {
+                    tree: fixture.history.get(parent)!.tree,
+                    message: `Other run\n<!-- chamvi:proposal=${branch} -->`,
+                    parents: [parent],
+                });
+                parent = sha;
+            }
+
+            fixture.refs.set(`heads/${branch}`, parent);
+            Object.assign(fixture.current().pull!.head, { sha: parent });
+            Object.assign(fixture.current().pull!, { state: 'closed' });
+            fixture.refs.delete(`heads/${branch}`);
+        }
+
+        expect(await replay(fixture, 'new-generation')).toMatchObject({ number: 15 });
+        expect(await replay(fixture, 'generation-0')).toMatchObject({ number: 12 });
+        expect(fixture.current()).toMatchObject({ commits: 4, posts: 4 });
+    });
+
+    it('refuses another commit at capacity but permits replay and a fresh generation after closure', async () => {
+        const fixture = setup();
+
+        await fixture.call();
+
+        const branch = fixture.current().pull!.head.ref;
+        let parent = 'commit-1';
+
+        for (let index = 0; index < 248; index += 1) {
+            const sha = `owned-${index}`;
+
+            fixture.history.set(sha, {
+                tree: fixture.history.get(parent)!.tree,
+                message: `Other run\n<!-- chamvi:proposal=${branch} -->`,
+                parents: [parent],
+            });
+            parent = sha;
+        }
+
+        fixture.refs.set(`heads/${branch}`, parent);
+        await expect(replay(fixture, 'r2')).rejects.toThrow(/close or merge/);
+        expect(await replay(fixture, 'r1')).toMatchObject({ number: 12 });
+        expect(fixture.current()).toMatchObject({
+            commits: 1,
+            posts: 1,
+            patches: 0,
+        });
+        Object.assign(fixture.current().pull!.head, { sha: parent });
+        Object.assign(fixture.current().pull!, { state: 'closed' });
+        fixture.refs.delete(`heads/${branch}`);
+        expect(await replay(fixture, 'r2')).toMatchObject({ number: 13 });
+        expect(fixture.current()).toMatchObject({ commits: 2, posts: 2 });
     });
 
     it('retains historical effects behind an unmarked commit on a PR', async () => {

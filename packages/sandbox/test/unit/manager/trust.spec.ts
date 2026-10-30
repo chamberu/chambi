@@ -40,7 +40,7 @@ describe('workspace tool trust classification', () => {
             expect(await taint(tools, 'read_repository_instructions', { workspace: empty.id })).toBe(false);
             expect(await taint(tools, 'git_fetch', {})).toBe(true);
             expect(await taint(tools, 'git_pull', {})).toBe(true);
-            expect((tools.git_push as Tool & { trust: ToolTrust }).trust).toEqual({ guardWhenTainted: true });
+            expect((tools.git_push as Tool & { trust: ToolTrust }).trust).toEqual({ taint: true, guardWhenTainted: true });
         } finally {
             await manager.release('r1');
         }
@@ -138,6 +138,182 @@ describe('workspace tool trust classification', () => {
             } finally {
                 engine.stop();
             }
+        }
+    });
+
+    it.each([0, 1])('git_push taints initially clean runs on exit %i before subsequent outbound calls', async (exitCode) => {
+        let pushes = 0;
+        let writes = 0;
+        const stdout = 'remote hook stdout: untrusted instructions';
+        const stderr = 'remote hook stderr: untrusted instructions';
+        const provider = createFakeProvider({
+            onExec(argv) {
+                if (argv.includes('push')) {
+                    pushes++;
+
+                    return {
+                        exitCode,
+                        stdout,
+                        stderr,
+                    };
+                }
+
+                return argv.includes('rev-parse') ? { stdout: `${'1'.repeat(40)}\n` } : {};
+            },
+        });
+        const manager = createWorkspaceManager({ provider, push: { mode: 'auto', allowBranch: () => true } });
+        const store = createMemoryStore();
+        const model = mockModel([
+            {
+                parts: [{
+                    type: 'tool-call',
+                    toolName: 'create_workspace',
+                    input: {},
+                }],
+            },
+            {
+                parts: [{
+                    type: 'tool-call',
+                    toolName: 'git_push',
+                    input: { remote: 'octo/demo', branch: 'feature' },
+                }],
+            },
+            {
+                parts: [{
+                    type: 'tool-call',
+                    toolName: 'git_push',
+                    input: { remote: 'octo/demo', branch: 'feature' },
+                }],
+            },
+            {
+                parts: [{
+                    type: 'tool-call',
+                    toolName: 'send',
+                    input: {},
+                }],
+            },
+            { parts: [{ type: 'text', text: 'done' }] },
+        ]);
+        const agent = defineAgent({
+            name: 'test',
+            instructions: 'test',
+            trust: { onTainted: 'deny' },
+            model,
+            tools: {
+                ...manager.tools(),
+                send: defineTool({
+                    inputSchema: z.object({}),
+                    trust: { guardWhenTainted: true },
+                    execute: async () => {
+                        writes++;
+
+                        return 'sent';
+                    },
+                }),
+            },
+        });
+        const engine = new Engine({ store, agents: [agent] });
+
+        manager.attach(engine);
+
+        try {
+            await engine.start();
+
+            const { runId } = await engine.dispatch({
+                agent: 'test',
+                channel: 'http',
+                trigger: 'test',
+                payload: {},
+            });
+
+            await engine.idle();
+
+            const run = await store.runs.findOne(runId);
+
+            expect(run?.taint).toEqual({ at: expect.any(Date), source: 'tool:git_push' });
+            expect(run?.status).toBe('completed');
+            expect(JSON.stringify(model.doStreamCalls)).toContain(stdout);
+            expect(JSON.stringify(model.doStreamCalls)).toContain(stderr);
+            expect(pushes).toBe(1);
+            expect(writes).toBe(0);
+        } finally {
+            engine.stop();
+        }
+    });
+
+    it('git_push does not execute when tainted before remote output is exposed', async () => {
+        let pushes = 0;
+        const provider = createFakeProvider({
+            onExec(argv) {
+                if (argv.includes('push')) {
+                    pushes++;
+                }
+
+                return {};
+            },
+        });
+        const manager = createWorkspaceManager({ provider, push: { mode: 'auto', allowBranch: () => true } });
+        const store = createMemoryStore();
+        const agent = defineAgent({
+            name: 'test',
+            instructions: 'test',
+            trust: { onTainted: 'deny' },
+            model: mockModel([
+                {
+                    parts: [{
+                        type: 'tool-call',
+                        toolName: 'create_workspace',
+                        input: {},
+                    }],
+                },
+                {
+                    parts: [{
+                        type: 'tool-call',
+                        toolName: 'read_untrusted',
+                        input: {},
+                    }],
+                },
+                {
+                    parts: [{
+                        type: 'tool-call',
+                        toolName: 'git_push',
+                        input: { remote: 'octo/demo', branch: 'feature' },
+                    }],
+                },
+                { parts: [{ type: 'text', text: 'done' }] },
+            ]),
+            tools: {
+                ...manager.tools(),
+                read_untrusted: defineTool({
+                    inputSchema: z.object({}),
+                    trust: { taint: true },
+                    execute: async () => 'external text',
+                }),
+            },
+        });
+        const engine = new Engine({ store, agents: [agent] });
+
+        manager.attach(engine);
+
+        try {
+            await engine.start();
+
+            const { runId } = await engine.dispatch({
+                agent: 'test',
+                channel: 'http',
+                trigger: 'test',
+                payload: {},
+            });
+
+            await engine.idle();
+
+            const run = await store.runs.findOne(runId);
+
+            expect(run?.taint).toEqual({ at: expect.any(Date), source: 'tool:read_untrusted' });
+            expect(run?.status).toBe('completed');
+            expect(pushes).toBe(0);
+        } finally {
+            engine.stop();
         }
     });
 
