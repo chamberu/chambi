@@ -114,6 +114,7 @@ function firstLine(message: unknown): string {
 export function createReadTools(app: IGithubApp): ToolSet {
     return {
         github_get_issue: defineTool<NumberInput, GithubIssue>({
+            trust: { untrustedResult: true },
             description: 'Read one issue (or pull request) of a repository: title, body, state, labels, author.',
             inputSchema: numberSchema('issue'),
             execute: async (input, { context }) => {
@@ -144,6 +145,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
         }),
 
         github_search_issues: defineTool<{ query: string; limit?: number }, GithubIssueSearch>({
+            trust: { untrustedResult: true },
             description: 'Search issues and pull requests with GitHub\'s search syntax, e.g. "repo:owner/name is:issue is:open crash".',
             inputSchema: objectSchema({
                 query: {
@@ -186,6 +188,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
         }),
 
         github_list_labels: defineTool<RepoInput, GithubLabel[]>({
+            trust: { untrustedResult: true },
             description: 'List every label of a repository with its description.',
             inputSchema: repoSchema(),
             execute: async (input, { context }) => {
@@ -204,6 +207,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
         }),
 
         github_get_pull_request: defineTool<NumberInput, GithubPullRequest>({
+            trust: { untrustedResult: true },
             description: 'Read one pull request: title, body, state, branches, head sha and repository (fork or not), author and its type, labels, mergeability, number of changed files.',
             inputSchema: numberSchema('pull request'),
             execute: async (input, { context }) => {
@@ -223,6 +227,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
         }),
 
         github_get_file: defineTool<RepoInput & { path: string; ref?: string }, GithubFile | GithubDirectory>({
+            trust: { untrustedResult: true },
             description: `Read a file (UTF-8 text, cut after ${FILE_MAX_CHARS} characters) or list a directory of a repository.`,
             inputSchema: objectSchema({
                 repo: REPO_PROPERTY,
@@ -267,6 +272,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
         }),
 
         github_get_latest_release: defineTool<RepoInput, GithubRelease>({
+            trust: { untrustedResult: true },
             description: 'Read the latest published release of a repository; { none: true } when it has none.',
             inputSchema: repoSchema(),
             execute: async (input, { context }) => {
@@ -300,6 +306,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
             tagPrefix?: string;
             exhaustive?: boolean;
         }, GithubReleaseList>({
+            trust: { untrustedResult: true },
             description: 'List the published releases of a repository between two versions (after from, up to and including to), oldest first, ' +
                 `with their notes (each cut at ${RELEASE_BODY_MAX_CHARS} characters, at most ${RELEASES_MAX} releases). ` +
                 'Tags v1.2.3 and 1.2.3 both match; tagPrefix selects one package of a monorepo (e.g. "@scope/pkg@"). ' +
@@ -450,6 +457,7 @@ export function createReadTools(app: IGithubApp): ToolSet {
         }),
 
         github_compare: defineTool<RepoInput & { base: string; head: string }, GithubComparison>({
+            trust: { untrustedResult: true },
             description: 'Compare two branches, tags or commits of a repository: the commits from base to head (first lines, ' +
                 `at most ${COMPARE_COMMITS_MAX}) and the changed files (at most ${COMPARE_FILES_MAX}). ` +
                 'Useful for a package without release notes; read a file at a ref with github_get_file.',

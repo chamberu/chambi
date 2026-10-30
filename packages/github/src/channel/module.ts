@@ -32,6 +32,7 @@ export function githubChannel(options: GithubChannelOptions): GithubChannel {
 
     return {
         name,
+        untrusted: true,
         in: (input, ctx) => receiveDelivery(input, ctx, resolved),
         out: createCommentSender(resolved),
         on: (events, subscriptionOptions) => createGithubSubscription(name, events, subscriptionOptions),

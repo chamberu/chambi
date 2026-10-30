@@ -21,6 +21,7 @@ import {
 } from './helpers.ts';
 import { resolveMergeMethod, toolError } from '../tools/helpers.ts';
 import { createPullRequestWriteTools } from '../tools/merge.ts';
+import { createProposalTools, normalizeProposals } from '../tools/proposals.ts';
 import { createPullRequestTools } from '../tools/pulls.ts';
 import { createReadTools } from '../tools/read.ts';
 import { createRepositoryTools } from '../tools/repositories.ts';
@@ -52,6 +53,7 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
     const clock = options.clock ?? systemClock;
     const baseUrl = normalizeBaseUrl(options.baseUrl);
     const request = options.fetch ? { fetch: options.fetch } : {};
+    const proposals = normalizeProposals(options.proposals);
 
     const tokens = createInstallationTokens({
         appId,
@@ -210,7 +212,11 @@ export function createGithubApp(options: GithubAppOptions): IGithubApp {
         writeTools(toolsOptions?: GithubWriteToolsOptions): ToolSet {
             const mergeMethod = resolveMergeMethod(toolsOptions?.mergeMethod);
 
-            return { ...createWriteTools(app), ...createPullRequestWriteTools(app, { mergeMethod }) };
+            return {
+                ...createWriteTools(app),
+                ...createPullRequestWriteTools(app, { mergeMethod }),
+                ...(proposals && createProposalTools(app, proposals)),
+            };
         },
     };
 

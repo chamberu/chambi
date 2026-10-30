@@ -126,6 +126,7 @@ function permissionOf(value: unknown): 'read' | 'write' | null {
 export function createPullRequestTools(app: IGithubApp): ToolSet {
     return {
         github_list_pull_requests: defineTool<ListPullRequestsInput, GithubPullRequestList>({
+            trust: { untrustedResult: true },
             description: 'List the open pull requests of a repository with author and its type, head sha and repository (fork or not) and labels.',
             inputSchema: objectSchema({
                 repo: REPO_PROPERTY,
@@ -179,6 +180,7 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
         }),
 
         github_get_pull_request_checks: defineTool<NumberInput, GithubPullRequestChecks>({
+            trust: { untrustedResult: true },
             description: 'Read the checks of a pull request\'s head commit (check runs and commit statuses) with the required ones of the base branch. ' +
                 'state is none while nothing reported yet and pending while a check runs or a required check has not reported; only success means green.',
             inputSchema: numberSchema('pull request'),
@@ -204,6 +206,7 @@ export function createPullRequestTools(app: IGithubApp): ToolSet {
         }),
 
         github_get_push_target: defineTool<NumberInput, GithubPushTarget>({
+            trust: { untrustedResult: true },
             description: 'Whether the GitHub App can push fix commits onto a pull request\'s head branch: the head repository, ' +
                 'the App\'s installation and permissions there. A fork the App is not installed on is never pushable; open a pull request of your own instead.',
             inputSchema: numberSchema('pull request'),

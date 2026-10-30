@@ -14,6 +14,7 @@ export type {
     GithubMergeMethod,
     GithubOctokit,
     GithubPermissions,
+    GithubProposalsOptions,
     GithubRepositoryToken,
     GithubWriteToolsOptions,
     IGithubApp,

@@ -103,12 +103,26 @@ describe('webhook to comment', () => {
         await engine.start();
         await engine.idle();
 
-        const run = await store.runs.findOne(runs[0]!.runId);
+        const waiting = await store.runs.findOne(runs[0]!.runId);
+
+        expect(waiting?.status).toBe('waiting');
+        expect(waiting?.waiting?.toolName).toBe('github_add_labels');
+        expect(fake.issues.get('octo/demo#5')?.labels).toEqual([]);
+
+        const isToolComment = (comment: Record<string, unknown>) => String(comment.body).includes(':github_create_comment:');
+
+        // Same-source replies still run; the other comment is the labels approval request.
+        expect((fake.comments.get('octo/demo#5') ?? []).filter(isToolComment)).toHaveLength(1);
+
+        await engine.approve(waiting!.id, { approvalId: waiting!.waiting!.approvalId, approved: true });
+        await engine.idle();
+
+        const run = await store.runs.findOne(waiting!.id);
 
         expect(run?.status).toBe('completed');
         expect(run?.output).toBe('Triaged.');
 
-        const comments = fake.comments.get('octo/demo#5') ?? [];
+        const comments = (fake.comments.get('octo/demo#5') ?? []).filter(isToolComment);
 
         expect(comments).toHaveLength(1);
         expect(comments[0]?.body).toContain(`<!-- chamvi:effect=${run!.id}:github_create_comment:octo/demo#5:1 -->`);
@@ -122,7 +136,7 @@ describe('webhook to comment', () => {
 
         expect(await redelivered.json()).toMatchObject({ runs: [{ deduplicated: true }] });
         await engine.idle();
-        expect(fake.comments.get('octo/demo#5')).toHaveLength(1);
+        expect((fake.comments.get('octo/demo#5') ?? []).filter(isToolComment)).toHaveLength(1);
         await engine.drain();
     });
 
