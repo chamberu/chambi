@@ -113,6 +113,24 @@ export function addRepoRoutes(fake: FakeGithub, botLogin: string, clock: IClock)
 
         return { status: 201, body: comment };
     });
+    fake.route('PATCH', '/repos/:owner/:repo/issues/comments/:comment_id', ({ params, body }) => {
+        for (const [key, comments] of fake.comments) {
+            if (!key.startsWith(`${params.owner}/${params.repo}#`)) {
+                continue;
+            }
+
+            const comment = comments.find((entry) => entry.id === Number(params.comment_id));
+
+            if (comment) {
+                comment.body = (body as { body: string }).body;
+                comment.updated_at = clock.now().toISOString();
+
+                return { status: 200, body: comment };
+            }
+        }
+
+        return NOT_FOUND;
+    });
     fake.route('POST', '/repos/:owner/:repo/issues/:number/labels', ({ params, body }) => {
         const issue = fake.issues.get(issueKey(params));
 

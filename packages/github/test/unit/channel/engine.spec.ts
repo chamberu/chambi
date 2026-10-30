@@ -58,7 +58,7 @@ function replyAgent(script: MockResponse[]) {
 }
 
 /** Closing an issue waits for the owner, asked on the issue itself. */
-function closeAgent(gh: IGithubApp) {
+function closeAgent(gh: IGithubApp, slot?: string) {
     return [defineAgent({
         name: 'triage',
         model: mockModel([
@@ -83,6 +83,7 @@ function closeAgent(gh: IGithubApp) {
                 const decision = await ctx.channels.findOneOrFail('github').approve({
                     title: 'Close octo/demo#5?',
                     body: 'It duplicates #3.',
+                    ...(slot !== undefined ? { slot } : {}),
                 });
 
                 if (!decision.approved) {
@@ -186,6 +187,43 @@ describe('github channel with the engine', () => {
         expect((await setup.engine.getRun(runId))?.status).toBe('completed');
         expect(setup.fake.requests.filter((r) => r.method === 'PATCH')).toHaveLength(1);
         expect(comments()).toHaveLength(1);
+        expect(setup.errors).toEqual([]);
+    });
+
+    it('refreshes the approval URL in one status comment across durable runs', async () => {
+        const setup = createGithubTestApp({
+            agents: (gh) => closeAgent(gh, 'maintainer'),
+            channel: { approvalUrl: APPROVAL_URL },
+        });
+        const firstId = await start(setup);
+        const first = await setup.engine.getRun(firstId);
+
+        expect(first?.waiting?.notifiedAt).toBeInstanceOf(Date);
+
+        await setup.engine.cancel(firstId);
+        await setup.engine.putAgent(closeAgent(setup.gh, 'maintainer')[0]!);
+
+        const response = await deliver(setup.app, {
+            event: 'issues',
+            body: ISSUES_OPENED,
+            delivery: 'new-assessment',
+        });
+        const { runs } = await response.json() as { runs: Array<{ runId: string }> };
+        const secondId = runs[0]!.runId;
+
+        await setup.engine.idle();
+
+        const second = await setup.engine.getRun(secondId);
+        const comments = setup.fake.comments.get('octo/demo#5') ?? [];
+
+        expect(secondId).not.toBe(firstId);
+        expect(second?.status).toBe('waiting');
+        expect(second?.waiting?.notifiedAt).toBeInstanceOf(Date);
+        expect(comments).toHaveLength(1);
+        expect(comments[0]?.body).toContain(`run=${secondId}&approval=${second!.waiting!.approvalId}&agent=triage`);
+        expect(comments[0]?.body).not.toContain(`run=${firstId}&approval=`);
+        expect(setup.fake.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/comments'))).toHaveLength(1);
+        expect(setup.fake.requests.filter((r) => r.method === 'PATCH' && r.path.includes('/issues/comments/'))).toHaveLength(1);
         expect(setup.errors).toEqual([]);
     });
 

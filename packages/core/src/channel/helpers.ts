@@ -52,6 +52,12 @@ export function assertChannelName(name: unknown): asserts name is string {
     }
 }
 
+function assertSlot(slot: unknown): void {
+    if (slot !== undefined && (typeof slot !== 'string' || slot.trim().length === 0 || slot.includes('\0') || !slot.isWellFormed())) {
+        throw new ValidationError('A channel message slot must be a non-empty, well-formed string without NUL characters.');
+    }
+}
+
 function assertEmitMessage(message: unknown): asserts message is EmitMessage {
     if (!isObject(message) || typeof message.body !== 'string') {
         throw new ValidationError('An emitted message needs a string body.');
@@ -64,6 +70,8 @@ function assertEmitMessage(message: unknown): asserts message is EmitMessage {
     if (message.key !== undefined && (typeof message.key !== 'string' || message.key.length === 0)) {
         throw new ValidationError('An emitted message key must be a non-empty string.');
     }
+
+    assertSlot(message.slot);
 }
 
 /**
@@ -106,6 +114,7 @@ function createChannelHandle(
             agent: run.agent,
             ...(message.title !== undefined ? { title: message.title } : {}),
             body: message.body,
+            ...(message.slot !== undefined ? { slot: message.slot } : {}),
         }, target, { signal: run.signal, trigger: run.trigger }));
 
         if (conversation) {
@@ -161,12 +170,16 @@ function createChannelHandle(
         }
 
         const prefix = `${run.runId}:emit:${name}:`;
+        const explicitKey = message.slot !== undefined ?
+            `slot:${stableHash({ key: message.key, slot: message.slot })}` :
+            `key:${message.key}`;
         const effectKey = message.key !== undefined ?
-            `${prefix}key:${message.key}` :
+            `${prefix}${explicitKey}` :
             `${prefix}${stableHash({
                 address: target,
                 title: message.title,
                 body: message.body,
+                ...(message.slot !== undefined ? { slot: message.slot } : {}),
             })}`;
         const key = message.key ?? effectKey;
         const captured = { ...message };
@@ -212,8 +225,15 @@ function createChannelHandle(
         return conversation ? conversation.capability.track(conversation.run.id, work) : work;
     };
 
-    const approve = async (request: ApprovalRequestInput & { address?: string }): Promise<ApprovalDecision> => {
-        const { address: to, ...rest }: ApprovalRequestInput & { address?: string } = isObject(request) ? request : { title: '' };
+    const approve = async (request: ApprovalRequestInput & { address?: string; slot?: string }): Promise<ApprovalDecision> => {
+        const {
+            address: to,
+            slot,
+            ...rest
+        } = isObject(request) ? request : { title: '' };
+
+        assertSlot(slot);
+
         const target = to ?? fallback;
 
         if (target === undefined) {
@@ -224,7 +244,11 @@ function createChannelHandle(
             throw new ValidationError('The address must be a non-empty string.');
         }
 
-        return requestApproval(rest as ApprovalRequestInput, { channel: name, address: target });
+        return requestApproval(rest as ApprovalRequestInput, {
+            channel: name,
+            address: target,
+            slot,
+        });
     };
 
     return {

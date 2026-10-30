@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { InvalidAgentDefinitionError } from '@chamvi/core';
+import { InvalidAgentDefinitionError, MemoryLockRepository } from '@chamvi/core';
 import { githubChannel } from '@chamvi/github';
 import type { GithubChannelOptions } from '@chamvi/github';
 import { resolveOptions } from '../../../src/channel/helpers.ts';
@@ -36,6 +36,22 @@ describe('githubChannel options', () => {
         expect(resolveOptions({ app: gh }).mentions).toEqual([]);
     });
 
+    it('defaults to independent local memory locks', () => {
+        const defaults = resolveOptions({ app: gh });
+
+        expect(defaults.locks).toBeInstanceOf(MemoryLockRepository);
+        expect(resolveOptions({ app: gh }).locks).not.toBe(defaults.locks);
+    });
+
+    it('uses the supplied lock repository for persistent comments', () => {
+        const locks = new MemoryLockRepository();
+
+        expect(resolveOptions({
+            app: gh,
+            locks,
+        }).locks).toBe(locks);
+    });
+
     it.each<[string, Partial<GithubChannelOptions>]>([
         ['no app', { app: undefined as unknown as GithubChannelOptions['app'] }],
         ['an app without octokit', { app: {} as GithubChannelOptions['app'] }],
@@ -49,6 +65,8 @@ describe('githubChannel options', () => {
         ['a zero timeoutMs', { timeoutMs: 0 }],
         ['a fractional timeoutMs', { timeoutMs: 2.5 }],
         ['a zero bodyLimit', { bodyLimit: 0 }],
+        ['a missing lock acquire', { locks: { release: async () => {} } as unknown as GithubChannelOptions['locks'] }],
+        ['a missing lock release', { locks: { acquire: async () => true } as unknown as GithubChannelOptions['locks'] }],
         ['a non-function onError', { onError: 'log' as unknown as GithubChannelOptions['onError'] }],
         ['a non-function approvalUrl', { approvalUrl: 'https://app.example/ui/approvals' as unknown as GithubChannelOptions['approvalUrl'] }],
     ])('rejects %s', (_label, patch) => {

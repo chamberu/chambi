@@ -74,12 +74,16 @@ function createChannel(name = 'slack', behave?: (sent: Sent) => Promise<void>) {
     return { channel, sent };
 }
 
-const askTool = (channel: string | null) => defineTool({
+const askTool = (channel: string | null, slot?: string) => defineTool({
     inputSchema: z.object({}),
     execute: async (_input, { context }) => {
         const request = { title: 'Close #12?', body: 'stale for 90 days' };
         const decision = channel ?
-            await context.channels.findOneOrFail(channel).approve({ ...request, address: 'C0OPS' }) :
+            await context.channels.findOneOrFail(channel).approve({
+                ...request,
+                address: 'C0OPS',
+                slot,
+            }) :
             await approve(context, request);
 
         return decision.approved;
@@ -98,7 +102,7 @@ const askModel = (): LanguageModel => mockModel([
     { parts: [{ type: 'text', text: 'done' }] },
 ]);
 
-function createEngine(store: ReturnType<typeof createMemoryStore>, clock: ControllableClock, channels: IChannel[], channel: string | null = 'slack') {
+function createEngine(store: ReturnType<typeof createMemoryStore>, clock: ControllableClock, channels: IChannel[], channel: string | null = 'slack', slot?: string) {
     const errors: unknown[] = [];
     const engine = new Engine({
         store,
@@ -106,7 +110,7 @@ function createEngine(store: ReturnType<typeof createMemoryStore>, clock: Contro
             name: 'release',
             instructions: 'You release.',
             model: askModel(),
-            tools: { ask: askTool(channel) },
+            tools: { ask: askTool(channel, slot) },
         })],
         channels,
         clock,
@@ -251,6 +255,38 @@ describe('approval delivery', () => {
             notifiedAt: expect.any(Date),
         });
         expect(second.errors).toEqual([]);
+    });
+
+    it('retains an approval slot through waiting recovery and retries its original target', async () => {
+        const { clock, store } = setup();
+        const slot = ' maintainer-status ';
+        const failing = createChannel('slack', async () => {
+            throw new Error('slack is down');
+        });
+        const { engine: first } = createEngine(store, clock, [failing.channel], 'slack', slot);
+        const runId = await start(first);
+        const before = (await store.runs.findOne(runId))!.waiting!;
+
+        expect(before).toMatchObject({
+            slot,
+            channel: 'slack',
+            address: 'C0OPS',
+        });
+        expect(before.notifiedAt).toBeUndefined();
+        expect(failing.sent[0]?.message).toMatchObject({ slot, kind: 'approval' });
+        await first.stop();
+
+        const recovered = createChannel();
+        const { engine: second } = createEngine(store, clock, [recovered.channel], 'slack', 'different-slot');
+
+        await second.start();
+        await second.tick();
+        expect(recovered.sent).toHaveLength(1);
+        expect(recovered.sent[0]?.message).toEqual(failing.sent[0]?.message);
+        expect(recovered.sent[0]?.address).toBe('C0OPS');
+        expect((await store.runs.findOne(runId))!.waiting).toMatchObject({ slot, notifiedAt: expect.any(Date) });
+        await second.tick();
+        expect(recovered.sent).toHaveLength(1);
     });
 
     it('approve() without a channel sends nothing', async () => {

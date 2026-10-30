@@ -83,5 +83,6 @@ export type ApprovalRequest = {
     /** The channel to deliver the request through; none for the inbox and API only. */
     channel?: string;
     address?: string;
+    slot?: string;
     timeoutMs: number;
 };

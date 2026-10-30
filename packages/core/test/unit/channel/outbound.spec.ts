@@ -302,6 +302,66 @@ describe('channel outbound', () => {
         expect(ctx.slack.calls[0]?.message.key).toBe('deploy-1');
     });
 
+    it.each([undefined, 'fixed'])('keeps append and named slots independent with key %s', async (key) => {
+        const slots = [undefined, 'maintainer-status', ' review-状态-🚀 '];
+        const tools: ToolSet = {
+            notify: emitTool(async (ctx, { body }) => {
+                const handle = ctx.channels.findOneOrFail('slack');
+
+                await Promise.all(slots.flatMap((slot) => [
+                    handle.emit({
+                        body,
+                        key,
+                        slot,
+                    }, 'C1'),
+                    handle.emit({
+                        body,
+                        key,
+                        slot,
+                    }, 'C1'),
+                ]));
+            }),
+        };
+        const ctx = setup(mockModel([call('notify', { body: 'b' }), call('notify', { body: 'b' }), text('done')]), tools);
+        const { runId, run: stored } = await run(ctx);
+
+        expect(stored?.status).toBe('completed');
+        expect(ctx.slack.calls.map(({ message }) => message.slot)).toEqual(slots);
+        expect(ctx.slack.calls.map(({ message }) => message.key)).toEqual(slots.map((slot) => key ?? `${runId}:emit:slack:${stableHash({
+            address: 'C1',
+            title: undefined,
+            body: 'b',
+            ...(slot !== undefined ? { slot } : {}),
+        })}`));
+        expect(ctx.slack.calls[0]?.message).not.toHaveProperty('slot');
+    });
+
+    it.each(['', ' \t\n', 'status\0', '\uD800', '\uDC00', 42, null, false])('refuses invalid emit and approval slots %s before effects or sends', async (slot) => {
+        const tools: ToolSet = {
+            notify: emitTool(async (ctx) => {
+                const handle = ctx.channels.findOneOrFail('slack');
+                const invalid = {
+                    title: 'continue?',
+                    body: 'b',
+                    slot,
+                };
+
+                await expect(handle.emit(invalid as never, 'C1')).rejects.toMatchObject({ code: 'validation_error' });
+                await expect(handle.approve({ ...invalid, address: 'C1' } as never)).rejects.toMatchObject({ code: 'validation_error' });
+            }),
+        };
+        const ctx = setup(mockModel([call('notify', { body: 'b' }), text('done')]), tools);
+        const findEffect = vi.spyOn(ctx.store.effects, 'findOne');
+        const saveEffect = vi.spyOn(ctx.store.effects, 'save');
+        const { run: stored, steps } = await run(ctx);
+
+        expect(steps.find((step) => step.kind === 'tool')?.error).toBeUndefined();
+        expect(stored?.status).toBe('completed');
+        expect(ctx.slack.calls).toHaveLength(0);
+        expect(findEffect).not.toHaveBeenCalled();
+        expect(saveEffect).not.toHaveBeenCalled();
+    });
+
     it('emit without an address on a non-source channel is a ValidationError tool error', async () => {
         const tools: ToolSet = { notify: emitTool((ctx, { body }) => ctx.channels.findOneOrFail('slack').emit({ body })) };
         const ctx = setup(mockModel([call('notify', { body: 'b' }), text('done')]), tools);

@@ -81,6 +81,32 @@ Before posting, the channel lists the issue's comments updated since the run's `
 
 An approval asked through the channel (`ctx.channels.findOneOrFail('github').approve(...)`, as the agent above does for `github_close_issue` in its `beforeToolExecution` hook) becomes one comment on the run's issue. With `approvalUrl` it links to the approval in the chamvi UI (run and approval id only), else it says to answer in the UI or through `POST /runs/:id/approve`. The comment is public to everyone who can read the issue. An approval with [options](/guide/approvals#offering-options) lists them after the body as `- <id>: <label>` under `Options (choose one):` (or `choose one or more`), fenced like the body, never with their details (those stay in the UI), and the link line reads `Choose and approve or deny: <link>`; the body is cut by the list's length, so the comment stays under GitHub's limit.
 
+### Persistent status comments
+
+Choose a persistent comment explicitly on each send with a named `slot`. Omitting `slot` keeps append-per-message behavior. One channel and agent can mix ordinary replies and multiple independent status comments:
+
+```ts
+const github = ctx.channels.findOneOrFail('github');
+
+await github.emit({ body: 'Found another issue.' }); // ordinary comment
+await github.emit({ body: 'Latest assessment...', slot: 'maintainer-status' });
+await github.emit({ body: 'Current test results...', slot: 'test-results' });
+
+const decision = await github.approve({
+    title: 'Merge the dependency update?',
+    body: 'Head abc123 is ready for review.',
+    slot: 'maintainer-status',
+});
+```
+
+The slot must be a non-empty, well-formed Unicode string without NUL characters so its name survives database storage unchanged; there is no implicit default slot. Repository, issue/PR number, channel name and agent are always part of its identity. Different agents and slots do not overwrite one another. An approval can deliberately replace a status message by naming the same slot, and its slot is stored durably for notification retries and recovery.
+
+The first send creates a comment. Later sends find it across **all comment pages, without a time cutoff**, then PATCH the complete safely rendered body, including the current run, approval choices, expiry and UI link. Only the authenticated App bot's comments with the matching hidden stable marker qualify. A retry of the currently published message does not write again. Lookup or PATCH failures fail the send, never fall back to POST; if a comment is deleted, a later send discovers its absence and recreates it.
+
+`githubModule()` automatically uses the app store's locks when a slotted message is sent. Include `storeModule()` for these sends; ordinary comments do not need it. For standalone `githubChannel({ app, locks: store.locks })`, pass the same lock repository to all replicas. Omitted `locks` uses channel-local memory, which does **not** coordinate separate instances or processes. A busy slot returns a retryable `github_request` error rather than waiting; approval notification delivery retries through the engine as usual.
+
+The lock covers lookup and mutation, with a lease twice `timeoutMs` and owner-qualified release. It prevents cooperative overlapping sends from creating duplicate comments, not writes from clients that ignore the shared lock or remote requests that survive cancellation/lease expiry. GitHub provides no atomic marker-based upsert. Updates follow delivery order, not PR head freshness: a retry of an older message after another update can restore the older content and approval link. Applications must serialize or cancel superseded work if freshness matters. Existing duplicate comments are not deleted.
+
 ## Tools
 
 Every tool acts as the installation of the repository it names: the delivery's for a run the GitHub channel started on that repository (no request), else the App's installation on it (`GET /repos/{owner}/{repo}/installation` with the App JWT, cached 10 minutes, so an App installed on several accounts and organisations reaches all of them from one run), else the delivery's or `installationId` from `createGithubApp()` (a public repository the App is not installed on stays readable). Without any the call is a `github_request` tool error, never a failed run. Installation tokens are cached per installation on the `clock` given to `createGithubApp()` (default `systemClock`, not the engine's), replaced five minutes before they expire (so a run resumed hours after an approval gets a fresh one) and never logged or stored. A failed GitHub call reaches the model as `GitHub <status>: <message>`, never with the request or its token. Every installation request carries the run's signal: cancel, drain and the run timeout abort a stalled call. The token exchange and `GET /app` are shared by every waiting run and delivery, so they are bounded by their own 30 s timeout on that same clock instead; a timed-out one is not cached and the next caller retries.

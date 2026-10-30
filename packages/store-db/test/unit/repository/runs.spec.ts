@@ -81,6 +81,7 @@ describePostgres('DatabaseRunRepository runs', () => {
                 multiple: true,
                 channel: 'github',
                 address: 'o/r#1',
+                slot: ' maintainer-状态-🚀 ',
                 expiresAt: new Date('2026-03-08T07:15:00.456Z'),
                 notifiedAt: new Date(2_000_001),
             },

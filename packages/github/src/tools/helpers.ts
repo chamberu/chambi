@@ -250,6 +250,9 @@ export function bindSignal(octokit: GithubOctokit, signal: AbortSignal): GithubO
  */
 export function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
     if (signal.aborted) {
+        // The operation may have aborted the signal synchronously; still observe its rejection.
+        void promise.catch(() => {});
+
         return Promise.reject(signal.reason);
     }
 

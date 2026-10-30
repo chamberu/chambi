@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { createHash, randomUUID } from 'node:crypto';
 import { isObject } from 'smob';
 import {
     ChamviError,
@@ -93,7 +94,9 @@ async function installationOf(
  * The channel's `out`: one comment on the issue or pull request `address`
  * (`owner/repo#n`) as the GitHub App, carrying `effectMarker(message.key)`.
  * A resend first looks for the App bot's comment holding the marker and
- * posts nothing when it finds one. Throws a ValidationError for another
+ * posts nothing when it finds one. Persistent mode locks a stable slot,
+ * searches without a time cutoff, then PATCHes that bot's matching comment.
+ * Throws a ValidationError for another
  * address (before any request) and InvalidAgentDefinitionError without an
  * installation (before any comment request), a `github_request` ChamviError for a GitHub failure
  * or a GitHub that does not answer within `timeoutMs`, and the caller's
@@ -109,6 +112,10 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
             throw new ValidationError(`The GitHub channel needs an address like "owner/repo#12", got ${JSON.stringify(address)}.`);
         }
 
+        if (message.slot !== undefined && (typeof message.slot !== 'string' || message.slot.trim().length === 0 || message.slot.includes('\0') || !message.slot.isWellFormed())) {
+            throw new ValidationError('A GitHub comment slot must be a non-empty, well-formed string without NUL characters.');
+        }
+
         opts.signal?.throwIfAborted();
 
         const controller = new AbortController();
@@ -118,50 +125,102 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
         });
         const timer = options.clock.setTimeout(() => controller.abort(timeout), options.timeoutMs);
         const signal = opts.signal ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
+        const slotKey = message.slot !== undefined ? `github:comment:${createHash('sha256').update(JSON.stringify([
+            target.owner.toLowerCase(),
+            target.repo.toLowerCase(),
+            target.number,
+            options.name,
+            message.agent,
+            message.slot,
+        ])).digest('hex')}` : undefined;
+        const owner = randomUUID();
+        let acquired = false;
 
         try {
-            const installationId = await untilAborted(installationOf(target, message, opts.trigger, options), signal);
-            const octokit = await app.octokit(installationId);
+            try {
+                if (slotKey) {
+                    const acquisition = options.locks.acquire(slotKey, owner, options.timeoutMs * 2).then(async (taken) => {
+                        // A cancelled caller may stop waiting before the store answers.
+                        if (taken && signal.aborted) {
+                            await options.locks.release(slotKey, owner);
 
-            octokit.hook.before('request', (request) => {
-                request.request = { ...request.request, signal };
-            });
+                            return false;
+                        }
 
-            const marker = effectMarker(markerKey(message.key));
-            const since = new Date(new Date(opts.trigger.receivedAt).getTime() - RECONCILE_SKEW_MS).toISOString();
-            const route = {
-                owner: target.owner,
-                repo: target.repo,
-                issue_number: target.number,
-            };
-            const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-                ...route,
-                since,
-                per_page: 100,
-            });
+                        acquired = taken;
 
-            for await (const { data } of pages) {
-                for (const comment of data) {
-                    if (!comment.body?.includes(marker)) {
-                        continue;
-                    }
+                        return taken;
+                    });
 
-                    const user = isObject(comment.user) ? comment.user : undefined;
+                    await untilAborted(acquisition, signal);
+                    signal.throwIfAborted();
 
-                    if (user?.type === 'Bot' && isSameLogin(user.login, await app.botLogin())) {
-                        return;
+                    if (!acquired) {
+                        throw new ChamviError({ message: 'GitHub persistent comment slot is busy; retry delivery.', code: GITHUB_REQUEST_ERROR_CODE });
                     }
                 }
-            }
 
-            await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
-                ...route,
-                body: renderComment(message, {
+                const installationId = await untilAborted(installationOf(target, message, opts.trigger, options), signal);
+                const octokit = await app.octokit(installationId);
+
+                octokit.hook.before('request', (request) => {
+                    request.request = { ...request.request, signal };
+                });
+
+                const deliveryKey = slotKey ? createHash('sha256').update(JSON.stringify([slotKey, message.key])).digest('hex') : message.key;
+                const marker = effectMarker(markerKey(deliveryKey));
+                const stableMarker = slotKey ? `<!-- chamvi:comment=${slotKey.slice('github:comment:'.length)} -->` : undefined;
+                const since = new Date(new Date(opts.trigger.receivedAt).getTime() - RECONCILE_SKEW_MS).toISOString();
+                const route = {
+                    owner: target.owner,
+                    repo: target.repo,
+                    issue_number: target.number,
+                };
+                const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+                    ...route,
+                    ...(stableMarker ? {} : { since }),
+                    per_page: 100,
+                });
+
+                const body = () => renderComment(message, {
                     mentions: options.mentions,
                     ...(options.approvalUrl ? { approvalUrl: options.approvalUrl } : {}),
-                    marker,
-                }),
-            });
+                    marker: stableMarker ? `${marker}\n${stableMarker}` : marker,
+                });
+
+                for await (const { data } of pages) {
+                    for (const comment of data) {
+                        // Only renderer-owned footers identify comments, not markers quoted in a body.
+                        if (!comment.body?.endsWith(`\n${stableMarker ?? marker}`)) {
+                            continue;
+                        }
+
+                        const user = isObject(comment.user) ? comment.user : undefined;
+
+                        if (user?.type === 'Bot' && isSameLogin(user.login, await app.botLogin())) {
+                            if (stableMarker && !comment.body.endsWith(`\n${marker}\n${stableMarker}`)) {
+                                await octokit.request('PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}', {
+                                    owner: target.owner,
+                                    repo: target.repo,
+                                    comment_id: comment.id,
+                                    body: body(),
+                                });
+                            }
+
+                            return;
+                        }
+                    }
+                }
+
+                await octokit.request('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', {
+                    ...route,
+                    body: body(),
+                });
+            } finally {
+                if (acquired && slotKey) {
+                    await untilAborted(options.locks.release(slotKey, owner), signal);
+                }
+            }
         } catch (error) {
             if (opts.signal?.aborted) {
                 throw opts.signal.reason;

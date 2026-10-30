@@ -7,7 +7,7 @@
 
 import { createHash } from 'node:crypto';
 import { isObject } from 'smob';
-import { InvalidAgentDefinitionError, systemClock } from '@chamvi/core';
+import { InvalidAgentDefinitionError, MemoryLockRepository, systemClock } from '@chamvi/core';
 import type { ApprovalOption, ChannelMessage } from '@chamvi/core';
 import { isPositiveInteger } from '../subscription/helpers.ts';
 import { REPO_PATTERN } from '../tools/constants.ts';
@@ -67,6 +67,12 @@ export function resolveOptions(options: GithubChannelOptions): ResolvedGithubCha
         throw invalid('onError must be a function.');
     }
 
+    if (options.locks !== undefined && (
+        !isObject(options.locks) || typeof options.locks.acquire !== 'function' || typeof options.locks.release !== 'function'
+    )) {
+        throw invalid('locks must be an ILockRepository.');
+    }
+
     const timeoutMs = options.timeoutMs ?? GITHUB_CHANNEL_TIMEOUT_MS;
 
     if (!isPositiveInteger(timeoutMs)) {
@@ -82,6 +88,7 @@ export function resolveOptions(options: GithubChannelOptions): ResolvedGithubCha
     return {
         app,
         name,
+        locks: options.locks ?? new MemoryLockRepository({ clock: options.clock }),
         mentions,
         ...(options.approvalUrl ? { approvalUrl: options.approvalUrl } : {}),
         timeoutMs,

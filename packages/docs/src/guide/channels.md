@@ -18,6 +18,7 @@ type ChannelContext = { engine: IEngine; dispatch(envelope: ChannelDispatchEnvel
 type ChannelMessage = {
     kind: 'message' | 'approval';
     key: string;          // stable per logical message: the transport's dedupe key
+    slot?: string;        // explicit named persistent message, where supported (GitHub)
     runId: string;
     agent: string;
     title?: string;
@@ -84,10 +85,14 @@ The engine never sends a message of its own. A tool sends through a channel:
 - `ctx.channels.findOne(name)` returns a handle on a registered channel with `out`, or `undefined` for an unknown name or a channel without `out`. Without a name it is the run's source channel, bound to its source address, so a tool answers where the run came from without knowing the channel (and gets `undefined` for a run from `http`, `mcp` or `cron`).
 - `ctx.channels.findOneOrFail(name?)` is the same, but throws `ChannelNotFoundError` (`channel_not_found`) instead of returning `undefined`: use it for a channel the agent cannot work without.
 - `ctx.channels.find()` returns a handle on every channel with `out`, in registration order.
-- `handle.emit({ title?, body, key? }, address?)` sends through `out`. The address defaults to the source address on the source channel, else to the channel's `defaultAddress`; without either a missing address is a `validation_error` tool error.
+- `handle.emit({ title?, body, key?, slot? }, address?)` sends through `out`. The address defaults to the source address on the source channel, else to the channel's `defaultAddress`; without either a missing address is a `validation_error` tool error.
 - An emit is an [effect](/guide/effect-tools): its key is `<runId>:emit:<channel>:<sha256 of address and message>` (or your `key`), recorded in the effect store, so identical emits of one step and a step redone after a crash send once. `out` gets the key as `message.key`, to dedupe on in the transport. A throwing `out` records nothing and is a tool error, so the next identical emit sends again.
 - `emit` outside a tool call (in the tools factory) throws `InvalidRunStateError`: the tool call is the unit of retry.
-- `handle.approve({ title, body?, options?, multiple?, timeoutMs?, address? })` asks the owner through the channel; see [Approvals](/guide/approvals).
+- `handle.approve({ title, body?, options?, multiple?, timeoutMs?, address?, slot? })` asks the owner through the channel; see [Approvals](/guide/approvals).
+
+### Named message slots
+
+A transport can support a persistent message addressed by `slot`. GitHub uses it to create a comment once, then update it across runs; omit `slot` to append an ordinary comment. A slot is a non-empty, well-formed Unicode string without NUL characters, chosen explicitly on each `emit()` or channel `approve()` call. A single channel and agent can mix ordinary replies and several independent slots. Slot selection is separate from the per-delivery `key`, which still deduplicates retries. The effect key includes the slot when present, so identical text or custom keys aimed at different slots do not suppress each other. Approval slots are stored with the waiting run and retained on recovery. Other shipped transports currently ignore slot hints. See [GitHub persistent status comments](/deployment/github-app#persistent-status-comments).
 
 ## Writing a channel
 

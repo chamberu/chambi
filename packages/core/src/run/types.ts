@@ -52,6 +52,8 @@ export type WaitPoint = {
     /** The channel the request is delivered through; none for the inbox and API only. */
     channel?: string;
     address?: string;
+    /** The named delivery slot, if requested. */
+    slot?: string;
     expiresAt: Date;
     /** Set once the approval message went out through `channel`; tick() re-sends while it is missing. */
     notifiedAt?: Date;
