@@ -5,7 +5,12 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 import { jsonSchema } from 'ai';
 import {
     Engine,
@@ -16,6 +21,7 @@ import {
 } from '@chamvi/core';
 import { fakeSkillRuntime } from '../../utils/skill-runtime.ts';
 import { mockModel } from '../../utils/mock-model.ts';
+import { ControllableClock } from '../../utils/clock.ts';
 
 const agent = (input?: ReturnType<typeof fakeSkillRuntime>['input']) => defineAgent({
     name: 'test',
@@ -30,6 +36,107 @@ const engine = (agents: ReturnType<typeof agent>[] = []) => new Engine({
 const flush = () => new Promise<void>((resolve) => { setImmediate(resolve); });
 
 describe('skill runtime integration', () => {
+    it('keeps the old registration, revision and queued run when caller cancellation interrupts a second preparation', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let hold = false;
+        const fake = fakeSkillRuntime({
+            prepare: async () => {
+                if (!hold) {
+                    return;
+                }
+
+                entered.resolve(); await release.promise;
+            },
+        });
+        const original = agent(fake.input);
+        const candidate = agent(fake.input);
+        const e = engine();
+        try {
+            await e.putAgent(original, { revision: 'v1' });
+            const { runId } = await e.dispatch({
+                agent: 'test',
+                channel: 'test',
+                trigger: 'test',
+                payload: {},
+            });
+            const marker = await e.store.agentRevisions.findOne('test');
+            const run = await e.getRun(runId);
+            await e.prepare({ agents: [candidate] });
+            const { commits } = fake.calls;
+            hold = true;
+            const controller = new AbortController();
+            const reason = new Error('caller stopped during second preparation');
+            const options = { revision: 'v2', signal: controller.signal };
+            let settled = false;
+            const pending = e.putAgent(candidate, options).catch((error: unknown) => error).finally(() => { settled = true; });
+            await entered.promise;
+            controller.abort(reason);
+            await flush();
+            expect(settled).toBe(false);
+            release.resolve();
+            expect(await pending).toBe(reason);
+            expect(fake.calls.commits).toBe(commits);
+            expect(e.getAgent('test')).toBe(original);
+            expect(e.agentRevision('test')).toBe('v1');
+            expect(await e.store.agentRevisions.findOne('test')).toEqual(marker);
+            expect(await e.getRun(runId)).toEqual(run);
+        } finally {
+            release.resolve();
+            await e.stop();
+        }
+    });
+
+    it.each(['caller', 'engine'] as const)('finishes an already-started revision change consistently when %s cancellation arrives', async (cancel) => {
+        const clock = new ControllableClock(new Date(1_000));
+        const store = createMemoryStore({ clock });
+        const original = agent();
+        const candidate = agent();
+        const e = new Engine({
+            clock,
+            store,
+            agents: [],
+            model: mockModel([]),
+        });
+        const controller = new AbortController();
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const save = store.agentRevisions.save.bind(store.agentRevisions);
+        let stopping: Promise<void> | undefined;
+        try {
+            await e.putAgent(original, { revision: 'v1' });
+            const { runId } = await e.dispatch({
+                agent: 'test',
+                channel: 'test',
+                trigger: 'test',
+                payload: {},
+            });
+            clock.advance(1);
+            vi.spyOn(store.agentRevisions, 'save').mockImplementation(async (revision) => {
+                await save(revision);
+                entered.resolve();
+                await release.promise;
+            });
+            const options = { revision: 'v2', signal: controller.signal };
+            const replacing = e.putAgent(candidate, options);
+            const result = replacing.catch((error: unknown) => error);
+            await entered.promise;
+            if (cancel === 'caller') controller.abort(new Error('caller stopped after registry mutation'));
+            else stopping = e.stop();
+            release.resolve();
+            expect(await result).toBe('replaced');
+            expect(e.getAgent('test')).toBe(candidate);
+            expect(e.agentRevision('test')).toBe('v2');
+            expect(await store.agentRevisions.findOne('test')).toMatchObject({ hash: 'v2' });
+            expect(await e.getRun(runId)).toMatchObject({ status: 'cancelled', error: { code: 'agent_replaced' } });
+        } finally {
+            release.resolve();
+            await stopping;
+            await e.stop();
+            vi.restoreAllMocks();
+        }
+    });
+
     it('snapshots synchronously without creating a runtime, and selects one runtime per engine', async () => {
         const one = fakeSkillRuntime(); const two = fakeSkillRuntime();
         const a = agent(one.input);

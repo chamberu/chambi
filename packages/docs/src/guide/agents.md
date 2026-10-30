@@ -98,3 +98,5 @@ One engine runs any number of agents. They share the store, the engine's local c
 `dispatch()` names the agent per run. An agent the engine does not hold throws `AgentNotFoundError` (`agent_not_found`, 404 over HTTP).
 
 The set can change while the engine runs: `engine.putAgent(agent)` adds an agent or replaces the one of the same name, `engine.removeAgent(name)` removes it, and both emit `agents.changed` (`{ name, kind: 'added' | 'replaced' | 'removed' }`), which the cron channel and `@chamvi/http` follow. Replacing or removing an agent first cancels its unsettled runs. An app loads such agents from a folder: see [Agent Folders](/guide/agent-folders).
+
+Pass `engine.putAgent(agent, { signal })` to cancel candidate preparation before registry changes. Cancellation leaves the previous registration, revision marker and unsettled runs intact. Once a registry operation starts, it finishes with local publication even if the caller or engine stops, keeping the registration and durable state consistent. Folder loading forwards the app shutdown signal through preparation and publication.

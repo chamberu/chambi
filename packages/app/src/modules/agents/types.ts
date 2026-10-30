@@ -24,7 +24,7 @@ export type AgentsWatcherOptions = {
     clock: IClock;
     logger: ILogger;
     pollMs: number;
-    /** Aborts the boot load between folders. */
+    /** Aborts preparation and prevents publication before a registry operation starts. */
     signal?: AbortSignal;
     /**
      * What the watcher may do to the store. `start`: register each folder

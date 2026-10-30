@@ -13,6 +13,7 @@ import {
     describe,
     expect,
     it,
+    vi,
 } from 'vitest';
 import { agentFile, buildAgentsDirHarness, queueRun } from '../../../utils/agents-dir.ts';
 import { createTempDir, writeTree } from '../../../utils/folder.ts';
@@ -26,6 +27,7 @@ beforeEach(async () => {
 afterEach(async () => {
     await Promise.all(harnesses.map((harness) => harness.stop()));
     harnesses.length = 0;
+    vi.restoreAllMocks();
     await root.remove();
 });
 
@@ -90,6 +92,50 @@ async function pollTimes(setup: ReturnType<typeof build>, count: number) {
 }
 
 describe('folder skill verification', () => {
+    it.each(['after-first', 'during-second'] as const)('keeps the old agent, marker and queued run when shutdown arrives %s preparation', async (phase) => {
+        await writeTree(root.path, { 'greeter/agent.ts': agentFile('v1') });
+        const setup = build();
+        await setup.harness.setup();
+        await setup.watch();
+        const current = setup.engine();
+        const original = current.getAgent('greeter');
+        const revision = current.agentRevision('greeter');
+        const marker = await setup.store.agentRevisions.findOne('greeter');
+        const runId = await queueRun(setup.store, setup.clock, 'greeter');
+        const queued = await setup.store.runs.findOne(runId);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const reason = new Error('app stopped before registry mutation');
+        const prepare = current.prepare.bind(current);
+        let attempts = 0;
+        vi.spyOn(current, 'prepare').mockImplementation(async (options) => {
+            const attempt = ++attempts;
+            if (phase === 'during-second' && attempt === 2) {
+                entered.resolve();
+                await release.promise;
+            }
+            await prepare(options);
+            if (phase === 'after-first' && attempt === 1) setup.harness.controller.abort(reason);
+        });
+        try {
+            await writeTree(join(root.path, 'greeter'), { 'agent.ts': agentFile('v2') });
+            await setup.poll();
+            const reload = setup.poll();
+            if (phase === 'during-second') {
+                await entered.promise;
+                setup.harness.controller.abort(reason);
+                release.resolve();
+            }
+            await reload;
+            expect(current.getAgent('greeter')).toBe(original);
+            expect(current.agentRevision('greeter')).toBe(revision);
+            expect(await setup.store.agentRevisions.findOne('greeter')).toEqual(marker);
+            expect(await setup.store.runs.findOne(runId)).toEqual(queued);
+        } finally {
+            release.resolve();
+        }
+    });
+
     it('aborts boot on required verification failure before a revision or registration', async () => {
         await writeTree(root.path, { 'greeter/agent.ts': sourceAgent() });
         const setup = build();

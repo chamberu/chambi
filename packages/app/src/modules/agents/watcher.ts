@@ -154,9 +154,11 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         try {
             // a marker from before HASH_IGNORE_PATTERNS holds the same content: moved, never a cancel
             const formerRevision = await formerAgentFolderHash(join(root, name), hash);
+            signal?.throwIfAborted();
             await engine.putAgent(loaded.agent, {
                 revision: hash,
                 reload: role === 'start',
+                signal,
                 ...(formerRevision !== undefined && { formerRevision }),
             });
         } catch (error) {

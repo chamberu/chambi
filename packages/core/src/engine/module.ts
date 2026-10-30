@@ -531,18 +531,23 @@ export class Engine implements IContextProvider {
      * A marker at `formerRevision` (the same content hashed by an earlier
      * algorithm) counts as equal: it is moved to `revision` and nothing is
      * cancelled, so a hash change of the loader never cancels runs.
+     *
+     * `signal` cancels preparation and prevents registry mutation. Once a
+     * registry operation starts, it finishes with local publication even if
+     * the caller or engine stops, keeping registration and durable state aligned.
      */
     async putAgent(
         agent: Agent,
         options: {
             revision?: string;
             formerRevision?: string;
-            reload?: boolean
+            reload?: boolean;
+            signal?: AbortSignal
         } = {},
     ): Promise<'added' | 'replaced' | 'unchanged'> {
         this.assertRegistrable(agent);
-        await this.prepare({ agents: [agent] });
-        const preparationSignal = this.preparationController.signal;
+        await this.prepare({ agents: [agent], signal: options.signal });
+        const preparationSignal = AbortSignal.any([this.preparationController.signal, ...(options.signal ? [options.signal] : [])]);
         preparationSignal.throwIfAborted();
         const { name } = agent;
         const {
@@ -576,7 +581,7 @@ export class Engine implements IContextProvider {
                 runIds: cancelled,
             });
         }
-        preparationSignal.throwIfAborted();
+        // Finish a registry operation already started, keeping its marker and local publication consistent.
         const kind = this.agents.has(name) ? 'replaced' : 'added';
         this.agents.set(name, agent);
         this.revisions.set(name, revision);
