@@ -32,7 +32,13 @@ export function defineAgent<S extends StateSchema = StateSchema>(def: AgentDefin
     }
 
     assertInstructions(def.instructions);
-    assertAgentTrust(def.trust, typeof def.tools === 'function' ? undefined : def.tools);
+
+    // Factories, state and skills can add tools; validate their names after assembly.
+    const completeTools = typeof def.tools === 'function' || def.state || def.skills?.length ?
+        undefined :
+        def.tools ?? {};
+
+    assertAgentTrust(def.trust, completeTools);
     assertConcurrencyMaxRuns(def.concurrencyMaxRuns, `Agent "${def.name}" concurrencyMaxRuns`);
     conversationKey(def);
 

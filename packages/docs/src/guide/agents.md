@@ -12,7 +12,7 @@ An agent is a typed config object passed to `defineAgent()`. It names a model, i
 - instructions are neither a string nor an array of native system/user/assistant messages (tool roles are refused),
 - two subscriptions of the agent share an id,
 - the agent's or a subscription's `concurrencyMaxRuns` is neither `undefined`, `false` nor a positive safe integer,
-- `trust.onTainted` is neither `'approve'` nor `'deny'`, or a `trust.tools` override has invalid flags or names no tool of a plain tool set (factory names are checked at execution),
+- `trust.onTainted` is neither `'approve'` nor `'deny'`, or a `trust.tools` override has invalid flags or names no available tool (names are checked at execution when a tools factory, state or non-empty skills are declared; flags are always checked at definition),
 - a tool of a plain tool set declares the AI SDK's `needsApproval` (use [`approve()`](/guide/approvals) instead),
 - a `toolsContext` entry names a chamvi tool or no tool of a plain tool set (see [Third-party tools with their own context](/guide/tools#third-party-tools-with-their-own-context)).
 

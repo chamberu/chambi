@@ -14,8 +14,9 @@ import {
     defineEffectTool,
     defineTool,
 } from '@chamvi/core';
-import type { IChannel } from '@chamvi/core';
+import type { AgentDefinition, IChannel } from '@chamvi/core';
 import { mockModel } from '../../utils/mock-model.ts';
+import { fakeSkillRuntime } from '../../utils/skill-runtime.ts';
 
 const engines: Engine[] = [];
 
@@ -43,6 +44,120 @@ it('rejects invalid trust policies rather than silently allowing outbound calls'
         tools: {},
         trust: { tools: { missing: { outbound: true } } },
     })).toThrow('missing');
+});
+
+it.each([undefined, {}])('rejects unknown trust names without dynamic tools (%j)', (tools) => {
+    expect(() => defineAgent({
+        name: 'test',
+        instructions: 'test',
+        tools,
+        skills: [],
+        trust: { tools: { missing: { outbound: true } } },
+    })).toThrow('missing');
+});
+
+it.each(['state', 'skill', 'factory'] as const)('defers %s tool names but always validates trust flags', (source) => {
+    const definition: AgentDefinition = {
+        name: 'test',
+        instructions: 'test',
+        tools: {},
+        ...(source === 'state' ? { state: { items: z.object({ title: z.string() }) } } : {}),
+        ...(source === 'skill' ? { skills: [fakeSkillRuntime().input] } : {}),
+        ...(source === 'factory' ? { tools: () => ({}) } : {}),
+    };
+
+    expect(() => defineAgent({
+        ...definition,
+        trust: { tools: { deferred: { outbound: true, untrustedResult: false } } },
+    })).not.toThrow();
+    expect(() => defineAgent({
+        ...definition,
+        trust: { onTainted: 'allow' as never },
+    })).toThrow('trust.onTainted');
+
+    for (const flags of [{ outbound: 'true' }, { untrustedResult: () => true }, { unknown: true }]) {
+        expect(() => defineAgent({
+            ...definition,
+            trust: { tools: { deferred: flags as never } },
+        })).toThrow('deferred');
+    }
+});
+
+it.each(['state', 'skill'] as const)('classifies assembled %s tools and rejects unknown names before model work', async (source) => {
+    const toolName = source === 'state' ? 'state_items_list' : 'contributed';
+    const skill = fakeSkillRuntime({
+        contribution: {
+            instructions: '',
+            tools: {
+                contributed: defineTool({
+                    inputSchema: z.object({}),
+                    execute: async () => 'skill content',
+                }),
+            },
+            checkTools: () => {},
+        },
+    });
+    const definition: AgentDefinition = {
+        name: 'test',
+        instructions: 'test',
+        tools: {},
+        ...(source === 'state' ?
+            { state: { items: z.object({ title: z.string() }) } } :
+            { skills: [skill.input] }),
+    };
+    const store = createMemoryStore();
+    const agent = defineAgent({
+        ...definition,
+        model: mockModel([call(toolName), done]),
+        trust: { tools: { [toolName]: { untrustedResult: true } } },
+    });
+    const engine = new Engine({ store, agents: [agent] });
+
+    engines.push(engine);
+    await engine.start();
+
+    const { runId } = await engine.dispatch({
+        agent: 'test',
+        channel: 'test',
+        trigger: 'test',
+        payload: {},
+    });
+
+    await engine.idle();
+
+    const run = await store.runs.findOne(runId);
+
+    expect(run?.status).toBe('completed');
+    expect(run?.taint).toEqual({ at: expect.any(Date), source: `tool:${toolName}` });
+
+    const invalidModel = mockModel([done]);
+    const invalidStore = createMemoryStore();
+    const invalidEngine = new Engine({
+        store: invalidStore,
+        agents: [defineAgent({
+            ...definition,
+            model: invalidModel,
+            trust: { tools: { missing: { outbound: true } } },
+        })],
+    });
+
+    engines.push(invalidEngine);
+    await invalidEngine.start();
+
+    const { runId: invalidRunId } = await invalidEngine.dispatch({
+        agent: 'test',
+        channel: 'test',
+        trigger: 'test',
+        payload: {},
+    });
+
+    await invalidEngine.idle();
+
+    const invalidRun = await invalidStore.runs.findOne(invalidRunId);
+
+    expect(invalidRun?.status).toBe('failed');
+    expect(invalidRun?.error?.message).toContain('missing');
+    expect(invalidModel.doStreamCalls).toHaveLength(0);
 });
 
 it('persists untrusted result taint and denies subsequent outbound effects', async () => {
