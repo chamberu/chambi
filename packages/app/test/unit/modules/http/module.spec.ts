@@ -34,7 +34,7 @@ import {
     staticTokensModule,
     storeModule,
 } from '@chamvi/app';
-import type { ILifecycleHook } from '@chamvi/app';
+import type { HttpModuleOptions, ILifecycleHook } from '@chamvi/app';
 import { createStoppedError } from '../../../../src/module/helpers.ts';
 import { buildHarness } from '../../../utils/harness.ts';
 import type { Harness } from '../../../utils/harness.ts';
@@ -103,6 +103,7 @@ async function build(options: {
     env?: Record<string, string>;
     modules?: IModule[];
     scheduler?: IModule;
+    http?: HttpModuleOptions;
 } = {}) {
     const port = await freePort();
     const clock = new ControllableClock(new Date('2026-10-21T00:00:00Z'));
@@ -121,7 +122,7 @@ async function build(options: {
             staticTokensModule(),
             engineModule(),
             options.scheduler ?? schedulerModule(),
-            httpModule(),
+            httpModule(options.http),
             ...(options.modules ?? []),
         ],
     });
@@ -174,6 +175,28 @@ describe('httpModule', () => {
         await harness.setup();
         expect(harness.container.resolveAll(AppToken.CHANNELS).map((channel) => channel.name))
             .toEqual(expect.arrayContaining(['http', 'mcp', 'webhook']));
+    });
+
+    it('registers the http and mcp channels trusted unless untrusted names them', async () => {
+        const trusted = await build();
+
+        await trusted.harness.setup();
+
+        const untrustedOf = (harness: Harness) => Object.fromEntries(harness.container.resolveAll(AppToken.CHANNELS)
+            .filter((channel) => channel.name === 'http' || channel.name === 'mcp')
+            .map((channel) => [channel.name, channel.untrusted === true]));
+
+        expect(untrustedOf(trusted.harness)).toEqual({ http: false, mcp: false });
+
+        const relayed = await build({ http: { untrusted: { mcp: true } } });
+
+        await relayed.harness.setup();
+        expect(untrustedOf(relayed.harness)).toEqual({ http: false, mcp: true });
+    });
+
+    it('refuses an untrusted option that is no object of booleans', () => {
+        expect(() => httpModule({ untrusted: { http: 'yes' as never } })).toThrow(InvalidAgentDefinitionError);
+        expect(() => httpModule({ untrusted: true as never })).toThrow(InvalidAgentDefinitionError);
     });
 
     it('serves /healthz and /readyz after start', async () => {

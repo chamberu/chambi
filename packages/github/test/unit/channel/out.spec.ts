@@ -799,6 +799,36 @@ describe('githubChannel persistent comments', () => {
         expect(fake.comments.get(ADDRESS)).toHaveLength(1);
     });
 
+    it('contains a release that throws synchronously and an onError that throws', async () => {
+        const locks = new MemoryLockRepository();
+        const failure = new Error('lock store broke');
+
+        vi.spyOn(locks, 'release').mockImplementationOnce(() => {
+            throw failure;
+        });
+
+        const unhandled = vi.fn();
+
+        process.on('unhandledRejection', unhandled);
+
+        try {
+            const onError = vi.fn(() => {
+                throw new Error('reporter broke');
+            });
+            const { send, fake } = setupPersistent({ locks, onError });
+
+            await send();
+            await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
+            await new Promise((resolve) => {
+                setImmediate(resolve);
+            });
+            expect(fake.comments.get(ADDRESS)).toHaveLength(1);
+            expect(unhandled).not.toHaveBeenCalled();
+        } finally {
+            process.off('unhandledRejection', unhandled);
+        }
+    });
+
     it('releases when abort races the successful acquisition callback', async () => {
         const locks = new MemoryLockRepository();
         const acquire = Promise.withResolvers<boolean>();

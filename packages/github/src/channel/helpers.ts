@@ -99,7 +99,6 @@ export function resolveOptions(options: GithubChannelOptions): ResolvedGithubCha
     };
 }
 
-/** `owner/repo#number` as owner, repo and number; `undefined` for anything else. */
 /** Waits `ms` on the clock; rejects with the signal's reason once it aborts. */
 export function waitOn(clock: IClock, ms: number, signal: AbortSignal): Promise<void> {
     if (signal.aborted) {
@@ -120,6 +119,7 @@ export function waitOn(clock: IClock, ms: number, signal: AbortSignal): Promise<
     });
 }
 
+/** `owner/repo#number` as owner, repo and number; `undefined` for anything else. */
 export function parseAddress(address: unknown): CommentTarget | undefined {
     const match = typeof address === 'string' ? ADDRESS.exec(address) : null;
 

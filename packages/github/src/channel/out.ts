@@ -17,7 +17,7 @@ import type { ChannelMessage, ChannelSendOptions, TriggerEnvelope } from '@chamv
 import { isSameLogin } from '../app/helpers.ts';
 import { isPositiveInteger } from '../subscription/helpers.ts';
 import { GITHUB_REQUEST_ERROR_CODE } from '../tools/constants.ts';
-import { untilAborted } from '../tools/helpers.ts';
+import { hasFooterMarker, untilAborted } from '../tools/helpers.ts';
 import { RECONCILE_SKEW_MS, SLOT_LOCK_RETRY_MAX_MS, SLOT_LOCK_RETRY_MS } from './constants.ts';
 import {
     markerKey,
@@ -215,14 +215,14 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
                 for await (const { data } of pages) {
                     for (const comment of data) {
                         // Only renderer-owned footers identify comments, not markers quoted in a body.
-                        if (!comment.body?.endsWith(`\n${stableMarker ?? marker}`)) {
+                        if (!hasFooterMarker(comment.body, stableMarker ?? marker)) {
                             continue;
                         }
 
                         const user = isObject(comment.user) ? comment.user : undefined;
 
                         if (user?.type === 'Bot' && isSameLogin(user.login, await app.botLogin())) {
-                            if (stableMarker && !comment.body.endsWith(`\n${marker}\n${stableMarker}`)) {
+                            if (stableMarker && !hasFooterMarker(comment.body, `${marker}\n${stableMarker}`)) {
                                 await octokit.request('PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}', {
                                     owner: target.owner,
                                     repo: target.repo,
@@ -243,7 +243,16 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
             } finally {
                 if (acquired && slotKey) {
                     // Not bound to the abort: the lease (twice timeoutMs) covers a release that never answers.
-                    options.locks.release(slotKey, owner).catch(options.onError);
+                    // Neither a synchronous throw of the repository nor a throwing onError escapes.
+                    const key = slotKey;
+
+                    Promise.try(() => options.locks.release(key, owner)).catch((error: unknown) => {
+                        try {
+                            options.onError(error);
+                        } catch {
+                            // a reporter that throws has nowhere left to report to
+                        }
+                    });
                 }
             }
         } catch (error) {

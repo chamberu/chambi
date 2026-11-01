@@ -153,6 +153,8 @@ defineAgent({
 });
 ```
 
+Two more tools are gated conditionally, so expect their approvals too: `github_create_comment` waits when it targets any issue or pull request other than the run's source one (a comment on the source issue goes through), and `github_add_labels` waits when it adds a label name the repository does not have yet (or when the label lookup fails). Both take the same `trust.tools` override.
+
 The override is a boolean per tool name; `trust.onTainted: 'deny'` refuses instead of asking. See [Tools](/guide/tools#untrusted-content-and-outbound-tools).
 
 ## Security notes

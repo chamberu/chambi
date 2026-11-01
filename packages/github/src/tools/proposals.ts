@@ -7,7 +7,7 @@
 
 import { createHash } from 'node:crypto';
 import { matchesGlob } from 'node:path';
-import type { ToolSet } from 'ai';
+import type { ToolExecutionOptions, ToolSet } from 'ai';
 import {
     InvalidAgentDefinitionError,
     ValidationError,
@@ -19,9 +19,11 @@ import { isObject } from 'smob';
 import type { GithubOctokit, GithubProposalsOptions, IGithubApp } from '../app/types.ts';
 import {
     REPO_PROPERTY,
+    hasFooterMarker,
     objectSchema,
     parseRepo,
     requireString,
+    stepOf,
     withOctokit,
 } from './helpers.ts';
 import { createPullRequest, toCreated } from './pull-operation.ts';
@@ -111,13 +113,41 @@ function validate(input: GithubProposeChangeInput, policy: GithubProposalsOption
 }
 
 /**
- * One effect per run, repository, path and content: a corrected proposal (another
- * content approved for the same path) is a new effect, never the recorded first one.
+ * One effect per run, repository, path, content and model step: a corrected proposal
+ * (another content for the same path) is a new effect, never the recorded first one,
+ * and so is a later step returning to an earlier content (A, B, A), which must write A
+ * again instead of answering with A's first record while the branch holds B.
  */
-function proposalKey(input: GithubProposeChangeInput, ctx: ToolContext): string {
+function proposalKey(
+    input: GithubProposeChangeInput,
+    ctx: ToolContext,
+    options: Pick<ToolExecutionOptions<unknown>, 'toolCallId' | 'messages'>,
+): string {
     const content = createHash('sha256').update(input.content).digest('hex');
 
-    return `${ctx.run.runId}:propose:${input.repo.toLowerCase()}:${input.path}:${content}`;
+    return `${ctx.run.runId}:propose:${input.repo.toLowerCase()}:${input.path}:${content}:${stepOf(options)}`;
+}
+
+function branchMarker(branch: string): string {
+    return `<!-- chamvi:proposal=${branch} -->`;
+}
+
+/** The tool-owned footer of a proposal body or commit message: the branch marker, then an effect marker, last. */
+function hasProposalFooter(text: string | null | undefined, branch: string): boolean {
+    if (typeof text !== 'string') {
+        return false;
+    }
+
+    const lines = text.trimEnd().split('\n');
+    const effect = lines.at(-1) ?? '';
+
+    return lines.length >= 3 && lines.at(-2) === branchMarker(branch) &&
+        effect.startsWith('<!-- chamvi:effect=') && effect.endsWith(' -->');
+}
+
+/** The tool-owned footer naming exactly this effect; a marker quoted in the model-written `reason` never counts. */
+function hasEffectFooter(text: string | null | undefined, branch: string, effect: string): boolean {
+    return hasFooterMarker(text, `${branchMarker(branch)}\n${effect}`);
 }
 
 function proposalBranch(input: GithubProposeChangeInput, ctx: ToolContext): string {
@@ -239,27 +269,39 @@ async function pullsOf(octokit: GithubOctokit, target: RepoTarget, branch: strin
 }
 
 /**
- * Every generation of a proposal: the root branch, then `<root>-g-<n>` with `n` the
- * highest PR number seen so far (the branch `selectBranch` names), until a generation
- * has no PR. Each step is one filtered request, so the repository's PR count is irrelevant.
+ * Every generation of a proposal: the root branch, then `<root>-g-<n>` for the number
+ * `n` of every PR found so far (`selectBranch` names the next generation after the
+ * highest one). Following each number, not only the highest, keeps a PR off the
+ * predicted chain (a human's PR on a proposal branch) from hiding the tool's own open
+ * PR, so the multiple-open guard still sees it. Each step is one filtered request, so
+ * the repository's PR count is irrelevant.
  */
 async function findPulls(octokit: GithubOctokit, target: RepoTarget, root: string) {
     const pulls: Awaited<ReturnType<typeof pullsOf>> = [];
-    const seen = new Set<string>();
-    let branch = root;
+    const seen = new Set<string>([root]);
+    const queue = [root];
 
-    for (let generation = 0; generation < MAX_GENERATIONS; generation += 1) {
-        seen.add(branch);
-        pulls.push(...await pullsOf(octokit, target, branch));
+    for (let requests = 0; requests < MAX_GENERATIONS; requests += 1) {
+        const branch = queue.shift();
 
-        const previous = Math.max(0, ...pulls.map((pull) => pull.number));
-        const next = `${root}-g-${previous}`;
-
-        if (previous === 0 || seen.has(next)) {
+        if (branch === undefined) {
             return pulls;
         }
 
-        branch = next;
+        for (const pull of await pullsOf(octokit, target, branch)) {
+            pulls.push(pull);
+
+            const next = `${root}-g-${pull.number}`;
+
+            if (!seen.has(next)) {
+                seen.add(next);
+                queue.push(next);
+            }
+        }
+    }
+
+    if (queue.length === 0) {
+        return pulls;
     }
 
     throw new ValidationError('Proposal generation limit exceeded; manual review is required.');
@@ -299,8 +341,7 @@ async function pullHasEffect(
         inspected += page.data.length;
 
         // Positive evidence is sufficient even if the remaining history is capped.
-        const found = page.data.some((commit) => commit.commit.message.includes(marker) &&
-            commit.commit.message.includes(`<!-- chamvi:proposal=${pull.head.ref} -->`));
+        const found = page.data.some((commit) => hasEffectFooter(commit.commit.message, pull.head.ref, marker));
 
         if (found) {
             return { found: true, commits: inspected };
@@ -335,7 +376,7 @@ async function orphanHasEffect(
             commit_sha: sha,
         });
 
-        if (!commit.message.includes(`<!-- chamvi:proposal=${branch} -->`)) {
+        if (!hasProposalFooter(commit.message, branch)) {
             throw new ValidationError('Proposal commit ancestry is not proposal-owned; manual review is required.');
         }
 
@@ -343,7 +384,7 @@ async function orphanHasEffect(
             throw new ValidationError('Proposal commit ancestry is not a single-parent chain; manual review is required.');
         }
 
-        if (commit.message.includes(marker)) {
+        if (hasEffectFooter(commit.message, branch, marker)) {
             return true;
         }
 
@@ -387,10 +428,10 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
                 content: { type: 'string' },
                 reason: { type: 'string', minLength: 1 },
             }, ['repo', 'path', 'content', 'reason']),
-            effectKey(input, ctx) {
+            effectKey(input, ctx, options) {
                 validate(input, policy);
 
-                return proposalKey(input, ctx);
+                return proposalKey(input, ctx, options);
             },
             async alreadyApplied(key, input, ctx) {
                 const target = validate(input, policy);
@@ -400,7 +441,7 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
                     const pulls = await findPulls(octokit, target, root);
 
                     for (const pull of pulls) {
-                        if (!pull.body?.includes(`<!-- chamvi:proposal=${pull.head.ref} -->`)) {
+                        if (!hasProposalFooter(pull.body, pull.head.ref)) {
                             throw new ValidationError('Existing proposal PR is not proposal-owned.');
                         }
 
@@ -410,10 +451,12 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
                             if (pull.state === 'open') {
                                 const base = await headOf(octokit, target, pull.base.ref);
 
+                                // The diff is pinned to the observed base SHA; the base is not
+                                // re-checked, since a busy default branch moving meanwhile would
+                                // report an applied effect as a failure.
                                 await checkDiff(octokit, target, base, pull.head.sha, policy);
                                 await readFile(octokit, target, input.path, pull.head.sha);
                                 await assertHead(octokit, target, pull.head.ref, pull.head.sha);
-                                await assertHead(octokit, target, pull.base.ref, base);
                             }
 
                             return toCreated(pull);
@@ -427,20 +470,20 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
                 const target = validate(input, policy);
                 const ctx = options.context;
                 const root = proposalBranch(input, ctx);
-                const effect = effectMarker(proposalKey(input, ctx));
+                const effect = effectMarker(proposalKey(input, ctx, options));
                 const title = `Propose change to ${input.path}`.slice(0, 256);
 
                 return withOctokit(app, ctx, target, async (octokit) => {
                     const pulls = await findPulls(octokit, target, root);
                     const branch = selectBranch(root, pulls);
                     const pull = pulls.find((item) => item.head.ref === branch && item.state === 'open');
-                    const marker = `<!-- chamvi:proposal=${branch} -->`;
+                    const marker = branchMarker(branch);
                     const body = `${input.reason}\n\n${marker}\n${effect}`;
                     const { data: repository } = await octokit.request('GET /repos/{owner}/{repo}', target);
                     const base = pull?.base.ref ?? repository.default_branch;
                     const baseSha = await headOf(octokit, target, base);
 
-                    if (pull && !pull.body?.includes(marker)) {
+                    if (pull && !hasProposalFooter(pull.body, branch)) {
                         throw new ValidationError('Existing proposal PR is not proposal-owned.');
                     }
 
@@ -467,7 +510,7 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
                         commit_sha: head,
                     });
 
-                    if (!pull && diff.status !== 'identical' && !commit.message.includes(marker)) {
+                    if (!pull && diff.status !== 'identical' && !hasProposalFooter(commit.message, branch)) {
                         throw new ValidationError('Existing proposal branch is not proposal-owned.');
                     }
 

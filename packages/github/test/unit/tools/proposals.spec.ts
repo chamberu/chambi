@@ -20,7 +20,7 @@ import { createGithubApp } from '@chamvi/github';
 import type { GithubCreatedPullRequest, GithubProposalsOptions, GithubProposeChangeInput } from '@chamvi/github';
 import { githubModule } from '@chamvi/github/module';
 import { createGithubFixture } from '../../utils/app.ts';
-import { callTool, toolContext } from '../../utils/tools.ts';
+import { assistant, callTool, toolContext } from '../../utils/tools.ts';
 
 const POLICY: GithubProposalsOptions = { repos: { 'octo/demo': { paths: ['config/**', 'README.md'] } } };
 const INPUT: GithubProposeChangeInput = {
@@ -30,9 +30,9 @@ const INPUT: GithubProposeChangeInput = {
     reason: 'Enable the agent.',
 };
 
-/** The effect key of a proposal: run, repository, path and a hash of the content. */
-function keyOf(runId: string, content = INPUT.content, path = INPUT.path): string {
-    return `${runId}:propose:octo/demo:${path}:${createHash('sha256').update(content).digest('hex')}`;
+/** The effect key of a proposal: run, repository, path, a hash of the content and the model step. */
+function keyOf(runId: string, content = INPUT.content, path = INPUT.path, step = 0): string {
+    return `${runId}:propose:octo/demo:${path}:${createHash('sha256').update(content).digest('hex')}:${step}`;
 }
 
 /** Immutable Git objects and non-forced refs, isolated from the shared GitHub fake. */
@@ -498,6 +498,78 @@ describe('github_propose_change', () => {
         expect(fixture.history.get('commit-2')?.message).toContain(effectMarker(keyOf('r1', 'enabled: false\n')));
     });
 
+    it('writes an earlier content again when a later step returns to it (A, B, A)', async () => {
+        const fixture = setup();
+        const tool = wrapped(fixture, 'r1');
+        const ctx = toolContext({ runId: 'r1' });
+
+        await callTool({ propose: tool }, 'propose', INPUT, ctx, { toolCallId: 'c1' });
+        await callTool({ propose: tool }, 'propose', { ...INPUT, content: 'enabled: false\n' }, ctx, { toolCallId: 'c2', messages: [assistant()] });
+        await callTool({ propose: tool }, 'propose', INPUT, ctx, { toolCallId: 'c3', messages: [assistant(), assistant()] });
+
+        expect(fixture.branchFiles().get(INPUT.path)?.content).toBe(INPUT.content);
+        expect(fixture.current()).toMatchObject({ commits: 3, posts: 1 });
+        expect(fixture.history.get('commit-3')?.message).toContain(effectMarker(keyOf('r1', INPUT.content, INPUT.path, 2)));
+    });
+
+    it('reconciles an applied open proposal while the base branch moves', async () => {
+        const fixture = setup();
+        const first = await replay(fixture, 'r1');
+        const before = fixture.current();
+
+        fixture.onCompare(() => {
+            fixture.history.set('busy-base', {
+                tree: 'base-tree',
+                message: 'Unrelated merge',
+                parents: ['base-sha'],
+            });
+            fixture.refs.set('heads/main', 'busy-base');
+        });
+
+        expect(await replay(fixture, 'r1')).toEqual(first);
+        expect(fixture.current()).toEqual(before);
+    });
+
+    it('owns a PR only by its final footer, not by a marker quoted earlier in the body', async () => {
+        const fixture = setup();
+        const result = await fixture.call();
+        const pull = fixture.current().pull!;
+
+        pull.body = `${pull.body}\n\nEdited by hand <!-- chamvi:proposal=${result.head.slice(5)} -->`;
+
+        await expect(fixture.call({ ...INPUT, content: 'later' }, 'r2')).rejects.toThrow(/not proposal-owned/);
+    });
+
+    it('finds its open PR behind a PR that is not on the predicted generation chain', async () => {
+        const fixture = setup();
+
+        await fixture.call();
+        fixture.close();
+
+        const second = await fixture.call({ ...INPUT, content: 'second' }, 'r2');
+        const root = fixture.pulls[0]!.head.ref as string;
+
+        fixture.pulls.push({
+            number: 40,
+            html_url: 'https://github.test/octo/demo/pull/40',
+            state: 'closed',
+            head: {
+                ref: root,
+                sha: 'base-sha',
+                label: `octo:${root}`,
+                repo: { full_name: 'octo/demo' },
+            },
+            base: { ref: 'main' },
+            body: 'A hand-made PR on the proposal branch.',
+        });
+
+        const third = await fixture.call({ ...INPUT, content: 'third' }, 'r3');
+
+        expect(third.number).toBe(second.number);
+        expect(fixture.current().posts).toBe(2);
+        expect(fixture.branchFiles().get(INPUT.path)?.content).toBe('third');
+    });
+
     it('recovers a lost effect record from ancestry after another run replaces the body and tip', async () => {
         const fixture = setup();
         const first = await replay(fixture, 'r1');
@@ -899,7 +971,7 @@ describe('github_propose_change', () => {
         });
         fixture.history.set('owned', {
             tree: commit.tree,
-            message: `Later tool update\n<!-- chamvi:proposal=${branch.slice(6)} -->`,
+            message: `Later tool update\n\n<!-- chamvi:proposal=${branch.slice(6)} -->\n${effectMarker(keyOf('r9'))}`,
             parents: ['manual'],
         });
         fixture.refs.set(branch, 'owned');
