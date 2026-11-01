@@ -9,7 +9,11 @@ import type { Agent } from '../../agent/types.ts';
 import type { SkillContribution } from '../../skill/types.ts';
 
 export interface IEngineSkills {
-    /** `commit: false` validates only: no runtime is selected and no input captured. */
+    /**
+     * `commit: false` validates only: no runtime is selected and no input captured. Without a
+     * selected runtime it may instantiate a candidate runtime (`provider.create()`) to validate
+     * against, but never keeps it.
+     */
     checkAgent(agent: Agent, options?: { commit?: boolean }): void;
     prepare(agents: readonly Agent[], options: { signal: AbortSignal }): Promise<void>;
     get(agent: Agent): SkillContribution | undefined;

@@ -23,6 +23,7 @@ import type {
     ToolContext,
 } from '@chamvi/core';
 import { createRunArtifacts } from '../../../src/artifact/module.ts';
+import { toolContextSchema } from '../../../src/tool/constants.ts';
 import { systemClock } from '../../../src/clock/index.ts';
 import { wrapToolsForRun } from '../../../src/effect/wrap.ts';
 import { createAgentState } from '../../../src/state/module.ts';
@@ -223,7 +224,7 @@ it('accepts boolean and predicate tool trust flags', () => {
     })).not.toThrow();
 });
 
-it('refuses a hand-built tool with a malformed trust when wrapping it', () => {
+it('refuses a hand-built chamvi tool with a malformed trust when wrapping it, but ignores a third-party trust field', () => {
     const store = createMemoryStore();
     const context: ToolContext = {
         run: {
@@ -251,8 +252,76 @@ it('refuses a hand-built tool with a malformed trust when wrapping it', () => {
     };
     const forged = Object.assign(tool({
         inputSchema: z.object({}),
+        contextSchema: toolContextSchema,
         execute: async () => 'ok',
-    }), { trust: { taint: 'yes' } });
+    } as never), { trust: { taint: 'yes' } });
+    const library = Object.assign(tool({
+        inputSchema: z.object({}),
+        execute: async () => 'ok',
+    }), { trust: 'unrelated library field' });
 
     expect(() => wrapToolsForRun({ forged }, context, store.effects)).toThrow('forged');
+    expect(() => wrapToolsForRun({ library }, context, store.effects)).not.toThrow();
+});
+
+it('keeps the plain ordinals of parallel gated approvals in call order when gate lookups differ in latency', async () => {
+    const ctx = setup({
+        model: mockModel([call('ask'), done]),
+        tools: {
+            ask: defineTool({
+                inputSchema: z.object({}),
+                execute: async (_, { context }) => {
+                    const handle = context.channels.findOneOrFail();
+                    const [a, b] = await Promise.all([
+                        handle.approve({ title: 'A', address: 'x' }),
+                        handle.approve({ title: 'B', address: 'y' }),
+                    ]);
+
+                    return `${a.approved}:${b.approved}`;
+                },
+            }),
+        },
+    });
+    const { findOne } = ctx.store.effects;
+    let slow: string | undefined;
+
+    ctx.store.effects.findOne = async (key) => {
+        if (slow !== undefined && key.endsWith(slow)) {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 20);
+            });
+        }
+
+        return findOne.call(ctx.store.effects, key);
+    };
+
+    const runId = await ctx.dispatch();
+    const first = await ctx.store.runs.findOne(runId);
+
+    expect(first?.waiting?.approvalId).toMatch(/^bound:/);
+    expect(first?.waiting?.body).toContain('"x"');
+
+    // A's gate lookup is slow from now on: B passes its gate first on every replay
+    slow = first!.waiting!.approvalId;
+
+    for (let i = 0; i < 4; i++) {
+        const run = await ctx.store.runs.findOne(runId);
+
+        if (!run?.waiting?.approvalId.startsWith('bound:')) {
+            break;
+        }
+
+        await ctx.engine.approve(runId, { approvalId: run.waiting.approvalId, approved: true });
+        await ctx.engine.idle();
+        await new Promise((resolve) => {
+            setTimeout(resolve, 50);
+        });
+        await ctx.engine.idle();
+    }
+
+    const plain = await ctx.store.runs.findOne(runId);
+
+    expect(plain?.status).toBe('waiting');
+    expect(plain?.waiting?.title).toBe('B');
+    expect(plain?.waiting?.approvalId).toMatch(/:1$/);
 });

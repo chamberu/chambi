@@ -455,6 +455,27 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         return pendingStepEnd;
     };
 
+    // Conversation sends a tool did not await, bounded: a transport that never settles stops being
+    // awaited after a grace, and the execution's abort on exit then ends the send (it stays pending,
+    // terminal reconciliation marks it unknown), so pause() and finish() are not held by it.
+    const awaitJournal = async (): Promise<void> => {
+        const journal = ctx.conversation?.capability.idle(run.id);
+
+        if (!journal) {
+            return;
+        }
+
+        let grace: { clear(): void } | undefined;
+
+        try {
+            await Promise.race([journal, new Promise<void>((resolve) => {
+                grace = clock.setTimeout(resolve, CONVERSATION_SEND_GRACE_MS);
+            })]);
+        } finally {
+            grace?.clear();
+        }
+    };
+
     if (pending.length > 0) {
         let outcome: Awaited<ReturnType<typeof runPending>>;
 
@@ -499,6 +520,8 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         replaying = false;
 
         if (outcome !== 'done') {
+            // the same bounded wait as after the model loop, before the abort ends the sends
+            await untilAborted(awaitJournal(), signal).catch(() => {});
             local.abort();
             timeout?.clear();
 
@@ -587,22 +610,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         const [steps, finishReason, text] = await Promise.all([stream.steps, stream.finishReason, stream.text]);
 
         // Keep normal sends alive until their journal settles; cancellation still exits via untilAborted.
-        // A transport that never settles stops being awaited after a grace: the execution's abort on exit
-        // then ends the send (it stays pending, terminal reconciliation marks it unknown), so pause() and
-        // finish() are not held by it.
-        const journal = ctx.conversation?.capability.idle(run.id);
-
-        if (journal) {
-            let grace: { clear(): void } | undefined;
-
-            try {
-                await Promise.race([journal, new Promise<void>((resolve) => {
-                    grace = clock.setTimeout(resolve, CONVERSATION_SEND_GRACE_MS);
-                })]);
-            } finally {
-                grace?.clear();
-            }
-        }
+        await awaitJournal();
 
         return {
             stream,

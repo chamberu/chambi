@@ -10,6 +10,7 @@ import { isObject } from 'smob';
 import { ToolNotAllowedError } from '../errors/index.ts';
 import type { IEffectRepository } from '../repository/types.ts';
 import type { ToolContext, ToolTrust } from '../tool/types.ts';
+import { hasToolContext } from '../tool/helpers.ts';
 import { assertToolTrust } from '../trust/asserts.ts';
 import { assertTrust, gateOutbound, markUntrusted } from '../trust/module.ts';
 import { SUSPENDED_RESULT } from '../approval/constants.ts';
@@ -93,8 +94,9 @@ function toolCallIdOf(options: unknown): string {
  * forward the call options unchanged. A throwing execute (or alreadyApplied)
  * records nothing, so a retry can still apply. Tools without `execute` pass
  * through untouched. A call approve() suspended (see `onSuspend`) resolves
- * with a placeholder, whatever the tool did with the signal. A tool whose
- * own `trust` is malformed throws InvalidAgentDefinitionError.
+ * with a placeholder, whatever the tool did with the signal. A chamvi tool
+ * (contextSchema toolContextSchema) whose own `trust` is malformed throws
+ * InvalidAgentDefinitionError; a third-party tool's `trust` field is ignored.
  */
 export function wrapToolsForRun(
     tools: ToolSet,
@@ -163,9 +165,11 @@ export function wrapToolsForRun(
                 throw new ToolNotAllowedError(name);
             }
         };
-        const own = (def as { trust?: unknown }).trust;
+        // Only a chamvi tool's own `trust` classifies it: a third-party tool stays trusted unless the
+        // agent's `trust.tools` names it, whatever unrelated `trust` field it carries. A hand-built
+        // chamvi tool can carry an unchecked trust: refused like defineTool() refuses it.
+        const own = hasToolContext(def) ? (def as { trust?: unknown }).trust : undefined;
 
-        // a hand-built tool can carry an unchecked trust: refused like defineTool() refuses it
         assertToolTrust(own, name);
 
         const trust: ToolTrust = { ...own, ...options.trust?.tools?.[name] };

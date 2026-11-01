@@ -5,6 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { ToolCallFrame } from '../effect/types.ts';
+import type { ApprovalRequest } from '../engine/execute/types.ts';
 import type { Invoker } from '../trigger/types.ts';
 
 /** One choice of an approval request; `detail` is shown in the UI only (e.g. a diff). */
@@ -34,4 +36,11 @@ export type ApprovalDecision = {
     approver?: Invoker;
     /** The selected option ids in the request's option order; only on an approval of a request with options. */
     selected?: string[];
+};
+
+/** A plain approval ordinal taken before any await (internal, not exported): see reserveApproval(). */
+export type ApprovalReservation = {
+    frame: ToolCallFrame;
+    choice: Pick<ApprovalRequest, 'options' | 'multiple'>;
+    ordinal: number;
 };

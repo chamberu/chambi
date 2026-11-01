@@ -8,7 +8,7 @@
 import { conversationFor } from '../conversation/context.ts';
 import { gateOutbound } from '../trust/module.ts';
 import { isObject } from 'smob';
-import { requestApproval } from '../approval/request.ts';
+import { requestApproval, reserveApproval } from '../approval/request.ts';
 import type { ApprovalDecision, ApprovalRequestInput } from '../approval/types.ts';
 import { currentToolCall } from '../effect/frame.ts';
 import { matchesEmitReceipt } from '../conversation/helpers.ts';
@@ -262,8 +262,13 @@ function createChannelHandle(
         }
 
         // The request body goes to the target: another destination passes the outbound gate like emit()
-        // (outside a tool call requestApproval() refuses the request).
+        // (outside a tool call requestApproval() refuses the request). The plain ordinal is reserved
+        // before the gate's awaits, so parallel requests keep their ids across replays.
+        let reservation: ReturnType<typeof reserveApproval> | undefined;
+
         if (currentToolCall() && !isFixedDestination(target)) {
+            reservation = reserveApproval(rest as ApprovalRequestInput);
+
             await gateOutbound({ run: execution }, 'channel.approve', {
                 channel: name,
                 address: target,
@@ -276,7 +281,7 @@ function createChannelHandle(
             channel: name,
             address: target,
             slot,
-        });
+        }, reservation);
     };
 
     return {

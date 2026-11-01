@@ -526,6 +526,52 @@ describe('source emit journal', () => {
         expect((await s.store.runs.findOne(runId))?.status).toBe('cancelled');
         expect((await items(s)).filter((i) => i.role === 'assistant')).toMatchObject([{ status: 'unknown' }]);
     });
+    it('a replayed pending call gives its fire-and-forget emit the same grace before it pauses again', async () => {
+        const clock = new ControllableClock();
+        const s = setup(async (ctx) => {
+            void ctx.channels.findOneOrFail().emit({ body: 'in flight' }).catch(() => {});
+
+            await approve(ctx, { title: 'one' });
+
+            return approve(ctx, { title: 'two' });
+        }, clock);
+
+        s.out.mockImplementation(async () => new Promise<void>(() => {}));
+
+        const { runId } = await s.ctx.dispatchConversation({
+            agent: 'helper',
+            trigger: 'message',
+            payload: 'hello',
+            address: 'source',
+        }, target);
+
+        await s.engine.start();
+        await vi.waitFor(() => expect(s.out).toHaveBeenCalledTimes(1));
+        await vi.waitFor(async () => {
+            clock.advance(CONVERSATION_SEND_GRACE_MS);
+            expect((await s.store.runs.findOne(runId))?.status).toBe('waiting');
+        });
+
+        const first = await s.store.runs.findOne(runId);
+
+        await s.engine.approve(runId, { approvalId: first!.waiting!.approvalId, approved: true });
+        await s.engine.tick();
+        await vi.waitFor(() => expect(s.out).toHaveBeenCalledTimes(2));
+
+        const { signal } = s.out.mock.calls[1]![2];
+
+        await new Promise((resolve) => {
+            setTimeout(resolve, 20);
+        });
+        expect(signal.aborted).toBe(false);
+        expect((await s.store.runs.findOne(runId))?.status).toBe('running');
+
+        await vi.waitFor(async () => {
+            clock.advance(CONVERSATION_SEND_GRACE_MS);
+            expect((await s.store.runs.findOne(runId))?.waiting?.title).toBe('two');
+        });
+        expect(signal.aborted).toBe(true);
+    });
     it('stop_does_not_pretend_flush_cancels_send', async () => {
         const gate = Promise.withResolvers<void>();
         const s = setup(async (ctx) => {
