@@ -1,6 +1,6 @@
 {
     "name": "@chamvi/store-db",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "type": "module",
     "description": "Database store for chamvi (PostgreSQL), with TypeORM repositories for durable runs, leases and agent state.",
     "author": {
@@ -53,8 +53,8 @@
         "typeorm-extension": "^4.3.0"
     },
     "devDependencies": {
-        "@chamvi/core": "^0.4.0",
-        "@chamvi/test-kit": "^0.4.0",
+        "@chamvi/core": "^0.4.1",
+        "@chamvi/test-kit": "^0.4.1",
         "@swc/core": "^1.16.20",
         "@testcontainers/postgresql": "^12.2.1",
         "ai": "^7.0.150",
@@ -64,7 +64,7 @@
         "zod": "^4.6.7"
     },
     "peerDependencies": {
-        "@chamvi/core": "^0.4.0",
+        "@chamvi/core": "^0.4.1",
         "pg": "^8",
         "typeorm": "^1.1.2"
     }

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.1](https://github.com/chamvi/chamvi/compare/v0.4.0...v0.4.1) (2026-11-01)
+
+
+### Features
+
+* **core,app:** resolve embedding models ([#107](https://github.com/chamvi/chamvi/issues/107)) ([d0e56b4](https://github.com/chamvi/chamvi/commit/d0e56b46c814037b55117e7163fa482dbb49519b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @chamvi/core bumped from ^0.4.0 to ^0.4.1
+  * peerDependencies
+    * @chamvi/core bumped from ^0.4.0 to ^0.4.1
+
 ## [0.4.0](https://github.com/chamvi/chamvi/compare/v0.3.1...v0.4.0) (2026-11-01)
 
 

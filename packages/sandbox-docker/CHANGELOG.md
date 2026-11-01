@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.1](https://github.com/chamvi/chamvi/compare/v0.4.0...v0.4.1) (2026-11-01)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @chamvi/coding bumped from ^0.4.0 to ^0.4.1
+    * @chamvi/core bumped from ^0.4.0 to ^0.4.1
+    * @chamvi/sandbox bumped from ^0.4.0 to ^0.4.1
+    * @chamvi/test-kit bumped from ^0.4.0 to ^0.4.1
+  * peerDependencies
+    * @chamvi/core bumped from ^0.4.0 to ^0.4.1
+    * @chamvi/sandbox bumped from ^0.4.0 to ^0.4.1
+
 ## [0.4.0](https://github.com/chamvi/chamvi/compare/v0.3.1...v0.4.0) (2026-11-01)
 
 
