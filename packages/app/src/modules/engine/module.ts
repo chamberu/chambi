@@ -20,7 +20,7 @@ import type { EngineModuleOptions } from './types.ts';
  * Builds the `Engine` (start and job mode; nothing in migrate mode). `setup`
  * reads the model settings (env over the config file over createApp's
  * `model`/`providers`; every issue in one InvalidAgentDefinitionError) and
- * builds the model resolver, and contributes `agentChannel()` (channel
+ * builds the model resolver (registered as `MODELS`), and contributes `agentChannel()` (channel
  * `agent`, the one hand-offs come in on) to `CHANNELS`; `onReady` builds the engine with the default
  * model, the resolver (which refuses an agent whose model cannot resolve) and
  * every `CHANNELS` contribution (two of one name, or a subscription of a
@@ -73,6 +73,8 @@ export class EngineModule implements IModule {
 
         this.model = settings.model?.ref;
         this.models = await createModelResolver(settings, { ...(context.models !== undefined && { models: context.models }) });
+        // the resolver other modules resolve model strings through (embedding models included)
+        container.register(AppToken.MODELS, { useValue: this.models });
     }
 
     async onReady(container: IContainer): Promise<void> {

@@ -68,6 +68,14 @@ An in-process GitHub for `createGithubApp({ fetch: fake.fetch, privateKey: fake.
 
 A request whose `signal` aborts, also while a route handler is pending, rejects with the signal's reason, as Node's `fetch` does. It never touches the network.
 
+## mockEmbeddingModel
+
+```ts
+function mockEmbeddingModel(options?: { dimensions?: number }): MockEmbeddingModel; // calls: every doEmbed call
+```
+
+An AI SDK embedding model without a provider: a hashed bag of words, normalized, 64 dimensions by default (1 to 8192), so texts sharing words score close. `calls` records each call's values.
+
 ## ControllableClock
 
 ```ts

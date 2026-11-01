@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import type { LanguageModel } from 'ai';
+import type { EmbeddingModel, LanguageModel } from 'ai';
 
 // #region public
 
@@ -16,7 +16,7 @@ import type { LanguageModel } from 'ai';
  */
 export type ModelRef = string | LanguageModel;
 
-/** Turns `'<provider>/<model id>'` strings into LanguageModel objects. */
+/** Turns `'<provider>/<model id>'` strings into LanguageModel (and, optionally, EmbeddingModel) objects. */
 export interface IModelResolver {
     /**
      * Refuses a ref that cannot resolve (unknown provider, missing setting)
@@ -26,6 +26,12 @@ export interface IModelResolver {
     check(ref: string, agent?: string): void;
     /** The LanguageModel for `ref`; InvalidAgentDefinitionError when it cannot resolve. */
     resolve(ref: string): LanguageModel;
+    /**
+     * The EmbeddingModel for `ref` (`'<provider>/<model id>'`), for packages
+     * that embed text; InvalidAgentDefinitionError when it cannot resolve.
+     * Optional: a resolver without it hands out no embedding models.
+     */
+    embedding?(ref: string): EmbeddingModel;
 }
 
 /** What checkAgentModel() reads besides the agent: the engine's default and resolver. */

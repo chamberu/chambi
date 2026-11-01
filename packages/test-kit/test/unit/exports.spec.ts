@@ -17,6 +17,7 @@ describe('public api', () => {
         'describeRepositoryContract',
         'describeWorkspaceContract',
         'mockModel',
+        'mockEmbeddingModel',
         'textModel',
         'approvalModel',
         'failingModel',
