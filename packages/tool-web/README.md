@@ -83,6 +83,8 @@ The request resolves the name again, so a host that answers the check with a pub
 
 Everything the tool returns comes from the open web, and a page can carry text written for the model ("ignore your instructions and ..."). The tool description says the result is untrusted data; say it in the agent's instructions too, and keep tools with side effects behind approvals or policies when an agent reads the web.
 
+`web_fetch` declares `trust: { taint: true }`: its results taint the run, so chamvi's outbound gates ask before a later outbound tool runs. A fetch on a tainted run is not gated itself, although the model picks its URL and a query string can carry data to the target host. To make every fetch after the first one wait for approval, opt in per agent with `trust: { tools: { web_fetch: { guardWhenTainted: true } } }`.
+
 ## Options
 
 | Option | Default | |

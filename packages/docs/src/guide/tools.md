@@ -81,7 +81,17 @@ A recovered run repeats the step that was in progress when the process died. A p
 
 <<< @/snippets/tool-web.ts#agent
 
-Everything the tool returns is written by strangers, and a page can carry instructions aimed at the model. `web_fetch` declares `trust.taint: true`, so its results and execution errors taint the run. Say so in the instructions too, and classify outbound tools or keep side effects behind [approvals](/guide/approvals) when an agent reads the web.
+Everything the tool returns is written by strangers, and a page can carry instructions aimed at the model. `web_fetch` declares `trust: { taint: true }`, so its results and execution errors taint the run. Say so in the instructions too, and classify outbound tools or keep side effects behind [approvals](/guide/approvals) when an agent reads the web.
+
+A fetch on an already tainted run is **not** gated. Its URL is chosen by the model and reaches the target host (and its logs), so a model steered by an earlier page can carry data out in a query string. Agents that hold anything worth exfiltrating make every later fetch wait for approval:
+
+```ts
+defineAgent({
+    // ...
+    tools: webTools(),
+    trust: { tools: { web_fetch: { guardWhenTainted: true } } },
+});
+```
 
 ## Restricting tools per invoker
 

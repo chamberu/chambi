@@ -57,10 +57,10 @@ function codeOf(error: unknown): string | undefined {
 const PAGE = '<html><head><title>Changelog</title></head><body><main><h2>1.2.0</h2><p>Fixed <a href="/i/1">#1</a>.</p></main></body></html>';
 
 describe('web_fetch', () => {
-    it('classifies page contents as untrusted and request URLs as outbound', () => {
+    it('classifies page contents as untrusted and leaves request URLs ungated', () => {
         const tool = webTools().web_fetch as Tool & { trust: ToolTrust };
 
-        expect(tool.trust).toEqual({ taint: true, guardWhenTainted: true });
+        expect(tool.trust).toEqual({ taint: true });
     });
 
     it('returns a page as markdown with its title', async () => {
