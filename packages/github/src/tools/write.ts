@@ -6,7 +6,12 @@
  */
 
 import type { ToolExecutionOptions, ToolSet } from 'ai';
-import { ValidationError, defineEffectTool, effectMarker } from '@chamvi/core';
+import {
+    ValidationError,
+    defineEffectTool,
+    effectMarker,
+    runSource,
+} from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
 import { isObject } from 'smob';
 import { isChannelOf, isSameLogin } from '../app/helpers.ts';
@@ -172,8 +177,10 @@ export function createWriteTools(app: IGithubApp): ToolSet {
         github_create_comment: defineEffectTool<CommentInput, GithubComment>({
             trust: {
                 guardWhenTainted: (input, ctx) => {
-                    const { channel, address } = ctx.run.trigger;
-                    const source = parseAddress(address);
+                    // the trust snapshot: tool code writing ctx.run.trigger cannot move the source issue
+                    const bound = runSource(ctx);
+                    const channel = bound?.channel;
+                    const source = parseAddress(bound?.address);
                     const { owner, repo } = parseRepo(input.repo);
                     const number = requireInteger(input.number, 'number', 1);
 

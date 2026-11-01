@@ -94,7 +94,7 @@ async function abortWhileRunning(ctx: ReturnType<typeof setup>) {
 }
 
 describe('runJob with a signal', () => {
-    it('caller cancellation during skill preparation preserves queued status and skips model execution', async () => {
+    it('caller cancellation during skill preparation fires nothing and skips model execution', async () => {
         const entered = Promise.withResolvers<AbortSignal>();
         const release = Promise.withResolvers<void>();
         const ctx = setup([fakeSkillRuntime({
@@ -115,7 +115,20 @@ describe('runJob with a signal', () => {
         controller.abort();
         expect(signal.aborted).toBe(true);
         release.resolve();
-        await expect(job).resolves.toMatchObject({ status: 'queued', exitCode: 0 });
+        await expect(job).resolves.toEqual({ status: 'skipped', exitCode: 0 });
+        expect((await ctx.store.runs.find({ agent: 'sweep' })).data).toEqual([]);
+    });
+
+    it('a failed skill preparation rejects before the tick is dispatched, leaving no queued run', async () => {
+        const failure = new Error('source temporarily unavailable');
+        const ctx = setup([fakeSkillRuntime({
+            prepare: async () => {
+                throw failure;
+            },
+        }).input]);
+
+        await expect(runJob({ engine: ctx.engine, agent: ctx.agent })).rejects.toBe(failure);
+        expect((await ctx.store.runs.find({ agent: 'sweep' })).data).toEqual([]);
     });
 
     it('independent verification errors still reject when the caller also cancels', async () => {
@@ -142,6 +155,7 @@ describe('runJob with a signal', () => {
         controller.abort();
         release.resolve();
         await rejection;
+        expect((await ctx.store.runs.find({ agent: 'sweep' })).data).toEqual([]);
     });
 
     it('returns the stored status after the drain when aborted while waiting', async () => {

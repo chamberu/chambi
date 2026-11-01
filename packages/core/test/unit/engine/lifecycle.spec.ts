@@ -37,6 +37,7 @@ import { systemClock } from '../../../src/clock/index.ts';
 import { ControllableClock } from '../../utils/clock.ts';
 import { MemoryRunRepository, createMemoryStore } from '../../../src/repository/index.ts';
 import { mockModel } from '../../utils/mock-model.ts';
+import { createMemoryStoreWithRuns } from '../../utils/store.ts';
 import type { MockResponse } from '../../utils/mock-model.ts';
 
 const engines: IEngine[] = [];
@@ -707,7 +708,7 @@ describe('recovery', () => {
             }
         }
         const clock = new ControllableClock();
-        const store = { ...createMemoryStore({ clock }), runs: new FlakyRepository({ clock }) };
+        const store = createMemoryStoreWithRuns(new FlakyRepository({ clock }), { clock });
         const { promise: stalled, resolve: release } = Promise.withResolvers<void>();
         const { model, calls } = scripted([{ before: () => stalled, response: text('late') }, text('again')]);
         const { engine, errors } = make(model, {
@@ -746,7 +747,7 @@ describe('recovery', () => {
     });
 
     it('finish writes nothing when the claim is taken over after the last ownership check', async () => {
-        const store = { ...createMemoryStore(), runs: new TakeoverRepository() };
+        const store = createMemoryStoreWithRuns(new TakeoverRepository());
 
         store.runs.takeoverOn = 'completed';
 
@@ -828,7 +829,7 @@ describe('recovery', () => {
     });
 
     it('cancel throws when the execution loses its lease while being cancelled', async () => {
-        const store = { ...createMemoryStore(), runs: new TakeoverRepository() };
+        const store = createMemoryStoreWithRuns(new TakeoverRepository());
         const { model, calls } = scripted(['hang']);
         const { engine, errors } = make(model, { store, owner: 'A' });
 

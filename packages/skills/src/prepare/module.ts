@@ -22,7 +22,14 @@ import {
     installSkillForAgent,
 } from 'skills';
 import type { PrepareSkillsOptions, PreparedSkill } from './types.ts';
-import { copyPreparationOptions, invalid } from './helpers.ts';
+import {
+    copyPreparationOptions,
+    invalid,
+    isCancellation,
+    toPreparationError,
+    unavailable,
+} from './helpers.ts';
+import { acquireGuard, releaseGuard } from './lock.ts';
 
 const run = promisify(execFile);
 const marker = '.chamvi-skills';
@@ -37,6 +44,23 @@ async function gitMetadata(args: string[], signal?: AbortSignal) {
 
     try {
         return await pending;
+    } catch (error) {
+        if (signal?.aborted) {
+            throw error;
+        }
+
+        const { code, signal: terminatedBy } = error as { code?: unknown; signal?: unknown };
+
+        // a failing or flooding command on the pinned checkout is the source's; a timeout or an external signal is retryable
+        if (typeof code === 'number' || code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+            invalid();
+        }
+
+        if (typeof terminatedBy === 'string') {
+            unavailable();
+        }
+
+        throw error;
     } finally {
         await closed;
     }
@@ -63,7 +87,8 @@ async function inspectTarget(directory: string): Promise<boolean> {
 
     if (entries.length) {
         const file = join(directory, marker);
-        const identity = await fs.lstat(file);
+        // no ownership marker: the target is not ours
+        const identity = await fs.lstat(file).catch(() => invalid());
 
         if (!identity.isFile() || identity.size !== ownership.length || await fs.readFile(file, 'utf8') !== ownership) {
             invalid();
@@ -73,7 +98,12 @@ async function inspectTarget(directory: string): Promise<boolean> {
     return true;
 }
 
-/** Prepare a dedicated corpus during setup/build; the caller owns source selection and content approval. */
+/**
+ * Prepare a dedicated corpus during setup/build; the caller owns source selection and content approval.
+ * Rejects with `InvalidAgentDefinitionError` for configuration (options, pin, source content, authentication,
+ * a missing repository, an unowned target), with `SKILL_PREPARATION_LOCKED_ERROR_CODE` while another
+ * preparer holds the target's guard, and with `SKILL_PREPARATION_FAILED_ERROR_CODE` for retryable failures.
+ */
 export async function prepareSkills(options: PrepareSkillsOptions): Promise<readonly PreparedSkill[]> {
     const {
         revision,
@@ -88,9 +118,10 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
 
     let clone: string | undefined;
     let stage: string | undefined;
-    let lock: string | undefined;
+    let lock: { guard: string; token: string } | undefined;
     let previous: string | undefined;
     let result: readonly PreparedSkill[];
+    let failed = false;
 
     try {
         await fs.mkdir(dirname(requestedDirectory), { recursive: true });
@@ -103,9 +134,8 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
         const directory = join(parent, basename(requestedDirectory));
         const guard = join(parent, `.${basename(directory)}.chamvi-skills-lock`);
 
-        // shortcut: a crashed preparer leaves its guard, remove it manually after confirming no preparer is running.
-        await fs.mkdir(guard);
-        lock = guard;
+        // a guard a crashed preparer left is recovered (its process is gone here, or it is older than the bound)
+        lock = { guard, token: await acquireGuard(guard) };
         signal?.throwIfAborted();
         await inspectTarget(directory);
         signal?.throwIfAborted();
@@ -134,13 +164,14 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
 
         signal?.throwIfAborted();
 
+        // discovery reads the pinned checkout only: a failure is the source's, never transient
         const discovered = await discoverSkills(clone, parsed.subpath, {
             includeDuplicateNames: true,
             includeInternal: true,
             fullDepth: true,
             // Source diagnostics can contain private YAML excerpts.
             onWarning: () => {},
-        });
+        }).catch(() => invalid());
 
         signal?.throwIfAborted();
 
@@ -181,7 +212,16 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
                 path,
             });
 
-            if (await verify?.(prepared) !== undefined) {
+            // the caller's own cancellation stays a cancellation; any other verifier failure is a refusal
+            const verdict = await (async () => verify?.(prepared))().catch((error: unknown) => {
+                if (isCancellation(error, signal)) {
+                    throw error;
+                }
+
+                return invalid();
+            });
+
+            if (verdict !== undefined) {
                 invalid();
             }
 
@@ -219,30 +259,27 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
         previous = undefined;
         result = Object.freeze(staged.map((skill) => Object.freeze({ ...skill, path: join(requestedDirectory, skill.name) })));
     } catch (error) {
-        if (signal?.aborted && error === signal.reason) {
-            throw error;
+        failed = true;
+
+        if (isCancellation(error, signal)) {
+            throw signal!.reason;
         }
 
-        if (signal?.aborted && Error.isError(error)) {
-            if ('code' in error && error.code === 'ABORT_ERR' && error.cause === signal.reason) {
-                throw signal.reason;
-            }
-        }
-
-        return invalid();
+        return toPreparationError(error);
     } finally {
         // Keep a backup if restoring the previous corpus itself failed.
         const cleanups = [
             clone && cleanupTempDir(clone),
             stage && !previous && fs.rm(stage, { recursive: true, force: true }),
-            lock && fs.rmdir(lock),
+            lock && releaseGuard(lock.guard, lock.token),
         ];
         const settled = await Promise.allSettled(cleanups);
 
         const hasRejectedCleanup = settled.some((result) => result.status === 'rejected');
 
-        if (hasRejectedCleanup) {
-            invalid();
+        // a cleanup failure never replaces the error of a failed preparation (configuration, cancellation)
+        if (hasRejectedCleanup && !failed) {
+            unavailable();
         }
     }
 

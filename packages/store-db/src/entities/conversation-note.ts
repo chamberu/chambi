@@ -19,6 +19,7 @@ import { ConversationEntity } from './conversation.ts';
 import { RunEntity } from './run.ts';
 
 @Index(['expiresAt'])
+@Index(['runId'])
 @Entity({ name: TableName.CONVERSATION_NOTES })
 export class ConversationNoteEntity {
     @PrimaryColumn({

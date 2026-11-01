@@ -47,6 +47,36 @@ describe('run-job', () => {
         expect(fake.exitCodes).toEqual([1]);
     });
 
+    describe('a folder agent whose skill preparation fails', () => {
+        const agentsDir = fileURLToPath(new URL('../../fixtures/skilled/agents', import.meta.url));
+
+        async function runSkilled(agent: string) {
+            await runCli(['run-job', agent, '--entry', fixture('skilled')], fake.context({
+                env: {
+                    CHAMVI_DRAIN_TIMEOUT_MS: '1000',
+                    CHAMVI_AGENTS_DIR: agentsDir,
+                },
+            }));
+        }
+
+        it.each(['flaky', 'locked'])('exits 1 for a retryable failure (%s)', async (agent) => {
+            await runSkilled(agent);
+            expect(fake.exitCodes).toEqual([1]);
+            expect(fake.stderr.join('')).toMatch(/source unavailable|guard held/);
+        });
+
+        it('exits 2 for a configuration failure', async () => {
+            await runSkilled('pinned');
+            expect(fake.exitCodes).toEqual([2]);
+            expect(fake.stderr.join('')).toContain('pin mismatch');
+        });
+
+        it('runs a job of another agent', async () => {
+            await runSkilled('echo');
+            expect(fake.exitCodes).toEqual([0]);
+        });
+    });
+
     it('unknown agent exits 2', async () => {
         await runJob(['nope', '--entry', fixture('app')]);
         expect(fake.exitCodes).toEqual([2]);

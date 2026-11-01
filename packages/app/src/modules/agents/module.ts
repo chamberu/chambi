@@ -34,7 +34,9 @@ import { createAgentsWatcher } from './watcher.ts';
  * watcher polls every `CHAMVI_AGENTS_POLL_MS` from `started` until
  * `stopping` or `teardown`, awaiting a reload in flight. A job never cancels:
  * a revision conflict of the job's own agent fails the job
- * (InvalidRunStateError), another agent's is an issue. A check
+ * (InvalidRunStateError), another agent's is an issue. A folder agent whose
+ * skill preparation fails is an issue (the others start, polling retries);
+ * a job of that agent fails with the preparation error. A check
  * (`context.check`) only loads and checks, writing nothing; it also runs
  * every `AGENT_CHECKS` contribution over the code agents, since a check
  * never reaches `engine.start()` (the cron channel's check of them).
@@ -152,6 +154,13 @@ export class AgentsModule implements IModule {
 
         if (conflict !== undefined) {
             throw new InvalidRunStateError(conflict);
+        }
+
+        // a job of an agent whose skills failed to prepare fails with that error (configuration or transient)
+        const failure = context.job ? watcher.preparationFailure(context.job.agent) : undefined;
+
+        if (failure) {
+            throw failure.error;
         }
     }
 

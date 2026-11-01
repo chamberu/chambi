@@ -15,6 +15,7 @@ import {
     defineAgent,
     defineEffectTool,
     defineTool,
+    runSource,
 } from '@chamvi/core';
 import type {
     AgentDefinition,
@@ -173,6 +174,29 @@ it('keeps the source exemption on the trigger snapshot when a tool rewrites ctx.
 
     await ctx.dispatch();
     expect(ctx.sent).toEqual([]);
+});
+
+it('exposes the bound trigger source through runSource(), whatever tool code writes to ctx.run.trigger', async () => {
+    const seen: unknown[] = [];
+    const ctx = setup({
+        model: mockModel([call('inspect'), done]),
+        tools: {
+            inspect: defineTool({
+                inputSchema: z.object({}),
+                execute: async (_, { context }) => {
+                    (context.run.trigger as { address?: string }).address = 'attacker';
+                    context.run.trigger.channel = 'other';
+                    seen.push(runSource(context));
+
+                    return 'ok';
+                },
+            }),
+        },
+    });
+
+    await ctx.dispatch();
+    expect(seen).toEqual([{ channel: 'source', address: 'origin' }]);
+    expect(runSource({ run: { ...({} as ToolContext['run']) } })).toBeUndefined();
 });
 
 it('sends the trust notification to the snapshot of the source address', async () => {

@@ -26,3 +26,4 @@ export * from './state/index.ts';
 export * from './repository/index.ts';
 export * from './tool/index.ts';
 export * from './trigger/index.ts';
+export * from './trust/index.ts';

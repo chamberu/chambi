@@ -8,6 +8,7 @@
 import {
     Column,
     Entity,
+    Index,
     JoinColumn,
     ManyToOne,
     OneToOne,
@@ -19,6 +20,7 @@ import { JSON_VALUE_TRANSFORMER, TableName } from './constants.ts';
 import { RunEntity } from './run.ts';
 import { ConversationEntity } from './conversation.ts';
 
+@Index(['conversationScopeId'])
 @Entity({ name: TableName.CHECKPOINTS })
 export class CheckpointEntity {
     @PrimaryColumn({

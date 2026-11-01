@@ -27,6 +27,8 @@ export type ToolContextInput = {
     runId?: string;
     /** The run's channel; default `github`. */
     channel?: string;
+    /** The run's source address (bound into the trust snapshot); default none. */
+    address?: string;
     /** Default: a GithubEvent for installation 42. */
     payload?: unknown;
     receivedAt?: Date;
@@ -53,6 +55,7 @@ export function toolContext(input: ToolContextInput = {}): ToolContext {
         trigger: channel,
         channel,
         payload,
+        ...(input.address !== undefined ? { address: input.address } : {}),
         receivedAt: input.receivedAt ?? START,
     };
 

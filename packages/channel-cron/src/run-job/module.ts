@@ -12,7 +12,9 @@ import { isQueuedBehindApproval, resolveCronSubscription } from './helpers.ts';
 import type { RunJobOptions, RunJobResult } from './types.ts';
 
 /**
- * Fires one cron subscription once (for a Kubernetes CronJob): dispatches the
+ * Fires one cron subscription once (for a Kubernetes CronJob): prepares the
+ * engine's skills (a failure rejects before anything is dispatched; an abort
+ * meanwhile fires nothing), dispatches the
  * tick at the engine clock's `now()` (the overlap policy applies), then starts
  * the engine without its channels (no schedules, sockets or polling) and
  * runs one approval tick, so leftovers of earlier jobs (a run whose pod was
@@ -42,6 +44,21 @@ export async function runJob(opts: RunJobOptions): Promise<RunJobResult> {
     const subscription = resolveCronSubscription(engine, agent, opts.subscription);
 
     // a stop that arrived before the job must not recover and execute the store's queued runs
+    if (signal?.aborted) {
+        return { status: 'skipped', exitCode: 0 };
+    }
+
+    // skills are prepared before the tick: a failed preparation leaves no queued run behind
+    try {
+        await engine.prepare({ signal });
+    } catch (error) {
+        if (signal?.aborted && error === signal.reason) {
+            return { status: 'skipped', exitCode: 0 };
+        }
+
+        throw error;
+    }
+
     if (signal?.aborted) {
         return { status: 'skipped', exitCode: 0 };
     }

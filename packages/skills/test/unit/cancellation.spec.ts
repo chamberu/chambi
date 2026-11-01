@@ -8,7 +8,7 @@
 import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { prepareSkills } from '@chamvi/skills';
+import { SKILL_PREPARATION_FAILED_ERROR_CODE, prepareSkills } from '@chamvi/skills';
 import { createGitFixture } from '@chamvi/test-kit';
 import type { GitFixture } from '@chamvi/test-kit';
 import {
@@ -86,7 +86,7 @@ it.each(['promotion', 'rollback'] as const)('finishes %s and cleanup before obse
     });
 
     if (phase === 'rollback') {
-        await expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toMatchObject({ name: 'InvalidAgentDefinitionError' });
+        await expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toMatchObject({ code: SKILL_PREPARATION_FAILED_ERROR_CODE });
     } else {
         await expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toBe(reason);
     }
@@ -120,5 +120,5 @@ it('preserves cleanup failure when the caller cancels during cleanup', async () 
 
         throw new Error('PRIVATE cleanup failure');
     });
-    await expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toMatchObject({ name: 'InvalidAgentDefinitionError' });
+    await expect(prepareSkills({ ...options, signal: controller.signal })).rejects.toMatchObject({ code: SKILL_PREPARATION_FAILED_ERROR_CODE });
 });

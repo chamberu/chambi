@@ -15,10 +15,16 @@ import {
 } from 'vue';
 import { RouterLink } from 'vue-router';
 import type { RunWire } from '../../api/types.ts';
-import { canApprove, detailLines, notifiedLine } from '../../approvals/helpers.ts';
+import {
+    canApprove,
+    detailLines,
+    jsonBody,
+    notifiedLine,
+} from '../../approvals/helpers.ts';
 import { RouteName } from '../../router/constants.ts';
 import { shortId } from '../../runs/helpers.ts';
 import ExpiryCountdown from '../expiry-countdown/ExpiryCountdown.vue';
+import JsonBlock from '../json-block/JsonBlock.vue';
 import NavIcon from '../nav-icon/NavIcon.vue';
 import StatusChip from '../status-chip/StatusChip.vue';
 
@@ -46,6 +52,8 @@ const chosen = computed<string[]>(() => {
 
     return single.value !== undefined ? [single.value] : [];
 });
+/** A JSON body (a trust approval: the tool, its input and the taint) is pretty-printed; any other body stays text. */
+const structured = computed(() => (props.run.waiting?.body ? jsonBody(props.run.waiting.body) : undefined));
 const approvable = computed(() => !props.run.waiting || canApprove(props.run.waiting, chosen.value));
 
 // another wait point of the run: its options are others
@@ -126,8 +134,15 @@ watch(() => props.highlight, reveal);
                 >
                     This run consumed untrusted content. Review this request carefully before approving.
                 </p>
+                <div
+                    v-if="structured !== undefined"
+                    class="callout-json"
+                    data-testid="approval-body"
+                >
+                    <JsonBlock :value="structured" />
+                </div>
                 <p
-                    v-if="run.waiting.body"
+                    v-else-if="run.waiting.body"
                     class="callout-text"
                     data-testid="approval-body"
                     v-text="run.waiting.body"

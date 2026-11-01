@@ -12,5 +12,8 @@ export const INBOX_POLL_MS = 5000;
 
 export const INBOX_PAGE_SIZE = 100;
 
+/** The longest approval body shown as a JSON block; a longer one stays one text node. */
+export const JSON_BODY_MAX_LENGTH = 16_384;
+
 /** The shell's inbox, shared with the approvals view (one poller for both). */
 export const INBOX: InjectionKey<ReturnType<typeof useApprovals>> = Symbol('chamvi.inbox');

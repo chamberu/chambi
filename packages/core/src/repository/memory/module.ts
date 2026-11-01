@@ -21,16 +21,19 @@ import type { MemoryStoreOptions } from './types.ts';
 
 /** Independent in-memory capabilities; each call creates fresh storage. */
 export function createMemoryStore(options: MemoryStoreOptions = {}): IStore & { conversations: IConversationRepository } {
+    const runs = new MemoryRunRepository(options);
+    const hasRun = (runId: string) => runs.has(runId);
+
     return {
-        runs: new MemoryRunRepository(options),
-        steps: new MemoryStepRepository(),
-        checkpoints: new MemoryCheckpointRepository(),
+        runs,
+        steps: new MemoryStepRepository({ hasRun }),
+        checkpoints: new MemoryCheckpointRepository({ hasRun }),
         idempotency: new MemoryIdempotencyRepository(options),
         locks: new MemoryLockRepository(options),
         effects: new MemoryEffectRepository(),
         state: new MemoryStateRepository(),
         artifacts: new MemoryArtifactRepository(),
         agentRevisions: new MemoryAgentRevisionRepository(),
-        conversations: new MemoryConversationRepository(options),
+        conversations: new MemoryConversationRepository({ ...options, hasRun }),
     };
 }

@@ -3,7 +3,7 @@
 Several engines can share one store. They coordinate through the store alone: run claims are leases, concurrency keys are checked under store locks, and idempotency keys are claimed atomically. There is no leader and no extra service.
 
 ::: warning Durable store required
-`createMemoryStore()` lives in one process, so replicas cannot share it. Running several replicas needs a durable, shared store such as the [TypeORM store](/repositories/typeorm).
+`createMemoryStore()` lives in one process, so replicas cannot share it. Running several replicas needs a durable, shared store such as the [database store](/repositories/database).
 :::
 
 ## Local slots

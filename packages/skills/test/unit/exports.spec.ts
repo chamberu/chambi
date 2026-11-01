@@ -20,7 +20,19 @@ import * as skills from '@chamvi/skills';
 import { expect, expectTypeOf, it } from 'vitest';
 
 it('exports the Chamvi source, preparation and verified bundle API from main', () => {
-    expect(Object.keys(skills).sort()).toEqual(['createSkillCatalog', 'defineSkill', 'defineSkillSource', 'gitSkills', 'hashSkillBundle', 'loadSkillBundle', 'loadSkillBundles', 'prepareSkills']);
+    expect(Object.keys(skills).sort()).toEqual([
+        'SKILL_PREPARATION_FAILED_ERROR_CODE',
+        'SKILL_PREPARATION_LOCKED_ERROR_CODE',
+        'SKILL_PREPARATION_LOCK_STALE_MS',
+        'createSkillCatalog',
+        'defineSkill',
+        'defineSkillSource',
+        'gitSkills',
+        'hashSkillBundle',
+        'loadSkillBundle',
+        'loadSkillBundles',
+        'prepareSkills',
+    ]);
     expectTypeOf<ReturnType<typeof skills.gitSkills>>().toEqualTypeOf<ISkillSource & SkillInput>();
     expectTypeOf<ReturnType<typeof skills.loadSkillBundle>>().toEqualTypeOf<Skill & SkillInput>();
     expectTypeOf<Skill>().toExtend<SkillIdentity>();

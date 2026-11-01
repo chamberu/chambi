@@ -12,7 +12,7 @@ const store = createMemoryStore();
 |---|---|---|---|
 | `clock` | `IClock` | `systemClock` | Time source for every expiry decision |
 
-Each role is also exported as a class: `MemoryRunRepository`, `MemoryStepRepository`, `MemoryCheckpointRepository`, `MemoryIdempotencyRepository`, `MemoryLockRepository`, `MemoryEffectRepository`, `MemoryStateRepository`, `MemoryArtifactRepository`, `MemoryAgentRevisionRepository` and `MemoryConversationRepository`. Only runs, idempotency, locks and conversations need a clock.
+Each role is also exported as a class: `MemoryRunRepository`, `MemoryStepRepository`, `MemoryCheckpointRepository`, `MemoryIdempotencyRepository`, `MemoryLockRepository`, `MemoryEffectRepository`, `MemoryStateRepository`, `MemoryArtifactRepository`, `MemoryAgentRevisionRepository` and `MemoryConversationRepository`. Only runs, idempotency, locks and conversations need a clock. `MemoryStepRepository`, `MemoryCheckpointRepository` and `MemoryConversationRepository` take an optional `hasRun(runId)` lookup (`MemoryRunReferenceOptions`); `createMemoryStore()` wires its run repository in, so a step, checkpoint or conversation turn of an unknown run throws `RunNotFoundError`, as the database's foreign keys refuse it. A class built without `hasRun` accepts any run id. Replacing `runs` in a spread store (`{ ...createMemoryStore(), runs: custom }`) leaves the other roles checking the original run repository: build them with `hasRun` over the replacement.
 
 ## How it keeps the contract
 

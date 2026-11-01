@@ -5,15 +5,26 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { RepositoryNotFoundError } from '../../errors/index.ts';
+import { RepositoryNotFoundError, RunNotFoundError } from '../../errors/index.ts';
 import type { Checkpoint } from '../../run/types.ts';
 import type { ICheckpointRepository } from '../types.ts';
 import { copy } from './helpers.ts';
+import type { MemoryRunReferenceOptions } from './types.ts';
 
 export class MemoryCheckpointRepository implements ICheckpointRepository {
     protected checkpoints = new Map<string, Checkpoint>();
 
+    protected hasRun?: (runId: string) => boolean;
+
+    constructor(opts: MemoryRunReferenceOptions = {}) {
+        this.hasRun = opts.hasRun;
+    }
+
     async save(cp: Checkpoint): Promise<void> {
+        if (this.hasRun && !this.hasRun(cp.runId)) {
+            throw new RunNotFoundError(cp.runId);
+        }
+
         const current = this.checkpoints.get(cp.runId);
 
         if (!current || cp.stepIndex >= current.stepIndex) {

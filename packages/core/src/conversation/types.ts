@@ -203,6 +203,11 @@ export type BeginTurnResult = {
 export type MemoryConversationRepositoryOptions = {
     /** Every date and expiry decision; default systemClock. */
     clock?: IClock;
+    /**
+     * Synchronous run lookup; beginTurn for a run it does not know is refused with
+     * RunNotFoundError, as a database foreign key would. Without one any run id is accepted.
+     */
+    hasRun?: (runId: string) => boolean;
 };
 
 export type ConversationFindOptions = { limit: number; offset: number };

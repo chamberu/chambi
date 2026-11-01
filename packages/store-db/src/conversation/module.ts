@@ -26,7 +26,13 @@ import type {
     IConversationRepository,
     ResolvedConversationLimits,
 } from '@chamvi/core';
-import { In, LessThanOrEqual, Not } from 'typeorm';
+import {
+    In,
+    IsNull,
+    LessThanOrEqual,
+    MoreThan,
+    Not,
+} from 'typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 import { isObject } from 'smob';
 import {
@@ -35,7 +41,7 @@ import {
     ConversationNoteEntity,
     ConversationOperationEntity,
 } from '../entities/index.ts';
-import { asValues } from '../repository/helpers.ts';
+import { asValues, withRunReference } from '../repository/helpers.ts';
 import {
     assertConversationScope,
     assertConversationText,
@@ -190,8 +196,10 @@ export class DatabaseConversationRepository implements IConversationRepository {
 
     protected async locked<T>(id: string, fn: (manager: EntityManager, row: ConversationEntity | null) => Promise<T>): Promise<T> {
         // withDatabaseLock is session-advisory; this row lock must share the writes' transaction.
+        // FOR NO KEY UPDATE: the row is never deleted and its key never changes, so the lock need
+        // not conflict with the KEY SHARE locks child-row foreign key checks take.
         return this.dataSource.transaction(async (manager) => {
-            const row = await manager.withRepository(this.conversations).findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+            const row = await manager.withRepository(this.conversations).findOne({ where: { id }, lock: { mode: 'for_no_key_update' } });
 
             return fn(manager, row);
         });
@@ -224,7 +232,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
         assertRunId(runId);
         assertConversationText(text, CONVERSATION_LIMITS_MAX.maxItemBytes);
 
-        return this.locked(scope.id, async (manager, row) => {
+        return withRunReference(this.dataSource, runId, () => this.locked(scope.id, async (manager, row) => {
             if (!row || row.generation !== scope.generation) {
                 return { kind: 'stale' };
             }
@@ -292,7 +300,7 @@ export class DatabaseConversationRepository implements IConversationRepository {
             await this.trimCount(manager, row.id, row.generation, row.activeRunId, limits.maxStoredItems);
 
             return { kind: 'ready', snapshot };
-        });
+        }));
     }
 
     protected async recallItems(manager: EntityManager, scope: ConversationScope, limits: ResolvedConversationLimits) {
@@ -468,9 +476,12 @@ export class DatabaseConversationRepository implements IConversationRepository {
             return [];
         }
 
-        const rows = await manager.withRepository(this.notes).createQueryBuilder('note')
-            .where('note.scopeId = :id AND note.generation = :generation', scope)
-            .andWhere('(note.expiresAt IS NULL OR note.expiresAt > :now)', { now: this.clock.now() }).orderBy('note.key', 'ASC').getMany();
+        const now = this.clock.now();
+        const where = { scopeId: scope.id, generation: scope.generation };
+        const rows = await manager.withRepository(this.notes).find({
+            where: [{ ...where, expiresAt: IsNull() }, { ...where, expiresAt: MoreThan(now) }],
+            order: { key: 'ASC' },
+        });
 
         return rows.map(noteOf);
     }
@@ -701,7 +712,11 @@ export class DatabaseConversationRepository implements IConversationRepository {
         let after = '';
 
         for (;;) {
-            const page = await this.conversations.createQueryBuilder('scope').where('scope.id > :after', { after }).orderBy('scope.id', 'ASC').take(100).getMany();
+            const page = await this.conversations.find({
+                where: { id: MoreThan(after) },
+                order: { id: 'ASC' },
+                take: 100,
+            });
 
             if (page.length === 0) {
                 break;
@@ -738,19 +753,26 @@ export class DatabaseConversationRepository implements IConversationRepository {
                         }
 
                         const before = new Date(this.clock.now().getTime() - limits.retentionMs);
-                        const query = manager.withRepository(this.operations).createQueryBuilder('operation')
-                            .where({
-                                scopeId: row.id,
-                                createdAt: LessThanOrEqual(before),
-                                ...(row.activeRunId === null ? {} : { runId: Not(row.activeRunId) }),
-                            })
-                            .orderBy('operation.generation', 'ASC').addOrderBy('operation.id', 'ASC').take(100);
+                        const base = {
+                            scopeId: row.id,
+                            createdAt: LessThanOrEqual(before),
+                            ...(row.activeRunId === null ? {} : { runId: Not(row.activeRunId) }),
+                        };
 
-                        if (afterOperation) {
-                            query.andWhere('(operation.generation > :generation OR (operation.generation = :generation AND operation.id > :id))', afterOperation);
-                        }
-
-                        return query.getMany();
+                        return manager.withRepository(this.operations).find({
+                            where: afterOperation ?
+                                [
+                                    { ...base, generation: MoreThan(afterOperation.generation) },
+                                    {
+                                        ...base,
+                                        generation: afterOperation.generation,
+                                        id: MoreThan(afterOperation.id),
+                                    },
+                                ] :
+                                base,
+                            order: { generation: 'ASC', id: 'ASC' },
+                            take: 100,
+                        });
                     });
 
                     if (candidates.length === 0) {

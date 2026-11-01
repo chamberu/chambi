@@ -21,17 +21,37 @@ The engine receives an `IStore` object with one implementation per persistence c
 
 This changes the storage API. `IStore` now aggregates individual repository interfaces rather than forwarding all operations through one facade. The `MemoryStore` and `TypeormStore` classes are removed; custom adapters assemble their capabilities into an `IStore` object.
 
-| Previous API | Store aggregate API |
+| Previous API (0.3) | Store aggregate API (0.4) |
 |---|---|
 | `new MemoryStore(options)` | `createMemoryStore(options)` |
 | `new TypeormStore(options)` | `createDatabaseStore(options)` |
-| `engine.store.getRun(id)` | `engine.store.runs.findOne(id)` |
-| `conversations: { store, authorize }` | `store.conversations` holds storage; `conversations: { authorize }` holds policy |
-| `container.resolve(AppToken.CONVERSATIONS)` | `container.resolve(AppToken.STORE).conversations` |
+| `TypeormStoreOptions` | `DatabaseStoreOptions` |
+| `IStore extends IRunStore, IStepStore, ...` | `IStore` is a plain aggregate: `runs`, `steps`, `checkpoints`, `idempotency`, `locks`, `effects`, `state`, `artifacts`, `agentRevisions`, optional `conversations` |
+| `IRunStore`, `IStepStore`, `ICheckpointStore`, `IIdempotencyStore`, `ILockStore`, `IEffectStore`, `IStateStore`, `IArtifactStore`, `IAgentRevisionStore` | `IRunRepository`, `IStepRepository`, `ICheckpointRepository`, `IIdempotencyRepository`, `ILockRepository`, `IEffectRepository`, `IStateRepository`, `IArtifactRepository`, `IAgentRevisionRepository` |
+| `store.createRun(run)` | `store.runs.insert(run)` |
+| `store.getRun(id)` | `store.runs.findOne(id)` |
+| `store.updateRun(id, patch, opts)` | `store.runs.update(id, patch, opts)` |
+| `store.listRuns(q)` | `store.runs.find(q)` |
+| `store.claimRun(id, owner, ttlMs)` | `store.runs.claim(id, owner, ttlMs)` |
+| `store.renewClaim(id, owner, ttlMs)` | `store.runs.renewClaim(id, owner, ttlMs)` |
+| `store.appendStep(step)` | `store.steps.insert(step)` |
+| `store.listSteps(runId)` | `store.steps.find(runId)` |
+| `store.saveCheckpoint(cp)` | `store.checkpoints.save(cp)` |
+| `store.latestCheckpoint(runId)` | `store.checkpoints.findOne(runId)` |
+| `store.claimKey(scope, key, runId, ttlMs)` | `store.idempotency.claim(scope, key, runId, ttlMs)` |
+| `store.acquire(key, owner, ttlMs)`, `store.release(key, owner)` | `store.locks.acquire(...)`, `store.locks.release(...)` |
+| `store.getEffect(key)`, `store.putEffect(key, result)` | `store.effects.findOne(key)`, `store.effects.save(key, result)` |
+| `store.kvGet(agent, key)`, `store.kvSet(agent, key, value)`, `store.kvList(agent, q)` | `store.state.findOne(agent, key)`, `store.state.set(agent, key, value)`, `store.state.find(agent, q)` |
+| `store.docList(...)`, `store.docUpsert(...)`, `store.docDelete(...)` | `store.state.findDocuments(...)`, `store.state.upsertDocument(...)`, `store.state.deleteDocument(...)` |
+| `store.putArtifact(artifact, data)`, `store.getArtifact(id)`, `store.readArtifact(id)`, `store.listArtifacts(runId)` | `store.artifacts.insert(artifact, data)`, `store.artifacts.findOne(id)`, `store.artifacts.read(id)`, `store.artifacts.find(runId)` |
+| `store.getAgentRevision(agent)`, `store.setAgentRevision(revision)`, `store.deleteAgentRevision(agent)`, `store.listAgentRevisions()` | `store.agentRevisions.findOne(agent)`, `store.agentRevisions.save(revision)`, `store.agentRevisions.delete(agent)`, `store.agentRevisions.find()` |
+| `store.purgeExpired(now?)` resolving `PurgeResult` | `store.idempotency.purgeExpired(now?)` and `store.locks.purgeExpired(now?)`, each resolving the number of rows deleted (database store) |
+
+Conversation memory is new in 0.4: its storage is `store.conversations` (both built-in stores carry it) and its policy is `createApp({ conversations: { authorize } })` or `EngineOptions.conversations`. There is nothing to migrate from 0.3.
 
 Keep passing the aggregate through `new Engine({ store, agents })`, `storeModule({ store })` and `AppToken.STORE`. Factory option types are `MemoryStoreOptions` and `DatabaseStoreOptions`; `createDatabaseStore()` returns `DatabaseStore`.
 
-The package is now `@chamvi/store-db` (previously `@chamvi/store-typeorm`). Replace package imports and dependencies; database tables and migration history keep their names. The class split itself changes no database schema. Existing TypeORM roles must keep sharing the same DataSource so their relationships remain valid.
+The package is now `@chamvi/store-db` (previously `@chamvi/store-typeorm`). Replace package imports and dependencies; database tables and migration history keep their names. The class split itself changes no database schema; 0.4's conversation and taint migration does, and it needs downtime: follow [Upgrading to 0.4](/guide/upgrading#upgrading-to-0-4). Existing TypeORM roles must keep sharing the same DataSource so their relationships remain valid.
 
 ## Query methods
 
@@ -57,7 +77,8 @@ const artifacts = await store.artifacts.find(runId);
 6. **Guards throw.** `runs.update` throws `InvalidRunStateError` when `expectStatus` does not match, or when `expectOwner` is given and the claim is absent or held by another owner (expiry is not checked there: a lease is lost once taken over). It throws `RunNotFoundError` for an unknown run.
 7. **Checkpoints.** `checkpoints.save` keeps the highest `stepIndex`; an equal index replaces.
 8. **State filters.** `state.findDocuments` `where` matches top-level fields by equality.
-9. **Artifacts.** `artifacts.insert` resolves `false` and keeps the stored artifact when the id exists. Bytes are copied in and out like every other value, and `read` returns a plain `Uint8Array` (no `Buffer` or other subclass). `findOne` and `find` return metadata only.
+9. **Run references.** `steps.insert`, `checkpoints.save` and `conversations.beginTurn` for a run the store does not hold throw `RunNotFoundError` and write nothing. `createMemoryStore()` checks its own run repository; the database store maps the foreign key violation.
+10. **Artifacts.** `artifacts.insert` resolves `false` and keeps the stored artifact when the id exists. Bytes are copied in and out like every other value, and `read` returns a plain `Uint8Array` (no `Buffer` or other subclass). `findOne` and `find` return metadata only.
 
 ## The interfaces
 
@@ -68,6 +89,6 @@ const artifacts = await store.artifacts.find(runId);
 | Store | Package | Status |
 |---|---|---|
 | [`createMemoryStore()`](/repositories/memory) | `@chamvi/core` | Shipped. Development and tests |
-| [TypeORM](/repositories/typeorm) | `@chamvi/store-db` | Shipped. PostgreSQL, production |
+| [Database (store-db)](/repositories/database) | `@chamvi/store-db` | Shipped. PostgreSQL, production |
 
 Redis is never required. Any store that passes the [contract suite](/repositories/writing-a-repository) from `@chamvi/test-kit` works with the engine.

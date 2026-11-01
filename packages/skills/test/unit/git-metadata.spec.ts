@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { InvalidAgentDefinitionError } from '@chamvi/core';
 import { createGitFixture } from '@chamvi/test-kit';
 import type { GitFixture } from '@chamvi/test-kit';
-import { prepareSkills } from '@chamvi/skills';
+import { SKILL_PREPARATION_FAILED_ERROR_CODE, prepareSkills } from '@chamvi/skills';
 import { discoverSkills } from 'skills';
 import type * as SkillsSDK from 'skills';
 import {
@@ -198,7 +198,7 @@ it.each([
 it.each(['rev-parse', 'ls-tree'])('enforces the absolute 30 second deadline for %s despite output', async (command) => {
     const { root, options } = await setup(command, 'slow');
 
-    await expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
+    await expect(prepareSkills(options)).rejects.toMatchObject({ code: SKILL_PREPARATION_FAILED_ERROR_CODE });
     expect(deadlines).toContain(30_000);
     expect(discoverSkills).not.toHaveBeenCalled();
 
@@ -227,7 +227,7 @@ it.each(['rev-parse', 'ls-tree'])('rejects silent nonzero %s before discovery an
 
 it.each(['rev-parse', 'ls-tree'])('rejects external SIGTERM of %s before discovery and preserves the previous corpus', async (command) => {
     const { root, options } = await setup(command, 'signal');
-    const rejected = expect(prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
+    const rejected = expect(prepareSkills(options)).rejects.toMatchObject({ code: SKILL_PREPARATION_FAILED_ERROR_CODE });
 
     try {
         // Cloning and earlier metadata commands can precede this child's ready marker under load.

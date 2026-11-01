@@ -8,7 +8,12 @@
 import { isObject } from 'smob';
 import { systemClock } from '../clock/index.ts';
 import type { IClock } from '../clock/index.ts';
-import { InvalidRunStateError, RepositoryNotFoundError, ValidationError } from '../errors/index.ts';
+import {
+    InvalidRunStateError,
+    RepositoryNotFoundError,
+    RunNotFoundError,
+    ValidationError,
+} from '../errors/index.ts';
 import { compareCodePoints, copy } from '../repository/memory/helpers.ts';
 import { CONVERSATION_LIMITS_MAX, CONVERSATION_NOTES_MAX } from './constants.ts';
 import {
@@ -86,8 +91,11 @@ export class MemoryConversationRepository implements IConversationRepository {
 
     protected records = new Map<string, ScopeRecord>();
 
+    protected hasRun?: (runId: string) => boolean;
+
     constructor(options: MemoryConversationRepositoryOptions = {}) {
         this.clock = options.clock ?? systemClock;
+        this.hasRun = options.hasRun;
     }
 
     async resolve(identity: ConversationIdentity): Promise<ConversationScope> {
@@ -178,6 +186,10 @@ export class MemoryConversationRepository implements IConversationRepository {
 
         if (this.findItem(record, userItemId(runId))) {
             throw new InvalidRunStateError('The conversation turn has already ended.');
+        }
+
+        if (this.hasRun && !this.hasRun(runId)) {
+            throw new RunNotFoundError(runId);
         }
 
         const now = this.clock.now();
@@ -463,7 +475,10 @@ export class MemoryConversationRepository implements IConversationRepository {
         record.generation += 1;
         record.snapshot = undefined;
 
-        if (!options.keepNotes) {
+        if (options.keepNotes) {
+            // as the database store: expired notes do not survive into the new generation
+            this.dropExpiredNotes(record, this.clock.now());
+        } else {
             record.notes.clear();
             record.operations.clear();
         }

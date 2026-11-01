@@ -8,7 +8,7 @@ Implement the capability interfaces from `@chamvi/core` and assemble them into a
 
 The engine owns monotonic, first-write taint: it keeps the first exposure's timestamp/source, shares the persistence write across parallel tool calls, and does not clear it on replay, extraction or handoff. This is an engine invariant, **not** a new repository compare-and-set API or a claim that arbitrary direct store writes cannot overwrite it. Custom stores must durably apply that field through the normal guarded run updates before untrusted results can be exposed.
 
-For `@chamvi/store-db`, apply migration `RunTaint1792800000000`, which adds nullable `chamvi_runs.taint` JSONB. It conservatively backfills legacy unfinished runs (`queued`, `running`, `waiting`, `interrupted`) with `{ at: <migration time>, source: 'migration:legacy-run' }`: their old checkpoints may already contain unclassified content. Terminal legacy runs remain untainted. Custom backends need equivalent schema support and unfinished-run backfill before resuming pre-upgrade work; otherwise old content can bypass the new gate. Do not infer trust from an absent field on a legacy unfinished run.
+For `@chamvi/store-db`, apply migration `ConversationsRunTaint1792713600000` (bundled in 0.4 with the conversation tables), which adds nullable `chamvi_runs.taint` JSONB. It conservatively backfills legacy unfinished runs (`queued`, `running`, `waiting`, `interrupted`) with `{ at: <migration time>, source: 'migration:legacy-run' }`: their old checkpoints may already contain unclassified content. Terminal legacy runs remain untainted. Custom backends need equivalent schema support and unfinished-run backfill before resuming pre-upgrade work; otherwise old content can bypass the new gate. Do not infer trust from an absent field on a legacy unfinished run.
 
 ### Upgrade without mixed versions
 
@@ -18,7 +18,24 @@ This upgrade does **not** support rolling deployments with old and new runtimes 
 2. Run the migration and unfinished-run backfill while all old processes are stopped.
 3. Start **only new binaries** against the migrated store.
 
+The full procedure for an app (CronJobs, `CHAMVI_MIGRATE`, `chamvi migrate`) is on [Upgrading to 0.4](/guide/upgrading#upgrading-to-0-4).
+
 An old approval poller can publish the private argument-bearing `waiting.body` from a new automatic gate instead of its safe notification. An old worker can also create or checkpoint untainted runs after the one-time backfill. A notification lock does not make mixed versions compatible. Custom backends must follow the same stop/backfill/start sequence. See [Multiple replicas](/deployment/replicas#upgrading-to-untrusted-content-gates).
+
+## Run references
+
+New in 0.4: `steps.insert`, `checkpoints.save` and `conversations.beginTurn` must refuse a run the store does not hold. Check that the run exists (or map your backend's foreign key violation) and throw `RunNotFoundError` from `@chamvi/core` without writing anything. `describeRepositoryContract()` has a case for each, so a store that passed the 0.3 contract fails it until it does this.
+
+```ts
+async insert(step: Step): Promise<void> {
+    if (!(await this.runs.findOne(step.runId))) {
+        throw new RunNotFoundError(step.runId);
+    }
+    // write the step
+}
+```
+
+Match a foreign key violation on structured fields (an error code and the constraint name), never on the message text: PostgreSQL translates it by `lc_messages`.
 
 ## Prove it with the contract suite
 

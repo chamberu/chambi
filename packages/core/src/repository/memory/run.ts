@@ -31,6 +31,11 @@ export class MemoryRunRepository implements IRunRepository {
         this.clock = opts.clock ?? systemClock;
     }
 
+    /** Synchronous presence check for the memory capabilities that reference runs. */
+    has(id: string): boolean {
+        return this.runs.has(id);
+    }
+
     protected now(): number {
         return this.clock.now().getTime();
     }
