@@ -28,6 +28,7 @@ import { bindRunSnapshot } from '../../handoff/helpers.ts';
 import { toLanguageModel } from '../../model/asserts.ts';
 import { untilAborted } from '../../run/helpers.ts';
 import { RunStatus } from '../../run/constants.ts';
+import { CONVERSATION_SEND_GRACE_MS } from './constants.ts';
 import type { RunContext, Step, Usage } from '../../run/types.ts';
 import {
     resolveBudget,
@@ -586,7 +587,22 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         const [steps, finishReason, text] = await Promise.all([stream.steps, stream.finishReason, stream.text]);
 
         // Keep normal sends alive until their journal settles; cancellation still exits via untilAborted.
-        await ctx.conversation?.capability.idle(run.id);
+        // A transport that never settles stops being awaited after a grace: the execution's abort on exit
+        // then ends the send (it stays pending, terminal reconciliation marks it unknown), so pause() and
+        // finish() are not held by it.
+        const journal = ctx.conversation?.capability.idle(run.id);
+
+        if (journal) {
+            let grace: { clear(): void } | undefined;
+
+            try {
+                await Promise.race([journal, new Promise<void>((resolve) => {
+                    grace = clock.setTimeout(resolve, CONVERSATION_SEND_GRACE_MS);
+                })]);
+            } finally {
+                grace?.clear();
+            }
+        }
 
         return {
             stream,

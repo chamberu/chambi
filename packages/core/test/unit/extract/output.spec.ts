@@ -112,6 +112,11 @@ describe('safe extraction output validation', () => {
             maxLength: 10,
         }, 'a'],
         [{ type: 'string' }, 'secret'],
+        [{
+            type: 'string',
+            pattern: '^a|b$',
+            maxLength: 10,
+        }, 'secretb'],
     ])('rejects values outside the advertised schema %j: %j', (schema, value) => {
         expect(isSafeExtractionOutput(schema, value)).toBe(false);
     });

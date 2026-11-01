@@ -21,12 +21,17 @@ type TrustState = {
     now: () => Date;
     persist: (taint: RunTaint) => Promise<unknown>;
     engine?: Pick<IEngine, 'getChannel'>;
+    /** The run's source channel and address when the trust context was bound, never the mutable `run.trigger`. */
+    source: { channel: string; address?: string };
 };
 
 const executions = new WeakMap<RunContext, TrustState>();
 
-export function bindTrust(run: RunContext, options: Omit<TrustState, 'pending' | 'failure' | 'failed'>): void {
-    executions.set(run, options);
+export function bindTrust(run: RunContext, options: Omit<TrustState, 'pending' | 'failure' | 'failed' | 'source'>): void {
+    // snapshot the notification target: tool code may write to ctx.run.trigger later
+    const { channel, address } = run.trigger;
+
+    executions.set(run, { ...options, source: { channel, ...(address !== undefined ? { address } : {}) } });
 }
 
 /** Persistence failure is fatal to the execution, never a usable tool result. */
@@ -106,9 +111,9 @@ export async function gateOutbound(ctx: Pick<ToolContext, 'run'>, name: string, 
         // Bind replay to the final arguments, independently of tool-call ids.
         binding: stableHash({ name, input }),
         notification: 'An outbound operation requires review in the approval inbox.',
-    }, ctx.run.trigger.address && state.engine?.getChannel(ctx.run.trigger.channel)?.out ? {
-        channel: ctx.run.trigger.channel,
-        address: ctx.run.trigger.address,
+    }, state.source.address && state.engine?.getChannel(state.source.channel)?.out ? {
+        channel: state.source.channel,
+        address: state.source.address,
     } : {});
 
     if (!decision.approved) {

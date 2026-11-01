@@ -52,6 +52,7 @@ import {
     ValidationError,
 } from '../errors/index.ts';
 import { RunStatus } from '../run/constants.ts';
+import { untilAborted } from '../run/helpers.ts';
 import type {
     Run,
     Step,
@@ -799,7 +800,9 @@ export class Engine implements IEngine {
      * Recovers abandoned runs, starts every channel (in registration order,
      * unless `channels: false`), then starts executing queued runs and
      * polling. A throwing channel start rejects after the channels already
-     * started were stopped and polling stopped.
+     * started were stopped and polling stopped. A call while another start
+     * is in flight joins it; its `signal` then only rejects that call, the
+     * joined start goes on (only its own caller's signal or stop() cancel it).
      */
     start(options: EngineStartOptions = {}): Promise<void> {
         if (this.stopping) {
@@ -807,24 +810,8 @@ export class Engine implements IEngine {
         }
 
         if (this.startup && !this.startup.controller.signal.aborted) {
-            const attempt = this.startup;
-
-            if (options.signal) {
-                const { signal } = options;
-                const abort = () => attempt.controller.abort(signal.reason);
-
-                if (signal.aborted) {
-                    abort();
-                } else {
-                    signal.addEventListener('abort', abort, { once: true });
-                }
-
-                const remove = () => signal.removeEventListener('abort', abort);
-
-                void attempt.done.then(remove, remove);
-            }
-
-            return attempt.done;
+            // A joining caller's signal only ends its own wait: the attempt belongs to the caller that began it.
+            return options.signal ? untilAborted(this.startup.done, options.signal) : this.startup.done;
         }
 
         if (this.startup) {
@@ -1831,14 +1818,18 @@ export class Engine implements IEngine {
     /**
      * What putAgent() refuses before any store read or write: a model that
      * does not resolve, a subscription to a channel the engine does not have
-     * (InvalidAgentDefinitionError). Registers nothing.
+     * (InvalidAgentDefinitionError). Registers nothing: its skill check
+     * neither selects a skill runtime nor captures the agent's inputs.
      */
     checkAgent(agent: Agent): void {
-        this.assertRegistrable(agent);
+        this.assertRegistrable(agent, { commit: false });
     }
 
-    /** Refuses an agent the engine cannot run: one subscribing to a channel it does not have. */
-    protected assertRegistrable(agent: Agent): void {
+    /**
+     * Refuses an agent the engine cannot run: one subscribing to a channel it does not have.
+     * `commit: false` (checkAgent()) keeps the skill check free of state changes.
+     */
+    protected assertRegistrable(agent: Agent, options: { commit?: boolean } = {}): void {
         // first: putAgent refuses before syncing, the lock and any store write
         checkAgentModel(agent, { model: this.model, models: this.models });
         assertConcurrencyMaxRuns(agent.definition.concurrencyMaxRuns, `Agent "${agent.name}" concurrencyMaxRuns`);
@@ -1857,7 +1848,7 @@ export class Engine implements IEngine {
             throw new InvalidAgentDefinitionError('The agent enables conversations but the engine has no conversation capability.');
         }
 
-        this.skills.checkAgent(agent);
+        this.skills.checkAgent(agent, options);
     }
 
     protected registry(): RegistryContext {

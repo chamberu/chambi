@@ -8,7 +8,36 @@
 import type { ToolSet } from 'ai';
 import { isObject } from 'smob';
 import { InvalidAgentDefinitionError } from '../errors/index.ts';
-import type { AgentTrust } from '../tool/types.ts';
+import type { AgentTrust, ToolTrust } from '../tool/types.ts';
+
+const TOOL_TRUST_FLAGS = ['taint', 'guardWhenTainted'];
+
+/**
+ * Refuses a tool-level `trust` that is no object of the known flags, each a
+ * boolean or a predicate: a misspelled flag or a string value would otherwise
+ * leave the tool silently untainted and ungated.
+ */
+export function assertToolTrust(trust: unknown, name?: string): asserts trust is ToolTrust | undefined {
+    if (trust === undefined) {
+        return;
+    }
+
+    const label = name === undefined ? 'a tool' : `tool "${name}"`;
+
+    if (!isObject(trust)) {
+        throw new InvalidAgentDefinitionError(`The trust of ${label} must be an object of taint and guardWhenTainted flags.`);
+    }
+
+    for (const [key, value] of Object.entries(trust)) {
+        if (!TOOL_TRUST_FLAGS.includes(key)) {
+            throw new InvalidAgentDefinitionError(`The trust of ${label} has an unknown flag "${key}" (taint, guardWhenTainted).`);
+        }
+
+        if (value !== undefined && typeof value !== 'boolean' && typeof value !== 'function') {
+            throw new InvalidAgentDefinitionError(`The trust flag "${key}" of ${label} must be a boolean or a predicate.`);
+        }
+    }
+}
 
 export function assertAgentTrust(trust: AgentTrust | undefined, tools?: ToolSet): void {
     if (trust === undefined) {

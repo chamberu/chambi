@@ -9,7 +9,8 @@ import type { Agent } from '../../agent/types.ts';
 import type { SkillContribution } from '../../skill/types.ts';
 
 export interface IEngineSkills {
-    checkAgent(agent: Agent): void;
+    /** `commit: false` validates only: no runtime is selected and no input captured. */
+    checkAgent(agent: Agent, options?: { commit?: boolean }): void;
     prepare(agents: readonly Agent[], options: { signal: AbortSignal }): Promise<void>;
     get(agent: Agent): SkillContribution | undefined;
 }

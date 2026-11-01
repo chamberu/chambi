@@ -392,7 +392,7 @@ describe('first class skills', () => {
 
         await e.start(); await e.idle(); expect((await e.getRun(run.runId))?.status).toBe('failed'); expect(model.doStreamCalls).toHaveLength(0); await e.stop();
     });
-    it('a concurrent start caller can cancel the shared attempt with its original reason', async () => {
+    it('a concurrent start caller stops waiting with its reason without cancelling the shared attempt', async () => {
         const deferred = Promise.withResolvers<readonly Skill[]>(); const entered = Promise.withResolvers<void>();
         const e = engine([defineSkillSource({
             skills: [skill()],
@@ -409,8 +409,10 @@ describe('first class skills', () => {
         const controller = new AbortController(); const reason = new Error('caller cancelled');
         const two = e.start({ signal: controller.signal }).catch((error: unknown) => error);
 
-        controller.abort(reason); deferred.resolve([skill()]);
-        expect(await one).toBe(reason); expect(await two).toBe(reason); await e.stop();
+        controller.abort(reason);
+        expect(await two).toBe(reason);
+        deferred.resolve([skill()]);
+        expect(await one).toBeUndefined(); await e.stop();
     });
     it('rejects conflicting content under the same identity from otherwise isolated providers', async () => {
         const a = agent([defineSkillSource({ skills: [skill()], load: async () => [skill()] })]);

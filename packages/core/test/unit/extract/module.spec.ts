@@ -21,6 +21,7 @@ import { bindProvided } from '../../../src/context/helpers.ts';
 import { runToolCall } from '../../../src/effect/frame.ts';
 import type { ToolCallFrame } from '../../../src/effect/types.ts';
 import { wrapToolsForRun } from '../../../src/effect/wrap.ts';
+import { InvalidRunStateError } from '../../../src/errors/index.ts';
 import { extract } from '../../../src/extract/index.ts';
 import type { ExtractOptions } from '../../../src/extract/index.ts';
 import { MODEL_CONTEXT } from '../../../src/model/constants.ts';
@@ -295,12 +296,12 @@ describe('extract', () => {
         expect(await setup().call({ schema: standard, content })).toEqual({ label: 'bug' });
     });
 
-    it('never returns unsafe output when persisting taint fails', async () => {
+    it('never returns unsafe output when persisting taint fails, and keeps the store error', async () => {
         const model = mockModel([]);
         const s = setup(model);
 
         s.persist.mockRejectedValue(new Error('store unavailable'));
-        await expect(s.call({ schema: z.object({ summary: z.string() }), content })).rejects.toThrow('extract() could not produce validated structured output.');
+        await expect(s.call({ schema: z.object({ summary: z.string() }), content })).rejects.toThrow('store unavailable');
         expect(model.doGenerateCalls).toHaveLength(0);
     });
 
@@ -420,7 +421,7 @@ describe('extract', () => {
 
             return { result: { version: 1, raw: true } };
         };
-        await expect(s.call({ schema: native, content })).rejects.toThrow('extract() could not produce validated structured output.');
+        await expect(s.call({ schema: native, content })).rejects.toMatchObject({ name: 'AbortError' });
         expect(validate).not.toHaveBeenCalled();
         expect(model.doGenerateCalls).toHaveLength(0);
         expect(save).not.toHaveBeenCalled();
@@ -442,7 +443,7 @@ describe('extract', () => {
             s.store.effects.findOne = async () => ({ result: { version: 1, raw: true } });
         }
 
-        await expect(s.call({ schema: native, content })).rejects.toThrow('extract() could not produce validated structured output.');
+        await expect(s.call({ schema: native, content })).rejects.toMatchObject({ name: 'AbortError' });
         expect(save).not.toHaveBeenCalled();
     });
 
@@ -453,7 +454,7 @@ describe('extract', () => {
             await Promise.resolve();
             s.signal.abort();
         };
-        await expect(s.call({ schema, content })).rejects.toThrow('extract() could not produce validated structured output.');
+        await expect(s.call({ schema, content })).rejects.toMatchObject({ name: 'AbortError' });
     });
 
     it('does not expose provider failures or their request bodies to the parent', async () => {
@@ -468,18 +469,33 @@ describe('extract', () => {
         await expect(s.call({ schema, content })).rejects.toThrow('extract() could not produce validated structured output.');
     });
 
-    it('refuses calls outside the matching tool frame', async () => {
+    it('refuses calls outside the matching tool frame with InvalidRunStateError', async () => {
         const s = setup();
 
+        await expect(extract(s.ctx, { schema, content })).rejects.toThrow(InvalidRunStateError);
         await expect(extract(s.ctx, { schema, content })).rejects.toThrow('extract() needs an executing tool call for this run.');
         s.frame.runId = 'other-run';
-        await expect(s.call({ schema, content })).rejects.toThrow('extract() needs an executing tool call for this run.');
+        await expect(s.call({ schema, content })).rejects.toThrow(InvalidRunStateError);
     });
 
-    it('passes cancellation through to the isolated call', async () => {
+    it('keeps a missing trust context an InvalidRunStateError', async () => {
+        const s = setup();
+        const run = { ...s.ctx.run };
+        const ctx = { ...s.ctx, run };
+
+        bindProvided(ctx, new Map([[MODEL_CONTEXT, {
+            model: mockModel([]),
+            agentModel: () => undefined,
+            models: { check() {}, resolve: () => mockModel([]) },
+        }]]));
+        await expect(runToolCall(s.frame, () => extract(ctx, { schema: z.object({ summary: z.string() }), content })))
+            .rejects.toThrow(InvalidRunStateError);
+    });
+
+    it('rejects with the abort reason on cancellation', async () => {
         const s = setup();
 
         s.signal.abort();
-        await expect(s.call({ schema, content })).rejects.toThrow('extract() could not produce validated structured output.');
+        await expect(s.call({ schema, content })).rejects.toMatchObject({ name: 'AbortError' });
     });
 });
