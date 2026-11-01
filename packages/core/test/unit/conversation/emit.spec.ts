@@ -53,6 +53,7 @@ function setup(
     action: (context: ToolContext) => Promise<unknown> = async (ctx) => ctx.channels.findOneOrFail().emit({ body: 'actual reply' }),
     clock?: ControllableClock,
     defaultAddress?: string,
+    budget?: { timeoutMs: number },
 ) {
     const store = createMemoryStore({ clock }); const conversations = new MemoryConversationRepository({ clock });
     const out = vi.fn<NonNullable<IChannel['out']>>(async () => {}); const other = vi.fn<NonNullable<IChannel['out']>>(async () => {});
@@ -82,6 +83,7 @@ function setup(
             instructions: 'help',
             conversation: true,
             model,
+            ...(budget ? { budget } : {}),
             tools: { reply: tool },
         })],
         channels: [channel, alternate],
@@ -571,6 +573,48 @@ describe('source emit journal', () => {
             expect((await s.store.runs.findOne(runId))?.waiting?.title).toBe('two');
         });
         expect(signal.aborted).toBe(true);
+    });
+    it('a timeout during the grace wait of a replayed pending call fails the run instead of pausing it', async () => {
+        const clock = new ControllableClock();
+        let replaying = false;
+        const s = setup(async (ctx) => {
+            if (replaying) {
+                void ctx.channels.findOneOrFail().emit({ body: 'in flight' }).catch(() => {});
+            }
+
+            await approve(ctx, { title: 'one' });
+
+            return approve(ctx, { title: 'two' });
+        }, clock, undefined, { timeoutMs: 10_000 });
+
+        s.out.mockImplementation(async () => new Promise<void>(() => {}));
+
+        const { runId } = await s.ctx.dispatchConversation({
+            agent: 'helper',
+            trigger: 'message',
+            payload: 'hello',
+            address: 'source',
+        }, target);
+
+        await s.engine.start();
+        await vi.waitFor(async () => expect((await s.store.runs.findOne(runId))?.status).toBe('waiting'));
+
+        const first = await s.store.runs.findOne(runId);
+
+        replaying = true;
+        await s.engine.approve(runId, { approvalId: first!.waiting!.approvalId, approved: true });
+        await s.engine.tick();
+        await vi.waitFor(() => expect(s.out).toHaveBeenCalledTimes(1));
+
+        // the timeout (10 s) ends the 30 s grace: the run fails, it never waits on "two"
+        await vi.waitFor(async () => {
+            clock.advance(10_000);
+
+            const run = await s.store.runs.findOne(runId);
+
+            expect(run?.status).toBe('failed');
+            expect(run?.error?.code).toBe('Timeout');
+        });
     });
     it('stop_does_not_pretend_flush_cancels_send', async () => {
         const gate = Promise.withResolvers<void>();

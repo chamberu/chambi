@@ -16,6 +16,13 @@ function buildChannel(name: string, options: HttpChannelOptions): IChannel {
         throw new InvalidAgentDefinitionError(`${name}Channel() takes an options object.`);
     }
 
+    // a misspelled key (`untrustd`) would leave the channel trusted
+    const unknown = Object.keys(options).find((key) => key !== 'untrusted');
+
+    if (unknown !== undefined) {
+        throw new InvalidAgentDefinitionError(`${name}Channel() has an unknown option "${unknown}" (allowed: untrusted).`);
+    }
+
     const { untrusted } = options;
 
     if (untrusted !== undefined && typeof untrusted !== 'boolean') {

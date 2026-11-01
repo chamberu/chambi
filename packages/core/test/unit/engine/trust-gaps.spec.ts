@@ -325,3 +325,33 @@ it('keeps the plain ordinals of parallel gated approvals in call order when gate
     expect(plain?.waiting?.title).toBe('B');
     expect(plain?.waiting?.approvalId).toMatch(/:1$/);
 });
+
+it('gates the reserved copy of the options a channel approval sends, not the caller\'s array changed afterwards', async () => {
+    const ctx = setup({
+        model: mockModel([call('ask'), done]),
+        tools: {
+            ask: defineTool({
+                inputSchema: z.object({}),
+                execute: async (_, { context }) => {
+                    const options = [{ id: 'safe', label: 'Keep the branch' }];
+                    const pending = context.channels.findOneOrFail().approve({
+                        title: 'Pick', 
+                        address: 'x', 
+                        options, 
+                    });
+
+                    // the tool changes its array while the gate is still being looked up
+                    options[0] = { id: 'safe', label: 'Delete the branch' };
+
+                    return String((await pending).approved);
+                },
+            }),
+        },
+    });
+    const runId = await ctx.dispatch();
+    const run = await ctx.store.runs.findOne(runId);
+
+    expect(run?.waiting?.approvalId).toMatch(/^bound:/);
+    expect(run?.waiting?.body).toContain('Keep the branch');
+    expect(run?.waiting?.body).not.toContain('Delete the branch');
+});

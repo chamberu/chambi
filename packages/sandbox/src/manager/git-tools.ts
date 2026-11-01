@@ -6,6 +6,7 @@
  */
 
 import type { ToolSet } from 'ai';
+import { isObject } from 'smob';
 import {
     SandboxError,
     ToolDeniedError,
@@ -213,6 +214,8 @@ export function createGitTools(context: GitToolsContext): ToolSet {
         }
     };
 
+    const gatedPlans = new WeakMap<object, Awaited<ReturnType<typeof pushPlan>>>();
+
     /** What a push of `body` sends: the target, branch, commit and the lease (the remote-tracking ref). */
     const pushPlan = async (body: Record<string, unknown>, ctx: ToolContext) => {
         const requested = requireBranch(body.branch);
@@ -234,16 +237,25 @@ export function createGitTools(context: GitToolsContext): ToolSet {
         };
     };
 
-    /** The push policy: a force push needs `allowForce`, the branch `allowBranch` (default: not the remote's default branch). */
+    /**
+     * The push policy: a force push needs `allowForce`, the branch `allowBranch` (default: not the remote's default branch).
+     * Before the outbound gate (`beforeGate`) only local checks and origin are asked: another remote is contacted for its
+     * default branch only once the push was approved, in execute.
+     */
     const assertPushAllowed = async (
         body: Record<string, unknown>,
         plan: Awaited<ReturnType<typeof pushPlan>>,
         ctx: ToolContext,
+        beforeGate = false,
     ): Promise<void> => {
         const force = optionalBoolean(body.force, 'force') ?? false;
 
         if (force && !policy.allowForce) {
             throw new ToolDeniedError('Force pushes are not allowed here; merge the remote branch instead of rebasing (git_pull without rebase), then push.');
+        }
+
+        if (!policy.allowBranch && beforeGate && !plan.t.isOrigin) {
+            return;
         }
 
         const allowed = policy.allowBranch ?
@@ -370,19 +382,26 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 guardWhenTainted: true,
                 // a tainted run: a push the policy refuses never reaches the gate, and with `mode: 'approve'`
                 // the gate's approval is the push approval (it carries the log privately; push.channel is not asked)
+                // the plan joins the binding (a moved commit asks again) and is the one execute pushes
                 approvalDetail: async (input: unknown, ctx: ToolContext) => {
                     const body = inputObject(input);
                     const plan = await pushPlan(body, ctx);
 
-                    await assertPushAllowed(body, plan, ctx);
+                    await assertPushAllowed(body, plan, ctx, true);
+
+                    if (isObject(input)) {
+                        gatedPlans.set(input, plan);
+                    }
+
+                    const summary = `${plan.commit ?? '(no commit)'} to ${plan.branch} at ${plan.t.url} (lease ${plan.lease ?? 'none'})`;
 
                     if (policy.mode !== 'approve' || plan.commit === undefined) {
-                        return undefined;
+                        return `Push ${summary}`;
                     }
 
                     const { title, body: text } = await pushApproval({ ...plan, commit: plan.commit }, ctx.run.signal);
 
-                    return `${title}\n${text}`;
+                    return `${title}\n${text}\nPush ${summary}`;
                 },
             },
             description: 'Push a branch (default: the current one) to the workspace\'s repository with the run\'s git credentials. ' +
@@ -406,7 +425,9 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 const body = inputObject(input);
                 const force = optionalBoolean(body.force, 'force') ?? false;
                 const setUpstream = optionalBoolean(body.setUpstream, 'setUpstream') ?? false;
-                const plan = await pushPlan(body, ctx);
+                // an approved push sends exactly the plan the gate bound, never one read again afterwards
+                const gated = outboundApproved(ctx) && isObject(input) ? gatedPlans.get(input) : undefined;
+                const plan = gated ?? await pushPlan(body, ctx);
                 const {
                     t,
                     branch,

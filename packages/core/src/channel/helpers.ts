@@ -272,7 +272,8 @@ function createChannelHandle(
             await gateOutbound({ run: execution }, 'channel.approve', {
                 channel: name,
                 address: target,
-                request: rest,
+                // the reserved copy of the choices, so the gate binds what the destination receives
+                request: { ...rest, ...reservation.choice },
                 ...(slot !== undefined ? { slot } : {}),
             });
         }

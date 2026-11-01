@@ -69,6 +69,12 @@ describe('safe extraction schemas', () => {
             maxLength: 200,
         },
         {
+            // invalid on its own; wrapped as ^(?:...)$ it would become an unanchored alternation
+            type: 'string',
+            pattern: '^a)|(?:b$',
+            maxLength: 200,
+        },
+        {
             type: 'string',
             pattern: '^.+$',
             maxLength: 201,

@@ -492,6 +492,20 @@ describe('extract', () => {
             .rejects.toThrow(InvalidRunStateError);
     });
 
+    it('refuses a missing trust context also for a safe schema', async () => {
+        const s = setup();
+        const run = { ...s.ctx.run };
+        const ctx = { ...s.ctx, run };
+
+        bindProvided(ctx, new Map([[MODEL_CONTEXT, {
+            model: mockModel([{ parts: [{ type: 'text', text: '{"label":"bug"}' }] }]),
+            agentModel: () => undefined,
+            models: { check() {}, resolve: () => mockModel([]) },
+        }]]));
+        await expect(runToolCall(s.frame, () => extract(ctx, { schema, content })))
+            .rejects.toThrow(InvalidRunStateError);
+    });
+
     it('rejects with the abort reason on cancellation', async () => {
         const s = setup();
 

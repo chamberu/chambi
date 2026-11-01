@@ -57,6 +57,7 @@ it.each([
 
 it.each([
     [{ untrusted: 'yes' }],
+    [{ untrustd: true }],
     ['options'],
 ])('refuses the options %j', (options) => {
     expect(() => httpChannel(options as never)).toThrow(InvalidAgentDefinitionError);

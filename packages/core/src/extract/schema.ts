@@ -39,7 +39,18 @@ function isAnchoredPattern(pattern: unknown): pattern is string {
         backslashes++;
     }
 
-    return backslashes % 2 === 0;
+    if (backslashes % 2 !== 0) {
+        return false;
+    }
+
+    // an invalid pattern (an unmatched parenthesis) could escape the `^(?:...)$` wrapper
+    try {
+        RegExp(pattern, 'u');
+    } catch {
+        return false;
+    }
+
+    return true;
 }
 
 /** The most free-text characters a schema accepted by isShapeSafe() can carry. */

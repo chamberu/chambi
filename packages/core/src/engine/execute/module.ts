@@ -522,10 +522,22 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         if (outcome !== 'done') {
             // the same bounded wait as after the model loop, before the abort ends the sends
             await untilAborted(awaitJournal(), signal).catch(() => {});
+
+            // a cancel or the timeout during that wait settles the run, never a pause
+            const timedOut = timeout?.signal.aborted === true ? { reason: timeout.signal.reason as unknown } : undefined;
+
             local.abort();
             timeout?.clear();
 
-            if (outcome === 'failed' && fatal) {
+            if (ctx.signal.aborted) {
+                await ctx.finish({ status: RunStatus.CANCELLED, usage });
+            } else if (timedOut) {
+                await ctx.finish({
+                    status: RunStatus.FAILED,
+                    usage,
+                    error: toRunError(timedOut.reason),
+                });
+            } else if (outcome === 'failed' && fatal) {
                 await ctx.finish({
                     status: RunStatus.FAILED,
                     usage,

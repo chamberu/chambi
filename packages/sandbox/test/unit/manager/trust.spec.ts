@@ -539,7 +539,8 @@ describe('workspace tool trust classification', () => {
             expect(gate?.waiting?.approvalId).toMatch(/^bound:/);
             expect(JSON.parse(gate!.waiting!.body!)).toMatchObject({
                 tool: 'git_push',
-                detail: 'Push 1 commit to feature\nTo https://github.com/octo/demo.git:\nabc1234 fix the build',
+                detail: 'Push 1 commit to feature\nTo https://github.com/octo/demo.git:\nabc1234 fix the build\n' +
+                    `Push ${'1'.repeat(40)} to feature at https://github.com/octo/demo.git (lease none)`,
             });
             expect(pushes).toBe(0);
 
@@ -556,6 +557,135 @@ describe('workspace tool trust classification', () => {
             engine.stop();
             await manager.close();
         }
+    });
+
+    async function gatedPush(
+        options: { push: { allowBranch?: () => boolean }, input: Record<string, unknown> },
+        onExec: (argv: readonly string[], approved: boolean) => { stdout?: string; exitCode?: number } | undefined,
+    ) {
+        const pushed: string[][] = [];
+        const remote: string[][] = [];
+        let approved = false;
+        const provider = createFakeProvider({
+            onExec(argv) {
+                if (argv.includes('push')) {
+                    pushed.push([...argv]);
+
+                    return {};
+                }
+
+                if (argv.includes('ls-remote')) {
+                    remote.push([...argv]);
+
+                    return { stdout: 'ref: refs/heads/main\tHEAD\n' };
+                }
+
+                return onExec(argv, approved) ?? {};
+            },
+        });
+        const manager = createWorkspaceManager({
+            provider, 
+            gcIntervalMs: 0, 
+            push: options.push, 
+        });
+        const store = createMemoryStore();
+        const call = (toolName: string, input: unknown = {}) => ({
+            parts: [{
+                type: 'tool-call' as const,
+                toolName,
+                toolCallId: toolName,
+                input,
+            }],
+        });
+        const engine = new Engine({
+            store,
+            agents: [defineAgent({
+                name: 'test',
+                instructions: 'test',
+                model: mockModel([
+                    call('create_workspace', { repo: 'octo/demo' }),
+                    call('git_push', options.input),
+                    { parts: [{ type: 'text', text: 'done' }] },
+                ]),
+                tools: manager.tools(),
+            })],
+        });
+
+        manager.attach(engine);
+
+        try {
+            await engine.start();
+
+            const { runId } = await engine.dispatch({
+                agent: 'test',
+                channel: 'http',
+                trigger: 'test',
+                payload: {},
+            });
+
+            await engine.idle();
+
+            const gate = await store.runs.findOne(runId);
+            const before = { pushed: pushed.length, remote: remote.length };
+
+            expect(gate?.status).toBe('waiting');
+
+            approved = true;
+            await engine.approve(runId, { approvalId: gate!.waiting!.approvalId, approved: true });
+            await engine.idle();
+
+            return {
+                before,
+                pushed,
+                remote,
+                run: await store.runs.findOne(runId),
+            };
+        } finally {
+            engine.stop();
+            await manager.close();
+        }
+    }
+
+    it('pushes the commit the gate approved, not one the branch moved to after the decision', async () => {
+        const reviewed = 'a'.repeat(40);
+        const moved = 'b'.repeat(40);
+        let reads = 0;
+        const result = await gatedPush({ push: { allowBranch: () => true }, input: { branch: 'feature' } }, (argv, approved) => {
+            if (!argv.includes('rev-parse')) {
+                return undefined;
+            }
+
+            if (argv.at(-1)?.startsWith('refs/remotes/')) {
+                return { exitCode: 1 };
+            }
+
+            // after the decision: the gate's replay still reads the reviewed commit, any later read the moved one
+            if (approved) {
+                reads++;
+            }
+
+            return { stdout: `${approved && reads > 1 ? moved : reviewed}\n` };
+        });
+
+        expect(result.run?.status).toBe('completed');
+        expect(result.pushed).toHaveLength(1);
+        expect(result.pushed[0]!.join(' ')).toContain(`${reviewed}:refs/heads/feature`);
+        expect(result.pushed[0]!.join(' ')).not.toContain(moved);
+    });
+
+    it('contacts another remote for its default branch only after the push was approved', async () => {
+        const result = await gatedPush({ push: {}, input: { remote: 'other/fork', branch: 'feature' } }, (argv) => {
+            if (!argv.includes('rev-parse')) {
+                return undefined;
+            }
+
+            return argv.at(-1)?.startsWith('refs/remotes/') ? { exitCode: 1 } : { stdout: `${'1'.repeat(40)}\n` };
+        });
+
+        expect(result.before).toEqual({ pushed: 0, remote: 0 });
+        expect(result.remote.length).toBeGreaterThan(0);
+        expect(result.remote.every((argv) => argv.some((arg) => arg.includes('other/fork')))).toBe(true);
+        expect(result.pushed).toHaveLength(1);
     });
 
     async function taintedPush(push: {

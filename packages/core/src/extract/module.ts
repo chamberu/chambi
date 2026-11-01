@@ -13,7 +13,7 @@ import { stableHash } from '../effect/helpers.ts';
 import { InvalidRunStateError, ValidationError } from '../errors/index.ts';
 import { resolveModel } from '../model/module.ts';
 import type { ToolContext } from '../tool/types.ts';
-import { markUntrusted } from '../trust/module.ts';
+import { assertTrust, markUntrusted } from '../trust/module.ts';
 import { isSafeExtractionOutput } from './output.ts';
 import { isSafeExtractionSchema } from './schema.ts';
 import type { ExtractOptions } from './types.ts';
@@ -62,6 +62,15 @@ export async function extract<T, S extends StateSchema = StateSchema>(
             instructions: stableHash(options.instructions),
             model: options.model === undefined ? { kind: 'default' } : { kind: 'override', ref: options.model },
         })}` : undefined;
+
+        // every extraction needs the execution-bound trust context, also one with a safe schema
+        try {
+            assertTrust(ctx.run, true);
+        } catch (error) {
+            trustFailure = { error };
+
+            throw error;
+        }
 
         const safe = isSafeExtractionSchema(jsonSchema);
 
