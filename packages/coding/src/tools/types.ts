@@ -29,8 +29,14 @@ export type ReadFileResult = {
     startLine: number;
     endLine: number;
     totalLines: number;
-    /** Current repository guidance for this path; absent for logs or when disabled. */
-    instructions?: RepositoryInstructions;
+    /**
+     * Current repository guidance for this path; absent for logs, in a
+     * workspace without a repository or when disabled; null when collection
+     * failed (see `instructionsError`).
+     */
+    instructions?: RepositoryInstructions | null;
+    /** Why the guidance could not be collected; set only with `instructions: null`. */
+    instructionsError?: string;
     /** True when `content` was cut at `READ_MAX_CHARS`. */
     truncated: boolean;
 };

@@ -465,6 +465,99 @@ describe('workspace tool trust classification', () => {
         });
     });
 
+    it('asks once for git_push in a tainted run with push.mode approve, the commit log in the private gate body', async () => {
+        let pushes = 0;
+        const provider = createFakeProvider({
+            onExec(argv) {
+                if (argv.includes('push')) {
+                    pushes++;
+
+                    return {};
+                }
+
+                if (argv.includes('rev-parse')) {
+                    return argv.at(-1)?.startsWith('refs/remotes/') ? { exitCode: 1 } : { stdout: `${'1'.repeat(40)}\n` };
+                }
+
+                if (argv.includes('rev-list')) {
+                    return { stdout: '1\n' };
+                }
+
+                if (argv.includes('log')) {
+                    return { stdout: 'abc1234 fix the build\n' };
+                }
+
+                return {};
+            },
+        });
+        const manager = createWorkspaceManager({
+            provider,
+            gcIntervalMs: 0,
+            push: { mode: 'approve', allowBranch: () => true },
+        });
+        const store = createMemoryStore();
+        const call = (toolName: string, input: unknown = {}) => ({
+            parts: [{
+                type: 'tool-call' as const,
+                toolName,
+                toolCallId: toolName,
+                input,
+            }],
+        });
+        const engine = new Engine({
+            store,
+            agents: [defineAgent({
+                name: 'test',
+                instructions: 'test',
+                model: mockModel([
+                    // a repo-backed create taints the run (repository instructions)
+                    call('create_workspace', { repo: 'octo/demo' }),
+                    call('git_push', { branch: 'feature' }),
+                    { parts: [{ type: 'text', text: 'done' }] },
+                ]),
+                tools: manager.tools(),
+            })],
+        });
+
+        manager.attach(engine);
+
+        try {
+            await engine.start();
+
+            const { runId } = await engine.dispatch({
+                agent: 'test',
+                channel: 'http',
+                trigger: 'test',
+                payload: {},
+            });
+
+            await engine.idle();
+
+            const gate = await store.runs.findOne(runId);
+
+            expect(gate?.status).toBe('waiting');
+            expect(gate?.waiting?.approvalId).toMatch(/^bound:/);
+            expect(JSON.parse(gate!.waiting!.body!)).toMatchObject({
+                tool: 'git_push',
+                detail: 'Push 1 commit to feature\nTo https://github.com/octo/demo.git:\nabc1234 fix the build',
+            });
+            expect(pushes).toBe(0);
+
+            await engine.approve(runId, { approvalId: gate!.waiting!.approvalId, approved: true });
+            await engine.idle();
+
+            const run = await store.runs.findOne(runId);
+            const waits = (await store.steps.find(runId)).filter((step) => step.kind === 'wait');
+
+            expect(run?.status).toBe('completed');
+            expect(waits).toHaveLength(1);
+            expect(pushes).toBe(1);
+        } finally {
+            engine.stop();
+            await manager.close();
+        }
+    });
+
     it('does not taint workspace creation when repository instructions are disabled', async () => {
         const manager = createWorkspaceManager({ provider: createFakeProvider(), repositoryInstructions: false });
         const tools = manager.tools();

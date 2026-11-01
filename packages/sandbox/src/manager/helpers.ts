@@ -113,6 +113,11 @@ export function assertManagerOptions(options: WorkspaceManagerOptions): void {
         throw new InvalidAgentDefinitionError('onError must be a function.');
     }
 
+    if ('credentialMode' in options) {
+        // removed in 0.4: silently ignoring it would hand bash the write token a `tools` deployment kept out
+        throw new InvalidAgentDefinitionError('credentialMode was removed in 0.4: workspace-installed credentials are the only mode; drop the option (see the upgrade guide).');
+    }
+
     credentialSources(options.credentials);
 
     if (options.depth !== undefined && (!Number.isSafeInteger(options.depth) || options.depth < 1)) {
@@ -263,7 +268,35 @@ export function redactToolResult<T>(workspace: IWorkspace, result: T): T {
     ))) as T;
 }
 
-export function toToolResult(workspace: IWorkspace, reused: boolean, instructions: RepositoryInstructions | null): WorkspaceToolResult {
+/**
+ * Collects guidance for `create_workspace`: a failure (a missing utility, a
+ * stray stderr line, an exec timeout) degrades to `instructions: null` plus
+ * the reason, since the workspace is usable without it; a cancelled run
+ * still rejects.
+ */
+export async function collectInstructions(
+    collect: () => Promise<RepositoryInstructions>,
+    signal: AbortSignal | undefined,
+): Promise<{ instructions: RepositoryInstructions | null; instructionsError?: string }> {
+    try {
+        return { instructions: await collect() };
+    } catch (error) {
+        if (signal?.aborted) {
+            throw error;
+        }
+
+        const message = Error.isError(error) ? error.message : String(error);
+
+        return { instructions: null, instructionsError: `Repository guidance could not be read: ${message}` };
+    }
+}
+
+export function toToolResult(
+    workspace: IWorkspace,
+    reused: boolean,
+    instructions: RepositoryInstructions | null,
+    instructionsError?: string,
+): WorkspaceToolResult {
     const { info } = workspace;
 
     return redactToolResult(workspace, {
@@ -277,5 +310,6 @@ export function toToolResult(workspace: IWorkspace, reused: boolean, instruction
         expiresAt: info.expiresAt.toISOString(),
         reused,
         instructions,
+        ...(instructionsError !== undefined && { instructionsError }),
     });
 }

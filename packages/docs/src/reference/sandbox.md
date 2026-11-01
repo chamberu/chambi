@@ -66,7 +66,7 @@ type RepositoryInstructions = {
 
 `clock` defaults to `systemClock` and measures the request deadline; `signal` cancels collection. The function works through `IWorkspace.exec`, without host filesystem reads or repository program execution. The manager's `read_repository_instructions({ paths?, workspace? })` resolves the calling run's workspace and forwards its cancellation signal. Paths default to `['.']`, follow workspace path normalization (relative or `/workspace/...`), and existing directories include themselves; files and missing targets use their parent.
 
-`create_workspace` adds `instructions: RepositoryInstructions | null` to `WorkspaceToolResult`. Repository-backed creates, including reuse or adoption, collect root guidance afresh. Repo-less creates return `null`. With `createWorkspaceManager({ provider, repositoryInstructions: false })`, `create_workspace` returns `instructions: null` and the explicit tool is omitted; the default is `true`. `sandboxModule({ repositoryInstructions: false })` forwards this manager option. There is no corresponding environment variable. The separate [`codingTools` option](/reference/coding#repository-instructions) controls text-read attachments independently.
+`create_workspace` adds `instructions: RepositoryInstructions | null` to `WorkspaceToolResult`. Repository-backed creates, including reuse or adoption, collect root guidance afresh. Repo-less creates return `null`. A collection failure (a missing utility, a stray stderr line, an exec timeout) returns `instructions: null` plus `instructionsError` (the redacted reason) rather than failing the create; a cancelled run still rejects. With `createWorkspaceManager({ provider, repositoryInstructions: false })`, `create_workspace` returns `instructions: null` and the explicit tool is omitted; the default is `true`. `sandboxModule({ repositoryInstructions: false })` forwards this manager option. There is no corresponding environment variable. The separate [`codingTools` option](/reference/coding#repository-instructions) controls text-read attachments independently.
 
 Entrypoint discovery visits root and requested ancestors only, ordered by directory depth then JavaScript string order; explicit includes may reference permitted files elsewhere in the workspace. Each directory reads `AGENTS.md` before `CLAUDE.md`, each immediately followed by its included files in depth-first textual order. Only standalone `@relative/path` lines count, with surrounding whitespace allowed and none within the path. Ordinary links, inline `@` text and fenced code are ignored. Fences use at least three backticks or tildes; a closing fence uses the same character with at least the opening length. Includes resolve relative to their source, allowing `..` only inside the workspace and refusing absolute paths, home paths, URLs, NUL and escapes.
 
@@ -168,11 +168,11 @@ const CACHE_DIR: '/cache';
 const WORKSPACE_HOME: '/home/sandbox';                      // HOME of a container or pod workspace, a disk-backed volume of its own
 const CACHE_ENV: Readonly<Record<string, string>>;          // XDG_CACHE_HOME, npm_config_cache, PIP_CACHE_DIR, GOMODCACHE, GOCACHE, COMPOSER_CACHE_DIR
 const ROOT_CAPABILITIES: readonly string[];                 // CHOWN, DAC_OVERRIDE, FOWNER, FSETID, SETUID, SETGID, KILL
-const IMAGE_REQUIREMENTS: readonly string[];                // sh, git, timeout (with -k)
+const IMAGE_REQUIREMENTS: readonly string[];                // sh, git, timeout (with -k), head, base64, tr
 const IMAGE_PROBE_TIMEOUT_MS: 30_000;
 ```
 
-`probeImage` runs one `sh -c` script straight on the transport (every workspace exec goes through `timeout`, which may be what is missing), right after the container or pod started and before the checkout: a `SandboxError` names what the image lacks (`git`, `timeout`, `a timeout that supports -k`, or `sh` when the script cannot start), or why the probe failed (no answer within `IMAGE_PROBE_TIMEOUT_MS` on the clock). Docker and Kubernetes add `ROOT_CAPABILITIES` back for a root user only and mount `/cache` with `CACHE_ENV` in every workspace.
+`probeImage` runs one `sh -c` script straight on the transport (every workspace exec goes through `timeout`, which may be what is missing), right after the container or pod started and before the checkout: a `SandboxError` names what the image lacks (`git`, `timeout`, `a timeout that supports -k`, `sh` when the script cannot start, `sh at /bin/sh`, or `head`, `base64` or `tr` missing from `/usr/bin` and `/bin`, the only directories the repository guidance collector resolves them in), or why the probe failed (no answer within `IMAGE_PROBE_TIMEOUT_MS` on the clock). Docker and Kubernetes add `ROOT_CAPABILITIES` back for a root user only and mount `/cache` with `CACHE_ENV` in every workspace.
 
 ### Remote workspaces
 
@@ -255,7 +255,7 @@ One pod per workspace, sleeping for its lifetime with that `activeDeadlineSecond
 
 ### Bash-first migration
 
-Remove `credentialMode`, its `CredentialMode` type and `CHAMVI_GIT_CREDENTIAL_MODE`. Workspace-installed credentials are the only mode. The structured Git tools, their result types and `PushPolicy` remain available. Push checks govern `git_push` only; sandbox code with another execution path can bypass them.
+Remove `credentialMode`, its `CredentialMode` type and `CHAMVI_GIT_CREDENTIAL_MODE`. Workspace-installed credentials are the only mode; a set `CHAMVI_GIT_CREDENTIAL_MODE` or a `credentialMode` option is refused with `InvalidAgentDefinitionError` instead of being ignored (a former `tools` mode would otherwise hand `bash` the write token). The structured Git tools, their result types and `PushPolicy` remain available. Push checks govern `git_push` only; sandbox code with another execution path can bypass them.
 
 ### Structured Git tools and policy scope
 

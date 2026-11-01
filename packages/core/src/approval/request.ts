@@ -186,3 +186,19 @@ export async function approve<S extends StateSchema = StateSchema>(
 
     return requestApproval(request);
 }
+
+/**
+ * Whether the outbound gate asked for and got an approval of the current tool
+ * call (a `guardWhenTainted` tool in a tainted run): a tool with an approval
+ * of its own skips it then, so one decision covers the call. False outside a
+ * tool call, for another run's context and when no gate asked.
+ */
+export function outboundApproved<S extends StateSchema = StateSchema>(ctx: Pick<ToolContext<S>, 'run'>): boolean {
+    const frame = currentToolCall();
+
+    if (!frame || ctx?.run?.runId !== frame.runId) {
+        return false;
+    }
+
+    return frame.outboundApproved === true;
+}

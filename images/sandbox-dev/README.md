@@ -6,11 +6,11 @@ The default workspace image of chamvi's container sandboxes (`@chamvi/sandbox-do
 
 - `debian:trixie-slim`
 - `git`, `ca-certificates`, `curl`, `jq`, `ripgrep`, `unzip`, `xz-utils`
-- GitHub CLI `gh` 2.103.3 from the official `cli.github.com` apt repository, for amd64 and arm64
+- GitHub CLI `gh` from the official `cli.github.com` apt repository (the current release at build time, unpinned so the weekly rebuild picks up security fixes), for amd64 and arm64
 - `build-essential` (gcc, make, libc headers), so native packages compile
 - [mise](https://mise.jdx.dev) from its apt repository, with its shims (in the workspace's HOME `/home/sandbox`, per workspace, on disk) at the end of the `PATH`
 - `tini` as the entrypoint (pid 1 reaps orphaned processes and forwards signals) for a standalone container; the providers replace it (docker-init or the pod's pause container reaps instead)
-- GNU coreutils `timeout`, which the providers wrap every command in
+- GNU coreutils `timeout`, which the providers wrap every command in, and `head`, `base64` and `tr` in `/usr/bin`, which the repository guidance collector resolves on `/usr/bin:/bin` only (with `/bin/sh`); the providers' image probe refuses an image without them
 - `/workspace` (the working directory) and `/cache` (the package download cache), writable by any user
 - root by default; the command is `sleep infinity` (the providers run `sleep <lifetime>` instead)
 

@@ -214,7 +214,14 @@ export function wrapToolsForRun(
             frame.taint = await matches(trust.taint, final);
 
             if (await matches(trust.guardWhenTainted, final)) {
-                await gateOutbound(execution, name, final);
+                const { approvalDetail } = trust;
+
+                frame.outboundApproved = await gateOutbound(
+                    execution,
+                    name,
+                    final,
+                    approvalDetail && (() => approvalDetail(final, ctx)),
+                );
             }
 
             return final;

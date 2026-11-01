@@ -12,6 +12,9 @@ import type { AgentTrust, ToolTrust } from '../tool/types.ts';
 
 const TOOL_TRUST_FLAGS = ['taint', 'guardWhenTainted'];
 
+/** The tool-level trust keys that take a function only. */
+const TOOL_TRUST_HOOKS = ['approvalDetail'];
+
 /**
  * Refuses a tool-level `trust` that is no object of the known flags, each a
  * boolean or a predicate: a misspelled flag or a string value would otherwise
@@ -29,8 +32,16 @@ export function assertToolTrust(trust: unknown, name?: string): asserts trust is
     }
 
     for (const [key, value] of Object.entries(trust)) {
+        if (TOOL_TRUST_HOOKS.includes(key)) {
+            if (value !== undefined && typeof value !== 'function') {
+                throw new InvalidAgentDefinitionError(`The trust hook "${key}" of ${label} must be a function.`);
+            }
+
+            continue;
+        }
+
         if (!TOOL_TRUST_FLAGS.includes(key)) {
-            throw new InvalidAgentDefinitionError(`The trust of ${label} has an unknown flag "${key}" (taint, guardWhenTainted).`);
+            throw new InvalidAgentDefinitionError(`The trust of ${label} has an unknown flag "${key}" (taint, guardWhenTainted, approvalDetail).`);
         }
 
         if (value !== undefined && typeof value !== 'boolean' && typeof value !== 'function') {

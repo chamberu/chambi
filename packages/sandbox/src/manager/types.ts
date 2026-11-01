@@ -225,8 +225,14 @@ export type WorkspaceToolResult = {
     image: string | null;
     expiresAt: string;
     reused: boolean;
-    /** Current root guidance; null without a repository or when collection is disabled. */
+    /** Current root guidance; null without a repository, when collection is disabled or when it failed. */
     instructions: RepositoryInstructions | null;
+    /**
+     * Why the guidance could not be collected (a missing utility, a stray
+     * line, an exec timeout); set only with `instructions: null` after a
+     * failure. The workspace is usable; `read_repository_instructions` retries.
+     */
+    instructionsError?: string;
 };
 
 export type DisposeWorkspaceResult = {

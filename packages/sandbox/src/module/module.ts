@@ -139,13 +139,23 @@ export class SandboxModule implements IModule {
 
         this.gcIntervalMs = managerOptions.gcIntervalMs ?? GC_INTERVAL_MS;
 
+        const env = input ?? process.env;
+
+        if (envString(env, 'CHAMVI_GIT_CREDENTIAL_MODE') !== undefined) {
+            // removed in 0.4: ignoring it would hand bash the write token a `tools` deployment kept out
+            throw new InvalidAgentDefinitionError('CHAMVI_GIT_CREDENTIAL_MODE was removed in 0.4: workspace-installed credentials are the only mode; unset it (see the upgrade guide).');
+        }
+
+        if ('credentialMode' in options) {
+            throw new InvalidAgentDefinitionError('credentialMode was removed in 0.4: workspace-installed credentials are the only mode; drop the option (see the upgrade guide).');
+        }
+
         if (manager) {
             this.manager = manager;
 
             return;
         }
 
-        const env = input ?? process.env;
         const deployment = envString(env, 'CHAMVI_DEPLOYMENT') ?? managerOptions.deployment;
 
         this.ownsDeployment = deployment !== undefined;

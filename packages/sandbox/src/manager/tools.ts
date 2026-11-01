@@ -11,6 +11,7 @@ import { INSTRUCTION_PATHS_MAX } from '../instructions/constants.ts';
 import { readRepositoryInstructions } from '../instructions/module.ts';
 import type { RepositoryInstructions } from '../instructions/types.ts';
 import {
+    collectInstructions,
     inputObject,
     optionalObjectSchema,
     optionalString,
@@ -75,10 +76,15 @@ export function createWorkspaceTools(manager: IWorkspaceManager, options: { imag
                     image,
                     signal: context.run.signal,
                 });
-                const instructions = options.repositoryInstructions && workspace.info.repo ?
-                    await readRepositoryInstructions(workspace, undefined, { signal: context.run.signal }) : null;
 
-                return toToolResult(workspace, reused, instructions);
+                if (!options.repositoryInstructions || !workspace.info.repo) {
+                    return toToolResult(workspace, reused, null);
+                }
+
+                const { signal } = context.run;
+                const collected = await collectInstructions(() => readRepositoryInstructions(workspace, undefined, { signal }), signal);
+
+                return toToolResult(workspace, reused, collected.instructions, collected.instructionsError);
             },
         }),
 

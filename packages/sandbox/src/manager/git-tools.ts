@@ -12,6 +12,7 @@ import {
     ValidationError,
     approve,
     defineTool,
+    outboundApproved,
 } from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
 import type { GitAccess } from '../credentials/types.ts';
@@ -212,6 +213,44 @@ export function createGitTools(context: GitToolsContext): ToolSet {
         }
     };
 
+    /** What a push of `body` sends: the target, branch, commit and the lease (the remote-tracking ref). */
+    const pushPlan = async (body: Record<string, unknown>, ctx: ToolContext) => {
+        const requested = requireBranch(body.branch);
+        const t = await target(body, ctx, 'git_push');
+        const { signal } = ctx.run;
+        const branch = requested ?? await currentBranch(t.workspace, 'git_push', signal);
+        const ownBranch = await revParse(t.workspace, `refs/heads/${branch}`, signal);
+        const commit = ownBranch ?? await revParse(t.workspace, 'HEAD', signal);
+        const tracking = `refs/remotes/${t.name}/${branch}`;
+        const lease = await revParse(t.workspace, tracking, signal);
+
+        return {
+            t,
+            branch,
+            ownBranch,
+            commit,
+            tracking,
+            lease,
+        };
+    };
+
+    /** The approval of `push.mode: 'approve'`: `Push <n> commits to <branch>` and the log of what it sends. */
+    const pushApproval = async (plan: Awaited<ReturnType<typeof pushPlan>> & { commit: string }, signal: AbortSignal) => {
+        const {
+            t,
+            commit,
+            lease,
+        } = plan;
+        const range = lease === undefined ? [commit, '--not', '--remotes'] : [commit, `^${lease}`];
+        const count = Number.parseInt((await local(t.workspace, ['rev-list', '--count', ...range], signal)).stdout.trim(), 10) || 0;
+        const log = (await local(t.workspace, ['log', '--format=%h %s', '-n', String(PUSH_LOG_MAX_COMMITS), ...range], signal)).stdout.trim();
+
+        return {
+            title: `Push ${count} commit${count === 1 ? '' : 's'} to ${plan.branch}`,
+            body: `To ${t.url}:\n${log || '(no new commits)'}`,
+        };
+    };
+
     return {
         git_fetch: defineTool<{
             remote?: string;
@@ -305,7 +344,24 @@ export function createGitTools(context: GitToolsContext): ToolSet {
             setUpstream?: boolean;
             workspace?: string;
         }, GitPushResult>({
-            trust: { taint: true, guardWhenTainted: true },
+            trust: {
+                taint: true,
+                guardWhenTainted: true,
+                // in a tainted run the outbound gate's approval is the push approval: it carries the log privately
+                ...(policy.mode === 'approve' && {
+                    approvalDetail: async (input: unknown, ctx: ToolContext) => {
+                        const plan = await pushPlan(inputObject(input), ctx);
+
+                        if (plan.commit === undefined) {
+                            return undefined;
+                        }
+
+                        const { title, body } = await pushApproval({ ...plan, commit: plan.commit }, ctx.run.signal);
+
+                        return `${title}\n${body}`;
+                    },
+                }),
+            },
             description: 'Push a branch (default: the current one) to the workspace\'s repository with the run\'s git credentials. ' +
                 'A rejected push (the remote moved) comes back with pushed: false; fetch and merge or rebase, then push again. ' +
                 'The repository\'s default branch is refused unless the operator allows it.',
@@ -327,10 +383,16 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 const body = inputObject(input);
                 const force = optionalBoolean(body.force, 'force') ?? false;
                 const setUpstream = optionalBoolean(body.setUpstream, 'setUpstream') ?? false;
-                const requested = requireBranch(body.branch);
-                const t = await target(body, ctx, 'git_push');
+                const plan = await pushPlan(body, ctx);
+                const {
+                    t,
+                    branch,
+                    ownBranch,
+                    commit,
+                    tracking,
+                    lease,
+                } = plan;
                 const { signal } = ctx.run;
-                const branch = requested ?? await currentBranch(t.workspace, 'git_push', signal);
 
                 if (force && !policy.allowForce) {
                     throw new ToolDeniedError('Force pushes are not allowed here; merge the remote branch instead of rebasing (git_pull without rebase), then push.');
@@ -344,23 +406,15 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                     throw new ToolDeniedError(`Pushing to ${branch} is not allowed here; push to another branch (e.g. git_push({ branch: "fix/..." })).`);
                 }
 
-                const ownBranch = await revParse(t.workspace, `refs/heads/${branch}`, signal);
-                const commit = ownBranch ?? await revParse(t.workspace, 'HEAD', signal);
-
                 if (commit === undefined) {
                     throw new ValidationError('There is no commit to push yet; commit first.');
                 }
 
-                const tracking = `refs/remotes/${t.name}/${branch}`;
-                const lease = await revParse(t.workspace, tracking, signal);
+                // the outbound gate already asked (a tainted run), with the same log: one decision covers the push
+                if (policy.mode === 'approve' && !outboundApproved(ctx)) {
+                    const { title, body: text } = await pushApproval({ ...plan, commit }, signal);
 
-                if (policy.mode === 'approve') {
-                    const range = lease === undefined ? [commit, '--not', '--remotes'] : [commit, `^${lease}`];
-                    const count = Number.parseInt((await local(t.workspace, ['rev-list', '--count', ...range], signal)).stdout.trim(), 10) || 0;
-                    const log = (await local(t.workspace, ['log', '--format=%h %s', '-n', String(PUSH_LOG_MAX_COMMITS), ...range], signal)).stdout.trim();
-                    const title = `Push ${count} commit${count === 1 ? '' : 's'} to ${branch}`;
-
-                    await askApproval(ctx, title, `To ${t.url}:\n${log || '(no new commits)'}`);
+                    await askApproval(ctx, title, text);
                 }
 
                 const args = ['push', '--porcelain'];

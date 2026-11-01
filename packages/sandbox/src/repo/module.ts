@@ -27,6 +27,7 @@ import { REDACTED, REDACT_MIN_LENGTH } from '../credentials/constants.ts';
 import { decodeRepoPath } from '../credentials/helpers.ts';
 import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../git/constants.ts';
 import { credentialKey, credentialsFileContent } from '../git/helpers.ts';
+import { gitArgv } from '../git/module.ts';
 import {
     hasUnsafeCharacter,
     isGitRef,
@@ -109,10 +110,12 @@ export function assertGitRef(ref: string): void {
  * branch is checked out as a local branch tracking `origin/<ref>`, a tag or
  * commit detached. With a `credential` for an https repository, the
  * workspace credential helper is installed first (`INSTALL_CREDENTIALS_SCRIPT`,
- * the credential over stdin only), so `ls-remote`, the fetch and every later
- * git call of the workspace authenticate through it; without one (or for a
- * `file://` repository) every credential helper is reset for the remote
- * calls. Hooks are off for the remote calls either way. Records the default branch, then, as the last
+ * the credential over stdin only) for the later git calls of the workspace,
+ * and `ls-remote` and the fetch run through `GIT_AUTH_SCRIPT` (the
+ * credential over stdin, refused when the git config sets a proxy, turns TLS
+ * verification off or rewrites the URL); without one (or for a `file://`
+ * repository) every credential helper is reset for the remote calls. Hooks
+ * are off for the remote calls either way. Records the default branch, then, as the last
  * step, the end of the checkout as `git config chamvi.checkout` (the commit,
  * `none` for a repo-less workspace; `readCheckout`). Returns HEAD and the
  * default branch.
@@ -182,8 +185,8 @@ export async function prepareWorkspace(
             throw error;
         }
     };
-    const step = async (name: string, argv: string[], allowFailure = false) => {
-        const result = await exec(argv);
+    const step = async (name: string, argv: string[], allowFailure = false, stdin?: string) => {
+        const result = await exec(argv, stdin);
 
         if ((result.exitCode !== 0 && !allowFailure) || result.timedOut) {
             throw fail(`git ${name}`, result);
@@ -191,11 +194,13 @@ export async function prepareWorkspace(
 
         return result;
     };
-    // with a credential the installed helper answers, so it is not reset
-    const remoteGit = secret ?
-        ['git', '-c', 'core.hooksPath=/dev/null'] :
-        ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null'];
-    const remoteStep = (name: string, args: string[]) => step(name, [...remoteGit, ...args]);
+    // with a credential through GIT_AUTH_SCRIPT (the credential on stdin, its config checks refusing a
+    // proxy, TLS verification off or a URL rewrite of an image's or the repository's config), else anonymous
+    const remoteStep = (name: string, args: string[]) => {
+        const { argv, stdin } = gitArgv(repo!, args, secret ? credential : undefined);
+
+        return step(name, argv, false, stdin);
+    };
 
     await step('init', ['git', 'init', '-q', '.']);
 

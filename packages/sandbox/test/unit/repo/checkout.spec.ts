@@ -9,7 +9,12 @@ import { describe, expect, it } from 'vitest';
 import { SandboxError, ValidationError } from '@chamvi/core';
 import type { IClock } from '@chamvi/core';
 import { EXEC_TIMEOUT_MS, prepareWorkspace, readCheckout } from '@chamvi/sandbox';
-import { CREDENTIAL_HELPER_SCRIPT, INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
+import {
+    CREDENTIAL_HELPER_SCRIPT,
+    GIT_AUTH_REFUSED_EXIT,
+    GIT_AUTH_SCRIPT,
+    INSTALL_CREDENTIALS_SCRIPT,
+} from '../../../src/git/constants.ts';
 import { CHECKOUT_READ_ATTEMPTS } from '../../../src/repo/constants.ts';
 import { createScriptedWorkspace } from '../../utils/workspace.ts';
 
@@ -28,7 +33,8 @@ const immediateClock: IClock = {
 
 const head = `ref: refs/heads/main\tHEAD\n${sha}\tHEAD\n`;
 const NO_CREDENTIAL = ['git', '-c', 'credential.helper=', '-c', 'core.hooksPath=/dev/null'];
-const AUTHENTICATED = ['git', '-c', 'core.hooksPath=/dev/null'];
+/** An authenticated remote call: GIT_AUTH_SCRIPT with its config checks, the credential on stdin. */
+const AUTHENTICATED = ['sh', '-c', GIT_AUTH_SCRIPT, 'sh', url, 'https://github.com', 'octo/demo'];
 
 /** A remote whose default branch is main and whose branches are `branches`. */
 function remote(branches: string[] = ['main']) {
@@ -112,7 +118,7 @@ describe('prepareWorkspace', () => {
         expect(result).toEqual({ commit: sha });
     });
 
-    it('installs the workspace credential helper before ls-remote and fetch, the credential on stdin only', async () => {
+    it('installs the workspace credential helper, then runs ls-remote and fetch through the auth script\'s config checks, the credential on stdin only', async () => {
         const workspace = remote();
 
         await prepareWorkspace(workspace, { repo: url, credential: { username: 'x-access-token', password: 'ghs_secret' } });
@@ -133,16 +139,30 @@ describe('prepareWorkspace', () => {
         ]);
 
         for (const call of workspace.calls) {
-            // the installed helper answers: an authenticated call never resets it
-            expect(call.argv).not.toContain('credential.helper=');
             expect(call.argv.join(' ')).not.toContain('ghs_secret');
 
             if (call.argv[2] === INSTALL_CREDENTIALS_SCRIPT) {
                 expect(call.options.stdin).toBe(content);
+            } else if (call.argv[2] === GIT_AUTH_SCRIPT) {
+                expect(call.options.stdin).toBe('x-access-token\nghs_secret\n');
             } else {
                 expect(call.options.stdin).toBeUndefined();
             }
         }
+    });
+
+    it('fails the checkout when the git config would send the credential through a proxy, naming the key', async () => {
+        const workspace = createScriptedWorkspace((argv) => (argv[2] === GIT_AUTH_SCRIPT ?
+            {
+                exitCode: GIT_AUTH_REFUSED_EXIT,
+                stderr: `chamvi: the git config sets http.proxy for ${url}, so the credential is not sent; remove it.\n`,
+            } :
+            {}));
+        const error = await prepareWorkspace(workspace, { repo: url, credential: { username: 'u', password: 'ghs_secret' } }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(SandboxError);
+        expect((error as Error).message).toContain('http.proxy');
+        expect(workspace.calls.some((call) => call.argv.includes('fetch'))).toBe(false);
     });
 
     it('fails the checkout without running git remotely when the helper install fails, never echoing the credential', async () => {
