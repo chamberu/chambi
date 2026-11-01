@@ -27,7 +27,7 @@ import type { ModelSettings } from '../../../src/models/types.ts';
  * every `embeddingModel` call; an id outside `known` throws NoSuchModelError,
  * as the AI SDK's providers do.
  */
-function embeddingImporter(known: Record<string, MockEmbeddingModelV4>) {
+function embeddingImporter(known: Record<string, MockEmbeddingModelV4 | Error>) {
     const calls: string[] = [];
     const importer = async (specifier: string): Promise<unknown> => {
         if (specifier !== '@ai-sdk/openai') {
@@ -50,6 +50,10 @@ function embeddingImporter(known: Record<string, MockEmbeddingModelV4>) {
 
                     if (!model) {
                         throw new NoSuchModelError({ modelId, modelType: 'embeddingModel' });
+                    }
+
+                    if (Error.isError(model)) {
+                        throw model;
                     }
 
                     return model;
@@ -134,6 +138,17 @@ describe('createModelResolver: embedding()', () => {
 
         expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
         expect(error.message).toBe('Provider "openai" offers no embedding model "nope".');
+    });
+
+    it('passes any other provider error through unchanged', async () => {
+        const failure = new Error('provider exploded');
+        const fake = embeddingImporter({ broken: failure });
+        const resolver = await createModelResolver(
+            await settingsOf({ OPENAI_API_KEY: 'k' }),
+            { importer: fake.importer },
+        );
+
+        expect(errorOf(() => resolver.embedding('openai/broken'))).toBe(failure);
     });
 
     it('lets createApp\'s models win for their ids', async () => {

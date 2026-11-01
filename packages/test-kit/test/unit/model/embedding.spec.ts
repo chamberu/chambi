@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { InvalidAgentDefinitionError } from '@chamvi/core';
 import { embed, embedMany } from 'ai';
 import { describe, expect, it } from 'vitest';
 import { mockEmbeddingModel } from '@chamvi/test-kit';
@@ -61,6 +62,14 @@ describe('mockEmbeddingModel', () => {
 
         expect(model.calls).toHaveLength(2);
         expect(model.calls.map((call) => call.values)).toEqual([['a', 'b'], ['c']]);
+    });
+
+    it('refuses dimensions outside 1 to 8192', () => {
+        for (const dimensions of [0, 1.5, 8193, 2 ** 32]) {
+            expect(() => mockEmbeddingModel({ dimensions })).toThrow(InvalidAgentDefinitionError);
+        }
+
+        expect(mockEmbeddingModel({ dimensions: 8192 })).toBeDefined();
     });
 
     it('keeps the mock provider and model id', () => {

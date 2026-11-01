@@ -74,7 +74,7 @@ A request whose `signal` aborts, also while a route handler is pending, rejects 
 function mockEmbeddingModel(options?: { dimensions?: number }): MockEmbeddingModel; // calls: every doEmbed call
 ```
 
-An AI SDK embedding model without a provider: a hashed bag of words, normalized, 64 dimensions by default, so texts sharing words score close. `calls` records each call's values.
+An AI SDK embedding model without a provider: a hashed bag of words, normalized, 64 dimensions by default (1 to 8192), so texts sharing words score close. `calls` records each call's values.
 
 ## ControllableClock
 

@@ -6,6 +6,7 @@
  */
 
 import { InvalidAgentDefinitionError } from '@chamvi/core';
+import { NoSuchModelError } from 'ai';
 import type { EmbeddingModel, LanguageModel } from 'ai';
 import { isObject } from 'smob';
 import { BUILTIN_PROVIDERS, MODEL_SEPARATOR, PROVIDER_TYPES } from './constants.ts';
@@ -103,7 +104,7 @@ function notConfigured(ref: string, provider: string, subject: Subject): Invalid
  * ids. A package that is not installed is recorded in `errors` and thrown by
  * `check`, `resolve` and `embedding` for that provider; a provider that offers
  * no embedding model of the id (the AI SDK's NoSuchModelError) is
- * InvalidAgentDefinitionError. Nothing touches the AI SDK's global provider.
+ * InvalidAgentDefinitionError, any other provider error passes through. Nothing touches the AI SDK's global provider.
  */
 export async function createModelResolver(
     settings: ModelSettings,
@@ -201,9 +202,13 @@ export async function createModelResolver(
 
             try {
                 return instance.embeddingModel(modelId) as EmbeddingModel;
-            } catch {
-                // NoSuchModelError, or a provider without embedding models
-                throw new InvalidAgentDefinitionError(`Provider "${provider}" offers no embedding model "${modelId}".`);
+            } catch (error) {
+                // only a missing model is a configuration error; any other failure keeps its diagnostics
+                if (NoSuchModelError.isInstance(error)) {
+                    throw new InvalidAgentDefinitionError(`Provider "${provider}" offers no embedding model "${modelId}".`);
+                }
+
+                throw error;
             }
         },
     };

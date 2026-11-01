@@ -23,7 +23,7 @@ export type MockResponse = {
 };
 
 export type MockEmbeddingModelOptions = {
-    /** Vector length, 64 by default. */
+    /** Vector length, 1 to 8192, 64 by default. */
     dimensions?: number;
 };
 

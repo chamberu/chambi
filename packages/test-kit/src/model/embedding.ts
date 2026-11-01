@@ -32,6 +32,9 @@ function embedText(text: string, dimensions: number): number[] {
     return length === 0 ? vector : vector.map((value) => value / length);
 }
 
+/** The largest vector a mock builds (real embedding models stay below it). */
+const MAX_DIMENSIONS = 8192;
+
 /**
  * A deterministic embedding model for tests, with no network: texts sharing
  * words score higher under cosine similarity. One `embed`/`embedMany` call is
@@ -41,8 +44,8 @@ function embedText(text: string, dimensions: number): number[] {
 export function mockEmbeddingModel(options: MockEmbeddingModelOptions = {}): MockEmbeddingModel {
     const dimensions = options.dimensions ?? 64;
 
-    if (!Number.isSafeInteger(dimensions) || dimensions < 1) {
-        throw new InvalidAgentDefinitionError('mockEmbeddingModel(): dimensions must be a positive integer.');
+    if (!Number.isSafeInteger(dimensions) || dimensions < 1 || dimensions > MAX_DIMENSIONS) {
+        throw new InvalidAgentDefinitionError(`mockEmbeddingModel(): dimensions must be an integer from 1 to ${MAX_DIMENSIONS}.`);
     }
 
     const model = new MockEmbeddingModelV4({
