@@ -29,6 +29,7 @@ import type {
     RunEvent,
 } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
+import { createMemoryStoreWithRuns } from '../../utils/store.ts';
 import { MemoryRunRepository, createMemoryStore } from '../../../src/repository/index.ts';
 
 const model = {} as LanguageModel;
@@ -316,7 +317,7 @@ describe('Engine.dispatch', () => {
     });
 
     it('same-key runs on two replicas sharing a store never overlap', async () => {
-        const store = { ...createMemoryStore(), runs: new SlowStartRepository() };
+        const store = createMemoryStoreWithRuns(new SlowStartRepository());
         // real timers: the lease must outlive a renewal delayed by a loaded machine,
         // or the other replica recovers the running run and executes it again
         const a = make({

@@ -58,7 +58,7 @@ packages:
             link: /reference/channel-cron
         -   name: '@chamvi/store-db'
             body: TypeORM store (PostgreSQL) for durable runs across replicas, passing the store contract suite.
-            link: /repositories/typeorm
+            link: /repositories/database
         -   name: '@chamvi/http'
             body: REST, server-sent events, an MCP endpoint, the webhook channel and the /channels mount, with bearer, authup and OIDC authentication.
             link: /guide/http

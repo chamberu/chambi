@@ -20,6 +20,7 @@ import { ConversationEntity } from './conversation.ts';
 import { RunEntity } from './run.ts';
 
 @Index(['scopeId', 'createdAt', 'id'])
+@Index(['runId'])
 @Entity({ name: TableName.CONVERSATION_OPERATIONS })
 export class ConversationOperationEntity {
     @PrimaryColumn({

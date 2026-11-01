@@ -21,6 +21,7 @@ import { RunEntity } from './run.ts';
 
 @Index(['scopeId', 'generation', 'id'], { unique: true })
 @Index(['scopeId', 'generation', 'createdAt', 'seq'])
+@Index(['runId'])
 @Entity({ name: TableName.CONVERSATION_ITEMS })
 export class ConversationItemEntity {
     @PrimaryGeneratedColumn('increment', { type: 'bigint' })

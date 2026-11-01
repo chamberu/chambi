@@ -6,7 +6,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { InvalidRunStateError, RunNotFoundError, RunStatus } from '@chamvi/core';
+import {
+    DEFAULT_CONVERSATION_LIMITS,
+    InvalidRunStateError,
+    RunNotFoundError,
+    RunStatus,
+} from '@chamvi/core';
 import type {
     AgentRevision,
     Artifact,
@@ -45,6 +50,45 @@ export function describeRepositoryContract(
             await expect(store.state.findOneOrFail('a', 'missing')).rejects.toMatchObject({ code: 'repository_not_found' });
             expect(await store.runs.find({})).toEqual({ data: [], total: 0 });
             expect(await store.state.find('a')).toEqual([]);
+        });
+
+        it('refuses steps, checkpoints and conversation turns of an unknown run with RunNotFoundError', async () => {
+            const { store } = await setup();
+            const at = new Date(1_000);
+
+            await expect(store.steps.insert({
+                runId: 'missing',
+                index: 0,
+                kind: 'llm',
+                startedAt: at,
+                finishedAt: at,
+            })).rejects.toBeInstanceOf(RunNotFoundError);
+            await expect(store.checkpoints.save({
+                runId: 'missing',
+                stepIndex: 0,
+                messages: [],
+                createdAt: at,
+            })).rejects.toBeInstanceOf(RunNotFoundError);
+            expect(await store.steps.find('missing')).toEqual([]);
+            expect(await store.checkpoints.findOne('missing')).toBeUndefined();
+
+            if (!store.conversations) {
+                return;
+            }
+
+            const identity = {
+                agent: 'a',
+                channel: 'chat',
+                account: 'main',
+                chat: 'room',
+                audience: 'direct',
+            };
+            const scope = await store.conversations.resolve(identity);
+
+            await expect(store.conversations.beginTurn(scope, 'missing', 'hello', DEFAULT_CONVERSATION_LIMITS))
+                .rejects.toBeInstanceOf(RunNotFoundError);
+            expect(await store.conversations.activeRun(scope)).toBeUndefined();
+            expect((await store.conversations.findItems(scope, { limit: 10, offset: 0 })).total).toBe(0);
         });
 
         it('findOrFail rejects empty collections and pages even when total is nonzero', async () => {

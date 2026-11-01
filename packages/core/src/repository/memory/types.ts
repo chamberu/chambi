@@ -11,6 +11,15 @@ export type MemoryStoreOptions = {
     clock?: IClock;
 };
 
+export type MemoryRunReferenceOptions = {
+    /**
+     * Synchronous run lookup; a write for a run it does not know is refused with
+     * RunNotFoundError, as a database foreign key would. createMemoryStore() wires
+     * its run repository in; without one any run id is accepted.
+     */
+    hasRun?: (runId: string) => boolean;
+};
+
 export type Expiring = {
     expiresAt: number;
 };

@@ -15,4 +15,4 @@ export * from './module.ts';
 export * from './run.ts';
 export * from './state.ts';
 export * from './step.ts';
-export type { MemoryStoreOptions } from './types.ts';
+export type { MemoryRunReferenceOptions, MemoryStoreOptions } from './types.ts';

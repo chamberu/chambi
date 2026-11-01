@@ -49,7 +49,7 @@ describePostgres('schema', () => {
         const ds = await create({ migrate: false });
         const prior = new DataSource({
             ...ds.options,
-            migrations: STORE_MIGRATIONS.filter((migration) => migration.name !== 'RunTaint1792800000000'),
+            migrations: STORE_MIGRATIONS.filter((migration) => migration.name !== 'ConversationsRunTaint1792713600000'),
         });
 
         await prior.initialize();
@@ -74,7 +74,7 @@ describePostgres('schema', () => {
             await prior.destroy();
         }
 
-        await expect(pendingMigrations(ds)).resolves.toEqual(['RunTaint1792800000000']);
+        await expect(pendingMigrations(ds)).resolves.toEqual(['ConversationsRunTaint1792713600000']);
 
         const [beforeMigration]: { at: Date }[] = await ds.query('SELECT clock_timestamp() AS at');
 
@@ -104,13 +104,13 @@ describePostgres('schema', () => {
         const ds = await create({ migrate: false });
         const prior = new DataSource({
             ...ds.options,
-            migrations: STORE_MIGRATIONS.slice(0, STORE_MIGRATIONS.findIndex((migration) => migration.name === 'Conversations1792713600000')),
+            migrations: STORE_MIGRATIONS.slice(0, STORE_MIGRATIONS.findIndex((migration) => migration.name === 'ConversationsRunTaint1792713600000')),
         });
 
         await prior.initialize();
         dataSources.push(prior);
         await migrateStore(prior);
-        expect(await pendingMigrations(ds)).toEqual(['Conversations1792713600000', 'RunTaint1792800000000']);
+        expect(await pendingMigrations(ds)).toEqual(['ConversationsRunTaint1792713600000']);
 
         const insertCheckpoint = (runId: string) => ds.query(
             'INSERT INTO chamvi_checkpoints (run_id, step_index, messages, finish_reason, created_at) VALUES ($1, 3, $2, $3, $4)',
@@ -229,6 +229,28 @@ describePostgres('schema', () => {
             .rejects.toMatchObject({ driverError: { code: '23503' } });
     });
 
+    it('indexes the run and conversation foreign key columns', async () => {
+        const ds = await create();
+        const rows: { tablename: string, indexdef: string }[] = await ds.query(
+            'SELECT tablename, indexdef FROM pg_indexes WHERE tablename = ANY($1::text[])',
+            [[
+                TableName.RUNS,
+                TableName.CHECKPOINTS,
+                TableName.CONVERSATION_ITEMS,
+                TableName.CONVERSATION_NOTES,
+                TableName.CONVERSATION_OPERATIONS,
+            ]],
+        );
+        const leads = (table: string, column: string) => rows.some((row) => row.tablename === table &&
+            row.indexdef.includes(`(${column}`));
+
+        expect(leads(TableName.RUNS, 'conversation_scope_id')).toBe(true);
+        expect(leads(TableName.CHECKPOINTS, 'conversation_scope_id')).toBe(true);
+        expect(leads(TableName.CONVERSATION_ITEMS, 'run_id')).toBe(true);
+        expect(leads(TableName.CONVERSATION_NOTES, 'run_id')).toBe(true);
+        expect(leads(TableName.CONVERSATION_OPERATIONS, 'run_id')).toBe(true);
+    });
+
     it('creates the GIN index on docs', async () => {
         const ds = await create();
         const rows: { indexdef: string }[] = await ds.query(
@@ -277,8 +299,7 @@ describePostgres('schema', () => {
             'IdempotencyScope1792454400000',
             'KvKeyCollation1792540800000',
             'AgentRevisions1792627200000',
-            'Conversations1792713600000',
-            'RunTaint1792800000000',
+            'ConversationsRunTaint1792713600000',
         ]);
         await migrateStore(ds);
         expect(await pendingMigrations(ds)).toEqual([]);
@@ -320,9 +341,6 @@ describePostgres('schema', () => {
         expect(await taintColumns()).toHaveLength(1);
         await ds.undoLastMigration({ transaction: 'each' });
         expect(await taintColumns()).toHaveLength(0);
-        expect(await tablesIn('other')).toBe(Object.values(TableName).length);
-
-        await ds.undoLastMigration({ transaction: 'each' });
 
         const tableCount = Object.values(TableName).length - 4;
 

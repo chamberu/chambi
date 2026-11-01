@@ -172,7 +172,8 @@ describe('public api', () => {
         expect(core.CONVERSATION_NOTE_TEXT_MAX_BYTES).toBe(2048);
         expect(core.CONVERSATION_NOTES_MAX).toBe(100);
         expect(core.MemoryConversationRepository).toBeTypeOf('function');
-        expectTypeOf<core.MemoryConversationRepositoryOptions>().toEqualTypeOf<{ clock?: core.IClock }>();
+        expectTypeOf<core.MemoryConversationRepositoryOptions>().toEqualTypeOf<{ clock?: core.IClock; hasRun?: (runId: string) => boolean }>();
+        expectTypeOf<core.MemoryRunReferenceOptions>().toEqualTypeOf<{ hasRun?: (runId: string) => boolean }>();
         expectTypeOf<core.MemoryConversationRepository>().toMatchTypeOf<core.IConversationRepository>();
 
         for (const name of [

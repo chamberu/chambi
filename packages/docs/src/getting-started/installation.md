@@ -20,7 +20,7 @@ For durable runs and more than one replica, add the TypeORM store with `typeorm`
 npm install @chamvi/store-db typeorm pg
 ```
 
-See [TypeORM store](/repositories/typeorm).
+See [database store](/repositories/database).
 
 ## Testing helpers
 

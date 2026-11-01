@@ -9,7 +9,7 @@ import { RepositoryNotFoundError } from '@chamvi/core';
 import type { IStepRepository, Step } from '@chamvi/core';
 import type { DataSource, Repository } from 'typeorm';
 import { StepEntity } from '../entities/index.ts';
-import { toStep, toStepValues } from '../repository/helpers.ts';
+import { toStep, toStepValues, withRunReference } from '../repository/helpers.ts';
 
 export class DatabaseStepRepository implements IStepRepository {
     protected dataSource: DataSource;
@@ -23,11 +23,11 @@ export class DatabaseStepRepository implements IStepRepository {
     }
 
     async insert(step: Step): Promise<void> {
-        await this.steps.createQueryBuilder()
+        await withRunReference(this.dataSource, step.runId, () => this.steps.createQueryBuilder()
             .insert()
             .values(toStepValues(step))
             .updateEntity(false)
-            .execute();
+            .execute());
     }
 
     async find(runId: string): Promise<Step[]> {

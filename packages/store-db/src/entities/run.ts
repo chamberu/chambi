@@ -25,6 +25,7 @@ import { ConversationEntity } from './conversation.ts';
 
 @Index(['agent', 'status', 'concurrencyKey'])
 @Index(['status', 'createdAt', 'id'])
+@Index(['conversationScopeId'])
 @Entity({ name: TableName.RUNS })
 export class RunEntity {
     @PrimaryColumn({

@@ -10,7 +10,7 @@ import type { Checkpoint, ICheckpointRepository } from '@chamvi/core';
 import { LessThanOrEqual } from 'typeorm';
 import type { DataSource, Repository } from 'typeorm';
 import { CheckpointEntity } from '../entities/index.ts';
-import { toCheckpoint, toCheckpointValues } from '../repository/helpers.ts';
+import { toCheckpoint, toCheckpointValues, withRunReference } from '../repository/helpers.ts';
 
 export class DatabaseCheckpointRepository implements ICheckpointRepository {
     protected dataSource: DataSource;
@@ -24,7 +24,7 @@ export class DatabaseCheckpointRepository implements ICheckpointRepository {
     }
 
     async save(cp: Checkpoint): Promise<void> {
-        await this.checkpoints.createQueryBuilder()
+        await withRunReference(this.dataSource, cp.runId, () => this.checkpoints.createQueryBuilder()
             .insert()
             .values(toCheckpointValues(cp))
             .orUpdate(
@@ -33,7 +33,7 @@ export class DatabaseCheckpointRepository implements ICheckpointRepository {
                 { overwriteCondition: { where: { stepIndex: LessThanOrEqual(cp.stepIndex) } } },
             )
             .updateEntity(false)
-            .execute();
+            .execute());
     }
 
     async findOne(runId: string): Promise<Checkpoint | undefined> {

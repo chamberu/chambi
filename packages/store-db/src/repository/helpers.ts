@@ -5,7 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { normalizeEnvelope } from '@chamvi/core';
+import { RunNotFoundError, normalizeEnvelope } from '@chamvi/core';
+import { isObject } from 'smob';
 import type {
     AgentRevision,
     Artifact,
@@ -28,6 +29,7 @@ import type {
     RunEntity,
     StepEntity,
 } from '../entities/index.ts';
+import { TableName } from '../entities/constants.ts';
 
 /** Run properties that map one to one onto a RunEntity property. */
 const RUN_PROPERTIES: ReadonlySet<string> = new Set([
@@ -337,4 +339,57 @@ export function toAgentRevision(entity: AgentRevisionEntity): AgentRevision {
         hash: entity.hash,
         changedAt: entity.changedAt,
     };
+}
+
+/** PostgreSQL foreign_key_violation. */
+const FOREIGN_KEY_VIOLATION = '23503';
+
+/**
+ * The names of the foreign keys that point at the runs table, read from the
+ * entity metadata (the migrations are generated from it, so the names match).
+ */
+export function runForeignKeyNames(dataSource: DataSource): ReadonlySet<string> {
+    const names = new Set<string>();
+
+    for (const metadata of dataSource.entityMetadatas) {
+        for (const foreignKey of metadata.foreignKeys) {
+            if (foreignKey.referencedEntityMetadata.tableName === TableName.RUNS && foreignKey.name) {
+                names.add(foreignKey.name);
+            }
+        }
+    }
+
+    return names;
+}
+
+/**
+ * Whether a write failed because a run it references does not exist: a foreign
+ * key violation of one of the runs table's foreign keys (the conversation scope
+ * keys point at another table, so they stay database errors). It reads the
+ * structured `code` and `constraint` fields only, never the `detail` text,
+ * which PostgreSQL translates by `lc_messages`.
+ */
+export function isMissingRunError(error: unknown, constraints: ReadonlySet<string>): boolean {
+    if (!isObject(error) || !isObject(error.driverError)) {
+        return false;
+    }
+
+    const { code, constraint } = error.driverError;
+
+    return code === FOREIGN_KEY_VIOLATION &&
+        typeof constraint === 'string' &&
+        constraints.has(constraint);
+}
+
+/** Runs a write and reports a missing referenced run as the core RunNotFoundError, as the memory store does. */
+export async function withRunReference<T>(dataSource: DataSource, runId: string, write: () => Promise<T>): Promise<T> {
+    try {
+        return await write();
+    } catch (error) {
+        if (isMissingRunError(error, runForeignKeyNames(dataSource))) {
+            throw new RunNotFoundError(runId);
+        }
+
+        throw error;
+    }
 }

@@ -7,8 +7,8 @@
 
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class Conversations1792713600000 implements MigrationInterface {
-    name = 'Conversations1792713600000';
+export class ConversationsRunTaint1792713600000 implements MigrationInterface {
+    name = 'ConversationsRunTaint1792713600000';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query('CREATE TABLE "chamvi_conversations" ("id" character varying(64) COLLATE "C" NOT NULL, "agent" text COLLATE "C" NOT NULL, "channel" text COLLATE "C" NOT NULL, "account" text COLLATE "C" NOT NULL, "chat" text COLLATE "C" NOT NULL, "audience" text COLLATE "C" NOT NULL, "generation" integer NOT NULL, "active_run_id" character varying(128), "snapshot_messages" jsonb, "snapshot_item_ids" text array, "snapshot_note_keys" text array, "snapshot_created_at" TIMESTAMP WITH TIME ZONE, "snapshot_omitted" integer, CONSTRAINT "PK_d70b087b46b044fb4d5ff1b20be" PRIMARY KEY ("id"))');
@@ -41,9 +41,27 @@ export class Conversations1792713600000 implements MigrationInterface {
         await queryRunner.query('ALTER TABLE "chamvi_conversation_notes" ADD CONSTRAINT "FK_08699555ad0212cc26e73325b75" FOREIGN KEY ("run_id") REFERENCES "chamvi_runs"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
         await queryRunner.query('ALTER TABLE "chamvi_conversation_operations" ADD CONSTRAINT "FK_94f96115d14b407087799db2081" FOREIGN KEY ("scope_id") REFERENCES "chamvi_conversations"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
         await queryRunner.query('ALTER TABLE "chamvi_conversation_operations" ADD CONSTRAINT "FK_9490b26a059a1d8b50e8c1b0e25" FOREIGN KEY ("run_id") REFERENCES "chamvi_runs"("id") ON DELETE NO ACTION ON UPDATE NO ACTION');
+        await queryRunner.query('CREATE INDEX "IDX_f52e3d9f9a700e00b702168225" ON "chamvi_runs" ("conversation_scope_id") ');
+        await queryRunner.query('CREATE INDEX "IDX_a7fd19281c5f361dc847332375" ON "chamvi_checkpoints" ("conversation_scope_id") ');
+        await queryRunner.query('CREATE INDEX "IDX_e3edf09ee4749bad2d7b394c83" ON "chamvi_conversation_items" ("run_id") ');
+        await queryRunner.query('CREATE INDEX "IDX_08699555ad0212cc26e73325b7" ON "chamvi_conversation_notes" ("run_id") ');
+        await queryRunner.query('CREATE INDEX "IDX_9490b26a059a1d8b50e8c1b0e2" ON "chamvi_conversation_operations" ("run_id") ');
+        await queryRunner.query('ALTER TABLE "chamvi_runs" ADD "taint" jsonb');
+        // Resumable legacy runs may already contain untrusted checkpoint content.
+        await queryRunner.query(`
+            UPDATE "chamvi_runs"
+            SET "taint" = jsonb_build_object('at', CURRENT_TIMESTAMP, 'source', 'migration:legacy-run')
+            WHERE "status" IN ('queued', 'running', 'waiting', 'interrupted')
+        `);
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query('ALTER TABLE "chamvi_runs" DROP COLUMN "taint"');
+        await queryRunner.query('DROP INDEX "IDX_9490b26a059a1d8b50e8c1b0e2"');
+        await queryRunner.query('DROP INDEX "IDX_08699555ad0212cc26e73325b7"');
+        await queryRunner.query('DROP INDEX "IDX_e3edf09ee4749bad2d7b394c83"');
+        await queryRunner.query('DROP INDEX "IDX_a7fd19281c5f361dc847332375"');
+        await queryRunner.query('DROP INDEX "IDX_f52e3d9f9a700e00b702168225"');
         await queryRunner.query('ALTER TABLE "chamvi_conversation_operations" DROP CONSTRAINT "FK_9490b26a059a1d8b50e8c1b0e25"');
         await queryRunner.query('ALTER TABLE "chamvi_conversation_operations" DROP CONSTRAINT "FK_94f96115d14b407087799db2081"');
         await queryRunner.query('ALTER TABLE "chamvi_conversation_notes" DROP CONSTRAINT "FK_08699555ad0212cc26e73325b75"');

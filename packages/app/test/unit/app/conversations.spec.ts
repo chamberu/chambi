@@ -109,13 +109,34 @@ describe('app conversation capability', () => {
 
         await built.app.check({ env });
 
-        const store = built.container().resolve(AppToken.STORE).conversations!;
+        const aggregate = built.container().resolve(AppToken.STORE);
+        const store = aggregate.conversations!;
 
         expect(store).toBeInstanceOf(MemoryConversationRepository);
 
         const engine = built.container().resolve(AppToken.ENGINE) as IEngine;
 
         expect(await engine.inspectConversation(identity)).toBeUndefined();
+
+        const at = built.clock.now();
+
+        // the memory store refuses a turn for a run it does not hold, as a foreign key would
+        await aggregate.runs.insert({
+            id: 'clock-run',
+            agent: 'helper',
+            status: 'running',
+            trigger: {
+                id: 'clock-run',
+                agent: 'helper',
+                trigger: 'chat',
+                channel: 'chat',
+                payload: {},
+                receivedAt: at,
+            },
+            usage: { inputTokens: 0, outputTokens: 0 },
+            createdAt: at,
+            updatedAt: at,
+        });
 
         const scope = await store.resolve(identity);
         const begun = await store.beginTurn(scope, 'clock-run', 'hello', {

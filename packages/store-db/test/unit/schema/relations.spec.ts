@@ -7,7 +7,7 @@
 
 import type { DataSource } from 'typeorm';
 import { afterEach, expect, it } from 'vitest';
-import { DEFAULT_CONVERSATION_LIMITS } from '@chamvi/core';
+import { DEFAULT_CONVERSATION_LIMITS, RunNotFoundError } from '@chamvi/core';
 import { DatabaseConversationRepository, createDatabaseStore } from '@chamvi/store-db';
 import { createTestDataSource, describePostgres } from '../../utils/database.ts';
 import { seedRun } from '../../utils/conversation.ts';
@@ -221,7 +221,7 @@ describePostgres('relational integrity', () => {
         const scope = await store.resolve(IDENTITY);
 
         await expect(store.beginTurn(scope, 'missing', 'input', DEFAULT_CONVERSATION_LIMITS))
-            .rejects.toMatchObject({ driverError: { code: '23503' } });
+            .rejects.toBeInstanceOf(RunNotFoundError);
         expect(await store.activeRun(scope)).toBeUndefined();
         expect((await store.findItems(scope, { limit: 10, offset: 0 })).total).toBe(0);
     });

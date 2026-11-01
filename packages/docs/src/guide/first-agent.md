@@ -52,7 +52,7 @@ npx chamvi start   # production: needs CHAMVI_TOKENS
 export CHAMVI_TOKENS="[{ \"value\": \"$(openssl rand -hex 32)\", \"id\": \"ops\", \"permissions\": [\"*\"] }]"
 ```
 
-Both listen on port 3000 (`PORT`). Without `DATABASE_URL` runs live in memory: a restart loses them (see [TypeORM store](/repositories/typeorm) for Postgres).
+Both listen on port 3000 (`PORT`). Without `DATABASE_URL` runs live in memory: a restart loses them (see [database store](/repositories/database) for Postgres).
 
 ## 5. The dashboard
 
