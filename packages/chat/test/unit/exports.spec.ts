@@ -14,11 +14,13 @@ describe('public api', () => {
         expect(Object.keys(pkg).sort()).toEqual([
             'CHAT_ADDRESS_PREFIX',
             'CHAT_CHANNEL_NAME',
-            'CHAT_CHANNEL_TIMEOUT_MS',
             'CHAT_EVENTS',
             'CHAT_INTAKE_FAILED_ERROR_CODE',
+            'CHAT_REQUEST_ERROR_CODE',
             'CHAT_STOP_TIMEOUT_ERROR_CODE',
             'CHAT_STOP_TIMEOUT_MS',
+            'CHAT_TEXT_MAX_CHARS',
+            'CHAT_TIMEOUT_MS',
             'DEFAULT_CHAT_EVENTS',
             'chat',
             'chatAddress',
@@ -36,6 +38,9 @@ describe('public api', () => {
         expect(pkg.CHAT_CHANNEL_NAME).toBe('chat');
         expect(pkg.CHAT_STOP_TIMEOUT_MS).toBe(30_000);
         expect(pkg.CHAT_INTAKE_FAILED_ERROR_CODE).toBe('chat_intake_failed');
+        expect(pkg.CHAT_REQUEST_ERROR_CODE).toBe('chat_request');
+        expect(pkg.CHAT_TEXT_MAX_CHARS).toBe(4096);
+        expect(pkg.CHAT_TIMEOUT_MS).toBe(30_000);
     });
 
     it.each([
@@ -51,6 +56,9 @@ describe('public api', () => {
         'chatIdempotencyKey',
         'chatConcurrencyKey',
         'CHANNEL_NAME_PATTERN',
+        'TIMER_MAX_MS',
+        'createChatSender',
+        'renderChatMessage',
     ])('has no %s', (name) => {
         expect(pkg).not.toHaveProperty(name);
     });

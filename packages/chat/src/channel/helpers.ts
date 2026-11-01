@@ -20,7 +20,8 @@ import {
     CHANNEL_NAME_PATTERN,
     CHAT_ADDRESS_PREFIX,
     CHAT_CHANNEL_NAME,
-    CHAT_CHANNEL_TIMEOUT_MS,
+    CHAT_TIMEOUT_MS,
+    TIMER_MAX_MS,
 } from './constants.ts';
 import type { ChatChannelOptions, ResolvedChatChannelOptions } from './types.ts';
 
@@ -134,10 +135,10 @@ export function resolveOptions(options: ChatChannelOptions): ResolvedChatChannel
         throw invalid('history must be 0: platform history is not fetched.');
     }
 
-    const timeoutMs = options.timeoutMs ?? CHAT_CHANNEL_TIMEOUT_MS;
+    const timeoutMs = options.timeoutMs ?? CHAT_TIMEOUT_MS;
 
-    if (!isPositiveInteger(timeoutMs)) {
-        throw invalid('timeoutMs must be a positive integer.');
+    if (!isPositiveInteger(timeoutMs) || timeoutMs > TIMER_MAX_MS) {
+        throw invalid(`timeoutMs must be a positive integer of at most ${TIMER_MAX_MS}.`);
     }
 
     if (options.defaultAddress !== undefined) {

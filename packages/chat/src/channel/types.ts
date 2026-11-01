@@ -69,11 +69,15 @@ export type ChatChannelOptions = {
     allowMessage: (incoming: ChatIncoming) => boolean | Promise<boolean>;
     /** The invoker of the runs a message starts; none by default. */
     resolveInvoker?: (incoming: ChatIncoming) => Invoker | undefined | Promise<Invoker | undefined>;
-    /** The approval link in approval messages; without it a hint names the UI. */
+    /**
+     * The approval link in approval messages (ids only, an absolute http(s)
+     * URL without credentials); required to send an approval, since an
+     * approval is answered in the UI only.
+     */
     approvalUrl?: (ref: ChatApprovalRef) => string;
     /** Platform-fetched history; only 0 (none) for now. */
     history?: 0;
-    /** Bound of one outbound send; default `CHAT_CHANNEL_TIMEOUT_MS` (30 s). */
+    /** Bound of one outbound send; default `CHAT_TIMEOUT_MS` (30 s). */
     timeoutMs?: number;
     /** Failures nobody awaits (refused and failed messages, stop); default console.error. */
     onError?: (error: unknown) => void;

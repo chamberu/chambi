@@ -471,6 +471,9 @@ describe('chatChannel options', () => {
             .toThrow(/allowMessage/);
         expect(() => chatChannel(options({ name: 'Chat' }))).toThrow(/name/);
         expect(() => chatChannel(options({ timeoutMs: 0 }))).toThrow(/timeoutMs/);
+        // a Node timer above 2^31 - 1 fires after 1 ms
+        expect(() => chatChannel(options({ timeoutMs: 2 ** 31 }))).toThrow(/timeoutMs/);
+        expect(() => chatChannel(options({ timeoutMs: 2 ** 31 - 1 }))).not.toThrow();
         expect(() => chatChannel(options({ connect: 'x' as unknown as ChatChannelOptions['connect'] }))).toThrow(/connect/);
         expect(() => chatChannel(options({ defaultAddress: 'owner' }))).toThrow(/defaultAddress/);
         expect(() => chatChannel({ adapters: [], allowMessage: () => true } as unknown as ChatChannelOptions)).toThrow(/chat must be/);

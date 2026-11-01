@@ -11,8 +11,17 @@ export const CHAT_CHANNEL_NAME = 'chat';
 /** Every chat address starts with it: `chat:<base64url of the JSON [adapter, threadId]>`. */
 export const CHAT_ADDRESS_PREFIX = 'chat:';
 
-/** Default bound of one outbound send. */
-export const CHAT_CHANNEL_TIMEOUT_MS = 30_000;
+/** Default bound of one outbound send, below the engine's approval delivery lock (`claimTtlMs`, 60 s). */
+export const CHAT_TIMEOUT_MS = 30_000;
+
+/** The longest text one send posts (no splitting); a conservative default, not a platform limit. */
+export const CHAT_TEXT_MAX_CHARS = 4096;
+
+/** `code` of every transport failure of a send. */
+export const CHAT_REQUEST_ERROR_CODE = 'chat_request';
+
+/** The longest Node timer: a larger one fires after 1 ms. */
+export const TIMER_MAX_MS = 2 ** 31 - 1;
 
 /** How long stop() waits for messages already being accepted. */
 export const CHAT_STOP_TIMEOUT_MS = 30_000;

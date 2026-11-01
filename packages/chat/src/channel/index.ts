@@ -8,10 +8,12 @@
 export {
     CHAT_ADDRESS_PREFIX,
     CHAT_CHANNEL_NAME,
-    CHAT_CHANNEL_TIMEOUT_MS,
     CHAT_INTAKE_FAILED_ERROR_CODE,
+    CHAT_REQUEST_ERROR_CODE,
     CHAT_STOP_TIMEOUT_ERROR_CODE,
     CHAT_STOP_TIMEOUT_MS,
+    CHAT_TEXT_MAX_CHARS,
+    CHAT_TIMEOUT_MS,
 } from './constants.ts';
 export { chatChannel } from './module.ts';
 export type {

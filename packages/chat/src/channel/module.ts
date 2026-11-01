@@ -11,6 +11,7 @@ import { createChatIntake } from '../intake/module.ts';
 import { bindIngress } from '../ingress/module.ts';
 import type { ChatIncoming, IChatReceiver } from '../ingress/types.ts';
 import { createChatSubscription } from '../subscription/module.ts';
+import { createChatSender } from '../outbound/module.ts';
 import { encodeChatAddress, reportError, resolveOptions } from './helpers.ts';
 import { CHAT_STOP_TIMEOUT_ERROR_CODE, CHAT_STOP_TIMEOUT_MS } from './constants.ts';
 import type {
@@ -33,6 +34,8 @@ type ChatRun = {
     /** the intake tasks already tracked: deliveries sharing one task report its failure once */
     readonly tasks: WeakSet<Promise<void>>;
     accepting: boolean;
+    /** connected: the start's own work succeeded and no stop began; sends need it */
+    online: boolean;
     disposers: Array<() => void>;
     /** the start's own work (bind, initialize, connect), settled */
     body?: Promise<void>;
@@ -122,6 +125,7 @@ async function waitInFlight(run: ChatRun, options: ResolvedChatChannelOptions): 
 async function runTeardown(run: ChatRun, options: ResolvedChatChannelOptions): Promise<void> {
     // admission closes first: a message from here on is refused, not half accepted
     run.accepting = false;
+    run.online = false;
     run.controller.abort(new InvalidRunStateError(`Chat channel "${options.name}" stopped.`));
 
     // a start in flight finishes its own step first (its connect sees the abort)
@@ -166,6 +170,11 @@ function teardown(run: ChatRun, options: ResolvedChatChannelOptions): Promise<vo
  * waits for the messages already being accepted (at most 30 s on the
  * engine's clock, reporting what is left), then shuts the Chat down.
  *
+ * `out` (createChatSender()) posts to the chat an address names, at least
+ * once and only while the channel is started: before `start` finished and
+ * from `stop` on it sends nothing (`chat_request`). Approvals go out as a
+ * link of `approvalUrl` (required for them), never as buttons.
+ *
  * Runs it starts are untrusted unless `untrusted: false`. Only incoming
  * messages reach chamvi: the Chat has no handlers of chamvi's, so an action
  * (a button) or any other event the adapter forwards answers nothing and
@@ -175,6 +184,14 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
     const resolved = resolveOptions(options);
     const { name, adapterNames } = resolved;
     let current: ChatRun | undefined;
+    const out = createChatSender({
+        name,
+        adapters: resolved.adapters,
+        ...(resolved.approvalUrl ? { approvalUrl: resolved.approvalUrl } : {}),
+        timeoutMs: resolved.timeoutMs,
+        online: () => (current?.online ? current.context.engine.clock : undefined),
+        onError: resolved.onError,
+    });
 
     const start = async (context: ChannelContext): Promise<void> => {
         if (current && !current.teardown) {
@@ -190,6 +207,7 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
             inFlight: new Set(),
             tasks: new WeakSet(),
             accepting: true,
+            online: false,
             disposers: [],
         };
 
@@ -219,6 +237,8 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
         }
 
         if (!run.controller.signal.aborted) {
+            run.online = true;
+
             return;
         }
 
@@ -238,6 +258,7 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
                 await teardown(current, resolved);
             }
         },
+        out,
         on: (subscriptionOptions) => createChatSubscription(name, subscriptionOptions, adapterNames),
         to: (target) => encodeChatAddress(target, adapterNames),
     };
