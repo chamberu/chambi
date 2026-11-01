@@ -40,7 +40,7 @@ describe('workspace tool trust classification', () => {
             expect(await taint(tools, 'read_repository_instructions', { workspace: empty.id })).toBe(false);
             expect(await taint(tools, 'git_fetch', {})).toBe(true);
             expect(await taint(tools, 'git_pull', {})).toBe(true);
-            expect((tools.git_push as Tool & { trust: ToolTrust }).trust).toEqual({ taint: true, guardWhenTainted: true });
+            expect((tools.git_push as Tool & { trust: ToolTrust }).trust).toMatchObject({ taint: true, guardWhenTainted: true });
         } finally {
             await manager.release('r1');
         }
@@ -555,6 +555,134 @@ describe('workspace tool trust classification', () => {
         } finally {
             engine.stop();
             await manager.close();
+        }
+    });
+
+    async function taintedPush(push: {
+        mode: 'approve' | 'auto';
+        channel?: string;
+        allowBranch: () => boolean
+    }) {
+        let pushes = 0;
+        const sent: string[] = [];
+        const provider = createFakeProvider({
+            onExec(argv) {
+                if (argv.includes('push')) {
+                    pushes++;
+
+                    return {};
+                }
+
+                if (argv.includes('rev-parse')) {
+                    return argv.at(-1)?.startsWith('refs/remotes/') ? { exitCode: 1 } : { stdout: `${'1'.repeat(40)}\n` };
+                }
+
+                if (argv.includes('rev-list')) {
+                    return { stdout: '1\n' };
+                }
+
+                if (argv.includes('log')) {
+                    return { stdout: 'abc1234 fix the build\n' };
+                }
+
+                return {};
+            },
+        });
+        const manager = createWorkspaceManager({
+            provider,
+            gcIntervalMs: 0,
+            push,
+        });
+        const store = createMemoryStore();
+        const call = (toolName: string, input: unknown = {}) => ({
+            parts: [{
+                type: 'tool-call' as const,
+                toolName,
+                toolCallId: toolName,
+                input,
+            }],
+        });
+        const engine = new Engine({
+            store,
+            channels: [{
+                name: 'ops',
+                out: async (message) => {
+                    sent.push(message.kind);
+                },
+            }],
+            agents: [defineAgent({
+                name: 'test',
+                instructions: 'test',
+                model: mockModel([
+                    call('create_workspace', { repo: 'octo/demo' }),
+                    call('git_push', { branch: 'feature' }),
+                    { parts: [{ type: 'text', text: 'done' }] },
+                ]),
+                tools: manager.tools(),
+            })],
+        });
+
+        manager.attach(engine);
+        await engine.start();
+
+        const { runId } = await engine.dispatch({
+            agent: 'test',
+            channel: 'http',
+            trigger: 'test',
+            payload: {},
+        });
+
+        await engine.idle();
+
+        return {
+            engine,
+            manager,
+            store,
+            runId,
+            sent,
+            pushes: () => pushes,
+        };
+    }
+
+    it('never asks the gate for a git_push the push policy refuses in a tainted run', async () => {
+        const t = await taintedPush({ mode: 'approve', allowBranch: () => false });
+
+        try {
+            const run = await t.store.runs.findOne(t.runId);
+            const steps = await t.store.steps.find(t.runId);
+
+            expect(run?.status).toBe('completed');
+            expect(steps.filter((step) => step.kind === 'wait')).toHaveLength(0);
+            expect(steps.find((step) => step.name === 'git_push')?.error).toMatchObject({ code: 'tool_denied' });
+            expect(t.pushes()).toBe(0);
+        } finally {
+            t.engine.stop();
+            await t.manager.close();
+        }
+    });
+
+    it('answers a tainted git_push with push.channel through the gate only, never asking push.channel', async () => {
+        const t = await taintedPush({
+            mode: 'approve',
+            channel: 'ops',
+            allowBranch: () => true,
+        });
+
+        try {
+            const gate = await t.store.runs.findOne(t.runId);
+
+            expect(gate?.waiting?.approvalId).toMatch(/^bound:/);
+            expect(gate?.waiting?.channel).toBeUndefined();
+
+            await t.engine.approve(t.runId, { approvalId: gate!.waiting!.approvalId, approved: true });
+            await t.engine.idle();
+
+            expect((await t.store.runs.findOne(t.runId))?.status).toBe('completed');
+            expect(t.sent).toEqual([]);
+            expect(t.pushes()).toBe(1);
+        } finally {
+            t.engine.stop();
+            await t.manager.close();
         }
     });
 

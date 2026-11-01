@@ -234,6 +234,27 @@ export function createGitTools(context: GitToolsContext): ToolSet {
         };
     };
 
+    /** The push policy: a force push needs `allowForce`, the branch `allowBranch` (default: not the remote's default branch). */
+    const assertPushAllowed = async (
+        body: Record<string, unknown>,
+        plan: Awaited<ReturnType<typeof pushPlan>>,
+        ctx: ToolContext,
+    ): Promise<void> => {
+        const force = optionalBoolean(body.force, 'force') ?? false;
+
+        if (force && !policy.allowForce) {
+            throw new ToolDeniedError('Force pushes are not allowed here; merge the remote branch instead of rebasing (git_pull without rebase), then push.');
+        }
+
+        const allowed = policy.allowBranch ?
+            await policy.allowBranch(plan.branch, ctx) :
+            plan.branch !== await defaultBranchOf(plan.t, ctx.run.signal);
+
+        if (!allowed) {
+            throw new ToolDeniedError(`Pushing to ${plan.branch} is not allowed here; push to another branch (e.g. git_push({ branch: "fix/..." })).`);
+        }
+    };
+
     /** The approval of `push.mode: 'approve'`: `Push <n> commits to <branch>` and the log of what it sends. */
     const pushApproval = async (plan: Awaited<ReturnType<typeof pushPlan>> & { commit: string }, signal: AbortSignal) => {
         const {
@@ -347,20 +368,22 @@ export function createGitTools(context: GitToolsContext): ToolSet {
             trust: {
                 taint: true,
                 guardWhenTainted: true,
-                // in a tainted run the outbound gate's approval is the push approval: it carries the log privately
-                ...(policy.mode === 'approve' && {
-                    approvalDetail: async (input: unknown, ctx: ToolContext) => {
-                        const plan = await pushPlan(inputObject(input), ctx);
+                // a tainted run: a push the policy refuses never reaches the gate, and with `mode: 'approve'`
+                // the gate's approval is the push approval (it carries the log privately; push.channel is not asked)
+                approvalDetail: async (input: unknown, ctx: ToolContext) => {
+                    const body = inputObject(input);
+                    const plan = await pushPlan(body, ctx);
 
-                        if (plan.commit === undefined) {
-                            return undefined;
-                        }
+                    await assertPushAllowed(body, plan, ctx);
 
-                        const { title, body } = await pushApproval({ ...plan, commit: plan.commit }, ctx.run.signal);
+                    if (policy.mode !== 'approve' || plan.commit === undefined) {
+                        return undefined;
+                    }
 
-                        return `${title}\n${body}`;
-                    },
-                }),
+                    const { title, body: text } = await pushApproval({ ...plan, commit: plan.commit }, ctx.run.signal);
+
+                    return `${title}\n${text}`;
+                },
             },
             description: 'Push a branch (default: the current one) to the workspace\'s repository with the run\'s git credentials. ' +
                 'A rejected push (the remote moved) comes back with pushed: false; fetch and merge or rebase, then push again. ' +
@@ -394,17 +417,7 @@ export function createGitTools(context: GitToolsContext): ToolSet {
                 } = plan;
                 const { signal } = ctx.run;
 
-                if (force && !policy.allowForce) {
-                    throw new ToolDeniedError('Force pushes are not allowed here; merge the remote branch instead of rebasing (git_pull without rebase), then push.');
-                }
-
-                const allowed = policy.allowBranch ?
-                    await policy.allowBranch(branch, ctx) :
-                    branch !== await defaultBranchOf(t, signal);
-
-                if (!allowed) {
-                    throw new ToolDeniedError(`Pushing to ${branch} is not allowed here; push to another branch (e.g. git_push({ branch: "fix/..." })).`);
-                }
+                await assertPushAllowed(body, plan, ctx);
 
                 if (commit === undefined) {
                     throw new ValidationError('There is no commit to push yet; commit first.');

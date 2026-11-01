@@ -24,6 +24,7 @@ import {
 import type { IWorkspace } from '@chamvi/sandbox';
 import {
     BINARY_MAX_BYTES,
+    FILE_NOT_FOUND,
     FILE_PATH_PROPERTY,
     IMAGE_MAX_BYTES,
     READ_LOG_SCRIPT,
@@ -147,7 +148,7 @@ async function readLog(
     );
 
     if (result.exitCode === 3) {
-        throw new SandboxError(`file not found: ${input.path}`);
+        throw new SandboxError(`${FILE_NOT_FOUND}${input.path}`);
     }
 
     const totalLines = Number(result.stderr.trim().split('\n').at(-1));

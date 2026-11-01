@@ -6,10 +6,10 @@
  */
 
 import type { Tool } from 'ai';
-import { ValidationError, defineTool } from '@chamvi/core';
+import { SandboxError, ValidationError, defineTool } from '@chamvi/core';
 import { REDACTED } from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
-import { FILE_PATH_PROPERTY, MULTI_EDIT_MAX_EDITS } from './constants.ts';
+import { FILE_NOT_FOUND, FILE_PATH_PROPERTY, MULTI_EDIT_MAX_EDITS } from './constants.ts';
 import {
     fileKey,
     inputObject,
@@ -123,7 +123,8 @@ function rawText(document: EditDocument): string {
  * read (the occurrences in order, a literal `[redacted]` of the file staying
  * literal), so a read and write round trip never writes the marker over a
  * token. ValidationError when the occurrences do not line up with the
- * file's; `content` itself for a file without a token (or a missing one).
+ * file's or when the file exists but cannot be read as text; `content`
+ * itself for a file without a token (or a missing one).
  */
 export async function restoreRedacted(workspace: IWorkspace, path: string, content: string): Promise<string> {
     if (!workspace.redactedSpans || !content.includes(REDACTED)) {
@@ -134,9 +135,14 @@ export async function restoreRedacted(workspace: IWorkspace, path: string, conte
 
     try {
         document = await readDocument(workspace, path);
-    } catch {
-        // a missing or unreadable file holds no token the write could clobber
-        return content;
+    } catch (error) {
+        // a missing file holds no token the write could clobber; any other failed read might
+        if (error instanceof SandboxError && error.message.startsWith(FILE_NOT_FOUND)) {
+            return content;
+        }
+
+        throw new ValidationError(`content holds [redacted], but ${path} could not be read as text to put its tokens back: ` +
+            'write content without [redacted] or change the file with edit_file.');
     }
 
     if (document.markers.length === 0) {

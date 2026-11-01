@@ -335,6 +335,19 @@ describe('edits of a file holding an issued token', () => {
         expect(await bytesOf('src/a.ts')).toBe(FILE);
     });
 
+    it('refuses write_file content with [redacted] over a token file it cannot read as text, writing nothing', async () => {
+        const bytes = new Uint8Array([...new TextEncoder().encode(`t = '${SECRET}';\n`), 0xFF]);
+
+        await s.workspace.writeFile('src/a.ts', bytes);
+
+        const call = redactingTools();
+        const error = await call('write_file', { path: 'src/a.ts', content: "t = '[redacted]';\n" }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(ValidationError);
+        expect((error as Error).message).not.toContain(SECRET);
+        expect(await s.workspace.readBytes('src/a.ts')).toEqual(bytes);
+    });
+
     it('writes a literal [redacted] where the file holds no token', async () => {
         const call = redactingTools();
 

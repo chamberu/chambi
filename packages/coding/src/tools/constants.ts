@@ -465,3 +465,6 @@ export const GREP_SCRIPT = [
     '{ st=$( { { "$@"; echo $? >&3; } | cl >&4; } 3>&1 ); } 4>&1',
     'exit "$st"',
 ].join('\n');
+
+/** How every provider's `readFile`/`readBytes` names a missing file (a `SandboxError`). */
+export const FILE_NOT_FOUND = 'file not found: ';
