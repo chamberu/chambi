@@ -55,6 +55,8 @@ export type FakeSocket = Omit<WhatsAppSocket, 'user'> & {
     readonly lids: Map<string, string>;
     /** answers sendMessage; default resolves with a message of the given (or a fresh) id */
     onSend?: (jid: string, text: string, messageId?: string) => Promise<WAMessage | undefined>;
+    /** answers end(); default resolves at once */
+    onEnd?: () => Promise<void>;
     emit<T extends keyof BaileysEventMap>(event: T, arg: BaileysEventMap[T]): void;
     listenerCount(): number;
     open(): void;
@@ -116,6 +118,7 @@ export function createFakeSockets(trace: string[] = []): FakeSockets {
             async end() {
                 trace.push('disconnect');
                 ended += 1;
+                await socket.onEnd?.();
             },
             async sendMessage(jid, content, options) {
                 const text = 'text' in content && typeof content.text === 'string' ? content.text : '';

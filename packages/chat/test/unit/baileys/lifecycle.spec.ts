@@ -21,7 +21,10 @@ import {
     WHATSAPP_RECONNECT,
     WHATSAPP_SHUTDOWN_TIMEOUT_MS,
 } from '@chamvi/chat/baileys';
-import { createWhatsAppFixture, settle } from '../../utils/whatsapp.ts';
+import { ControllableClock } from '@chamvi/test-kit';
+import { createWhatsAppConnection } from '../../../src/baileys/connection.ts';
+import { createRecordingAuth } from '../../utils/auth.ts';
+import { createFakeSockets, createWhatsAppFixture, settle } from '../../utils/whatsapp.ts';
 import type { WhatsAppFixture } from '../../utils/whatsapp.ts';
 
 const engines: IEngine[] = [];
@@ -500,5 +503,82 @@ describe('WhatsApp connection lifecycle', () => {
         expect(setup.status()).toBe('connected');
 
         await channel.stop!();
+    });
+
+    it('a socket whose end never settles holds the stop for the shutdown bound only', async () => {
+        const {
+            engine,
+            sockets,
+            clock,
+            errors,
+        } = fixture();
+
+        await engine.start();
+        sockets.last().open();
+        sockets.last().onEnd = () => Promise.withResolvers<void>().promise;
+
+        let stopped = false;
+        const stopping = engine.stop().then(() => {
+            stopped = true;
+        });
+
+        await settle();
+        clock.advance(WHATSAPP_SHUTDOWN_TIMEOUT_MS - 1);
+        await settle();
+        expect(stopped).toBe(false);
+
+        clock.advance(1);
+        await stopping;
+
+        expect(sockets.last().ended).toBe(1);
+        expect(codesOf(errors)).toContain(WHATSAPP_CONNECTION_ERROR_CODE);
+    });
+
+    it('builds no socket once the signal aborted after the lease arrived', async () => {
+        // the abort lands n microtasks after acquire resolved, for every n up to the connect's resumption
+        for (let n = 0; n < 12; n += 1) {
+            const trace: string[] = [];
+            const auth = createRecordingAuth(trace);
+            const sockets = createFakeSockets(trace);
+            const controller = new AbortController();
+            const abortedAtCreation: boolean[] = [];
+            const connection = createWhatsAppConnection({
+                auth: {
+                    acquire: async (signal) => {
+                        const lease = await auth.provider.acquire(signal);
+                        let chain = Promise.resolve();
+
+                        for (let i = 0; i < n; i += 1) {
+                            chain = chain.then(() => undefined);
+                        }
+
+                        chain.then(() => controller.abort(new InvalidRunStateError('stopped')));
+
+                        return lease;
+                    },
+                },
+                socketFactory: (config) => {
+                    abortedAtCreation.push(controller.signal.aborted);
+
+                    return sockets.factory(config);
+                },
+                onPairing: () => undefined,
+                onError: () => undefined,
+                onMessages: () => undefined,
+            });
+
+            const outcome = await connection.connect({ signal: controller.signal, clock: new ControllableClock() })
+                .then(() => 'connected', (error: unknown) => error);
+
+            expect(abortedAtCreation, `abort after ${n} microtasks`).not.toContain(true);
+
+            if (outcome !== 'connected') {
+                expect(outcome).toBeInstanceOf(InvalidRunStateError);
+                expect(connection.status()).toBe('stopped');
+            }
+
+            await connection.close();
+            expect(trace.filter((entry) => entry === 'release')).toHaveLength(1);
+        }
     });
 });

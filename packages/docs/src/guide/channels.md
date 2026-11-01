@@ -118,6 +118,7 @@ Rules for a channel:
 | `cronChannel()` | [`@chamvi/channel-cron`](/guide/scheduler) | ticks from `start()` | none |
 | `githubChannel({ app })` | [`@chamvi/github`](/deployment/github-app) | signed deliveries at `POST /channels/github` | a comment on an issue or pull request (`owner/repo#n`), deduplicated by a hidden marker |
 | `openclawChannel({ ... })` | [`@chamvi/channel-openclaw`](/deployment/openclaw) | none | an OpenClaw chat through its hooks endpoint, deduplicated by `Idempotency-Key` |
+| `chatChannel({ ... })`, `createWhatsAppChat({ ... })` | [`@chamvi/chat`](/reference/chat) | Chat SDK adapters: socket messages from `start()` (WhatsApp Web), webhooks at `POST /channels/chat/<adapter>` | a text message in the chat (approvals as a UI link), at least once |
 | `consoleChannel({ name?, write? })` | `@chamvi/core` | none | one header line per message, the body lines and, for an approval, until when it waits (default `console.log`); never throws |
 
 ## Attachments

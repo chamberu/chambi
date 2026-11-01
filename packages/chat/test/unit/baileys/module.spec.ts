@@ -5,6 +5,8 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { makeWASocket } from 'baileys';
 import type { Adapter } from 'chat';
 import {
@@ -32,6 +34,18 @@ describe('@chamvi/chat/baileys', () => {
             'createWhatsAppChat',
         ]);
         expect(baileys.WHATSAPP_ADAPTER_NAME).toBe('whatsapp');
+    });
+
+    it('pins the one verified Baileys version (its LID mapping trust depends on it)', () => {
+        const manifest = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')) as {
+            peerDependencies: Record<string, string>;
+            devDependencies: Record<string, string>;
+        };
+        const installed = (createRequire(import.meta.url)('baileys/package.json') as { version: string }).version;
+
+        expect(manifest.peerDependencies.baileys).toBe('7.0.0-rc14');
+        expect(manifest.devDependencies.baileys).toBe('7.0.0-rc14');
+        expect(installed).toBe('7.0.0-rc14');
     });
 
     it('keeps the main entry free of it', () => {

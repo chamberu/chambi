@@ -163,8 +163,8 @@ function guardKeys(generation: Generation, keys: SignalKeyStore): SignalKeyStore
  * alone set the status. An unexpected close reconnects with backoff on the
  * clock; a logout or a replacing session does not. `close` (idempotent per
  * connect) ends the socket and the reconnect, stops admitting auth calls,
- * waits for the pending ones and the lease's flush (at most
- * WHATSAPP_SHUTDOWN_TIMEOUT_MS), then releases the lease. Past that bound,
+ * waits for the pending ones and the lease's flush (the socket's end
+ * included, at most WHATSAPP_SHUTDOWN_TIMEOUT_MS), then releases the lease. Past that bound,
  * or when the flush failed, the lease is not released: it stays fenced (the
  * guard refuses every later call) and the failure is reported.
  */
@@ -326,12 +326,22 @@ export function createWhatsAppConnection(options: WhatsAppConnectionOptions): Wh
         setStatus(generation, 'stopped');
 
         const { socket } = generation;
+        // one bound for the whole close: a dead link's end() cannot stretch it
+        const deadline = generation.clock.now().getTime() + WHATSAPP_SHUTDOWN_TIMEOUT_MS;
+        const remaining = () => Math.max(0, deadline - generation.clock.now().getTime());
 
         dropSocket(generation);
 
         if (socket) {
-            try {
+            const ending = (async () => {
                 await socket.end(undefined);
+            })();
+
+            try {
+                if (!await within(generation.clock, remaining(), ending)) {
+                    ending.catch(() => undefined);
+                    report(failure(WHATSAPP_CONNECTION_ERROR_CODE, `Ending the WhatsApp socket did not finish within ${WHATSAPP_SHUTDOWN_TIMEOUT_MS}ms.`));
+                }
             } catch (error) {
                 report(failure(WHATSAPP_CONNECTION_ERROR_CODE, 'Ending the WhatsApp socket failed.', error));
             }
@@ -347,7 +357,7 @@ export function createWhatsAppConnection(options: WhatsAppConnectionOptions): Wh
         let settled: boolean;
 
         try {
-            settled = await within(generation.clock, WHATSAPP_SHUTDOWN_TIMEOUT_MS, settling);
+            settled = await within(generation.clock, remaining(), settling);
         } catch (error) {
             report(failure(WHATSAPP_AUTH_ERROR_CODE, 'Flushing the WhatsApp auth lease failed; it stays held (not released).', error));
 
@@ -417,8 +427,11 @@ export function createWhatsAppConnection(options: WhatsAppConnectionOptions): Wh
             throw error;
         }
 
-        if (!lease) {
-            throw signal.reason;
+        // an abort or close between the lease's arrival and here builds no socket (the close releases the lease)
+        if (!lease || signal.aborted || generation.closed) {
+            setStatus(generation, 'stopped');
+
+            throw signal.aborted ? signal.reason : new InvalidRunStateError('The WhatsApp connection closed while it connected.');
         }
 
         createSocket(generation);

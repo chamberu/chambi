@@ -283,6 +283,42 @@ describe('WhatsApp sender and group policy', () => {
         }));
     });
 
+    it('never hands a group message without participant to resolveInvoker, also under the open policy', async () => {
+        const decided: WhatsAppIdentity[] = [];
+        const value = await started({
+            patch: {
+                policy: {
+                    open: true,
+                    groups: [GROUP],
+                    requireGroupMention: false,
+                },
+                resolveInvoker: (identity) => {
+                    decided.push(identity);
+
+                    return {
+                        id: identity.sender,
+                        kind: 'whatsapp-guest',
+                        permissions: [],
+                    };
+                },
+            },
+        });
+
+        value.sockets.last().deliver(
+            waMessage({ chat: GROUP, id: 'anonymous' }),
+            // the control: the same message with a participant is decided on
+            waMessage({
+                chat: GROUP,
+                participant: MALLORY,
+                id: 'named',
+            }),
+        );
+        await settle();
+
+        expect(decided.map((identity) => identity.sender)).toEqual([MALLORY]);
+        expect(decided.map((identity) => identity.chat)).toEqual([GROUP]);
+    });
+
     it('ignores the bot\'s own messages', async () => {
         const decided: WhatsAppIdentity[] = [];
         const value = await started({

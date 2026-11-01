@@ -159,7 +159,9 @@ export function createWhatsAppAdapter(options: WhatsAppAdapterOptions): WhatsApp
         const identity = await resolveIdentity(raw, content, socket, options.account);
         const group = isJidGroup(remote) === true;
         const from = (group ? raw.key.participant : remote) ?? '';
-        // an unresolved sender keeps its raw id: the policy denies it, nothing borrows another's
+        // the Chat SDK needs an author id. Without an identity it is the raw sender id (a LID), or, for a
+        // group message without participant, the group jid: a display value only, since allowMessage
+        // denies every message without an identity before the policy or resolveInvoker sees an author
         const author = identity?.sender ?? (from ? jidNormalizedUser(from) : remote);
         const threadId = encodeWhatsAppThread(identity?.chat ?? jidNormalizedUser(remote));
         const seconds = toNumber(raw.messageTimestamp);

@@ -305,4 +305,28 @@ describe('chat intake with conversations', () => {
         // the plain agent still got its run
         expect((await fixture.runs()).map((run) => run.agent)).toEqual(['plain']);
     });
+
+    it('a transport without a conversation for the message refuses the bound agent only, once', async () => {
+        const fixture = await started({
+            agents: (channel) => [remembering(channel), plain(channel, 'plain')],
+            hooks: { conversationTarget: () => undefined },
+        });
+
+        const error = await fixture.adapter.deliver(createTextMessage({ id: 'm-1', text: 'secret words' })).catch((caught: unknown) => caught);
+
+        expect((error as ChamviError).code).toBe(CHAT_INTAKE_FAILED_ERROR_CODE);
+        expect((error as Error).message).toMatch(/remembering/);
+        expect((error as Error).message).toMatch(/1 attempt/);
+        expect((error as Error).message).not.toContain('secret words');
+        expect(((error as Error).cause as ChamviError).code).toBe(ErrorCode.VALIDATION);
+        expect(fixture.errors).toEqual([error]);
+
+        fixture.clock.advance(60_000);
+        await flush();
+
+        // terminal: no retry, no conversation policy call, the plain agent still ran
+        expect(fixture.errors).toHaveLength(1);
+        expect(fixture.access).toEqual([]);
+        expect((await fixture.runs()).map((run) => run.agent)).toEqual(['plain']);
+    });
 });

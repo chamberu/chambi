@@ -129,11 +129,6 @@ function firstMatch(agent: Agent, channel: string, payload: ChatPayload): Channe
         matchesChatSubscription(subscription, payload));
 }
 
-/**
- * The dispatches of one attempt, read from the live agents (a replaced agent's
- * new subscriptions, a removed agent none). A throwing filter fails its agent
- * only.
- */
 /** The conversation of the message: the transport's (hook), else from the payload. */
 function conversationOf(incoming: ChatIncoming, options: ResolvedChatChannelOptions, payload: ChatPayload): ConversationTarget | undefined {
     if (options.conversationTarget) {
@@ -149,6 +144,11 @@ function conversationOf(incoming: ChatIncoming, options: ResolvedChatChannelOpti
     };
 }
 
+/**
+ * The dispatches of one attempt, read from the live agents (a replaced agent's
+ * new subscriptions, a removed agent none). A throwing filter fails its agent
+ * only.
+ */
 function plan(
     context: ChannelContext,
     options: ResolvedChatChannelOptions,
