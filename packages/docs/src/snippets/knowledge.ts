@@ -35,6 +35,8 @@ const support = defineAgent({
 });
 
 export default createApp({
+    // the agents' default chat model; OPENAI_API_KEY configures the provider for both
+    model: 'openai/gpt-5-mini',
     agents: [support],
     modules: [knowledgeModule({
         collections: [

@@ -50,5 +50,14 @@ export function documentProblem(value: unknown): ValidationError | undefined {
         return new ValidationError(`${name}: metadata must be a plain object; skipped.`);
     }
 
+    if (item.metadata !== undefined) {
+        try {
+            // the repository stores a copy: a function or a symbol would fail the whole sync
+            structuredClone(item.metadata);
+        } catch {
+            return new ValidationError(`${name}: metadata must be cloneable; skipped.`);
+        }
+    }
+
     return undefined;
 }

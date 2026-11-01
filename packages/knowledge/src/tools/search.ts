@@ -9,6 +9,7 @@ import type { EmbeddingModel, Tool } from 'ai';
 import { embed } from 'ai';
 import { ValidationError, defineTool } from '@chamvi/core';
 import type { ToolContext } from '@chamvi/core';
+import { isObject } from 'smob';
 import { injectKnowledgeContext } from '../context/module.ts';
 import type { IKnowledge } from '../knowledge/types.ts';
 import type { KnowledgeCollection, KnowledgeMatch } from '../repository/types.ts';
@@ -73,11 +74,25 @@ function modelOf(knowledge: IKnowledge, record: KnowledgeCollection): EmbeddingM
 }
 
 /**
- * Whether a call's result is untrusted: any collection it searches is not
- * trusted by its record or its declaration, or has no record while this app
- * does not declare it trusted (it may be created by anyone meanwhile; a
- * declared trusted one without a record only answers "not ready"). A failing
- * read taints too; the call then reports the failure itself.
+ * Whether a collection's content is untrusted: not trusted by its record or
+ * its declaration, or without a record while this app does not declare it
+ * trusted (it may be created by anyone meanwhile; a declared trusted one
+ * without a record only answers "not ready").
+ */
+function isUntrustedRecord(knowledge: IKnowledge, name: string, record: KnowledgeCollection | undefined): boolean {
+    const declared = knowledge.collection(name);
+
+    if (!record) {
+        return declared?.trusted !== true;
+    }
+
+    return !record.trusted || declared?.trusted === false;
+}
+
+/**
+ * Whether a call's result is untrusted: any collection it searches is (see
+ * isUntrustedRecord). A failing read taints too; the call then reports the
+ * failure itself.
  */
 async function isUntrusted(input: unknown, ctx: ToolContext, options: KnowledgeToolsOptionsNormalized): Promise<boolean> {
     const knowledge = injectKnowledgeContext(ctx);
@@ -86,26 +101,34 @@ async function isUntrusted(input: unknown, ctx: ToolContext, options: KnowledgeT
     try {
         const records = await Promise.all(names.map((name) => knowledge.repository.findOneCollection(name)));
 
-        return records.some((record, index) => {
-            const declared = knowledge.collection(names[index]!);
-
-            if (!record) {
-                return declared?.trusted !== true;
-            }
-
-            return !record.trusted || declared?.trusted === false;
-        });
+        return records.some((record, index) => isUntrustedRecord(knowledge, names[index]!, record));
     } catch {
         return true;
     }
 }
 
+function changedError(name: string): ValidationError {
+    return new ValidationError(`Knowledge collection "${name}" changed while it was searched; search again.`);
+}
+
 export function knowledgeSearchTool(options: KnowledgeToolsOptionsNormalized): Tool<KnowledgeSearchInput, KnowledgeSearchResult> {
     const names = options.collections.join(', ');
+    // the taint check's answer per call input (the object the wrapper hands to execute)
+    const verdicts = new WeakMap<object, boolean>();
 
     return defineTool<KnowledgeSearchInput, KnowledgeSearchResult>({
         // A search of an untrusted collection (managed, or fed from outside the deploy) taints the run.
-        trust: { taint: (input, ctx) => isUntrusted(input, ctx, options) },
+        trust: {
+            taint: async (input, ctx) => {
+                const untrusted = await isUntrusted(input, ctx, options);
+
+                if (isObject(input)) {
+                    verdicts.set(input, untrusted);
+                }
+
+                return untrusted;
+            },
+        },
         description: `Search the knowledge collections ${names} by meaning. Returns the passages closest to the query ` +
             `(at most ${KNOWLEDGE_SEARCH_MAX_RESULTS}, ${KNOWLEDGE_SEARCH_MAX_CHARS} characters in all), highest score first, ` +
             `each with its collection, document, title and source. ${REFERENCE_NOTE}`,
@@ -170,6 +193,28 @@ export function knowledgeSearchTool(options: KnowledgeToolsOptionsNormalized): T
                     ...(options.minScore !== undefined && { minScore: options.minScore }),
                 },
             )));
+
+            // trusted as the taint check saw it (else as execute read it): a call it did not taint
+            const verdict = isObject(input) ? verdicts.get(input) : undefined;
+            const trusted = verdict === undefined ?
+                records.every((record) => !isUntrustedRecord(knowledge, record.name, record)) :
+                !verdict;
+
+            if (isObject(input)) {
+                verdicts.delete(input);
+            }
+
+            // a sync may have switched the served generation (its chunks deleted) or downgraded
+            // the collection (untrusted chunks written) meanwhile: never an answer from either
+            const after = await Promise.all(records.map((record) => knowledge.repository.findOneCollection(record.name)));
+
+            for (const [index, record] of records.entries()) {
+                const now = after[index];
+
+                if (!now || now.generation !== record.generation || (trusted && isUntrustedRecord(knowledge, record.name, now))) {
+                    throw changedError(record.name);
+                }
+            }
 
             return toResult(found.flat(), count);
         },

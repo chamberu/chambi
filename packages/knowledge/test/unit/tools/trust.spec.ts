@@ -19,7 +19,12 @@ import {
 import type { IStore } from '@chamvi/core';
 import { mockEmbeddingModel, mockModel } from '@chamvi/test-kit';
 import type { MockEmbeddingModel } from '@chamvi/test-kit';
-import type { IKnowledge, IKnowledgeSource, KnowledgeSearchResult } from '@chamvi/knowledge';
+import type {
+    IKnowledge,
+    IKnowledgeSource,
+    KnowledgeSearchResult,
+    MemoryKnowledgeRepository,
+} from '@chamvi/knowledge';
 import {
     createKnowledge,
     defineKnowledgeSource,
@@ -52,6 +57,7 @@ const done = { parts: [{ type: 'text' as const, text: 'done' }] };
 
 type Setup = {
     engine: Engine;
+    repository: MemoryKnowledgeRepository;
     store: IStore;
     model: MockEmbeddingModel;
     writes: () => number;
@@ -103,6 +109,7 @@ async function setup(source: IKnowledgeSource, options: { index?: boolean } = {}
 
     return {
         engine,
+        repository: indexer.repository,
         store,
         model,
         writes: () => writes,
@@ -215,4 +222,35 @@ it('leaves the run clean when a trusted declared collection is not indexed yet',
     const [step] = await searchSteps(store, runId);
 
     expect(step?.error).toMatchObject({ message: 'Knowledge collection "wiki" is not ready.' });
+});
+
+it('answers no passage when the collection turns untrusted while it is searched', async () => {
+    const source = defineKnowledgeSource({
+        async* documents() {
+            yield { id: 'refunds', content: 'Our refund policy: within 30 days.' };
+        },
+    });
+    const {
+        engine,
+        repository,
+        store,
+    } = await setup(source);
+    const search = repository.search.bind(repository);
+
+    // a sync downgrades the collection between the taint check and the search
+    repository.search = async (collection, generation, vector, options) => {
+        const record = (await repository.findOneCollection(collection))!;
+
+        await repository.saveCollection({ ...record, trusted: false });
+
+        return search(collection, generation, vector, options);
+    };
+
+    const runId = await dispatch(engine);
+    const run = await store.runs.findOne(runId);
+    const [step] = await searchSteps(store, runId);
+
+    expect(step?.output).toBeUndefined();
+    expect(step?.error).toMatchObject({ message: 'Knowledge collection "wiki" changed while it was searched; search again.' });
+    expect(run?.taint).toBeUndefined();
 });

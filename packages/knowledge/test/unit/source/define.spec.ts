@@ -18,7 +18,8 @@ async function collect(source: IKnowledgeSource): Promise<{ documents: Knowledge
         signal: new AbortController().signal,
         onError: (error) => {
             errors.push(error);
-        }, 
+        },
+        incomplete: () => {},
     })) {
         documents.push(document);
     }
@@ -36,6 +37,30 @@ describe('defineKnowledgeSource', () => {
 
         expect(source.kind).toBe('custom');
         expect(source.trusted).toBe(true);
+    });
+
+    it('skips a document whose metadata cannot be cloned', async () => {
+        const source = defineKnowledgeSource({
+            async* documents() {
+                yield {
+                    id: 'fn.md',
+                    content: 'x',
+                    metadata: { format: () => 'x' },
+                };
+                yield {
+                    id: 'ok.md',
+                    content: 'y',
+                    metadata: { tags: ['a'], at: new Date('2026-11-01T00:00:00Z') },
+                };
+            },
+        });
+
+        const { documents, errors } = await collect(source);
+
+        expect(documents.map((document) => document.id)).toEqual(['ok.md']);
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toBeInstanceOf(ValidationError);
+        expect((errors[0] as Error).message).toBe('Knowledge document "fn.md": metadata must be cloneable; skipped.');
     });
 
     it('keeps a given kind and trust', () => {
@@ -159,7 +184,11 @@ describe('defineKnowledgeSource', () => {
             },
         });
 
-        const iterator = source.documents({ signal: controller.signal, onError: () => {} })[Symbol.asyncIterator]();
+        const iterator = source.documents({
+            signal: controller.signal,
+            onError: () => {},
+            incomplete: () => {},
+        })[Symbol.asyncIterator]();
 
         await iterator.next();
 

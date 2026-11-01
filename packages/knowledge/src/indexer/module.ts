@@ -27,7 +27,6 @@ import {
 } from './constants.ts';
 import {
     createIndexLock,
-    isCurrent,
     lockKey,
     messageOf,
     sameDetails,
@@ -125,7 +124,8 @@ function assertVectors(label: string, vectors: unknown, count: number, dimension
  * One pass over a declared collection: picks the generation to write (the
  * served one when model and chunker match, else the pending re-embed), embeds
  * every new or changed document into it, deletes the documents the sources no
- * longer yield and, for a re-embed, switches the served generation and deletes
+ * longer yield (none when a source marked its read incomplete: reported once;
+ * a re-embed then fails, retried on the backoff) and, for a re-embed, switches the served generation and deletes
  * the previous one. Unchanged documents cost nothing. Ends early, without an
  * error, once `lock.renew()` answers false.
  */
@@ -205,7 +205,15 @@ export async function syncCollection(input: SyncCollectionInput): Promise<void> 
 
     let dimensions = target === record.generation ? record.dimensions : record.pending?.dimensions;
     const seen = new Set<string>();
-    const context = { signal, onError: input.onError };
+    // what the sources could not read this pass (an unlistable folder, a read error)
+    const missed: string[] = [];
+    const context = {
+        signal,
+        onError: input.onError,
+        incomplete: (reason: string) => {
+            missed.push(typeof reason === 'string' && reason.length > 0 ? reason : 'no reason given');
+        },
+    };
 
     for (const source of definition.sources) {
         for await (const document of source.documents(context)) {
@@ -257,6 +265,12 @@ export async function syncCollection(input: SyncCollectionInput): Promise<void> 
             }
 
             signal.throwIfAborted();
+
+            // embedding may have outlasted the lease: never write once another owner may hold it
+            if (!await lock.renew()) {
+                return;
+            }
+
             await repository.replaceChunks(name, document.id, target, inputs);
             await repository.saveDocument(documentOf(name, document, hash, target, clock.now()));
         }
@@ -268,9 +282,22 @@ export async function syncCollection(input: SyncCollectionInput): Promise<void> 
         return;
     }
 
-    for (const id of await repository.findDocumentIds(name)) {
-        if (!seen.has(id)) {
-            await repository.deleteDocument(name, id);
+    if (missed.length > 0) {
+        const partial = `${label}: a source read only part of its documents (${missed[0]}` +
+            `${missed.length > 1 ? `, and ${missed.length - 1} more` : ''})`;
+
+        if (target !== record.generation) {
+            // the documents it missed live in the served generation only: switching would drop them
+            throw new ValidationError(`${partial}; the re-embed waits for a complete read.`);
+        }
+
+        // a document it could not read is no deleted document
+        input.onError(new ValidationError(`${partial}; no document was deleted.`));
+    } else {
+        for (const id of await repository.findDocumentIds(name)) {
+            if (!seen.has(id)) {
+                await repository.deleteDocument(name, id);
+            }
         }
     }
 
@@ -289,9 +316,13 @@ export async function syncCollection(input: SyncCollectionInput): Promise<void> 
     }
 
     const previous = record.generation;
+    // the previous model's length never carries over: a switch without a chunk learned none
+    const switched = settled(record);
+
+    delete switched.dimensions;
 
     await repository.saveCollection({
-        ...settled(record),
+        ...switched,
         trusted: definition.trusted,
         generation: target,
         model: definition.model,
@@ -359,8 +390,8 @@ async function retryDelayOf(repository: IKnowledgeRepository, name: string, cloc
 /**
  * Indexes one declared collection until it is current: syncs under the store
  * lock `knowledge:<name>`; while another owner holds it, waits
- * `KNOWLEDGE_RETRY_MS` and ends once that owner left the collection ready at
- * the definition. A failure is stored with the time of the next attempt
+ * `KNOWLEDGE_RETRY_MS` and tries again, so this replica's own sources are
+ * synced once the lock is free (an unchanged document embeds nothing). A failure is stored with the time of the next attempt
  * (still under the lock, so no replica's later sync is overwritten) and
  * reported; every replica waits for that time before it takes the lock again
  * (5 s doubling to `KNOWLEDGE_RETRY_MAX_MS` per failure in a row, across
@@ -476,19 +507,9 @@ export async function runCollection(input: CollectionLoopInput): Promise<void> {
             }
         }
 
+        // the holder may sync other sources than this replica's: wait for the
+        // lock and sync ours (content hashes make an unchanged sync embed nothing)
         await wait(clock, KNOWLEDGE_RETRY_MS, signal);
-
-        if (signal.aborted) {
-            return;
-        }
-
-        try {
-            if (isCurrent(await repository.findOneCollection(name), definition)) {
-                return;
-            }
-        } catch (error) {
-            report(error);
-        }
     }
 }
 

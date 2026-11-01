@@ -20,6 +20,14 @@ export type KnowledgeSourceContext = {
     signal: AbortSignal;
     /** Receives a skipped document's problem; the source goes on. */
     onError(error: unknown): void;
+    /**
+     * Marks this read incomplete (a transient failure: a directory that could
+     * not be listed, a file read error): the sync then deletes no stored
+     * document the sources did not yield, and a re-embed does not switch.
+     * Never for a document that is skipped for good (too large, invalid):
+     * those are deleted.
+     */
+    incomplete(reason: string): void;
 };
 
 /** Yields the documents of a declared collection. */

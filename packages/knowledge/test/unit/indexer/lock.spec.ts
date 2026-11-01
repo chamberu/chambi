@@ -109,7 +109,7 @@ async function settle(): Promise<void> {
 }
 
 describe('the indexing lock', () => {
-    it('indexes once across two replicas, and the loser stops once the winner is ready', async () => {
+    it('embeds once across two replicas; the loser syncs after the winner, finding nothing to embed', async () => {
         const setup = createIndexerSetup();
         const model = mockEmbeddingModel();
 
@@ -129,9 +129,71 @@ describe('the indexing lock', () => {
         setup.clock.advance(KNOWLEDGE_RETRY_MS * 10);
         await settle();
 
-        // the loser re-read a ready collection and ended without retrying the lock
-        expect(acquiresOf(setup, 'replica-b')).toEqual([false]);
+        // the loser took the lock once it was free and synced its own sources: unchanged, nothing embedded
+        expect(acquiresOf(setup, 'replica-b')).toEqual([false, true]);
         expect(model.calls.flatMap((call) => call.values)).toHaveLength(3);
+        expect(setup.errors).toEqual([]);
+    });
+
+    it('lets a replica with changed sources index them once the holder released the lock', async () => {
+        const setup = createIndexerSetup();
+        const gated = gatedSource();
+
+        start(setup, 'replica-a', mockEmbeddingModel(), gated.source);
+
+        await expect.poll(() => gated.held()).toBe(true);
+
+        const changed = new Map([
+            ['a.md', 'Our refund policy allows returns within thirty days.'],
+            ['d.md', 'Deployments roll out one replica at a time.'],
+        ]);
+
+        start(setup, 'replica-b', mockEmbeddingModel(), mapSource(changed));
+
+        await expect.poll(() => acquiresOf(setup, 'replica-b')).toEqual([false]);
+
+        gated.open();
+        await waitForReady(setup.repository, 'docs');
+
+        await vi.waitFor(async () => {
+            setup.clock.advance(KNOWLEDGE_RETRY_MS);
+            await settle();
+
+            expect(await setup.repository.findOneDocument('docs', 'd.md')).toBeDefined();
+        });
+
+        expect(await setup.repository.findDocumentIds('docs')).toEqual(['a.md', 'd.md']);
+        expect(setup.errors).toEqual([]);
+    });
+
+    it('renews the lock after embedding and writes nothing once it was lost meanwhile', async () => {
+        const setup = createIndexerSetup();
+        const model = gatedModel({ modelId: 'mock-model-id' });
+        // three embedding batches (64 chunks each at most)
+        const long = Array.from({ length: 150 }, (_, i) => `Paragraph ${i} ${'x'.repeat(1700)}`).join('\n\n');
+
+        start(setup, 'replica-a', model, mapSource(new Map([['long.md', long]])));
+
+        for (let n = 0; n < 3; n++) {
+            await expect.poll(() => model.started.length).toBe(n + 1);
+            // below the embedding timeout per call, past half the lease in all
+            setup.clock.advance(59_000);
+
+            if (n < 2) {
+                model.open(n);
+            }
+        }
+
+        // the lease is taken over while the last batch is embedded
+        await setup.locks.release('knowledge:docs', 'replica-a');
+        expect(await setup.locks.acquire('knowledge:docs', 'intruder', KNOWLEDGE_LOCK_TTL_MS)).toBe(true);
+        model.open(2);
+
+        await expect.poll(() => acquiresOf(setup, 'replica-a')).toEqual([true, false]);
+        await settle();
+
+        expect(await setup.repository.findOneDocument('docs', 'long.md')).toBeUndefined();
+        expect(await setup.repository.search('docs', 1, (await mockEmbeddingModel().doEmbed({ values: ['x'] })).embeddings[0]!, { topK: 5 })).toEqual([]);
         expect(setup.errors).toEqual([]);
     });
 

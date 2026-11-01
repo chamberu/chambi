@@ -40,6 +40,12 @@ class Knowledge implements IKnowledge {
     /** The indexing in flight: its abort and its tasks (one loop per collection, the orphan pass). */
     protected indexing: { controller: AbortController; tasks: Promise<void>[] } | undefined;
 
+    /** The stop still waiting for its tasks; a start() meanwhile waits for it. */
+    protected stopping: Promise<void> | undefined;
+
+    /** Whether a start() waits for `stopping`. */
+    protected restart = false;
+
     constructor(options: KnowledgeOptions) {
         const normalized = normalizeOptions(options);
 
@@ -88,6 +94,31 @@ class Knowledge implements IKnowledge {
     }
 
     start(): void {
+        if (this.indexing || this.restart) {
+            return;
+        }
+
+        const { stopping } = this;
+
+        if (stopping) {
+            // a restart waits for the loops still stopping, so two task sets never overlap
+            this.restart = true;
+            stopping.then(() => {
+                if (!this.restart) {
+                    return;
+                }
+
+                this.restart = false;
+                this.begin();
+            }, () => {});
+
+            return;
+        }
+
+        this.begin();
+    }
+
+    protected begin(): void {
         if (this.indexing) {
             return;
         }
@@ -113,16 +144,31 @@ class Knowledge implements IKnowledge {
     }
 
     async stop(): Promise<void> {
+        // a restart still waiting for an earlier stop is dropped
+        this.restart = false;
+
         const { indexing } = this;
 
         if (!indexing) {
+            await this.stopping;
+
             return;
         }
 
         this.indexing = undefined;
         indexing.controller.abort();
 
-        await Promise.allSettled(indexing.tasks);
+        const stopping = Promise.allSettled(indexing.tasks).then(() => {});
+
+        this.stopping = stopping;
+
+        try {
+            await stopping;
+        } finally {
+            if (this.stopping === stopping) {
+                this.stopping = undefined;
+            }
+        }
     }
 
     /**
@@ -191,7 +237,7 @@ class Knowledge implements IKnowledge {
  * refuses the ref). `start()` indexes every declared collection in the
  * background (one loop each, under the store lock `knowledge:<name>`) and
  * marks declared records without a definition orphaned; `stop()` aborts and
- * awaits both. `check()` only reads: it runs every source's `check()` (a
+ * awaits both (a `start()` meanwhile begins once they settled). `check()` only reads: it runs every source's `check()` (a
  * missing folder) and refuses a declared name the store holds as a managed
  * collection.
  */

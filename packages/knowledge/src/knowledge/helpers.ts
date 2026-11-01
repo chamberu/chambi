@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import type { IModelResolver } from '@chamvi/core';
 import { InvalidAgentDefinitionError, systemClock } from '@chamvi/core';
@@ -94,7 +95,8 @@ export function normalizeOptions(options: KnowledgeOptions): NormalizedOptions {
         collections: options.collections ?? [],
         models: options.models,
         clock,
-        owner: options.owner ?? `${hostname()}-${process.pid}`,
+        // per instance: two in one process never release each other's locks
+        owner: options.owner ?? `${hostname()}-${process.pid}-${randomUUID()}`,
         // a throwing onError is contained: it would reject an indexing loop nothing awaits
         onError: (error, context) => {
             try {

@@ -91,14 +91,6 @@ export function servesDefinition(record: KnowledgeCollection, definition: Resolv
         record.chunker === CHUNKER_VERSION;
 }
 
-/** Whether a sync elsewhere already left the collection ready at the definition. */
-export function isCurrent(record: KnowledgeCollection | undefined, definition: ResolvedKnowledgeCollection): boolean {
-    return record !== undefined &&
-        record.kind === 'declared' &&
-        record.status === 'ready' &&
-        servesDefinition(record, definition);
-}
-
 /** Whether a stored document needs no new record: same title, source and metadata. */
 export function sameDetails(stored: KnowledgeDocument, input: KnowledgeDocumentInput): boolean {
     return stored.title === input.title &&

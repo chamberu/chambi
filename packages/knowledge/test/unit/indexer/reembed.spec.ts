@@ -261,4 +261,47 @@ describe('re-embedding a collection', () => {
         expect(await setup.repository.search('docs', 1, await queryVector('refund'), { topK: 10 })).toEqual([]);
         expect(await setup.repository.search('docs', 2, await queryVector('refund'), { topK: 10 })).toHaveLength(3);
     });
+
+    it('forgets the previous model\'s dimensions when a re-embed switches without writing a chunk', async () => {
+        const setup = createIndexerSetup();
+        const own = new Map(docs);
+        const run = (ref: string, model: EmbeddingModel) => {
+            const knowledge = createKnowledge(setup.options({
+                models: embeddingResolver({ [ref]: model }),
+                collections: [knowledgeCollection('docs', { model: ref, sources: [mapSource(own)] })],
+            }));
+
+            started.push(knowledge);
+            knowledge.start();
+
+            return knowledge;
+        };
+        const first = run('mock/a', mockEmbeddingModel());
+
+        await waitForReady(setup.repository, 'docs');
+        await first.stop();
+
+        // the sources yield nothing while the model changes to a smaller one
+        own.clear();
+
+        const second = run('mock/b', mockEmbeddingModel({ dimensions: 8 }));
+        const switched = await waitForReady(setup.repository, 'docs', 2);
+
+        await second.stop();
+        expect(switched.dimensions).toBeUndefined();
+
+        own.set('d.md', 'Deployments roll out one replica at a time.');
+        setup.clock.advance(1000);
+        run('mock/b', mockEmbeddingModel({ dimensions: 8 }));
+
+        const after = await waitForCollection(
+            setup.repository,
+            'docs',
+            (found) => found.updatedAt.getTime() === setup.clock.now().getTime() && found.status === 'ready',
+        );
+
+        expect(after).toMatchObject({ generation: 2, dimensions: 8 });
+        expect(after.error).toBeUndefined();
+        expect((await setup.repository.findOneDocument('docs', 'd.md'))?.generation).toBe(2);
+    });
 });

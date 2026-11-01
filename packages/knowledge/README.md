@@ -109,6 +109,8 @@ import { folder, knowledgeCollection, knowledgeTools } from '@chamvi/knowledge';
 import { knowledgeModule } from '@chamvi/knowledge/module';
 
 export default createApp({
+    // the agents' default chat model; OPENAI_API_KEY configures the provider for both
+    model: 'openai/gpt-5-mini',
     agents: [defineAgent({
         name: 'support',
         instructions: 'Answer customer questions. Search the handbook first.',
@@ -127,16 +129,16 @@ The module checks its options when called, builds the knowledge in `setup` (a mo
 
 ## Sources
 
-- `folder(path, { extensions?, trusted? })`: every `.md`, `.markdown`, `.mdx` and `.txt` file below `path` (resolved against the cwd when called), sorted by path, dot entries skipped. The id and source are the relative POSIX path, the title the first `# ` heading, else the file name. Symbolic links (to files or directories, never followed), subdirectories that cannot be listed, files over 1 MiB and files that are not UTF-8 are reported through `onError` and skipped; the rest indexes. A path that is no directory fails `knowledge.check()` (the boot and `start --check`).
-- `defineKnowledgeSource({ kind?, trusted?, check?, documents })`: your own; `documents(ctx)` yields `{ id, content, title?, source?, metadata? }`. An invalid item (an id that is empty, over 255 characters or holds NUL, content that is no string) is reported by id and skipped. `check()` validates the configuration up front; an `InvalidAgentDefinitionError` from a source is stored and reported once, never retried.
+- `folder(path, { extensions?, trusted? })`: every `.md`, `.markdown`, `.mdx` and `.txt` file below `path` (resolved against the cwd when called), sorted by path, dot entries skipped. The id and source are the relative POSIX path, the title the first `# ` heading outside fenced code blocks, else the file name. Symbolic links (to files or directories, never followed), files that are no regular file, files over 1 MiB, files that are not UTF-8 and relative paths over 255 characters are reported through `onError` and skipped (a document skipped so is deleted); the rest indexes. Subdirectories that cannot be listed and files that cannot be read are reported and skipped too, but mark the read incomplete, so their documents stay indexed. A path that is no directory fails `knowledge.check()` (the boot and `start --check`).
+- `defineKnowledgeSource({ kind?, trusted?, check?, documents })`: your own; `documents(ctx)` yields `{ id, content, title?, source?, metadata? }`. An invalid item (an id that is empty, over 255 characters or holds NUL, content that is no string, metadata that is no plain object or cannot be cloned) is reported by id and skipped. `ctx.incomplete(reason)` marks a read that a transient failure cut short: the pass deletes no document and a re-embed does not switch. `check()` validates the configuration up front; an `InvalidAgentDefinitionError` from a source is stored and reported once, never retried.
 
-A document id is stable: yielding the same id with new content replaces the document, an id no source yields any more is deleted.
+A document id is stable: yielding the same id with new content replaces the document, an id no source yields any more is deleted (unless a source marked its read incomplete).
 
 ## Indexing
 
 Documents are split into passages of at most 2000 characters (paragraphs packed whole, a heading kept with the paragraph after it, 200 characters of overlap) and embedded through the AI SDK's `embedMany`, 64 passages per call. Each document's content hash is stored, so a restart with unchanged sources makes no embedding call.
 
-Each collection is indexed under the store lock `knowledge:<name>`: one replica indexes, the others wait and stop once it is ready. A failed pass (a provider error, a rate limit) is stored on the collection with the time of the next attempt, reported through `onError` and retried after 5 seconds, doubling up to 5 minutes; the backoff is stored, so it holds across replicas. An embedding call that does not answer within 60 seconds counts as a failure. Indexing never blocks the start or readiness.
+Each collection is indexed under the store lock `knowledge:<name>`: one replica indexes, the others wait and then sync their own sources once it is free (embedding nothing when they match). A failed pass (a provider error, a rate limit) is stored on the collection with the time of the next attempt, reported through `onError` and retried after 5 seconds, doubling up to 5 minutes; the backoff is stored, so it holds across replicas. An embedding call that does not answer within 60 seconds counts as a failure. Indexing never blocks the start or readiness.
 
 A collection serves one **generation** of passages, embedded by one model with one chunker version. When the model changes, the next generation is written while searches keep reading the current one; it is switched to once complete and the old one deleted. Searching the old generation needs the old model: an object model the code no longer passes, or a removed provider, leaves the collection unsearchable (a clear tool error) until the switch. Statuses: `pending` (never indexed), `ready`, `stale` (a re-embed in progress, the old generation served) and `orphaned` (a collection the code no longer declares: kept, searchable by no agent).
 

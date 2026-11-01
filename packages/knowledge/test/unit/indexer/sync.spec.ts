@@ -200,6 +200,89 @@ describe('syncing a declared collection', () => {
         expect((setup.errors[0]!.error as Error).message).not.toContain('second text');
     });
 
+    it('keeps the documents a source did not yield when it marked its read incomplete', async () => {
+        const setup = createIndexerSetup();
+        const model = mockEmbeddingModel();
+        const docs = documents();
+        let partial = false;
+        const source = defineKnowledgeSource({
+            async* documents(ctx) {
+                for (const [id, content] of docs) {
+                    if (partial && id === 'b.md') {
+                        ctx.incomplete('b.md could not be read');
+
+                        continue;
+                    }
+
+                    yield { id, content };
+                }
+            },
+        });
+        const collections = [knowledgeCollection('docs', { model, sources: [source] })];
+        const first = start(createKnowledge(setup.options({ collections })));
+
+        await waitForReady(setup.repository, 'docs');
+        await first.stop();
+
+        partial = true;
+        docs.delete('c.md');
+        setup.clock.advance(1000);
+        start(createKnowledge(setup.options({ collections })));
+
+        const collection = await waitForCollection(
+            setup.repository,
+            'docs',
+            (found) => found.updatedAt.getTime() === setup.clock.now().getTime() && found.status === 'ready',
+        );
+
+        expect(collection.error).toBeUndefined();
+        // neither the unread b.md nor the removed c.md is deleted while the read was partial
+        expect(await setup.repository.findDocumentIds('docs')).toEqual(['a.md', 'b.md', 'c.md']);
+        expect(setup.errors).toHaveLength(1);
+        expect(setup.errors[0]).toMatchObject({ collection: 'docs' });
+        expect((setup.errors[0]!.error as Error).message).toBe(
+            'Knowledge collection "docs": a source read only part of its documents (b.md could not be read); ' +
+            'no document was deleted.',
+        );
+    });
+
+    it('does not switch a re-embed to a generation a partial read left without some documents', async () => {
+        const setup = createIndexerSetup();
+        const docs = documents();
+        let partial = false;
+        const source = defineKnowledgeSource({
+            async* documents(ctx) {
+                for (const [id, content] of docs) {
+                    if (partial && id === 'b.md') {
+                        ctx.incomplete('b.md could not be read');
+
+                        continue;
+                    }
+
+                    yield { id, content };
+                }
+            },
+        });
+        const first = start(createKnowledge(setup.options({ collections: [knowledgeCollection('docs', { model: mockEmbeddingModel(), sources: [source] })] })));
+
+        await waitForReady(setup.repository, 'docs');
+        await first.stop();
+
+        partial = true;
+        start(createKnowledge(setup.options({ collections: [knowledgeCollection('docs', { model: gatedModel({ opened: 100 }), sources: [source] })] })));
+
+        const collection = await waitForCollection(setup.repository, 'docs', (found) => found.error !== undefined);
+
+        expect(collection).toMatchObject({
+            generation: 1,
+            status: 'stale',
+            pending: { generation: 2 },
+            failures: 1,
+        });
+        expect(collection.error).toMatch(/only part of its documents/);
+        expect(await setup.repository.findDocumentIds('docs')).toEqual(['a.md', 'b.md', 'c.md']);
+    });
+
     it('reports a skipped document with its collection and indexes the rest', async () => {
         const setup = createIndexerSetup();
         const model = mockEmbeddingModel();

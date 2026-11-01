@@ -18,7 +18,8 @@ import type {
 /**
  * A custom source (default kind `custom`, trusted). Every document it
  * yields is checked: an invalid one (an id that is not 1 to 255 characters
- * without NUL, content that is no string, metadata that is no plain object)
+ * without NUL, content that is no string, metadata that is no plain object
+ * or cannot be cloned)
  * is reported through `ctx.onError` as a ValidationError and skipped. An
  * optional `check()` validates the source's configuration up front (see
  * IKnowledgeSource.check).

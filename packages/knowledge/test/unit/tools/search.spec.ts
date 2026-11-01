@@ -370,6 +370,57 @@ describe('knowledge_search', () => {
         expect(await taint({ query: 'x', collection: 'other' }, ctx)).toBe(false);
     });
 
+    it('fails instead of answering when the served generation switched during the search', async () => {
+        const fixture = await setup();
+        const search_ = fixture.repository.search.bind(fixture.repository);
+
+        fixture.repository.search = async (collection, generation, vector, options) => {
+            const record = (await fixture.repository.findOneCollection(collection))!;
+
+            // a re-embed switches and deletes the generation being searched
+            await fixture.repository.saveCollection({ ...record, generation: record.generation + 1 });
+
+            return search_(collection, generation, vector, options);
+        };
+
+        await expect(search(fixture, { query: 'refund policy' })).rejects.toThrow(ValidationError);
+        await expect(search(fixture, { query: 'refund policy' })).rejects.toThrow(
+            'Knowledge collection "handbook" changed while it was searched; search again.',
+        );
+    });
+
+    it('fails instead of answering when a collection the taint check saw trusted turned untrusted', async () => {
+        const fixture = await setup();
+        const tools = knowledgeTools({ collections: ['handbook'] });
+        const { taint } = (tools.knowledge_search as unknown as { trust: { taint: (input: unknown, ctx: unknown) => Promise<boolean> } }).trust;
+        const ctx = toolContext(fixture.knowledge);
+        const input = { query: 'refund policy' };
+
+        expect(await taint(input, ctx)).toBe(false);
+
+        const search_ = fixture.repository.search.bind(fixture.repository);
+        const downgrade = async (collection: string) => {
+            const record = (await fixture.repository.findOneCollection(collection))!;
+
+            await fixture.repository.saveCollection({ ...record, trusted: false });
+        };
+
+        // a sync downgrades the collection (and writes untrusted chunks) while it is searched
+        fixture.repository.search = async (collection, generation, vector, options) => {
+            await downgrade(collection);
+
+            return search_(collection, generation, vector, options);
+        };
+
+        await expect(callTool(tools, 'knowledge_search', input, ctx)).rejects.toThrow(
+            'Knowledge collection "handbook" changed while it was searched; search again.',
+        );
+
+        // a call the taint check marked untrusted keeps its result
+        expect(await taint(input, ctx)).toBe(true);
+        expect((await callTool<KnowledgeSearchResult>(tools, 'knowledge_search', input, ctx)).matches).toHaveLength(3);
+    });
+
     it('leaves a declared trusted collection without a record untainted', async () => {
         const fixture = await setup({ index: false });
         const tools = knowledgeTools({ collections: ['handbook'] });

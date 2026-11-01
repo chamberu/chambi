@@ -17,7 +17,7 @@ import {
     folder,
     knowledgeCollection,
 } from '@chamvi/knowledge';
-import { createIndexerSetup, mapSource } from '../../utils/indexer.ts';
+import { createIndexerSetup, gatedModel, mapSource } from '../../utils/indexer.ts';
 
 const source = defineKnowledgeSource({
     async* documents() {
@@ -175,6 +175,67 @@ describe('createKnowledge', () => {
         const knowledge = createKnowledge(base({ models: resolver(() => model) }));
 
         expect(knowledge.embedding('openai/y')).toBe(model);
+    });
+
+    it('gives every instance its own default lock owner', async () => {
+        const setup = createIndexerSetup();
+        const collections = [knowledgeCollection('docs', { model: mockEmbeddingModel(), sources: [source] })];
+        const first = createKnowledge(setup.options({ collections }));
+        const second = createKnowledge(setup.options({ collections }));
+
+        first.start();
+        await expect.poll(() => setup.locks.acquired.length).toBeGreaterThanOrEqual(1);
+        second.start();
+        await expect.poll(() => setup.locks.acquired.length).toBeGreaterThanOrEqual(2);
+        await Promise.all([first.stop(), second.stop()]);
+
+        const owners = new Set(setup.locks.acquired.map((entry) => entry.owner));
+
+        expect(owners.size).toBe(2);
+
+        for (const owner of owners) {
+            expect(owner).toMatch(/-\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+        }
+    });
+
+    it('starts again only once a pending stop has settled', async () => {
+        const setup = createIndexerSetup();
+        const gated = gatedModel({ modelId: 'mock-model-id' });
+        const knowledge = createKnowledge(setup.options({
+            owner: 'replica-a',
+            collections: [knowledgeCollection('docs', { model: gated, sources: [mapSource(new Map([['a.md', 'Refunds take thirty days.']]))] })],
+        }));
+        const release = setup.locks.release.bind(setup.locks);
+        const gate = Promise.withResolvers<void>();
+
+        knowledge.start();
+        await expect.poll(() => gated.started.length).toBe(1);
+
+        // the stopping loop holds in its lock release
+        setup.locks.release = async (key, owner) => {
+            await gate.promise;
+
+            return release(key, owner);
+        };
+
+        const stopping = knowledge.stop();
+
+        knowledge.start();
+
+        for (let i = 0; i < 20; i++) {
+            await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+            });
+        }
+
+        expect(setup.locks.acquired).toHaveLength(1);
+
+        setup.locks.release = release;
+        gate.resolve();
+        await stopping;
+
+        await expect.poll(() => setup.locks.acquired).toHaveLength(2);
+        await knowledge.stop();
     });
 
     it('has lifecycle stubs', async () => {
