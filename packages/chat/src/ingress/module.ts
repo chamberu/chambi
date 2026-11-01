@@ -45,9 +45,9 @@ async function receive(
     }
 
     await receiver.receive({
-        adapter: incoming.adapter, 
-        threadId: incoming.threadId, 
-        message, 
+        adapter: incoming.adapter,
+        threadId: incoming.threadId,
+        message,
     });
 }
 
@@ -67,9 +67,9 @@ export function createChatIngressAdapter(adapter: Adapter): ChatIngress {
 
         const processMessage: ChatInstance['processMessage'] = (source, threadId, message) => {
             const task = receive(state, {
-                adapter: source, 
-                threadId, 
-                message, 
+                adapter: source,
+                threadId,
+                message,
             });
 
             // a caller that drops the promise (chat-adapter-baileys) must not cause an

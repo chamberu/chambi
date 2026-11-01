@@ -61,9 +61,9 @@ function buildChat(adapters: Record<string, Adapter>) {
     });
 
     return {
-        chat, 
-        state, 
-        logger, 
+        chat,
+        state,
+        logger,
     };
 }
 
@@ -71,9 +71,9 @@ describe('chat 4.43.0 native message processing', () => {
     it('native: a handler failure after the pre-handler dedupe drops the redelivery', async () => {
         const adapter = createFakeAdapter();
         const {
-            chat, 
-            state, 
-            logger, 
+            chat,
+            state,
+            logger,
         } = buildChat({ fake: adapter });
         let calls = 0;
 
@@ -149,9 +149,9 @@ describe('ingress facade over the public Adapter.initialize(chat)', () => {
         // the failed message reaches the receiver again: the SDK's dedupe never ran
         expect(received).toHaveLength(2);
         expect(received[1]).toEqual({
-            adapter, 
-            threadId: 'fake:chat-1', 
-            message, 
+            adapter,
+            threadId: 'fake:chat-1',
+            message,
         });
         expect(state.claimed).toEqual([]);
         expect(nativeCalls).toBe(0);

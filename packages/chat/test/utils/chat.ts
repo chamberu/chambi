@@ -38,9 +38,9 @@ export function createMemoryState(): RecordingState {
             }
 
             const lock = {
-                threadId, 
-                token: `${threadId}:${locks.size}`, 
-                expiresAt: Date.now() + ttlMs, 
+                threadId,
+                token: `${threadId}:${locks.size}`,
+                expiresAt: Date.now() + ttlMs,
             };
 
             locks.set(threadId, lock);
@@ -126,9 +126,9 @@ export type RecordingLogger = Logger & { readonly records: LogRecord[] };
 export function createRecordingLogger(records: LogRecord[] = []): RecordingLogger {
     const log = (level: LogRecord['level']) => (message: string, ...args: unknown[]) => {
         records.push({
-            level, 
-            message, 
-            args, 
+            level,
+            message,
+            args,
         });
     };
 

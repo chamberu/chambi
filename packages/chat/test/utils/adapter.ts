@@ -68,16 +68,16 @@ export function createFakeAdapter(name = 'fake'): FakeAdapter {
             posts.push({ threadId, message });
 
             return {
-                id: `sent-${posts.length}`, 
-                threadId, 
-                raw: {}, 
+                id: `sent-${posts.length}`,
+                threadId,
+                raw: {},
             };
         },
         async editMessage(threadId) {
             return {
-                id: 'edited', 
-                threadId, 
-                raw: {}, 
+                id: 'edited',
+                threadId,
+                raw: {},
             };
         },
         deleteMessage: () => Promise.resolve(),
@@ -89,9 +89,9 @@ export function createFakeAdapter(name = 'fake'): FakeAdapter {
         },
         async fetchThread(threadId) {
             return {
-                id: threadId, 
-                channelId: threadId, 
-                metadata: {}, 
+                id: threadId,
+                channelId: threadId,
+                metadata: {},
             };
         },
         renderFormatted: () => '',
@@ -102,10 +102,10 @@ export function createFakeAdapter(name = 'fake'): FakeAdapter {
 
 /** A text message from another user in the fake adapter's thread. */
 export function createTextMessage(input: {
-    adapter?: string; 
-    thread?: string; 
-    id: string; 
-    text?: string 
+    adapter?: string;
+    thread?: string;
+    id: string;
+    text?: string
 }): Message {
     const text = input.text ?? 'hello';
 
