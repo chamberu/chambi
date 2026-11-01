@@ -22,6 +22,7 @@ Last checked against the codebase and GitHub on **2026-10-30**.
 | `@chamvi/ui` | Vue 3 dashboard served by `uiRoutes()`: an agents overview, runs started from the agent page, runs with live steps, an approvals inbox, agent state, schedules |
 | `@chamvi/app`, `@chamvi/cli` | `createApp()` with orkos modules, folder agents and dependency preparation, named model providers and app-wide defaults, `createTestApp()`, `start --check`, visible reload failures, and the `chamvi` commands `dev`, `build`, `start`, `run-job`, `migrate`. See [Apps & Modules](/guide/app), [Agent Folders](/guide/agent-folders) and [CLI](/reference/cli) |
 | `@chamvi/skills` | Verified, digest-pinned local bundles and Git sources, startup installation, agent-scoped metadata catalogs and the `load_skill` tool. See [Approved Skills](/guide/skills) |
+| `@chamvi/knowledge` | Declared knowledge collections (`folder()` and custom sources) embedded in the background across replicas, re-embedded per generation on a model change, searched by meaning through `knowledge_search`; untrusted collections taint the run. Unreleased. See [Knowledge](/guide/knowledge) |
 
 The [base image](/deployment/docker), [Helm chart](https://github.com/chamvi/helm) and [agent template](https://github.com/chamvi/agent-template) also exist. The chart and template support default models and named providers. Their existence does not by itself complete the end-to-end agent milestones.
 

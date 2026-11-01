@@ -65,6 +65,7 @@ The optional modules ship with the package they configure, on its `/module` subp
 | `sandboxModule()` | `@chamvi/sandbox/module` | `.manager` (`IWorkspaceManager`), attached on start, closed after the engine drained | `injectSandboxContext(ctx)` |
 | `openclawModule()` | `@chamvi/channel-openclaw/module` | the `openclawChannel()` named `openclaw` (out only) | `ctx.channels.findOne('openclaw')` |
 | `uiModule()` | `@chamvi/ui/module` | the [dashboard](/guide/ui) at `<basePath>/ui` | |
+| `knowledgeModule({ collections?, repository?, owner? })` | `@chamvi/knowledge/module` | `.knowledge` (`IKnowledge`): the declared [knowledge collections](/guide/knowledge), indexed in the background once the app started | `injectKnowledgeContext(ctx)` |
 | `authupModule()`, `oidcModule(options)` | `@chamvi/app/authup` | the `authup()` and `oidc()` authenticators, after the static tokens | |
 | `consoleChannelModule({ name?, write? })` | `@chamvi/app` | the `consoleChannel()` named `console` (out only) | `ctx.channels.findOne('console')` |
 

@@ -14,6 +14,7 @@ describe('public api', () => {
         'createFakeGithub',
         'createGitFixture',
         'describeConversationRepositoryContract',
+        'describeKnowledgeRepositoryContract',
         'describeRepositoryContract',
         'describeWorkspaceContract',
         'mockModel',

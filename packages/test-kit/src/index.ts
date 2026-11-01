@@ -9,6 +9,7 @@ export * from './clock/index.ts';
 export * from './conversation-contract/index.ts';
 export * from './git-fixture/index.ts';
 export * from './github-fake/index.ts';
+export * from './knowledge-contract/index.ts';
 export * from './model/index.ts';
 export * from './skill-runtime/index.ts';
 export * from './repository-contract/index.ts';

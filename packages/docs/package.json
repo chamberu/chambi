@@ -35,6 +35,7 @@
         "@chamvi/core": "*",
         "@chamvi/github": "*",
         "@chamvi/http": "*",
+        "@chamvi/knowledge": "*",
         "@chamvi/sandbox": "*",
         "@chamvi/sandbox-docker": "*",
         "@chamvi/sandbox-k8s": "*",
