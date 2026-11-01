@@ -32,8 +32,9 @@ function isId(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0 && value.length <= CHAT_ID_MAX_LENGTH && !value.includes('\0');
 }
 
+/** A retry may succeed: not a refusal, recognized by its code (so another core copy's errors count too). */
 function isTransient(error: unknown): boolean {
-    return !(error instanceof ChamviError && TERMINAL_ERROR_CODES.has(String(error.code)));
+    return !(isObject(error) && typeof error.code === 'string' && TERMINAL_ERROR_CODES.has(error.code));
 }
 
 /** Waits `ms` on the clock; rejects with the signal's reason once it aborts. */
@@ -86,6 +87,13 @@ function readPayload(incoming: ChatIncoming, options: ResolvedChatChannelOptions
         event = 'direct';
     } else if (message.isMention === true) {
         event = 'mention';
+    }
+
+    // the thread must fit an address before any policy runs (it never would later)
+    try {
+        encodeChatAddress({ adapter: adapterName, threadId }, options.adapterNames);
+    } catch {
+        throw new ValidationError(`Chat channel "${options.name}" got a message of adapter "${adapterName}" whose thread id is too long for a chat address.`);
     }
 
     const channelId = adapter.channelIdFromThreadId(threadId);
@@ -287,8 +295,8 @@ async function deliver(
  * The intake of one chat channel: policy first, then the runs. In order: a
  * message of the bot itself is skipped; the ids are checked; `allowMessage`
  * decides (a refused message is dropped silently: no download, no history, no
- * invoker lookup, no run); a message with attachments is refused
- * (ValidationError, media is not supported yet); `resolveInvoker` names the
+ * invoker lookup, no run); a message with attachments or without text is
+ * refused (ValidationError, media is not supported yet); `resolveInvoker` names the
  * invoker; then every agent with a matching subscription gets one run, through
  * the trusted conversation intake for an agent with `conversation`, else a
  * plain dispatch.
@@ -316,6 +324,11 @@ export function createChatIntake(): ChatIntake {
 
         if (Array.isArray(incoming.message.attachments) && incoming.message.attachments.length > 0) {
             throw new ValidationError(`Chat channel "${options.name}" refused a message of adapter "${payload.adapter}": attachments are not supported.`);
+        }
+
+        // nothing to answer: only text messages start runs
+        if (payload.message.text.trim().length === 0) {
+            throw new ValidationError(`Chat channel "${options.name}" refused a message of adapter "${payload.adapter}": it has no text.`);
         }
 
         const invoker = options.resolveInvoker ? await options.resolveInvoker(incoming) : undefined;

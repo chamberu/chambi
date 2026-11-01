@@ -420,4 +420,69 @@ describe('chat intake delivery', () => {
         expect(((error as Error).cause as ChamviError).code).toBe(ErrorCode.VALIDATION);
         expect((await fixture.runs()).map((run) => run.agent)).toEqual(['working']);
     });
+
+    it('empty_text_refused', async () => {
+        const fixture = await started();
+
+        for (const [id, text] of [['m-empty', ''], ['m-blank', ' \n\t ']]) {
+            const error = await fixture.adapter.deliver(createTextMessage({ id: id!, text: text! })).catch((caught: unknown) => caught);
+
+            expect(error).toBeInstanceOf(ValidationError);
+            expect((error as Error).message).toMatch(/no text/);
+        }
+
+        expect(await fixture.runs()).toEqual([]);
+        expect(fixture.errors).toHaveLength(2);
+    });
+
+    it('treats a validation code of another core copy as terminal', async () => {
+        let inserts = 0;
+        const fixture = await started({
+            store: (memory) => ({
+                ...memory,
+                runs: new Proxy(memory.runs, {
+                    get(target, key, receiver) {
+                        if (key === 'insert') {
+                            return async () => {
+                                inserts += 1;
+
+                                // not this copy's ValidationError, only its code
+                                throw Object.assign(new Error('refused elsewhere'), { code: ErrorCode.VALIDATION });
+                            };
+                        }
+
+                        const value: unknown = Reflect.get(target, key, receiver);
+
+                        return typeof value === 'function' ? value.bind(target) : value;
+                    },
+                }),
+            }),
+        });
+
+        const error = await fixture.adapter.deliver(createTextMessage({ id: 'm-foreign' })).catch((caught: unknown) => caught);
+
+        expect((error as ChamviError).code).toBe(CHAT_INTAKE_FAILED_ERROR_CODE);
+        expect((error as Error).message).toMatch(/1 attempt/);
+        fixture.clock.advance(10_000);
+        await flush();
+        expect(inserts).toBe(1);
+        expect(fixture.errors).toEqual([error]);
+    });
+
+    it('refuses a thread id the address cannot hold before the policy runs, without echoing it', async () => {
+        const allowMessage = vi.fn(() => true);
+        const resolveInvoker = vi.fn(() => undefined);
+        const fixture = await started({ patch: { allowMessage, resolveInvoker } });
+        const thread = `t${'y'.repeat(400)}`;
+        const message = createTextMessage({ id: 'm-long', thread });
+
+        const error = await fixture.adapter.deliver(message).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(ValidationError);
+        expect(allowMessage).not.toHaveBeenCalled();
+        expect(resolveInvoker).not.toHaveBeenCalled();
+        expect(await fixture.runs()).toEqual([]);
+        expect(fixture.errors).toEqual([error]);
+        expect((error as Error).message).not.toContain('yyyy');
+    });
 });

@@ -6,13 +6,18 @@
  */
 
 import { ChamviError, InvalidRunStateError } from '@chamvi/core';
-import type { ChannelContext } from '@chamvi/core';
+import type { ChannelContext, ChannelRequest } from '@chamvi/core';
 import { createChatIntake } from '../intake/module.ts';
 import { bindIngress } from '../ingress/module.ts';
 import type { ChatIncoming, IChatReceiver } from '../ingress/types.ts';
 import { createChatSubscription } from '../subscription/module.ts';
 import { createChatSender } from '../outbound/module.ts';
-import { encodeChatAddress, reportError, resolveOptions } from './helpers.ts';
+import {
+    encodeChatAddress,
+    markChatChannel,
+    reportError,
+    resolveOptions,
+} from './helpers.ts';
 import { CHAT_STOP_TIMEOUT_ERROR_CODE, CHAT_STOP_TIMEOUT_MS } from './constants.ts';
 import type {
     ChatChannel,
@@ -20,6 +25,7 @@ import type {
     ChatIntake,
     ResolvedChatChannelOptions,
 } from './types.ts';
+import { receiveWebhook } from './webhook.ts';
 
 /**
  * One start of the channel. Nothing of it is cleared on stop: a message whose
@@ -170,6 +176,10 @@ function teardown(run: ChatRun, options: ResolvedChatChannelOptions): Promise<vo
  * waits for the messages already being accepted (at most 30 s on the
  * engine's clock, reporting what is left), then shuts the Chat down.
  *
+ * `in` (receiveWebhook(), only with `webhooks`) hands the webhook requests of
+ * those adapters to them at `/channels/<name>/<adapter>` and answers once
+ * the messages they carried are accepted (503 when not).
+ *
  * `out` (createChatSender()) posts to the chat an address names, at least
  * once and only while the channel is started: before `start` finished and
  * from `stop` on it sends nothing (`chat_request`). Approvals go out as a
@@ -248,10 +258,12 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
         throw run.controller.signal.reason;
     };
 
-    return {
+    return markChatChannel({
         name,
         untrusted: resolved.untrusted,
         ...(resolved.defaultAddress !== undefined ? { defaultAddress: resolved.defaultAddress } : {}),
+        // only webhook adapters take requests: a socket transport has no in
+        ...(resolved.webhooks.length > 0 ? { in: (input: ChannelRequest, ctx: ChannelContext) => receiveWebhook(input, ctx, resolved) } : {}),
         start,
         stop: async () => {
             if (current) {
@@ -261,7 +273,7 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
         out,
         on: (subscriptionOptions) => createChatSubscription(name, subscriptionOptions, adapterNames),
         to: (target) => encodeChatAddress(target, adapterNames),
-    };
+    });
 }
 
 /**

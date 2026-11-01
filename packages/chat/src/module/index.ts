@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+// The /module entry: the only folder importing @chamvi/app.
 
-// The /module entry: the only folder importing @chamvi/app. Filled by the module task.
-
-export {};
+export * from './module.ts';
+export type * from './types.ts';

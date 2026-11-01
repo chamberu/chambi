@@ -28,6 +28,8 @@ export type FakeAdapter = Adapter<string, unknown> & {
     isDirect: (threadId: string) => boolean;
     /** runs inside initialize(), after the adapter took the ChatInstance */
     onInitialize?: (chat: ChatInstance) => void | Promise<void>;
+    /** answers handleWebhook(); default 501 */
+    onWebhook?: (request: Request, options?: WebhookOptions) => Promise<Response>;
     /** hands a message to chat.processMessage and returns its promise, as a webhook adapter can */
     deliver(message: Message, options?: WebhookOptions): Promise<void>;
     /** hands a message to chat.processMessage and drops its promise, as chat-adapter-baileys 2.1.0 does */
@@ -86,7 +88,11 @@ export function createFakeAdapter(name = 'fake'): FakeAdapter {
         parseMessage: () => {
             throw new Error('not used');
         },
-        async handleWebhook() {
+        async handleWebhook(request, options) {
+            if (adapter.onWebhook) {
+                return adapter.onWebhook(request, options);
+            }
+
             return new Response(null, { status: 501 });
         },
         async postMessage(threadId, message): Promise<RawMessage<unknown>> {

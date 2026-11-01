@@ -6,6 +6,7 @@
  */
 
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { InvalidAgentDefinitionError, InvalidRunStateError } from '@chamvi/core';
 import { isObject } from 'smob';
 import type {
@@ -24,6 +25,18 @@ type IngressState = {
 
 // ingress -> its receiver binding; keyed by the wrapper object, never a global singleton of data
 const states = new WeakMap<object, IngressState>();
+
+// the collector of the webhook call (trackIngress) a message was handed over in; data lives per call
+const trackers = new AsyncLocalStorage<(task: Promise<void>) => void>();
+
+/**
+ * Runs `fn` (a webhook handler) so every message any ingress gets during it,
+ * also from work it started without passing `waitUntil` on, hands its
+ * acceptance task to `track` (internal: the channel's `in`).
+ */
+export function trackIngress<T>(track: (task: Promise<void>) => void, fn: () => T): T {
+    return trackers.run(track, fn);
+}
 
 /**
  * A Proxy over `target` whose members are the target's, methods bound to the
@@ -101,7 +114,9 @@ async function receive(
  * acceptance task (rejecting when the message was not accepted), so a webhook
  * caller can wait for acceptance before it answers. `deduplicate` and
  * `propagateHandlerErrors` are ignored (chamvi deduplicates itself and always
- * propagates a failure), `onOpenModal` has no use for a message.
+ * propagates a failure), `onOpenModal` has no use for a message. Inside a
+ * trackIngress() call (the channel's webhook `in`) the acceptance task is
+ * also handed to its collector, whether or not the adapter passed options.
  */
 export function createChatIngressAdapter(adapter: Adapter): ChatIngress {
     const state: IngressState = { receiver: undefined };
@@ -118,6 +133,7 @@ export function createChatIngressAdapter(adapter: Adapter): ChatIngress {
             // a caller that drops the promise (chat-adapter-baileys) must not cause an
             // unhandled rejection; a caller that awaits it still sees the failure
             task.catch(() => undefined);
+            trackers.getStore()?.(task);
             options?.waitUntil?.(task);
 
             return task;
@@ -127,6 +143,7 @@ export function createChatIngressAdapter(adapter: Adapter): ChatIngress {
             const task = receive(state, source, threadId, message);
 
             task.catch(() => undefined);
+            trackers.getStore()?.(task);
 
             return task;
         };

@@ -47,6 +47,14 @@ export type ChatChannelOptions = {
     /** Default `chat`. */
     name?: string;
     /**
+     * The adapters (names of `adapters`) whose platform posts webhooks to
+     * `POST /channels/<name>/<adapter>` (the http app's channel mount);
+     * none by default, and without any the channel has no `in`. Each adapter
+     * verifies its own requests (handleWebhook); GET challenges are not
+     * served.
+     */
+    webhooks?: readonly string[];
+    /**
      * The address emit()/approve() use without one off the source channel.
      * Not set by default: it is an ungated destination for a tainted run.
      */
@@ -91,6 +99,7 @@ export type ResolvedChatChannelOptions = {
     adapters: readonly ChatIngress[];
     adapterNames: readonly string[];
     name: string;
+    webhooks: readonly string[];
     defaultAddress?: string;
     untrusted: boolean;
     account?: string;

@@ -22,8 +22,11 @@ import type { FakeAdapter } from './adapter.ts';
 import { createMemoryState, createRecordingLogger } from './chat.ts';
 
 export type IntakeFixture = {
+    /** the first adapter */
     adapter: FakeAdapter;
     ingress: ChatIngress;
+    /** every adapter, in the order of `adapterNames` */
+    adapters: FakeAdapter[];
     chat: Chat;
     clock: ControllableClock;
     store: IStore;
@@ -45,16 +48,20 @@ export type IntakeFixtureInput = {
     store?: (store: ReturnType<typeof createMemoryStore>) => IStore;
     /** the conversation policy; default allow */
     authorize?: (access: ConversationAccess) => boolean | Promise<boolean>;
+    /** the adapters' names; default one adapter `fake` */
+    adapterNames?: string[];
 };
 
 /** A chat channel with the real intake over the fake adapter, on an Engine with a memory store (conversations included). */
 export function createIntakeFixture(input: IntakeFixtureInput): IntakeFixture {
     const clock = new ControllableClock(new Date('2026-11-01T09:00:00Z'));
-    const adapter = createFakeAdapter();
-    const ingress = createChatIngressAdapter(adapter);
+    const adapters = (input.adapterNames ?? ['fake']).map((name) => createFakeAdapter(name));
+    const ingresses = adapters.map((item) => createChatIngressAdapter(item));
+    const [adapter] = adapters as [FakeAdapter];
+    const [ingress] = ingresses as [ChatIngress];
     const chat = new Chat({
         userName: 'chamvi',
-        adapters: { [ingress.name]: ingress },
+        adapters: Object.fromEntries(ingresses.map((item) => [item.name, item])),
         state: createMemoryState(),
         logger: createRecordingLogger(),
         concurrency: 'concurrent',
@@ -64,7 +71,7 @@ export function createIntakeFixture(input: IntakeFixtureInput): IntakeFixture {
     const access: ConversationAccess[] = [];
     const channel = chatChannel({
         chat,
-        adapters: [ingress],
+        adapters: ingresses,
         allowMessage: () => true,
         onError: (error) => {
             errors.push(error);
@@ -93,6 +100,7 @@ export function createIntakeFixture(input: IntakeFixtureInput): IntakeFixture {
     return {
         adapter,
         ingress,
+        adapters,
         chat,
         clock,
         store,

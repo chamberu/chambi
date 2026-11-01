@@ -31,6 +31,21 @@ const BASE64URL = /^[A-Za-z0-9_-]+$/;
 const ownedChats = new WeakSet<object>();
 const ownedIngresses = new WeakSet<object>();
 
+// the channels chatChannel() made
+const channels = new WeakSet<object>();
+
+/** Marks a channel of chatChannel() (internal). */
+export function markChatChannel<T extends object>(channel: T): T {
+    channels.add(channel);
+
+    return channel;
+}
+
+/** Whether `value` is a channel chatChannel() made (of this copy of the package). */
+export function isChatChannel(value: unknown): boolean {
+    return isObject(value) && channels.has(value);
+}
+
 function invalid(message: string): InvalidAgentDefinitionError {
     return new InvalidAgentDefinitionError(`chatChannel: ${message}`);
 }
@@ -87,6 +102,34 @@ function assertAdapters(options: ChatChannelOptions): ChatIngress[] {
     return [...adapters];
 }
 
+function assertWebhooks(options: ChatChannelOptions, adapterNames: readonly string[]): string[] {
+    const { webhooks } = options;
+
+    if (webhooks === undefined) {
+        return [];
+    }
+
+    if (!Array.isArray(webhooks)) {
+        throw invalid('webhooks must list adapter names.');
+    }
+
+    const list: string[] = [];
+
+    for (const name of webhooks) {
+        if (typeof name !== 'string' || !adapterNames.includes(name)) {
+            throw invalid('every entry of webhooks must name an adapter of adapters.');
+        }
+
+        if (list.includes(name)) {
+            throw invalid(`webhooks lists adapter "${name}" twice.`);
+        }
+
+        list.push(name);
+    }
+
+    return list;
+}
+
 /**
  * Checks the options (InvalidAgentDefinitionError naming the option) and
  * claims the Chat and its adapters for one channel. Reads the Chat's adapters
@@ -109,6 +152,7 @@ export function resolveOptions(options: ChatChannelOptions): ResolvedChatChannel
 
     const adapters = assertAdapters(options);
     const adapterNames = adapters.map((adapter) => adapter.name);
+    const webhooks = assertWebhooks(options, adapterNames);
     const name = options.name ?? CHAT_CHANNEL_NAME;
 
     if (typeof name !== 'string' || !CHANNEL_NAME_PATTERN.test(name) || name.length > CHANNEL_NAME_MAX_LENGTH) {
@@ -160,6 +204,7 @@ export function resolveOptions(options: ChatChannelOptions): ResolvedChatChannel
         adapters,
         adapterNames,
         name,
+        webhooks,
         ...(options.defaultAddress !== undefined ? { defaultAddress: options.defaultAddress } : {}),
         untrusted: options.untrusted !== false,
         ...(options.account !== undefined ? { account: options.account } : {}),
@@ -196,7 +241,8 @@ export function encodeChatAddress(target: ChatTarget, adapters?: readonly string
     const address = CHAT_ADDRESS_PREFIX + Buffer.from(JSON.stringify([adapter, threadId]), 'utf8').toString('base64url');
 
     if (address.length > TRIGGER_KEY_MAX_LENGTH) {
-        throw new ValidationError(`The chat address of thread "${threadId.slice(0, 32)}..." exceeds ${TRIGGER_KEY_MAX_LENGTH} characters.`);
+        // the thread id is not echoed: it may be long and is the platform's
+        throw new ValidationError(`The chat address of the thread exceeds ${TRIGGER_KEY_MAX_LENGTH} characters.`);
     }
 
     return address;
