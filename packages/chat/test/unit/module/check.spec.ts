@@ -24,7 +24,10 @@ import type { IApp } from '@chamvi/app';
 import { chatChannel, createChatIngressAdapter } from '@chamvi/chat';
 import { chatModule } from '@chamvi/chat/module';
 import { ControllableClock, textModel } from '@chamvi/test-kit';
+import { createWhatsAppChat } from '@chamvi/chat/baileys';
 import { createFakeAdapter } from '../../utils/adapter.ts';
+import { createRecordingAuth } from '../../utils/auth.ts';
+import { createFakeSockets } from '../../utils/whatsapp.ts';
 import { createMemoryState, createRecordingLogger } from '../../utils/chat.ts';
 
 const TOKENS = JSON.stringify([{
@@ -110,5 +113,46 @@ describe('chatModule under start --check', () => {
         expect(adapter.posts).toEqual([]);
         // the check never listened, so nothing served the webhook path either
         expect(adapter.chat).toBeUndefined();
+    });
+
+    it('check_no_auth_acquire_or_socket for a WhatsApp setup', async () => {
+        const stateCalls: string[] = [];
+        const auth = createRecordingAuth();
+        const sockets = createFakeSockets();
+        const setup = createWhatsAppChat({
+            account: 'support',
+            auth: auth.provider,
+            policy: { senders: ['491701111111@s.whatsapp.net'] },
+            resolveInvoker: () => undefined,
+            state: recordingState(stateCalls),
+            approvalUrl: () => 'https://chamvi.example/ui/approvals',
+            onPairing: () => undefined,
+            socketFactory: sockets.factory,
+        });
+        const app = createApp({
+            agents: [defineAgent({
+                name: 'assistant',
+                model: textModel(),
+                instructions: 'Answer.',
+                channels: [setup.channel.on()],
+            })],
+            modules: [
+                configModule({
+                    clock: new ControllableClock(new Date('2026-11-01T09:00:00Z')),
+                    logger: createLogger({ level: 'error', write: () => undefined }),
+                }),
+                chatModule({ channel: setup.channel }),
+            ],
+        });
+
+        apps.push(app);
+
+        await expect(app.check({ env: { CHAMVI_TOKENS: TOKENS, PORT: '4999' } })).resolves.toEqual({ issues: [] });
+
+        expect(auth.signals).toEqual([]);
+        expect(auth.trace).toEqual([]);
+        expect(sockets.sockets).toEqual([]);
+        expect(stateCalls).toEqual([]);
+        expect(setup.status()).toBe('stopped');
     });
 });

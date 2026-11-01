@@ -235,6 +235,55 @@ describe('chatChannel lifecycle', () => {
         expect(fixture.accepted.map((item) => item.id)).toEqual(['again']);
     });
 
+    it('stop_while_connect_pending: the start rejects with the abort reason, disconnect and shutdown run once', async () => {
+        let disconnects = 0;
+        let connectSignal: AbortSignal | undefined;
+        const fixture = setup({
+            patch: {
+                // honours the documented contract: settles once its signal aborts
+                connect: ({ signal }) => new Promise<void>((_resolve, reject) => {
+                    connectSignal = signal;
+                    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+                }),
+                disconnect: async () => {
+                    disconnects += 1;
+                },
+            },
+        });
+        const starting = fixture.channel.start!(fixture.engine.channelContext(fixture.channel));
+        const outcome = starting.catch((error: unknown) => error);
+
+        await flush();
+        expect(connectSignal?.aborted).toBe(false);
+
+        await fixture.channel.stop!();
+
+        const reason = await outcome;
+
+        expect(reason).toBeInstanceOf(InvalidRunStateError);
+        expect(reason).toBe(connectSignal?.reason);
+        expect(disconnects).toBe(1);
+        expect(fixture.adapter.disconnectCalls).toBe(1);
+        await expect(fixture.adapter.deliver(createTextMessage({ id: 'late' }))).rejects.toThrow(/no receiver/);
+        expect(fixture.accepted).toEqual([]);
+
+        // a connect that resolves after the abort leaves the start rejected as well
+        const second = setup({
+            patch: {
+                connect: ({ signal }) => new Promise<void>((resolve) => {
+                    signal.addEventListener('abort', () => resolve(), { once: true });
+                }),
+            },
+        });
+        const late = second.channel.start!(second.engine.channelContext(second.channel)).catch((error: unknown) => error);
+
+        await flush();
+        await second.channel.stop!();
+
+        expect(await late).toBeInstanceOf(InvalidRunStateError);
+        expect(second.adapter.disconnectCalls).toBe(1);
+    });
+
     it('refuses a second start while started', async () => {
         const fixture = setup();
 

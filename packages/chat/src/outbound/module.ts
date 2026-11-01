@@ -22,7 +22,8 @@ import type { ChatSenderOptions } from './types.ts';
  *
  * Delivery is at least once. `postMessage` takes no client message id, so
  * `message.key` reaches no transport dedupe: a second call with the same key
- * posts again. Core records the emit effect after `out` resolves, so a
+ * posts again. A transport may supply its own send (`prepare`, e.g. one that
+ * derives a message id from the key), which changes no guarantee. Core records the emit effect after `out` resolves, so a
  * failure between the post and that record sends the message again.
  *
  * Waiting is bounded by `timeoutMs` on the channel's clock and by
@@ -38,6 +39,16 @@ export function createChatSender(options: ChatSenderOptions): NonNullable<IChann
     return async (message: ChannelMessage, address: string, opts: ChannelSendOptions): Promise<void> => {
         const target = decodeChatAddress(address, names);
         const text = renderChatMessage(message, options);
+        const adapter = adapters.get(target.adapter)!;
+        // a transport's own send refuses its target here, before anything goes out
+        const post = options.prepare ?
+            options.prepare({
+                adapter: target.adapter,
+                threadId: target.threadId,
+                text,
+                key: message.key,
+            }) :
+            () => adapter.postMessage(target.threadId, { raw: text });
         const clock = options.online();
 
         if (!clock) {
@@ -48,9 +59,8 @@ export function createChatSender(options: ChatSenderOptions): NonNullable<IChann
 
         signal.throwIfAborted();
 
-        const adapter = adapters.get(target.adapter)!;
         // a synchronous throw of the adapter becomes a rejection like any other failure
-        const posting = (async () => adapter.postMessage(target.threadId, { raw: text }))();
+        const posting = (async () => post())();
 
         await new Promise<void>((resolve, reject) => {
             let waiting = true;

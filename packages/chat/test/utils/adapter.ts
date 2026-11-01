@@ -32,7 +32,7 @@ export type FakeAdapter = Adapter<string, unknown> & {
     onWebhook?: (request: Request, options?: WebhookOptions) => Promise<Response>;
     /** hands a message to chat.processMessage and returns its promise, as a webhook adapter can */
     deliver(message: Message, options?: WebhookOptions): Promise<void>;
-    /** hands a message to chat.processMessage and drops its promise, as chat-adapter-baileys 2.1.0 does */
+    /** hands a message to chat.processMessage and drops its promise, as a socket adapter may */
     deliverIgnored(message: Message): void;
 };
 

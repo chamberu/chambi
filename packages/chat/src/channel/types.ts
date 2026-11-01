@@ -7,6 +7,7 @@
 
 import type {
     ChannelContext,
+    ConversationTarget,
     IChannel,
     IClock,
     Invoker,
@@ -69,7 +70,12 @@ export type ChatChannelOptions = {
      * conversation account); default the adapter's name.
      */
     account?: string;
-    /** Called on start after the Chat initialized, e.g. to open a socket. */
+    /**
+     * Called on start after the Chat initialized, e.g. to open a socket. It
+     * must settle once `signal` aborts (a stop during the start): stop waits
+     * for it before `disconnect`, and the start then rejects with the
+     * signal's reason whether it resolved or rejected.
+     */
     connect?: (ctx: { signal: AbortSignal; clock: IClock }) => Promise<void>;
     /** Called on stop (and after a failed start) before the Chat shuts down. */
     disconnect?: () => Promise<void>;
@@ -110,6 +116,35 @@ export type ResolvedChatChannelOptions = {
     approvalUrl?: ChatChannelOptions['approvalUrl'];
     timeoutMs: number;
     onError: (error: unknown) => void;
+    /** see ChatChannelHooks */
+    conversationTarget?: ChatChannelHooks['conversationTarget'];
+};
+
+/**
+ * What a transport package built on the channel adds (internal: the /baileys
+ * entry); a plain chatChannel() has none.
+ */
+export type ChatChannelHooks = {
+    /** Whether the transport is connected; the channel sends only while it is started and this holds. */
+    online?: () => boolean;
+    /**
+     * Prepares one send before the channel's online check: throws for a
+     * target the transport refuses (its error as is), else returns the post
+     * the sender waits for (its failure a `chat_request`). Default the
+     * adapter's `postMessage(threadId, { raw: text })`.
+     */
+    prepare?: (input: {
+        adapter: string;
+        threadId: string;
+        text: string;
+        key: string
+    }) => () => Promise<unknown>;
+    /**
+     * The conversation of a message for an agent with `conversation`: undefined
+     * refuses the dispatch of that agent. Default from the payload (the
+     * account alias, the thread, `direct:<author>` or `group:<channel>`).
+     */
+    conversationTarget?: (incoming: ChatIncoming, payload: ChatPayload) => ConversationTarget | undefined;
 };
 
 /** What the intake of one message gets besides the message (internal). */

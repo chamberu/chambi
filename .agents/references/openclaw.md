@@ -38,4 +38,4 @@ What the existing out-only channel relies on, as recorded in `.agents/architectu
 
 ## WhatsApp transport replacement (plan 034, Task 1)
 
-`@chamvi/chat` (`packages/chat`) is to replace the OpenClaw relay for WhatsApp with a direct WhatsApp Web transport (chat-adapter-baileys 2.1.0 over Baileys 7.0.0-rc14, mapped in [chat-sdk.md](chat-sdk.md)). Task 1 inspected no OpenClaw source or state for this: the existing channel keeps working unchanged as the rollback path, and nothing in `packages/chat` imports or calls OpenClaw.
+`@chamvi/chat` (`packages/chat`) is to replace the OpenClaw relay for WhatsApp with a direct WhatsApp Web transport (a chamvi-owned Chat SDK adapter on Baileys 7.0.0-rc14, mapped in [chat-sdk.md](chat-sdk.md)). Task 1 inspected no OpenClaw source or state for this: the existing channel keeps working unchanged as the rollback path, and nothing in `packages/chat` imports or calls OpenClaw.

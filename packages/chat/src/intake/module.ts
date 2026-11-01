@@ -10,6 +10,7 @@ import type {
     Agent,
     ChannelContext,
     ChannelSubscription,
+    ConversationTarget,
     IClock,
     Invoker,
 } from '@chamvi/core';
@@ -133,9 +134,25 @@ function firstMatch(agent: Agent, channel: string, payload: ChatPayload): Channe
  * new subscriptions, a removed agent none). A throwing filter fails its agent
  * only.
  */
+/** The conversation of the message: the transport's (hook), else from the payload. */
+function conversationOf(incoming: ChatIncoming, options: ResolvedChatChannelOptions, payload: ChatPayload): ConversationTarget | undefined {
+    if (options.conversationTarget) {
+        return options.conversationTarget(incoming, payload);
+    }
+
+    return {
+        account: options.account ?? payload.adapter,
+        chat: payload.threadId,
+        // a group is one shared memory: its members are who reads it
+        audience: payload.event === 'direct' ? `direct:${payload.message.author.id}` : `group:${payload.channelId}`,
+        text: payload.message.text,
+    };
+}
+
 function plan(
     context: ChannelContext,
     options: ResolvedChatChannelOptions,
+    incoming: ChatIncoming,
     payload: ChatPayload,
     invoker: Invoker | undefined,
     skip: ReadonlySet<string>,
@@ -178,17 +195,23 @@ function plan(
         };
 
         if (agent.definition.conversation) {
+            const conversation = conversationOf(incoming, options, payload);
+
+            if (!conversation) {
+                failures.push({
+                    agent: agent.name,
+                    error: new ValidationError(`Chat channel "${options.name}" has no conversation identity for a message of adapter "${payload.adapter}".`),
+                    transient: false,
+                });
+
+                continue;
+            }
+
             // the engine derives the conversation's own concurrency key
             dispatches.push({
                 agent: agent.name,
                 envelope,
-                conversation: {
-                    account: options.account ?? payload.adapter,
-                    chat: payload.threadId,
-                    // a group is one shared memory: its members are who reads it
-                    audience: payload.event === 'direct' ? `direct:${payload.message.author.id}` : `group:${payload.channelId}`,
-                    text: payload.message.text,
-                },
+                conversation,
             });
         } else {
             dispatches.push({
@@ -235,6 +258,7 @@ async function deliver(
         signal,
         options,
     }: ChatIntakeContext,
+    incoming: ChatIncoming,
     payload: ChatPayload,
     invoker: Invoker | undefined,
 ): Promise<void> {
@@ -247,7 +271,7 @@ async function deliver(
         attempts += 1;
         transient.length = 0;
 
-        const { dispatches, failures } = plan(context, options, payload, invoker, done);
+        const { dispatches, failures } = plan(context, options, incoming, payload, invoker, done);
 
         for (const failure of failures) {
             done.add(failure.agent);
@@ -333,7 +357,7 @@ export function createChatIntake(): ChatIntake {
 
         const invoker = options.resolveInvoker ? await options.resolveInvoker(incoming) : undefined;
 
-        await deliver(ctx, payload, invoker);
+        await deliver(ctx, incoming, payload, invoker);
     };
 
     return (incoming, ctx) => {

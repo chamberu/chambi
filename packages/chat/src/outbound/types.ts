@@ -7,7 +7,7 @@
 
 import type { IClock } from '@chamvi/core';
 import type { Adapter } from 'chat';
-import type { ChatApprovalRef } from '../channel/types.ts';
+import type { ChatApprovalRef, ChatChannelHooks } from '../channel/types.ts';
 
 /** What createChatSender() sends through (internal). */
 export type ChatSenderOptions = {
@@ -24,6 +24,8 @@ export type ChatSenderOptions = {
      * (not started, stopped, a transport that reports itself down) sends nothing.
      */
     online: () => IClock | undefined;
+    /** The transport's own send (ChatChannelHooks.prepare); default the adapter's postMessage. */
+    prepare?: ChatChannelHooks['prepare'];
     /** Outcomes nobody waits for any more (a send that settled after its deadline or abort). */
     onError: (error: unknown) => void;
 };

@@ -5,8 +5,26 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+// The /baileys entry (WhatsApp Web on Baileys): the only entry that imports baileys.
 
-// The /baileys entry (WhatsApp Web through chat-adapter-baileys): the only entry
-// that may import baileys or chat-adapter-baileys. Filled by the WhatsApp task.
-
-export {};
+export {
+    WHATSAPP_ADAPTER_NAME,
+    WHATSAPP_AUTH_ERROR_CODE,
+    WHATSAPP_CONNECTION_ERROR_CODE,
+    WHATSAPP_LOGGED_OUT_ERROR_CODE,
+    WHATSAPP_RECONNECT,
+    WHATSAPP_SHUTDOWN_TIMEOUT_MS,
+} from './constants.ts';
+export { createWhatsAppChat } from './module.ts';
+export type {
+    IWhatsAppAuthProvider,
+    WhatsAppAuthLease,
+    WhatsAppChatOptions,
+    WhatsAppChatSetup,
+    WhatsAppConnectionStatus,
+    WhatsAppIdentity,
+    WhatsAppPairing,
+    WhatsAppPolicy,
+    WhatsAppSocket,
+    WhatsAppSocketFactory,
+} from './types.ts';

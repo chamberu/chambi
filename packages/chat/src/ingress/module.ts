@@ -130,7 +130,7 @@ export function createChatIngressAdapter(adapter: Adapter): ChatIngress {
         ) => {
             const task = receive(state, source, threadId, message);
 
-            // a caller that drops the promise (chat-adapter-baileys) must not cause an
+            // a caller that drops the promise (a socket adapter) must not cause an
             // unhandled rejection; a caller that awaits it still sees the failure
             task.catch(() => undefined);
             trackers.getStore()?.(task);

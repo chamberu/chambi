@@ -21,6 +21,7 @@ import {
 import { CHAT_STOP_TIMEOUT_ERROR_CODE, CHAT_STOP_TIMEOUT_MS } from './constants.ts';
 import type {
     ChatChannel,
+    ChatChannelHooks,
     ChatChannelOptions,
     ChatIntake,
     ResolvedChatChannelOptions,
@@ -190,8 +191,11 @@ function teardown(run: ChatRun, options: ResolvedChatChannelOptions): Promise<vo
  * (a button) or any other event the adapter forwards answers nothing and
  * never answers an approval.
  */
-export function createChatChannel(options: ChatChannelOptions, intake: ChatIntake): ChatChannel {
-    const resolved = resolveOptions(options);
+export function createChatChannel(options: ChatChannelOptions, intake: ChatIntake, hooks: ChatChannelHooks = {}): ChatChannel {
+    const resolved: ResolvedChatChannelOptions = {
+        ...resolveOptions(options),
+        ...(hooks.conversationTarget ? { conversationTarget: hooks.conversationTarget } : {}),
+    };
     const { name, adapterNames } = resolved;
     let current: ChatRun | undefined;
     const out = createChatSender({
@@ -199,7 +203,9 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
         adapters: resolved.adapters,
         ...(resolved.approvalUrl ? { approvalUrl: resolved.approvalUrl } : {}),
         timeoutMs: resolved.timeoutMs,
-        online: () => (current?.online ? current.context.engine.clock : undefined),
+        // started, and connected as far as the transport knows
+        online: () => (current?.online && (hooks.online?.() ?? true) ? current.context.engine.clock : undefined),
+        ...(hooks.prepare ? { prepare: hooks.prepare } : {}),
         onError: resolved.onError,
     });
 

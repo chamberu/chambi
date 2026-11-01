@@ -2,7 +2,7 @@
     "name": "@chamvi/chat",
     "version": "0.4.0",
     "type": "module",
-    "description": "Chat SDK channels for chamvi agents, with WhatsApp Web through Baileys.",
+    "description": "Chat SDK channels for chamvi agents, with WhatsApp Web on Baileys.",
     "author": {
         "name": "Peter Placzek",
         "email": "contact@tada5hi.net",
@@ -66,25 +66,20 @@
         "@chamvi/test-kit": "^0.4.0",
         "ai": "^7.0.150",
         "baileys": "7.0.0-rc14",
-        "chat": "^4.43.0",
-        "chat-adapter-baileys": "^2.1.0"
+        "chat": "^4.43.0"
     },
     "peerDependencies": {
         "@chamvi/app": "^0.4.0",
         "@chamvi/core": "^0.4.0",
         "@chamvi/http": "^0.4.0",
         "baileys": ">=7.0.0-rc14 <8",
-        "chat": "^4.43.0",
-        "chat-adapter-baileys": "^2.1.0"
+        "chat": "^4.43.0"
     },
     "peerDependenciesMeta": {
         "@chamvi/app": {
             "optional": true
         },
         "baileys": {
-            "optional": true
-        },
-        "chat-adapter-baileys": {
             "optional": true
         }
     }

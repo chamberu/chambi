@@ -14,7 +14,7 @@ import * as module from '@chamvi/chat/module';
 describe('package entries', () => {
     it('resolve', () => {
         expect(chat.createChatIngressAdapter).toBeTypeOf('function');
-        expect(baileys).toBeDefined();
+        expect(baileys.createWhatsAppChat).toBeTypeOf('function');
         expect(module).toBeDefined();
     });
 });
