@@ -5,6 +5,5 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-
 export { createChatIngressAdapter } from './module.ts';
 export type { ChatIncoming, ChatIngress } from './types.ts';

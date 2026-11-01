@@ -8,11 +8,15 @@
 
 import type { Adapter, Message } from 'chat';
 
+declare const chatIngressBrand: unique symbol;
+
 /**
  * A Chat SDK adapter wrapped by createChatIngressAdapter(): register it with
- * the Chat in place of the adapter it wraps.
+ * the Chat in place of the adapter it wraps. The brand exists for the type
+ * checker only, so a plain Adapter is no ChatIngress; chatChannel() checks
+ * the wrapping at runtime as well.
  */
-export type ChatIngress = Adapter & { readonly name: string };
+export type ChatIngress = Adapter & { readonly [chatIngressBrand]: true };
 
 /** One incoming message as the wrapped adapter handed it to processMessage. */
 export type ChatIncoming = {

@@ -19,6 +19,11 @@ export type FakeAdapter = Adapter<string, unknown> & {
     /** the ChatInstance the adapter got from initialize() */
     readonly chat: ChatInstance | undefined;
     readonly posts: Array<{ threadId: string; message: AdapterPostableMessage }>;
+    /** how often initialize() and disconnect() ran */
+    readonly initializeCalls: number;
+    readonly disconnectCalls: number;
+    /** runs inside initialize(), after the adapter took the ChatInstance */
+    onInitialize?: (chat: ChatInstance) => void | Promise<void>;
     /** hands a message to chat.processMessage and returns its promise, as a webhook adapter can */
     deliver(message: Message, options?: WebhookOptions): Promise<void>;
     /** hands a message to chat.processMessage and drops its promise, as chat-adapter-baileys 2.1.0 does */
@@ -28,6 +33,8 @@ export type FakeAdapter = Adapter<string, unknown> & {
 /** A transport-free Chat SDK adapter: every thread is a direct chat. */
 export function createFakeAdapter(name = 'fake'): FakeAdapter {
     let chat: ChatInstance | undefined;
+    let initializeCalls = 0;
+    let disconnectCalls = 0;
     const posts: FakeAdapter['posts'] = [];
 
     const requireChat = (): ChatInstance => {
@@ -44,9 +51,20 @@ export function createFakeAdapter(name = 'fake'): FakeAdapter {
         get chat() {
             return chat;
         },
+        get initializeCalls() {
+            return initializeCalls;
+        },
+        get disconnectCalls() {
+            return disconnectCalls;
+        },
         posts,
         async initialize(instance) {
+            initializeCalls += 1;
             chat = instance;
+            await adapter.onInitialize?.(instance);
+        },
+        async disconnect() {
+            disconnectCalls += 1;
         },
         deliver(message, options) {
             return requireChat().processMessage(adapter, message.threadId, message, options);
