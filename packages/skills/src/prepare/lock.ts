@@ -14,6 +14,10 @@ import { SKILL_PREPARATION_LOCK_STALE_MS } from './constants.ts';
 import { locked } from './helpers.ts';
 
 const OWNER_FILE = 'owner.json';
+// a recovery guard only lives for a stat, a read and a remove
+const RECOVERY_STALE_MS = 60_000;
+// the guards this process holds: a guard of this very process outside it was left by a failed release
+const held = new Set<string>();
 // tells a guard of this process from one an earlier process with the same pid left (a container restart)
 const PROCESS_START = Math.round(performance.timeOrigin);
 
@@ -24,6 +28,19 @@ type GuardOwner = {
     token?: unknown;
     createdAt?: unknown;
 };
+
+/**
+ * The age at which any guard is stale: `SKILL_PREPARATION_LOCK_STALE_MS`, or
+ * twice the SDK's clone timeout (`SKILLS_CLONE_TIMEOUT_MS`, read like the SDK
+ * does) when that is longer, so a live, slow clone keeps its guard.
+ */
+export function guardStaleMs(env: NodeJS.ProcessEnv = process.env): number {
+    const timeout = Number.parseInt(env.SKILLS_CLONE_TIMEOUT_MS ?? '', 10);
+
+    return Number.isFinite(timeout) && timeout > 0 ?
+        Math.max(SKILL_PREPARATION_LOCK_STALE_MS, timeout * 2) :
+        SKILL_PREPARATION_LOCK_STALE_MS;
+}
 
 function isAlive(pid: number): boolean {
     try {
@@ -45,10 +62,10 @@ async function readOwner(guard: string): Promise<GuardOwner | undefined> {
     }
 }
 
-function isStale(owner: GuardOwner | undefined, modifiedAt: number): boolean {
+function isStale(guard: string, owner: GuardOwner | undefined, modifiedAt: number): boolean {
     const createdAt = typeof owner?.createdAt === 'number' ? owner.createdAt : modifiedAt;
 
-    if (Date.now() - createdAt >= SKILL_PREPARATION_LOCK_STALE_MS) {
+    if (Date.now() - createdAt >= guardStaleMs()) {
         return true;
     }
 
@@ -57,7 +74,7 @@ function isStale(owner: GuardOwner | undefined, modifiedAt: number): boolean {
     }
 
     if (owner.pid === process.pid) {
-        return owner.processStart !== PROCESS_START;
+        return owner.processStart !== PROCESS_START || !held.has(guard);
     }
 
     return !isAlive(owner.pid);
@@ -81,7 +98,7 @@ async function recoverGuard(guard: string): Promise<boolean> {
         // a recoverer that died between its mkdir and rmdir
         const stat = await fs.stat(recovery).catch(() => undefined);
 
-        if (stat && Date.now() - stat.mtimeMs >= SKILL_PREPARATION_LOCK_STALE_MS) {
+        if (stat && Date.now() - stat.mtimeMs >= RECOVERY_STALE_MS) {
             await fs.rm(recovery, { recursive: true, force: true });
         }
 
@@ -101,7 +118,7 @@ async function recoverGuard(guard: string): Promise<boolean> {
             return true;
         }
 
-        if (!isStale(await readOwner(guard), stat.mtimeMs)) {
+        if (!isStale(guard, await readOwner(guard), stat.mtimeMs)) {
             return false;
         }
 
@@ -150,6 +167,8 @@ export async function acquireGuard(guard: string): Promise<string> {
             throw error;
         }
 
+        held.add(guard);
+
         return token;
     }
 
@@ -158,12 +177,17 @@ export async function acquireGuard(guard: string): Promise<string> {
 
 /** Removes the guard unless another preparer recovered and took it meanwhile (its token differs). */
 export async function releaseGuard(guard: string, token: string): Promise<void> {
-    const owner = await readOwner(guard);
+    try {
+        const owner = await readOwner(guard);
 
-    if (owner?.token !== token) {
-        return;
+        if (owner?.token !== token) {
+            return;
+        }
+
+        await fs.rm(join(guard, OWNER_FILE), { force: true });
+        await fs.rmdir(guard);
+    } finally {
+        // a guard this release failed to remove is stale for this process's next attempt
+        held.delete(guard);
     }
-
-    await fs.rm(join(guard, OWNER_FILE), { force: true });
-    await fs.rmdir(guard);
 }

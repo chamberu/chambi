@@ -13,7 +13,8 @@ export const SKILL_PREPARATION_LOCKED_ERROR_CODE = 'skill_preparation_locked';
 
 /**
  * The age at which a target's guard counts as stale whoever holds it (1 h,
- * well above the SDK's default 5 min clone timeout). A guard of a process
- * on this host that no longer runs is stale at once.
+ * well above the SDK's default 5 min clone timeout; twice
+ * `SKILLS_CLONE_TIMEOUT_MS` when that is longer). A guard of a process on
+ * this host that no longer runs is stale at once.
  */
 export const SKILL_PREPARATION_LOCK_STALE_MS = 3_600_000;

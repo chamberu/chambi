@@ -1,0 +1,9 @@
+{
+    "name": "fixture-skilled",
+    "type": "module",
+    "private": true,
+    "dependencies": {
+        "@chamvi/app": "*",
+        "ai": "*"
+    }
+}

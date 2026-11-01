@@ -18,6 +18,7 @@ import {
     SKILL_PREPARATION_LOCK_STALE_MS,
 } from '@chamvi/skills';
 import * as sdk from 'skills';
+import { guardStaleMs } from '../../src/prepare/lock.ts';
 import {
     afterEach,
     describe,
@@ -32,6 +33,7 @@ vi.mock('skills', async (original) => {
     return {
         ...actual,
         cloneRepo: vi.fn(actual.cloneRepo),
+        cleanupTempDir: vi.fn(actual.cleanupTempDir),
     };
 });
 
@@ -78,6 +80,7 @@ afterEach(async () => {
     fixtures.length = 0;
     roots.length = 0;
     vi.mocked(sdk.cloneRepo).mockClear();
+    vi.mocked(sdk.cleanupTempDir).mockClear();
 });
 
 describe('prepareSkills failures', () => {
@@ -138,6 +141,57 @@ describe('prepareSkills failures', () => {
         await expect(skills.prepareSkills(options)).resolves.toHaveLength(1);
     });
 
+    it('recovers a guard this process left behind but no longer holds', async () => {
+        const { guard, options } = await setup();
+
+        await writeOwner(guard, {
+            host: hostname(),
+            pid: process.pid,
+            processStart: Math.round(performance.timeOrigin),
+            token: 'leftover',
+            createdAt: Date.now(),
+        });
+
+        await expect(skills.prepareSkills(options)).resolves.toHaveLength(1);
+    });
+
+    it('removes a recovery guard a crashed recoverer left once it is a minute old', async () => {
+        const { guard, options } = await setup();
+
+        await writeOwner(guard, {
+            host: hostname(),
+            pid: 2 ** 22 + 12_345,
+            token: 'dead',
+            createdAt: Date.now(),
+        });
+        await fs.mkdir(`${guard}.recover`);
+
+        const old = new Date(Date.now() - 61_000);
+
+        await fs.utimes(`${guard}.recover`, old, old);
+        expect((await failureOf(skills.prepareSkills(options))).code).toBe(SKILL_PREPARATION_LOCKED_ERROR_CODE);
+        await expect(skills.prepareSkills(options)).resolves.toHaveLength(1);
+    });
+
+    it('stretches the stale bound to twice a longer SDK clone timeout', () => {
+        expect(guardStaleMs({})).toBe(SKILL_PREPARATION_LOCK_STALE_MS);
+        expect(guardStaleMs({ SKILLS_CLONE_TIMEOUT_MS: '600000' })).toBe(SKILL_PREPARATION_LOCK_STALE_MS);
+        expect(guardStaleMs({ SKILLS_CLONE_TIMEOUT_MS: '3600000' })).toBe(7_200_000);
+        expect(guardStaleMs({ SKILLS_CLONE_TIMEOUT_MS: 'x' })).toBe(SKILL_PREPARATION_LOCK_STALE_MS);
+    });
+
+    it('keeps a configuration error when the checkout cleanup also fails', async () => {
+        const { options } = await setup();
+
+        vi.mocked(sdk.cleanupTempDir).mockRejectedValueOnce(new Error('busy'));
+        await expect(skills.prepareSkills({
+            ...options,
+            verify: () => {
+                throw new Error('refused');
+            },
+        })).rejects.toThrow(InvalidAgentDefinitionError);
+    });
+
     it('keeps a fresh guard of another host and recovers it once older than the bound', async () => {
         const { guard, options } = await setup();
         const owner = {
@@ -178,6 +232,46 @@ describe('prepareSkills failures', () => {
         expect(error.code).toBe(SKILL_PREPARATION_FAILED_ERROR_CODE);
         expect(error.message).not.toContain('token');
         expect(await fs.readdir(root)).toEqual([]);
+    });
+
+    it('reports a failed fetch of the pinned commit through the real SDK clone as retryable', async () => {
+        const { root, options } = await setup();
+
+        // the SDK's `clone --branch <sha>` fails with "Remote branch <sha> not found", then its own
+        // fetch of the sha fails (here on a bad client setting, as a network failure would) and is swallowed
+        vi.stubEnv('GIT_CONFIG_COUNT', '1');
+        vi.stubEnv('GIT_CONFIG_KEY_0', 'fetch.negotiationAlgorithm');
+        vi.stubEnv('GIT_CONFIG_VALUE_0', 'bogus');
+
+        try {
+            const error = await failureOf(skills.prepareSkills(options));
+
+            expect(error).not.toBeInstanceOf(InvalidAgentDefinitionError);
+            expect(error.code).toBe(SKILL_PREPARATION_FAILED_ERROR_CODE);
+        } finally {
+            vi.unstubAllEnvs();
+        }
+
+        expect(await fs.readdir(root)).toEqual([]);
+    });
+
+    it('reports a pinned commit the source does not hold as retryable, since the SDK hides the cause', async () => {
+        const { options } = await setup();
+        const error = await failureOf(skills.prepareSkills({ ...options, revision: 'f'.repeat(40) }));
+
+        expect(error).not.toBeInstanceOf(InvalidAgentDefinitionError);
+        expect(error.code).toBe(SKILL_PREPARATION_FAILED_ERROR_CODE);
+    });
+
+    it.each([
+        new sdk.GitCloneError('Failed to clone x: fatal: Remote branch abc not found in upstream origin', 'x'),
+        new sdk.GitCloneError("Failed to clone x: fatal: couldn't find remote ref abc", 'x'),
+        new sdk.GitCloneError('Failed to clone x: fatal: remote error: upload-pack: not our ref abc', 'x'),
+    ])('reports a missing ref answer of the SDK as retryable: %s', async (failure) => {
+        const { options } = await setup();
+
+        vi.mocked(sdk.cloneRepo).mockRejectedValueOnce(failure);
+        expect((await failureOf(skills.prepareSkills(options))).code).toBe(SKILL_PREPARATION_FAILED_ERROR_CODE);
     });
 
     it.each([

@@ -100,7 +100,7 @@ async function inspectTarget(directory: string): Promise<boolean> {
 /**
  * Prepare a dedicated corpus during setup/build; the caller owns source selection and content approval.
  * Rejects with `InvalidAgentDefinitionError` for configuration (options, pin, source content, authentication,
- * a missing repository or revision, an unowned target), with `SKILL_PREPARATION_LOCKED_ERROR_CODE` while another
+ * a missing repository, an unowned target), with `SKILL_PREPARATION_LOCKED_ERROR_CODE` while another
  * preparer holds the target's guard, and with `SKILL_PREPARATION_FAILED_ERROR_CODE` for retryable failures.
  */
 export async function prepareSkills(options: PrepareSkillsOptions): Promise<readonly PreparedSkill[]> {
@@ -120,6 +120,7 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
     let lock: { guard: string; token: string } | undefined;
     let previous: string | undefined;
     let result: readonly PreparedSkill[];
+    let failed = false;
 
     try {
         await fs.mkdir(dirname(requestedDirectory), { recursive: true });
@@ -250,6 +251,8 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
         previous = undefined;
         result = Object.freeze(staged.map((skill) => Object.freeze({ ...skill, path: join(requestedDirectory, skill.name) })));
     } catch (error) {
+        failed = true;
+
         if (signal?.aborted && error === signal.reason) {
             throw error;
         }
@@ -272,7 +275,8 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
 
         const hasRejectedCleanup = settled.some((result) => result.status === 'rejected');
 
-        if (hasRejectedCleanup) {
+        // a cleanup failure never replaces the error of a failed preparation (configuration, cancellation)
+        if (hasRejectedCleanup && !failed) {
             unavailable();
         }
     }

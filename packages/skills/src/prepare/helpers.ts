@@ -18,8 +18,12 @@ export function invalid(): never {
     throw new InvalidAgentDefinitionError('Cannot prepare skills: invalid configuration, source, verification or managed directory.');
 }
 
-// git's answers for a source that is not there (deterministic, unlike a network failure)
-const missingSource = /not found|does not appear to be a git repository|does not exist|returned error: 404|unsupported git transport/iu;
+// git's answers for a repository that is not there (deterministic, unlike a network failure)
+const missingSource = /repository .* not found|does not appear to be a git repository|does not exist|returned error: 404|unsupported git transport/iu;
+
+// The SDK clones `--branch <sha>`, which always fails with a missing-ref answer, then fetches the sha
+// and swallows that fetch's failure (a network failure as much as a missing commit): never configuration.
+const missingRef = /remote branch .* not found in upstream origin|couldn't find remote ref|upload-pack: not our ref/iu;
 
 /** A retryable failure: generic, since SDK and git messages can hold credentials or private content. */
 export function unavailable(): never {
@@ -33,14 +37,15 @@ export function locked(guard: string): never {
     throw new ChamviError({
         code: SKILL_PREPARATION_LOCKED_ERROR_CODE,
         message: `Cannot prepare skills: another preparation holds the guard ${guard}. ` +
-            'A guard whose process is gone (on this host) or older than one hour is recovered on the next attempt.',
+            'A guard whose process is gone (on this host) or older than the stale bound is recovered on the next attempt.',
     });
 }
 
 /**
  * Maps a preparation failure to the configuration error (`invalid()`: a check
- * refused the input, an authentication failure, a missing repository or
- * revision), the lock error, or else a retryable failure (`unavailable()`).
+ * refused the input, an authentication failure, a missing repository), the
+ * lock error, or else a retryable failure (`unavailable()`): a pinned commit
+ * the SDK could not fetch is retryable, since its answer hides the cause.
  */
 export function toPreparationError(error: unknown): never {
     if (error instanceof ChamviError && error.code === SKILL_PREPARATION_LOCKED_ERROR_CODE) {
@@ -51,8 +56,12 @@ export function toPreparationError(error: unknown): never {
         invalid();
     }
 
-    if (error instanceof GitCloneError && (error.isAuthError || (!error.isTimeout && missingSource.test(error.message)))) {
-        invalid();
+    if (error instanceof GitCloneError) {
+        const isMissingSource = !error.isTimeout && !missingRef.test(error.message) && missingSource.test(error.message);
+
+        if (error.isAuthError || isMissingSource) {
+            invalid();
+        }
     }
 
     return unavailable();
