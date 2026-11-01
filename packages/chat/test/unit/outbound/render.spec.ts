@@ -171,6 +171,40 @@ describe('renderChatMessage', () => {
         expect(text.startsWith('Deploy to prod?\n\n😀')).toBe(true);
     });
 
+    it('holds the bound for a huge body at every structure size: a cut keeps prose, else refuses', () => {
+        const body = 'b'.repeat(1_000_000);
+        let cut = 0;
+        let refused = 0;
+
+        // one option whose label grows the structure past the point where prose still fits
+        for (let length = 3700; length <= 4100; length++) {
+            const render = () => renderChatMessage(approval({
+                title: undefined,
+                body,
+                options: [{ id: 'a', label: 'L'.repeat(length) }],
+            }), { approvalUrl: URL_OF });
+            let text: string;
+
+            try {
+                text = render();
+            } catch (error) {
+                expect(error).toBeInstanceOf(ValidationError);
+                expect((error as Error).message).toMatch(/no room for the title and body/);
+                refused += 1;
+
+                continue;
+            }
+
+            cut += 1;
+            expect(text.length).toBeLessThanOrEqual(CHAT_TEXT_MAX_CHARS);
+            // at least PROSE_MIN_CHARS (32) of the body before the cut note
+            expect(text).toMatch(/^b{32,}\n… \(cut, \d+ more characters\)\n\n/);
+        }
+
+        expect(cut).toBeGreaterThan(0);
+        expect(refused).toBeGreaterThan(0);
+    });
+
     it('refuses an approval whose links and options cannot fit', () => {
         const options = Array.from({ length: 20 }, (_, index) => ({ id: `option-${index}`, label: 'L'.repeat(200) }));
         const render = () => renderChatMessage(approval({ options }), { approvalUrl: URL_OF });

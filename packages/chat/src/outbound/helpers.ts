@@ -65,21 +65,32 @@ function assertApprovalLink(value: unknown): string {
     return value;
 }
 
+/** The cut note for `cut` characters left out. */
+function cutNote(cut: number): string {
+    return `\n… (cut, ${cut} more characters)`;
+}
+
 /**
- * `text` cut to at most `max` characters including a note of how many were
- * cut; never ends on a high surrogate, so the result stays well formed.
+ * `text` cut to at most `max` characters including the note of how many were
+ * cut, keeping at least `PROSE_MIN_CHARS` of it; never ends on a high
+ * surrogate, so the result stays well formed. Undefined when `max` leaves
+ * less than that.
  */
-function cutProse(text: string, max: number): string {
+function cutProse(text: string, max: number): string | undefined {
     // the note for the longest possible remainder, so the cut text and its note fit
-    const reserve = `\n… (cut, ${text.length} more characters)`.length;
-    let end = max - reserve;
+    let end = max - cutNote(text.length).length;
+
+    if (end < PROSE_MIN_CHARS) {
+        return undefined;
+    }
+
     const last = text.charCodeAt(end - 1);
 
     if (last >= 0xD800 && last <= 0xDBFF) {
         end--;
     }
 
-    return `${text.slice(0, end)}\n… (cut, ${text.length - end} more characters)`;
+    return `${text.slice(0, end)}${cutNote(text.length - end)}`;
 }
 
 function renderPlain(message: ChannelMessage): string {
@@ -133,13 +144,13 @@ function renderApproval(message: ChannelMessage, options: ChatRenderOptions): st
     const structure = tail.join('\n\n');
     const prose = [message.title, message.body].filter((part) => !!part).join('\n\n');
     const budget = CHAT_TEXT_MAX_CHARS - structure.length - (prose ? 2 : 0);
-    const refused = () => new ValidationError(
-        `The approval's options, expiry and link need ${structure.length} characters and do not fit a chat message of ${CHAT_TEXT_MAX_CHARS}.`,
+    const refused = (reason: string) => new ValidationError(
+        `The approval's options, expiry and link need ${structure.length} characters ${reason} of a chat message of ${CHAT_TEXT_MAX_CHARS}.`,
     );
 
     if (!prose) {
         if (budget < 0) {
-            throw refused();
+            throw refused('and do not fit the bound');
         }
 
         return structure;
@@ -149,11 +160,13 @@ function renderApproval(message: ChannelMessage, options: ChatRenderOptions): st
         return `${prose}\n\n${structure}`;
     }
 
-    if (budget < PROSE_MIN_CHARS) {
-        throw refused();
+    const cut = cutProse(prose, budget);
+
+    if (cut === undefined) {
+        throw refused('and leave no room for the title and body');
     }
 
-    return `${cutProse(prose, budget)}\n\n${structure}`;
+    return `${cut}\n\n${structure}`;
 }
 
 /**
@@ -167,5 +180,12 @@ function renderApproval(message: ChannelMessage, options: ChatRenderOptions): st
  * an InvalidAgentDefinitionError. Nothing else of the run is rendered.
  */
 export function renderChatMessage(message: ChannelMessage, options: ChatRenderOptions): string {
-    return message.kind === 'approval' ? renderApproval(message, options) : renderPlain(message);
+    const text = message.kind === 'approval' ? renderApproval(message, options) : renderPlain(message);
+
+    // the bound holds by construction; this keeps it so should the arithmetic above ever slip
+    if (text.length > CHAT_TEXT_MAX_CHARS) {
+        throw new ValidationError(`The rendered chat message has ${text.length} characters; at most ${CHAT_TEXT_MAX_CHARS} are sent.`);
+    }
+
+    return text;
 }

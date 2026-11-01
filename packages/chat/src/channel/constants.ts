@@ -14,7 +14,10 @@ export const CHAT_ADDRESS_PREFIX = 'chat:';
 /** Default bound of one outbound send, below the engine's approval delivery lock (`claimTtlMs`, 60 s). */
 export const CHAT_TIMEOUT_MS = 30_000;
 
-/** The longest text one send posts (no splitting); a conservative default, not a platform limit. */
+/**
+ * The longest text one send posts, in UTF-16 code units (JavaScript string
+ * length), never split; a conservative default, not a platform limit.
+ */
 export const CHAT_TEXT_MAX_CHARS = 4096;
 
 /** `code` of every transport failure of a send. */
