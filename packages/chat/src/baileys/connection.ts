@@ -326,9 +326,6 @@ export function createWhatsAppConnection(options: WhatsAppConnectionOptions): Wh
         setStatus(generation, 'stopped');
 
         const { socket } = generation;
-        // one bound for the whole close: a dead link's end() cannot stretch it
-        const deadline = generation.clock.now().getTime() + WHATSAPP_SHUTDOWN_TIMEOUT_MS;
-        const remaining = () => Math.max(0, deadline - generation.clock.now().getTime());
 
         dropSocket(generation);
 
@@ -338,7 +335,7 @@ export function createWhatsAppConnection(options: WhatsAppConnectionOptions): Wh
             })();
 
             try {
-                if (!await within(generation.clock, remaining(), ending)) {
+                if (!await within(generation.clock, WHATSAPP_SHUTDOWN_TIMEOUT_MS, ending)) {
                     ending.catch(() => undefined);
                     report(failure(WHATSAPP_CONNECTION_ERROR_CODE, `Ending the WhatsApp socket did not finish within ${WHATSAPP_SHUTDOWN_TIMEOUT_MS}ms.`));
                 }
@@ -347,7 +344,8 @@ export function createWhatsAppConnection(options: WhatsAppConnectionOptions): Wh
             }
         }
 
-        // a write admitted before the close finishes, then the lease flushes it
+        // a write admitted before the close finishes, then the lease flushes it; admission closed above,
+        // so this phase gets its own bound: a dead link's end() never eats into it
         const settling = (async () => {
             await generation.acquiring;
             await Promise.allSettled([...generation.writes]);
@@ -357,7 +355,7 @@ export function createWhatsAppConnection(options: WhatsAppConnectionOptions): Wh
         let settled: boolean;
 
         try {
-            settled = await within(generation.clock, remaining(), settling);
+            settled = await within(generation.clock, WHATSAPP_SHUTDOWN_TIMEOUT_MS, settling);
         } catch (error) {
             report(failure(WHATSAPP_AUTH_ERROR_CODE, 'Flushing the WhatsApp auth lease failed; it stays held (not released).', error));
 
@@ -386,6 +384,8 @@ export function createWhatsAppConnection(options: WhatsAppConnectionOptions): Wh
 
         // a close still settling (flush, release) finishes before the next lease is taken
         await current?.closing;
+        // an aborted connect never becomes the current generation
+        signal.throwIfAborted();
 
         const generation: Generation = {
             clock: options.clock ?? clock,
@@ -398,7 +398,6 @@ export function createWhatsAppConnection(options: WhatsAppConnectionOptions): Wh
 
         current = generation;
         status = 'connecting';
-        signal.throwIfAborted();
 
         const acquired = (async () => {
             const lease = await options.auth.acquire(signal);

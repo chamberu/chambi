@@ -241,6 +241,59 @@ describe('WhatsApp sender and group policy', () => {
         expect(value.errors).toEqual([]);
     });
 
+    it('names no author: a WhatsApp sender has an id only, never a display name', async () => {
+        const value = await started();
+
+        value.sockets.last().deliver(waMessage({ chat: ALICE, pushName: 'Alice' }));
+        await settle();
+
+        const [run] = await value.runs();
+
+        expect((run?.trigger.payload as { message: { author: unknown } }).message.author).toEqual({ id: ALICE });
+    });
+
+    it('accepts the messages of one batch in their order', async () => {
+        const calls: string[] = [];
+        const first = Promise.withResolvers<void>();
+        const value = await started({
+            patch: {
+                policy: { senders: [ALICE, MALLORY] },
+                resolveInvoker: async (identity) => {
+                    calls.push(identity.sender);
+
+                    if (identity.sender === ALICE) {
+                        await first.promise;
+                    }
+
+                    return {
+                        id: identity.sender,
+                        kind: 'whatsapp',
+                        permissions: [],
+                    };
+                },
+            },
+        });
+
+        value.sockets.last().deliver(
+            waMessage({ chat: ALICE }),
+            waMessage({ chat: MALLORY }),
+        );
+        await settle();
+
+        try {
+            // the second message waits until the first is accepted
+            expect(calls).toEqual([ALICE]);
+            expect(await value.runs()).toEqual([]);
+        } finally {
+            first.resolve();
+        }
+
+        await settle();
+
+        expect(calls).toEqual([ALICE, MALLORY]);
+        expect((await senders(value)).sort()).toEqual([ALICE, MALLORY].sort());
+    });
+
     it('denies a message whose invoker is unknown', async () => {
         const value = await started({ patch: { resolveInvoker: () => undefined } });
 

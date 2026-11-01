@@ -38,6 +38,22 @@ function isTransient(error: unknown): boolean {
     return !(isObject(error) && typeof error.code === 'string' && TERMINAL_ERROR_CODES.has(error.code));
 }
 
+/** Intake errors whose every failure was a refusal: a redelivery of the message cannot change them. */
+const refusals = new WeakSet<object>();
+
+/**
+ * Whether delivering the message again may help: false for a refusal (a
+ * terminal code, or an intake error without a transient failure left), true
+ * for anything else (a store failure, the channel not started or stopped).
+ */
+export function isRetryableIntakeError(error: unknown): boolean {
+    if (isObject(error) && refusals.has(error)) {
+        return false;
+    }
+
+    return isTransient(error);
+}
+
 /** Waits `ms` on the clock; rejects with the signal's reason once it aborts. */
 function wait(clock: IClock, ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -310,9 +326,17 @@ async function deliver(
 
     const failures = [...terminal, ...transient];
 
-    if (failures.length > 0) {
-        throw intakeError(options, payload.adapter, failures, attempts);
+    if (failures.length === 0) {
+        return;
     }
+
+    const error = intakeError(options, payload.adapter, failures, attempts);
+
+    if (transient.length === 0) {
+        refusals.add(error);
+    }
+
+    throw error;
 }
 
 /**
@@ -361,8 +385,9 @@ export function createChatIntake(): ChatIntake {
     };
 
     return (incoming, ctx) => {
-        const key = isObject(incoming.message) && isId(incoming.message.id) && isId(incoming.threadId) ?
-            hashKey([incoming.adapter?.name ?? '', incoming.threadId, incoming.message.id]) :
+        const author = isObject(incoming.message) && isObject(incoming.message.author) ? incoming.message.author.userId : undefined;
+        const key = isObject(incoming.message) && isId(incoming.message.id) && isId(incoming.threadId) && isId(author) ?
+            hashKey([incoming.adapter?.name ?? '', incoming.threadId, author, incoming.message.id]) :
             undefined;
         const running = key === undefined ? undefined : inFlight.get(key);
 

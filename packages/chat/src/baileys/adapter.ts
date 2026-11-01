@@ -173,7 +173,8 @@ export function createWhatsAppAdapter(options: WhatsAppAdapterOptions): WhatsApp
             raw,
             author: {
                 userId: author,
-                userName: author,
+                // WhatsApp has no verified display name: the payload names the sender by id only
+                userName: '',
                 fullName: '',
                 isBot: false,
                 isMe: raw.key.fromMe === true,
@@ -201,9 +202,12 @@ export function createWhatsAppAdapter(options: WhatsAppAdapterOptions): WhatsApp
                 return;
             }
 
-            for (const raw of upsert.messages) {
-                handle(socket, raw).catch(report);
-            }
+            // one after another: the runs of a batch are created in its message order
+            void (async () => {
+                for (const raw of upsert.messages) {
+                    await handle(socket, raw).catch(report);
+                }
+            })();
         },
     });
 

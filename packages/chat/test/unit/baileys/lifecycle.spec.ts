@@ -534,6 +534,63 @@ describe('WhatsApp connection lifecycle', () => {
         expect(codesOf(errors)).toContain(WHATSAPP_CONNECTION_ERROR_CODE);
     });
 
+    it('a socket end that used the whole bound still flushes and releases a write that settles', async () => {
+        const {
+            engine,
+            auth,
+            sockets,
+            trace,
+            clock,
+            errors,
+        } = fixture();
+
+        await engine.start();
+        sockets.last().open();
+
+        const hold = auth.holdCreds();
+
+        sockets.last().emit('creds.update', { registered: true });
+        sockets.last().onEnd = () => Promise.withResolvers<void>().promise;
+
+        const stopping = engine.stop();
+
+        await settle();
+        clock.advance(WHATSAPP_SHUTDOWN_TIMEOUT_MS);
+        await settle();
+        // the write is still in flight a moment after the socket's bound ran out
+        clock.advance(1);
+        await settle();
+        hold.resolve();
+        await stopping;
+
+        expect(trace.slice(-3)).toEqual(['saveCreds:done', 'flush', 'release']);
+        expect(codesOf(errors)).toEqual([WHATSAPP_CONNECTION_ERROR_CODE]);
+    });
+
+    it('a connect with an aborted signal changes nothing: the next connect goes through', async () => {
+        const trace: string[] = [];
+        const auth = createRecordingAuth(trace);
+        const sockets = createFakeSockets(trace);
+        const connection = createWhatsAppConnection({
+            auth: auth.provider,
+            socketFactory: sockets.factory,
+            onPairing: () => undefined,
+            onError: () => undefined,
+            onMessages: () => undefined,
+        });
+        const clock = new ControllableClock();
+        const reason = new InvalidRunStateError('stopped');
+
+        await expect(connection.connect({ signal: AbortSignal.abort(reason), clock })).rejects.toBe(reason);
+        expect(connection.status()).toBe('stopped');
+        expect(trace).toEqual([]);
+
+        await connection.connect({ signal: new AbortController().signal, clock });
+        expect(trace).toEqual(['acquire', 'load', 'connect']);
+
+        await connection.close();
+    });
+
     it('builds no socket once the signal aborted after the lease arrived', async () => {
         // the abort lands n microtasks after acquire resolved, for every n up to the connect's resumption
         for (let n = 0; n < 12; n += 1) {

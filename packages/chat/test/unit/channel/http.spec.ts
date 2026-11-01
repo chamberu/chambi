@@ -91,9 +91,17 @@ async function serve(input: Partial<IntakeFixtureInput> & { start?: boolean } = 
 }
 
 /** a webhook adapter that hands one text message to the chat, as a Chat SDK adapter's handleWebhook does */
-function forwardMessage(adapter: FakeAdapter, id: string, options: { waitUntil?: boolean } = {}) {
+function forwardMessage(
+    adapter: FakeAdapter,
+    id: string,
+    options: { waitUntil?: boolean; message?: Partial<Parameters<typeof createTextMessage>[0]> } = {},
+) {
     adapter.onWebhook = async (_request, webhookOptions) => {
-        const message = createTextMessage({ id, text: 'private words' });
+        const message = createTextMessage({
+            id,
+            text: 'private words',
+            ...options.message,
+        });
 
         if (options.waitUntil === false) {
             // an adapter that drops both the promise and the options
@@ -310,6 +318,52 @@ describe('chat channel webhooks', () => {
         expect(fixture.errors).toHaveLength(1);
         expect((fixture.errors[0] as ChamviError).code).toBe(CHAT_INTAKE_FAILED_ERROR_CODE);
         expect(JSON.stringify(fixture.errors.map((error) => (error as Error).message))).not.toContain('private words');
+    });
+
+    it('answers the adapter\'s 2xx for a refused media message and reports it once', async () => {
+        const fixture = await serve();
+
+        forwardMessage(fixture.adapter, 'm-media', {
+            message: {
+                attachments: [{
+                    type: 'image',
+                    mimeType: 'image/png',
+                    name: 'a.png',
+                }],
+            },
+        });
+
+        const response = await fixture.post('/channels/chat/fake', '{}');
+
+        // a retry cannot change a refusal: the platform must not redeliver it forever
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe('ok');
+        expect(fixture.errors).toHaveLength(1);
+        expect((fixture.errors[0] as ChamviError).code).toBe('validation_error');
+        expect(await fixture.runs()).toEqual([]);
+    });
+
+    it('answers the adapter\'s 2xx when every agent refused the message terminally', async () => {
+        const fixture = await serve({
+            agents: (channel) => [defineAgent({
+                name: 'assistant',
+                model: textModel(),
+                instructions: 'Answer.',
+                channels: [channel.on({
+                    filter: () => {
+                        throw new Error('filter broke');
+                    },
+                })],
+            })],
+        });
+
+        forwardMessage(fixture.adapter, 'm-filter');
+
+        const response = await fixture.post('/channels/chat/fake', '{}');
+
+        expect(response.status).toBe(200);
+        expect(fixture.errors).toHaveLength(1);
+        expect((fixture.errors[0] as ChamviError).code).toBe(CHAT_INTAKE_FAILED_ERROR_CODE);
     });
 
     it('answers 503 when the adapter drops the message promise and its options', async () => {

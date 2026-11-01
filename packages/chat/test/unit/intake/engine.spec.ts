@@ -102,7 +102,22 @@ describe('chat intake on an engine', () => {
         const runs = await fixture.runs();
 
         expect(runs).toHaveLength(1);
-        expect(runs[0]?.trigger.idempotencyKey).toBe(hashKey(['chat', 'fake', 'fake:chat-1', 'm-1']));
+        expect(runs[0]?.trigger.idempotencyKey).toBe(hashKey(['chat', 'fake', 'fake:chat-1', 'user-1', 'm-1']));
+        expect(fixture.errors).toEqual([]);
+    });
+
+    it('one message id of two authors in one chat starts two runs', async () => {
+        const fixture = await started({ agents: (channel) => [plain(channel, 'assistant')] });
+
+        // concurrent deliveries: the in-flight key must tell the authors apart too
+        fixture.adapter.deliverIgnored(createTextMessage({ id: 'm-1', author: 'user-1' }));
+        fixture.adapter.deliverIgnored(createTextMessage({ id: 'm-1', author: 'user-2' }));
+        await flush();
+
+        const runs = await fixture.runs();
+
+        expect(runs.map((run) => (run.trigger.payload as { message: { author: { id: string } } }).message.author.id).sort())
+            .toEqual(['user-1', 'user-2']);
         expect(fixture.errors).toEqual([]);
     });
 

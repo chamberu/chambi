@@ -9,6 +9,7 @@ import { ChamviError } from '@chamvi/core';
 import type { ChannelContext, ChannelRequest } from '@chamvi/core';
 import { readRequestBody } from '@chamvi/http';
 import { trackIngress } from '../ingress/module.ts';
+import { isRetryableIntakeError } from '../intake/module.ts';
 import type { ChatIngress } from '../ingress/types.ts';
 import {
     CHAT_BODY_LIMIT_BYTES,
@@ -83,12 +84,15 @@ async function settleAll(tasks: Set<Promise<unknown>>): Promise<Map<Promise<unkn
  *
  * The answer waits for every task the call started: the messages the adapter
  * handed to the chat (tracked whether or not it passed `waitUntil` on) and
- * the tasks it gave `waitUntil`. Any of them failing (a message not accepted,
- * the channel not started) answers 503, never the adapter's 2xx; so does no
- * settlement within `CHAT_WEBHOOK_TIMEOUT_MS` on the engine's clock (reported).
- * A failed message is reported by the intake, a failed task of the adapter
- * here. Otherwise the adapter's own Response is the answer (its 401 for a bad
- * signature included). A throwing adapter throws (500).
+ * the tasks it gave `waitUntil`. Any of them failing in a way a redelivery
+ * may fix (a store failure, the channel not started or stopped, a failed task
+ * of the adapter) answers 503, never the adapter's 2xx; so does no settlement
+ * within `CHAT_WEBHOOK_TIMEOUT_MS` on the engine's clock (reported). A message
+ * only refused (media, no text, invalid ids, no conversation identity, a
+ * denial, a throwing filter) gets the adapter's own Response, since a
+ * redelivery cannot change it. A failed message is reported by the intake, a
+ * failed task of the adapter here. Otherwise the adapter's own Response is the
+ * answer (its 401 for a bad signature included). A throwing adapter throws (500).
  */
 export async function receiveWebhook(
     { request, subpath }: ChannelRequest,
@@ -155,11 +159,21 @@ export async function receiveWebhook(
         return outcome.response;
     }
 
+    let retryable = false;
+
     for (const [task, error] of outcome.rejected) {
-        // a message's failure was reported by the intake already
-        if (!messages.has(task)) {
+        if (messages.has(task)) {
+            // a message's failure was reported by the intake already; a refusal stays one on redelivery
+            retryable ||= isRetryableIntakeError(error);
+        } else {
             reportError(options, error);
+            retryable = true;
         }
+    }
+
+    // only refusals: the platform must not redeliver the message forever
+    if (!retryable) {
+        return outcome.response;
     }
 
     return answer(503, 'service_unavailable', `Chat channel "${options.name}" could not accept the webhook; deliver it again.`);

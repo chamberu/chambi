@@ -106,6 +106,14 @@ describe('chat.on()', () => {
         expect(concurrency).toMatch(/^sha256:[0-9a-f]{64}$/);
         expect(subscription.idempotencyKey?.(payload())).toBe(first);
         expect(subscription.idempotencyKey?.(payload({}, 'm-2'))).not.toBe(first);
+        // one message id of another author is another message
+        expect(subscription.idempotencyKey?.(payload({
+            message: {
+                id: 'm-1',
+                text: 'hello',
+                author: { id: 'user-2' },
+            },
+        }))).not.toBe(first);
         expect(subscription.concurrencyKey?.(payload({}, 'm-2'))).toBe(concurrency);
         expect(subscription.concurrencyKey?.(payload({ threadId: 'fake:chat-2' }))).not.toBe(concurrency);
         // another channel's keys differ

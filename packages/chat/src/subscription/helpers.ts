@@ -10,9 +10,13 @@ import { isObject } from 'smob';
 import { hashKey } from '../channel/helpers.ts';
 import type { ChatPayload } from '../channel/types.ts';
 
-/** The idempotency key of a message: one run per agent, message and chat (a hash of channel, adapter, thread and message id). */
+/**
+ * The idempotency key of a message: one run per agent, message and chat (a
+ * hash of channel, adapter, thread, sender and message id; a platform such as
+ * WhatsApp identifies a message by chat, sender and id).
+ */
 export function chatIdempotencyKey(channel: string, payload: Pick<ChatPayload, 'adapter' | 'threadId' | 'message'>): string {
-    return hashKey([channel, payload.adapter, payload.threadId, payload.message.id]);
+    return hashKey([channel, payload.adapter, payload.threadId, payload.message.author.id, payload.message.id]);
 }
 
 /** The concurrency key of a chat: one run per chat at a time (a hash of channel, adapter and thread). */
