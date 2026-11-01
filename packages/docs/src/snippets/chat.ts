@@ -31,7 +31,7 @@ const whatsapp = createWhatsAppChat({
     account: 'assistant',
     auth,
     state,
-    // phone number jids, no device suffix; groups need a mention by default
+    // placeholder jids: phone number jids, no device suffix; groups need a mention by default
     policy: { senders: ['491701111111@s.whatsapp.net'], groups: ['120363000000000001@g.us'] },
     // undefined denies the message
     resolveInvoker: (identity) => ({
