@@ -29,7 +29,8 @@ import type { AgentsWatcherOptions, IAgentsWatcher } from './types.ts';
  * (stable for one interval), and registered only when the load read exactly
  * that content. A folder absent on two consecutive polls is removed from the
  * engine. A failed load or check keeps the registered agent and writes no
- * revision marker. Failed skill preparation retries with bounded backoff.
+ * revision marker. Failed skill preparation (at boot too) is an issue and
+ * retries with bounded backoff while the other agents run.
  * Every poll compares the stored markers with the applied
  * hashes and records an agent whose marker another process moved as an issue.
  * The role decides what reaches the store (see `AgentsWatcherOptions.role`).
@@ -57,6 +58,8 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
     const drifted = new Set<string>();
     // job role: agents whose stored marker differs while they have unsettled runs, by issue message
     const conflicts = new Map<string, string>();
+    // agents whose skill preparation failed, with the error (a job of one of them fails with it)
+    const preparationFailures = new Map<string, unknown>();
 
     let timer: { clear(): void } | undefined;
     let started = false;
@@ -107,6 +110,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         const previousRetry = preparationRetries.get(name);
 
         preparationRetries.delete(name);
+        preparationFailures.delete(name);
 
         if (codeNames.has(name)) {
             record(name, `${name}: a code agent has this name; the folder is not loaded.`);
@@ -149,13 +153,15 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
             return 'done';
         }
 
-        // Boot fails closed. Polling keeps the last valid agent and retries transient or verification failures.
+        // A failed preparation is an issue (boot included): the last valid agent stays, the others start, polling retries with backoff.
         try {
             await engine.prepare({ agents: [loaded.agent], signal });
         } catch (error) {
-            if (!started || stopped || signal?.aborted) {
+            if (stopped || signal?.aborted) {
                 throw error;
             }
+
+            preparationFailures.set(name, error);
 
             const delay = Math.min((previousRetry?.delay ?? pollMs) * 2, Math.max(pollMs, SKILL_PREPARATION_RETRY_MAX_MS));
 
@@ -200,6 +206,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         applied.set(name, hash);
         issues.delete(name);
         drifted.delete(name);
+        preparationFailures.delete(name);
 
         return 'done';
     };
@@ -306,6 +313,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
                 // back to the registered content: nothing to reload (the marker check re-reads a moved marker)
                 attempted.set(name, hash);
                 preparationRetries.delete(name);
+                preparationFailures.delete(name);
                 issues.delete(name);
                 drifted.delete(name);
 
@@ -351,6 +359,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
             attempted.delete(name);
             applied.delete(name);
             preparationRetries.delete(name);
+            preparationFailures.delete(name);
             issues.delete(name);
         }
 
@@ -451,6 +460,9 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
         },
         conflict(name) {
             return conflicts.get(name);
+        },
+        preparationFailure(name) {
+            return preparationFailures.get(name);
         },
         issues() {
             return issues.values().toArray().map((issue) => ({ ...issue }));

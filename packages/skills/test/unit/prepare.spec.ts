@@ -162,7 +162,7 @@ describe('prepareSkills', () => {
         await entered.promise;
 
         try {
-            await expect(skills.prepareSkills(options)).rejects.toThrow(InvalidAgentDefinitionError);
+            await expect(skills.prepareSkills(options)).rejects.toMatchObject({ code: skills.SKILL_PREPARATION_LOCKED_ERROR_CODE });
         } finally {
             release.resolve();
         }
@@ -239,7 +239,7 @@ describe('prepareSkills', () => {
 
             return rename(source, destination);
         });
-        await expect(skills.prepareSkills({ ...options, names: ['design'] })).rejects.toThrow(InvalidAgentDefinitionError);
+        await expect(skills.prepareSkills({ ...options, names: ['design'] })).rejects.toMatchObject({ code: skills.SKILL_PREPARATION_FAILED_ERROR_CODE });
         expect(await fs.readFile(join(options.directory, 'audit/SKILL.md'), 'utf8')).toContain('PRIVATE BODY');
         expect(await fs.readdir(root)).toEqual(['corpus']);
     });

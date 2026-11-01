@@ -193,7 +193,8 @@ it('does not publish retained snapshots when cleanup fails', async () => {
     const { options } = await setup();
 
     vi.spyOn(fs, 'rmdir').mockRejectedValueOnce(new Error('cleanup failed'));
-    await expect(skills.gitSkills(options).load({ signal: new AbortController().signal })).rejects.toThrow(InvalidAgentDefinitionError);
+    await expect(skills.gitSkills(options).load({ signal: new AbortController().signal }))
+        .rejects.toMatchObject({ code: skills.SKILL_PREPARATION_FAILED_ERROR_CODE });
 });
 it('cancels before clone without creating output', async () => {
     const { root, options } = await setup();

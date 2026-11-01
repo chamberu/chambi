@@ -156,14 +156,78 @@ describe('folder skill verification', () => {
         }
     });
 
-    it('aborts boot on required verification failure before a revision or registration', async () => {
-        await writeTree(root.path, { 'greeter/agent.ts': sourceAgent() });
+    it('skips a folder agent whose preparation fails at boot, starts the others and retries with backoff', async () => {
+        await writeTree(root.path, {
+            'greeter/agent.ts': controlledSourceAgent('v1', 'transient'),
+            'keeper/agent.ts': agentFile('keeper', 'test/model', 'keeper'),
+            'provider.json': JSON.stringify({ attempts: 0, ready: false }),
+        });
 
         const setup = build();
 
-        await expect(setup.harness.setup()).rejects.toThrow(/skill/i);
+        await setup.harness.setup();
+        expect(setup.engine().getAgent('keeper')).toBeDefined();
         expect(setup.engine().getAgent('greeter')).toBeUndefined();
         expect(await setup.store.agentRevisions.findOne('greeter')).toBeUndefined();
+        expect(setup.issues()).toMatchObject([{ agent: 'greeter', message: expect.stringMatching(/temporarily unavailable/) }]);
+        expect((await providerState()).attempts).toBe(1);
+
+        await setup.watch();
+        await setup.poll();
+        expect((await providerState()).attempts).toBe(1);
+        await writeFile(join(root.path, 'provider.json'), JSON.stringify({ attempts: 1, ready: true }));
+        await setup.poll();
+        expect((await providerState()).attempts).toBe(2);
+        expect(setup.engine().getAgent('greeter')?.definition.instructions).toBe('v1');
+        expect(await setup.store.agentRevisions.findOne('greeter')).toBeDefined();
+        expect(setup.issues()).toEqual([]);
+    });
+
+    it.each([
+        { failure: 'transient', code: undefined },
+        { failure: 'configuration', code: 'invalid_agent_definition' },
+    ])('fails a job of the agent whose preparation fails ($failure), keeping the error', async ({ failure, code }) => {
+        const throwing = failure === 'transient' ?
+            "throw new Error('source temporarily unavailable');" :
+            "throw Object.assign(new Error('pin mismatch'), { code: 'invalid_agent_definition' });";
+
+        await writeTree(root.path, {
+            'greeter/agent.ts': `export default { name: 'greeter', definition: { model: 'test/model', instructions: 'v1', skills: [${runtimeInput(throwing)}] } };`,
+            'keeper/agent.ts': agentFile('keeper', 'test/model', 'keeper'),
+        });
+
+        const setup = buildAgentsDirHarness({
+            root: root.path, 
+            mode: 'job', 
+            job: { agent: 'greeter' }, 
+        });
+
+        harnesses.push(setup.harness);
+
+        const error = await setup.harness.setup().then(() => undefined, (reason: unknown) => reason);
+
+        expect(error).toBeInstanceOf(Error);
+        expect((error as { code?: unknown }).code).toBe(code);
+        expect(await setup.store.agentRevisions.findOne('greeter')).toBeUndefined();
+    });
+
+    it('runs a job of another agent when one folder agent fails preparation', async () => {
+        await writeTree(root.path, {
+            'greeter/agent.ts': sourceAgent(),
+            'keeper/agent.ts': agentFile('keeper', 'test/model', 'keeper'),
+        });
+
+        const setup = buildAgentsDirHarness({
+            root: root.path, 
+            mode: 'job', 
+            job: { agent: 'keeper' }, 
+        });
+
+        harnesses.push(setup.harness);
+        await setup.harness.setup();
+        expect(setup.engine().getAgent('keeper')).toBeDefined();
+        expect(setup.engine().getAgent('greeter')).toBeUndefined();
+        expect(setup.issues()).toMatchObject([{ agent: 'greeter', message: expect.stringMatching(/skill/i) }]);
     });
 
     it('keeps static definition failures tolerant and never loads their source', async () => {

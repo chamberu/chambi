@@ -6,8 +6,9 @@
  */
 
 import { dirname, resolve } from 'node:path';
-import { InvalidAgentDefinitionError } from '@chamvi/core';
-import { parseSource } from 'skills';
+import { ChamviError, InvalidAgentDefinitionError } from '@chamvi/core';
+import { GitCloneError, parseSource } from 'skills';
+import { SKILL_PREPARATION_FAILED_ERROR_CODE, SKILL_PREPARATION_LOCKED_ERROR_CODE } from './constants.ts';
 import type { PrepareSkillsOptions } from './types.ts';
 
 // eslint-disable-next-line no-control-regex
@@ -15,6 +16,46 @@ const controls = /[\x00-\x1f\x7f]/u;
 
 export function invalid(): never {
     throw new InvalidAgentDefinitionError('Cannot prepare skills: invalid configuration, source, verification or managed directory.');
+}
+
+// git's answers for a source that is not there (deterministic, unlike a network failure)
+const missingSource = /not found|does not appear to be a git repository|does not exist|returned error: 404|unsupported git transport/iu;
+
+/** A retryable failure: generic, since SDK and git messages can hold credentials or private content. */
+export function unavailable(): never {
+    throw new ChamviError({
+        code: SKILL_PREPARATION_FAILED_ERROR_CODE,
+        message: 'Cannot prepare skills: the source could not be fetched or the managed directory could not be written; the preparation can be retried.',
+    });
+}
+
+export function locked(guard: string): never {
+    throw new ChamviError({
+        code: SKILL_PREPARATION_LOCKED_ERROR_CODE,
+        message: `Cannot prepare skills: another preparation holds the guard ${guard}. ` +
+            'A guard whose process is gone (on this host) or older than one hour is recovered on the next attempt.',
+    });
+}
+
+/**
+ * Maps a preparation failure to the configuration error (`invalid()`: a check
+ * refused the input, an authentication failure, a missing repository or
+ * revision), the lock error, or else a retryable failure (`unavailable()`).
+ */
+export function toPreparationError(error: unknown): never {
+    if (error instanceof ChamviError && error.code === SKILL_PREPARATION_LOCKED_ERROR_CODE) {
+        throw error;
+    }
+
+    if (error instanceof InvalidAgentDefinitionError) {
+        invalid();
+    }
+
+    if (error instanceof GitCloneError && (error.isAuthError || (!error.isTimeout && missingSource.test(error.message)))) {
+        invalid();
+    }
+
+    return unavailable();
 }
 
 export function copyPreparationOptions(options: PrepareSkillsOptions) {

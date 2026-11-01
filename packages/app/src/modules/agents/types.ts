@@ -45,8 +45,8 @@ export interface IAgentsWatcher {
     /**
      * Loads every folder and registers its agent (code agents win a name
      * clash), then (role `start`) removes every agent with a revision
-     * marker but neither a folder nor a code agent. Load failures and refused
-     * checks are issues; store failures throw.
+     * marker but neither a folder nor a code agent. Load failures, refused
+     * checks and failed skill preparations are issues; store failures throw.
      */
     boot(): Promise<void>;
     /** Polls every `pollMs` until stopped; idempotent, a no-op once stopped. */
@@ -60,6 +60,11 @@ export interface IAgentsWatcher {
      * marker differs while it has unsettled runs), else undefined.
      */
     conflict(name: string): string | undefined;
+    /**
+     * The error of the last failed skill preparation of `name` (an issue
+     * until a later attempt succeeds or the folder changes), else undefined.
+     */
+    preparationFailure(name: string): unknown;
     /** The current load issues, as a fresh array. */
     issues(): AgentIssue[];
 }
