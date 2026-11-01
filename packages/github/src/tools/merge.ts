@@ -26,6 +26,7 @@ import {
 } from './constants.ts';
 import {
     REPO_PROPERTY,
+    hasFooterMarker,
     inputEffectKey,
     numberSchema,
     objectSchema,
@@ -180,7 +181,7 @@ export function createPullRequestWriteTools(app: IGithubApp, options: { mergeMet
 
                     for await (const { data } of pages) {
                         for (const pull of data) {
-                            if (pull.body?.includes(marker)) {
+                            if (hasFooterMarker(pull.body, marker)) {
                                 return toCreated(pull);
                             }
                         }

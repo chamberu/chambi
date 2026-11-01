@@ -31,3 +31,9 @@ export const SAFE_KEY_PATTERN = '^[\\w:.-]{1,255}$';
 
 /** Backtick runs longer than this are broken up, so the body's fence stays short. */
 export const BACKTICK_RUN_MAX_LENGTH = 31;
+
+/** The first wait before a busy persistent slot's lock is asked again; doubled per attempt. */
+export const SLOT_LOCK_RETRY_MS = 50;
+
+/** The longest wait between two attempts on a busy slot's lock. */
+export const SLOT_LOCK_RETRY_MAX_MS = 1_000;

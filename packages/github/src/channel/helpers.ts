@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto';
 import { isObject } from 'smob';
 import { InvalidAgentDefinitionError, MemoryLockRepository, systemClock } from '@chamvi/core';
-import type { ApprovalOption, ChannelMessage } from '@chamvi/core';
+import type { ApprovalOption, ChannelMessage, IClock } from '@chamvi/core';
 import { isPositiveInteger } from '../subscription/helpers.ts';
 import { REPO_PATTERN } from '../tools/constants.ts';
 import {
@@ -100,6 +100,26 @@ export function resolveOptions(options: GithubChannelOptions): ResolvedGithubCha
 }
 
 /** `owner/repo#number` as owner, repo and number; `undefined` for anything else. */
+/** Waits `ms` on the clock; rejects with the signal's reason once it aborts. */
+export function waitOn(clock: IClock, ms: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) {
+        return Promise.reject(signal.reason);
+    }
+
+    return new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+            timer.clear();
+            reject(signal.reason);
+        };
+        const timer = clock.setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
 export function parseAddress(address: unknown): CommentTarget | undefined {
     const match = typeof address === 'string' ? ADDRESS.exec(address) : null;
 

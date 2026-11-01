@@ -99,13 +99,15 @@ const decision = await github.approve({
 });
 ```
 
-The slot must be a non-empty, well-formed Unicode string without NUL characters so its name survives database storage unchanged; there is no implicit default slot. Repository, issue/PR number, channel name and agent are always part of its identity. Different agents and slots do not overwrite one another. An approval can deliberately replace a status message by naming the same slot, and its slot is stored durably for notification retries and recovery.
+The slot must be a non-empty, well-formed Unicode string without NUL characters so its name survives database storage unchanged; there is no implicit default slot. The GitHub App, repository, issue/PR number, channel name and agent are always part of its identity, so another App never updates the comment; two deployments sharing one App, channel name, agent and slot name do share it. Different agents and slots do not overwrite one another. An approval can deliberately replace a status message by naming the same slot, and its slot is stored durably for notification retries and recovery.
 
 The first send creates a comment. Later sends find it across **all comment pages, without a time cutoff**, then PATCH the complete safely rendered body, including the current run, approval choices, expiry and UI link. Only the authenticated App bot's comments with the matching hidden stable marker qualify. A retry of the currently published message does not write again. Lookup or PATCH failures fail the send, never fall back to POST; if a comment is deleted, a later send discovers its absence and recreates it.
 
-`githubModule()` automatically uses the app store's locks when a slotted message is sent. Include `storeModule()` for these sends; ordinary comments do not need it. For standalone `githubChannel({ app, locks: store.locks })`, pass the same lock repository to all replicas. Omitted `locks` uses channel-local memory, which does **not** coordinate separate instances or processes. A busy slot returns a retryable `github_request` error rather than waiting; approval notification delivery retries through the engine as usual.
+`githubModule()` automatically uses the app store's locks when a slotted message is sent. Include `storeModule()` for these sends; ordinary comments do not need it. For standalone `githubChannel({ app, locks: store.locks })`, pass the same lock repository to all replicas. Omitted `locks` uses channel-local memory, which does **not** coordinate separate instances or processes. A send that finds the slot busy waits for it, asking the lock again with backoff (50 ms, doubling to 1 s) within the send's `timeoutMs`; only a slot busy for the whole timeout fails with a retryable `github_request` error, and approval notification delivery retries through the engine as usual. The lock is released in the background once the send settled: a release that fails is reported to `onError` and never turns a delivered comment into an error, and the lease ends a release that never answers.
 
 The lock covers lookup and mutation, with a lease twice `timeoutMs` and owner-qualified release. It prevents cooperative overlapping sends from creating duplicate comments, not writes from clients that ignore the shared lock or remote requests that survive cancellation/lease expiry. GitHub provides no atomic marker-based upsert. Updates follow delivery order, not PR head freshness: a retry of an older message after another update can restore the older content and approval link. Applications must serialize or cancel superseded work if freshness matters. Existing duplicate comments are not deleted.
+
+The slotted lookup pages **every** comment of the issue or pull request (100 per request), since chamvi keeps no durable comment id. A thread with many thousand comments can outlast `timeoutMs` (30 s by default); raise it for such threads, or use ordinary comments there.
 
 ## Tools
 
@@ -134,6 +136,24 @@ Every tool acts as the installation of the repository it names: the delivery's f
 | `github_merge_pull_request` | effect | Merges at the checked head `sha`; refuses a moved head, a draft, an unknown or blocked `mergeable_state` and any required check that is not green, and never sends a bypass |
 
 Write tools are [effect tools](/guide/effect-tools). A comment embeds an [`effectMarker`](/guide/effect-tools#the-crash-window) keyed by run, issue and model step (`<runId>:github_create_comment:<owner>/<repo>#<n>:<step>`, owner and repo lower-cased since GitHub resolves them case-insensitively), and `alreadyApplied` looks for the App's own comment with that marker before posting. A crash between posting and recording redoes the model step with a different text, and the step-based key still finds the first comment, so nothing is posted twice. A second call for the same issue in the same step returns the first comment.
+
+## Approvals in event-started runs
+
+The GitHub channel is untrusted ingress: every run a delivery starts is tainted from its first step (issue text is written by strangers). `github_create_issue`, `github_create_pull_request`, `github_merge_pull_request` and `github_propose_change` are classified `guardWhenTainted`, so in such a run each of them waits for an [approval](/guide/approvals#automatic-outbound-gates) before it runs, and the source issue gets a generic "An outbound operation requires review" comment (never the arguments). This is intended: a model steered by issue text should not open, merge or propose on its own. An agent whose own policy already decides (an auto-merge maintainer that checks authors and checks itself) opts out per tool:
+
+```ts
+defineAgent({
+    // ...
+    trust: {
+        tools: {
+            github_merge_pull_request: { guardWhenTainted: false },
+            github_create_pull_request: { guardWhenTainted: false },
+        },
+    },
+});
+```
+
+The override is a boolean per tool name; `trust.onTainted: 'deny'` refuses instead of asking. See [Tools](/guide/tools#untrusted-content-and-outbound-tools).
 
 ## Security notes
 

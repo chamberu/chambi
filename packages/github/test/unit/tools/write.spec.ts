@@ -115,6 +115,23 @@ describe('write tools', () => {
         expect(result.id).not.toBe(1);
     });
 
+    it('matches only a marker in the bot comment\'s final footer, not a quoted one', async () => {
+        const {
+            fake,
+            ctx,
+            wrap,
+        } = setup();
+
+        await comment(wrap(), ctx, 'Labelled as a bug.', STEP_1);
+
+        const posted = fake.comments.get('octo/demo#5')![0]!;
+        const marker = effectMarker('run-1:github_create_comment:octo/demo#5:1');
+
+        posted.body = `The bot once wrote ${marker} and then more text.`;
+        await comment(wrap(), ctx, 'Labelled as a bug.', STEP_1);
+        expect(posts(fake)).toHaveLength(2);
+    });
+
     it('a later step posts again', async () => {
         const {
             fake,
@@ -342,6 +359,22 @@ describe('write tools', () => {
                 creator: 'chamvi-test[bot]',
                 since: new Date(START.getTime() - 3_600_000).toISOString(),
             });
+        });
+
+        it('matches only a marker in the issue body\'s final footer', async () => {
+            const {
+                fake,
+                wrap,
+                create,
+            } = cron();
+
+            await create(wrap());
+
+            const issue = fake.issues.get('tada5hi/agents-dev#1')!;
+
+            issue.body = `${String(issue.body)}\n\nA quote of the footer above.`;
+            await create(wrap());
+            expect(issuePosts(fake)).toHaveLength(2);
         });
 
         it('treats an empty labels list as no labels', async () => {

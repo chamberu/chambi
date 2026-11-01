@@ -27,14 +27,27 @@ import {
 import { createPullRequest, toCreated } from './pull-operation.ts';
 import type { GithubCreatedPullRequest, GithubProposeChangeInput, RepoTarget } from './types.ts';
 
-/** No normalization: accepting a different spelling could bypass the allowlist or target a different file. */
+/** Root folders whose files steer CI, hooks or review, refused whatever the allowlist says. */
+const FORBIDDEN_ROOTS = new Set(['.github', '.husky']);
+
+/** File names refused in any folder: review ownership and submodule targets. */
+const FORBIDDEN_NAMES = new Set(['codeowners', '.gitmodules']);
+
+/**
+ * No normalization: accepting a different spelling could bypass the allowlist or target a different file.
+ * Unicode format characters (category Cf: bidi overrides, zero-width joiners) are refused, since they
+ * make a path (and the PR title built from it) read differently from what GitHub writes.
+ */
 function safePath(path: string): boolean {
     const printable = Array.from(path).every((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127);
+    const parts = path.split('/');
 
     return path.length > 0 && path.trim() === path && printable &&
+        !/\p{Cf}/u.test(path) &&
         !/[\\%:#?]/.test(path) &&
-        path.split('/').every((part) => part !== '' && part !== '.' && part !== '..') &&
-        path.split('/')[0]!.toLowerCase() !== '.github';
+        parts.every((part) => part !== '' && part !== '.' && part !== '..') &&
+        !FORBIDDEN_ROOTS.has(parts[0]!.toLowerCase()) &&
+        parts.every((part) => !FORBIDDEN_NAMES.has(part.toLowerCase()));
 }
 
 /** Validate and snapshot policy before any tools can be built, retaining no caller-owned objects. */
@@ -60,7 +73,7 @@ export function normalizeProposals(input: GithubProposalsOptions | undefined): G
             policy.paths.every((path: unknown) => typeof path === 'string' && safePath(path.replaceAll('?', 'x')));
 
         if (!validPaths) {
-            throw new InvalidAgentDefinitionError('proposals.repos paths must be non-empty, safe repository-relative globs (not .github).');
+            throw new InvalidAgentDefinitionError('proposals.repos paths must be non-empty, safe repository-relative globs (not .github, .husky, CODEOWNERS or .gitmodules).');
         }
 
         const key = name.toLowerCase();
@@ -85,7 +98,7 @@ function validate(input: GithubProposeChangeInput, policy: GithubProposalsOption
     const allowed = allowedPath(input.path, input.repo, policy);
 
     if (!allowed) {
-        throw new ValidationError('Proposal repository/path is not allowed (unsafe paths and .github are always forbidden).');
+        throw new ValidationError('Proposal repository/path is not allowed (unsafe paths, .github, .husky, CODEOWNERS and .gitmodules are always forbidden).');
     }
 
     if (typeof input.content !== 'string') {
@@ -97,8 +110,14 @@ function validate(input: GithubProposeChangeInput, policy: GithubProposalsOption
     return target;
 }
 
+/**
+ * One effect per run, repository, path and content: a corrected proposal (another
+ * content approved for the same path) is a new effect, never the recorded first one.
+ */
 function proposalKey(input: GithubProposeChangeInput, ctx: ToolContext): string {
-    return `${ctx.run.runId}:propose:${input.repo.toLowerCase()}:${input.path}`;
+    const content = createHash('sha256').update(input.content).digest('hex');
+
+    return `${ctx.run.runId}:propose:${input.repo.toLowerCase()}:${input.path}:${content}`;
 }
 
 function proposalBranch(input: GithubProposeChangeInput, ctx: ToolContext): string {
@@ -190,13 +209,16 @@ async function readFile(octokit: GithubOctokit, target: RepoTarget, path: string
 
 const MAX_PULL_PAGES = 10;
 const MAX_HISTORY_COMMITS = 250;
+const MAX_GENERATIONS = 250;
 
-async function findPulls(octokit: GithubOctokit, target: RepoTarget, branch: string) {
+/** The PRs of one head branch (`head=<owner>:<branch>`), never a scan of the repository's PRs. */
+async function pullsOf(octokit: GithubOctokit, target: RepoTarget, branch: string) {
     const pulls = [];
     let pageCount = 0;
     const pages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/pulls', {
         ...target,
         state: 'all',
+        head: `${target.owner}:${branch}`,
         per_page: 100,
     });
 
@@ -209,11 +231,38 @@ async function findPulls(octokit: GithubOctokit, target: RepoTarget, branch: str
             throw new ValidationError('Proposal PR discovery limit exceeded; manual review is required.');
         }
 
-        pulls.push(...page.data.filter((item) => (item.head.ref === branch || item.head.ref.startsWith(`${branch}-g-`)) &&
+        pulls.push(...page.data.filter((item) => item.head.ref === branch &&
             item.head.repo?.full_name.toLowerCase() === `${target.owner}/${target.repo}`.toLowerCase()));
     }
 
     return pulls;
+}
+
+/**
+ * Every generation of a proposal: the root branch, then `<root>-g-<n>` with `n` the
+ * highest PR number seen so far (the branch `selectBranch` names), until a generation
+ * has no PR. Each step is one filtered request, so the repository's PR count is irrelevant.
+ */
+async function findPulls(octokit: GithubOctokit, target: RepoTarget, root: string) {
+    const pulls: Awaited<ReturnType<typeof pullsOf>> = [];
+    const seen = new Set<string>();
+    let branch = root;
+
+    for (let generation = 0; generation < MAX_GENERATIONS; generation += 1) {
+        seen.add(branch);
+        pulls.push(...await pullsOf(octokit, target, branch));
+
+        const previous = Math.max(0, ...pulls.map((pull) => pull.number));
+        const next = `${root}-g-${previous}`;
+
+        if (previous === 0 || seen.has(next)) {
+            return pulls;
+        }
+
+        branch = next;
+    }
+
+    throw new ValidationError('Proposal generation limit exceeded; manual review is required.');
 }
 
 type ProposalPull = Awaited<ReturnType<typeof findPulls>>[number];
@@ -331,7 +380,7 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
     return {
         github_propose_change: defineEffectTool<GithubProposeChangeInput, GithubCreatedPullRequest>({
             trust: { guardWhenTainted: true },
-            description: 'Propose replacement file content in an allowlisted repository/path. Creates or updates one stable branch and open PR for this agent and path. Never merges; .github paths are forbidden.',
+            description: 'Propose replacement file content in an allowlisted repository/path. Creates or updates one stable branch and open PR for this agent and path. Never merges; .github, .husky, CODEOWNERS and .gitmodules paths are forbidden.',
             inputSchema: objectSchema<GithubProposeChangeInput>({
                 repo: REPO_PROPERTY,
                 path: { type: 'string', minLength: 1 },
@@ -497,8 +546,9 @@ export function createProposalTools(app: IGithubApp, policy: GithubProposalsOpti
                         body,
                     });
 
+                    // The base is not re-checked here: a busy default branch moving after
+                    // the PR write would report an applied effect as a failure.
                     await assertHead(octokit, target, branch, head);
-                    await assertHead(octokit, target, base, baseSha);
 
                     return result;
                 });

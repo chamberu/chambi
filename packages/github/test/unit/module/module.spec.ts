@@ -259,7 +259,8 @@ describe('githubModule', () => {
         harnesses.push(harness);
 
         const store = harness.container.resolve(AppToken.STORE);
-        const acquire = vi.spyOn(store.locks, 'acquire').mockResolvedValue(false);
+        // A busy slot is asked again with backoff (on the app's clock) until the send's timeout.
+        const acquire = vi.spyOn(store.locks, 'acquire').mockResolvedValueOnce(false);
         const [channel] = harness.container.resolveAll(AppToken.CHANNELS);
         const message = {
             kind: 'message' as const,
@@ -281,17 +282,13 @@ describe('githubModule', () => {
             },
         };
 
-        await expect(channel!.out!(message, 'octo/demo#7', opts)).rejects.toMatchObject({ code: 'github_request' });
-        expect(acquire).toHaveBeenCalledOnce();
-        expect(fixture.comments.size).toBe(0);
-        acquire.mockRestore();
-
         await channel!.out!(message, 'octo/demo#7', opts);
         await channel!.out!({
             ...message,
             key: 'status-2',
             body: 'Latest status',
         }, 'octo/demo#7', opts);
+        expect(acquire.mock.calls.length).toBeGreaterThan(2);
         expect(fixture.comments.get('octo/demo#7')).toHaveLength(1);
         expect(fixture.comments.get('octo/demo#7')?.[0]?.body).toContain('Latest status');
     });

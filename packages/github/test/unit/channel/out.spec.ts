@@ -69,6 +69,16 @@ function setupPersistent(patch: Partial<GithubChannelOptions> = {}) {
     return setup(patch, {}, STATUS_APPROVAL);
 }
 
+/** Advances the clock in steps, letting the send's promises settle in between, until `done()`. */
+async function driveUntil(clock: { advance(ms: number): void }, done: () => boolean, stepMs = 100): Promise<void> {
+    for (let index = 0; index < 1000 && !done(); index += 1) {
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+        clock.advance(stepMs);
+    }
+}
+
 async function rejection(promise: Promise<unknown>): Promise<ChamviError> {
     const error = await promise.then(() => undefined, (e: unknown) => e);
 
@@ -530,7 +540,7 @@ describe('githubChannel persistent comments', () => {
         expect(patches()).toHaveLength(1);
     });
 
-    it('coordinates independently constructed instances with shared locks and retries the busy loser', async () => {
+    it('lets a send wait for a busy slot with shared locks, then update the winner\'s comment', async () => {
         const locks = new MemoryLockRepository();
         const {
             send,
@@ -538,14 +548,18 @@ describe('githubChannel persistent comments', () => {
             peer,
             posts,
             patches,
+            clock,
         } = setupPersistent({ locks });
         const other = peer();
         const entered = Promise.withResolvers<void>();
         const proceed = Promise.withResolvers<void>();
+        let held = true;
 
         fake.route('GET', COMMENTS, async () => {
-            entered.resolve();
-            await proceed.promise;
+            if (held) {
+                entered.resolve();
+                await proceed.promise;
+            }
 
             return { status: 200, body: fake.comments.get(ADDRESS) ?? [] };
         });
@@ -554,26 +568,70 @@ describe('githubChannel persistent comments', () => {
 
         await entered.promise;
 
-        const retry = () => other.out!({ ...STATUS_APPROVAL, key: 'next-approval' }, ADDRESS, {
+        let settled = false;
+        const loser = other.out!({ ...STATUS_APPROVAL, key: 'next-approval' }, ADDRESS, {
+            signal: new AbortController().signal,
+            trigger: githubTrigger(),
+        }).finally(() => {
+            settled = true;
+        });
+
+        await driveUntil(clock, () => fake.requests.length > 1, 50);
+        expect(settled).toBe(false);
+        expect(posts()).toHaveLength(0);
+
+        held = false;
+        proceed.resolve();
+        await winner;
+        await driveUntil(clock, () => settled);
+        await loser;
+
+        expect(posts()).toHaveLength(1);
+        expect(patches()).toHaveLength(1);
+    });
+
+    it('fails as busy when the slot stays locked for the whole timeout', async () => {
+        const locks = new MemoryLockRepository();
+        const acquire = vi.spyOn(locks, 'acquire').mockResolvedValue(false);
+        const {
+            send,
+            fake,
+            clock,
+        } = setupPersistent({ locks });
+        let settled = false;
+        const pending = send().catch((error: unknown) => error).finally(() => {
+            settled = true;
+        });
+
+        await driveUntil(clock, () => settled, 1_000);
+
+        const error = await pending;
+
+        expect(error).toMatchObject({ code: 'github_request', message: expect.stringMatching(/busy/i) });
+        expect(acquire.mock.calls.length).toBeGreaterThan(2);
+        expect(fake.requests).toHaveLength(0);
+    });
+
+    it('keys a slot by the GitHub App, so another App never updates the comment', async () => {
+        const {
+            send,
+            gh,
+            peer,
+            posts,
+            patches,
+        } = setupPersistent();
+
+        await send();
+
+        const other = peer({ app: { ...gh, appId: `${gh.appId}0` } });
+
+        await other.out!({ ...STATUS_APPROVAL, key: 'next-approval' }, ADDRESS, {
             signal: new AbortController().signal,
             trigger: githubTrigger(),
         });
 
-        try {
-            const error = await rejection(retry());
-
-            expect(error.code).toBe('github_request');
-            expect(error.message).toMatch(/busy/i);
-            expect(posts()).toHaveLength(0);
-        } finally {
-            proceed.resolve();
-            await winner;
-        }
-
-        expect(posts()).toHaveLength(1);
-        await retry();
-        expect(posts()).toHaveLength(1);
-        expect(patches()).toHaveLength(1);
+        expect(posts()).toHaveLength(2);
+        expect(patches()).toHaveLength(0);
     });
 
     it('releases the slot after a failed POST', async () => {
@@ -702,7 +760,7 @@ describe('githubChannel persistent comments', () => {
         await expect(send(STATUS_APPROVAL, ADDRESS, githubTrigger(), controller.signal)).rejects.toBe(reason);
     });
 
-    it.each(['abort', 'timeout'])('settles promptly on %s while release remains pending after a successful write', async (mode) => {
+    it('resolves a delivered comment while the release stays pending, never as a timeout', async () => {
         const locks = new MemoryLockRepository();
         const entered = Promise.withResolvers<void>();
 
@@ -712,48 +770,32 @@ describe('githubChannel persistent comments', () => {
             return new Promise(() => {});
         });
 
+        const onError = vi.fn();
         const {
             send,
             fake,
             clock,
-        } = setupPersistent({ locks });
-        const controller = new AbortController();
-        const reason = new Error('cancel while releasing');
-        let settled = false;
-        const pending = send(STATUS_APPROVAL, ADDRESS, githubTrigger(), controller.signal).catch((error: unknown) => {
-            settled = true;
+        } = setupPersistent({ locks, onError });
 
-            return error;
-        });
-
+        await send();
         await entered.promise;
+        clock.advance(GITHUB_CHANNEL_TIMEOUT_MS);
+
         expect(fake.comments.get(ADDRESS)).toHaveLength(1);
-
-        if (mode === 'abort') {
-            controller.abort(reason);
-        } else {
-            clock.advance(GITHUB_CHANNEL_TIMEOUT_MS);
-        }
-
-        await vi.waitFor(() => expect(settled).toBe(true), { timeout: 100 });
-
-        if (mode === 'abort') {
-            expect(await pending).toBe(reason);
-        } else {
-            expect(await pending).toMatchObject({ code: 'github_request', message: expect.stringContaining('within') });
-        }
+        expect(onError).not.toHaveBeenCalled();
     });
 
-    it('wraps a rejected release as github_request after a successful write', async () => {
+    it('reports a rejected release to onError and still resolves the delivered comment', async () => {
         const locks = new MemoryLockRepository();
+        const failure = new Error('lock store unavailable');
 
-        vi.spyOn(locks, 'release').mockRejectedValueOnce(new Error('lock store unavailable'));
+        vi.spyOn(locks, 'release').mockRejectedValueOnce(failure);
 
-        const { send, fake } = setupPersistent({ locks });
-        const error = await rejection(send());
+        const onError = vi.fn();
+        const { send, fake } = setupPersistent({ locks, onError });
 
-        expect(error.code).toBe('github_request');
-        expect(error.message).toContain('lock store unavailable');
+        await send();
+        await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
         expect(fake.comments.get(ADDRESS)).toHaveLength(1);
     });
 

@@ -112,6 +112,24 @@ describe('github_create_pull_request', () => {
         expect(fake.requests.find((r) => r.method === 'GET' && r.path === '/repos/octo/demo/pulls')?.query).toMatchObject({ state: 'all', head: 'octo:chamvi/fix-ci' });
     });
 
+    it('matches only a marker in the pull body\'s final footer', async () => {
+        const {
+            fake,
+            wrap,
+            call,
+            pullPosts,
+        } = setup();
+
+        await call(wrap(), 'github_create_pull_request', INPUT);
+
+        const pull = fake.pulls.get('octo/demo#1')!;
+
+        pull.body = `${String(pull.body)}\n\nQuoted footer, then edited.`;
+        pull.state = 'closed';
+        await call(wrap(), 'github_create_pull_request', INPUT);
+        expect(pullPosts()).toHaveLength(2);
+    });
+
     it('refuses a head outside HEAD_PATTERN', async () => {
         const { wrap, call } = setup();
 

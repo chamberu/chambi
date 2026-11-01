@@ -244,6 +244,16 @@ export function bindSignal(octokit: GithubOctokit, signal: AbortSignal): GithubO
 }
 
 /**
+ * Whether `body` ends with `marker` as its own final line, the footer the
+ * write tools append (`<text>\n\n<marker>`); trailing whitespace GitHub may
+ * add is ignored. A marker quoted inside the text never counts, as for the
+ * channel's comments.
+ */
+export function hasFooterMarker(body: string | null | undefined, marker: string): boolean {
+    return typeof body === 'string' && body.trimEnd().endsWith(`\n${marker}`);
+}
+
+/**
  * `promise`, or a rejection with the signal's reason once it aborts. For a
  * shared request (the single-flight installation lookup) one caller's
  * signal must not abort, so the caller only stops waiting.

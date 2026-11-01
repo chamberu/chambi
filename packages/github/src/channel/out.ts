@@ -18,8 +18,13 @@ import { isSameLogin } from '../app/helpers.ts';
 import { isPositiveInteger } from '../subscription/helpers.ts';
 import { GITHUB_REQUEST_ERROR_CODE } from '../tools/constants.ts';
 import { untilAborted } from '../tools/helpers.ts';
-import { RECONCILE_SKEW_MS } from './constants.ts';
-import { markerKey, parseAddress, renderComment } from './helpers.ts';
+import { RECONCILE_SKEW_MS, SLOT_LOCK_RETRY_MAX_MS, SLOT_LOCK_RETRY_MS } from './constants.ts';
+import {
+    markerKey,
+    parseAddress,
+    renderComment,
+    waitOn,
+} from './helpers.ts';
 import type { ResolvedGithubChannelOptions } from './types.ts';
 
 function requestError(error: unknown): ChamviError {
@@ -94,8 +99,12 @@ async function installationOf(
  * The channel's `out`: one comment on the issue or pull request `address`
  * (`owner/repo#n`) as the GitHub App, carrying `effectMarker(message.key)`.
  * A resend first looks for the App bot's comment holding the marker and
- * posts nothing when it finds one. Persistent mode locks a stable slot,
- * searches without a time cutoff, then PATCHes that bot's matching comment.
+ * posts nothing when it finds one. Persistent mode locks a stable slot
+ * (keyed by App, repository, issue, channel, agent and slot; a busy lock is
+ * asked again with backoff until `timeoutMs`), searches without a time
+ * cutoff, then PATCHes that bot's matching comment. The lock is released
+ * in the background once the send settled, so a slow or failing release
+ * (reported to `onError`) never fails a delivered comment.
  * Throws a ValidationError for another
  * address (before any request) and InvalidAgentDefinitionError without an
  * installation (before any comment request), a `github_request` ChamviError for a GitHub failure
@@ -126,6 +135,7 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
         const timer = options.clock.setTimeout(() => controller.abort(timeout), options.timeoutMs);
         const signal = opts.signal ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal;
         const slotKey = message.slot !== undefined ? `github:comment:${createHash('sha256').update(JSON.stringify([
+            String(app.appId),
             target.owner.toLowerCase(),
             target.repo.toLowerCase(),
             target.number,
@@ -135,28 +145,42 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
         ])).digest('hex')}` : undefined;
         const owner = randomUUID();
         let acquired = false;
+        let busy = false;
+        const busyError = new ChamviError({
+            message: `GitHub persistent comment slot stayed busy for ${options.timeoutMs}ms; retry delivery.`,
+            code: GITHUB_REQUEST_ERROR_CODE,
+        });
 
         try {
             try {
                 if (slotKey) {
-                    const acquisition = options.locks.acquire(slotKey, owner, options.timeoutMs * 2).then(async (taken) => {
-                        // A cancelled caller may stop waiting before the store answers.
-                        if (taken && signal.aborted) {
-                            await options.locks.release(slotKey, owner);
+                    let wait = SLOT_LOCK_RETRY_MS;
 
-                            return false;
+                    for (;;) {
+                        const acquisition = options.locks.acquire(slotKey, owner, options.timeoutMs * 2).then(async (taken) => {
+                            // A cancelled caller may stop waiting before the store answers.
+                            if (taken && signal.aborted) {
+                                await options.locks.release(slotKey, owner);
+
+                                return false;
+                            }
+
+                            acquired = taken;
+
+                            return taken;
+                        });
+
+                        await untilAborted(acquisition, signal);
+                        signal.throwIfAborted();
+
+                        if (acquired) {
+                            break;
                         }
 
-                        acquired = taken;
-
-                        return taken;
-                    });
-
-                    await untilAborted(acquisition, signal);
-                    signal.throwIfAborted();
-
-                    if (!acquired) {
-                        throw new ChamviError({ message: 'GitHub persistent comment slot is busy; retry delivery.', code: GITHUB_REQUEST_ERROR_CODE });
+                        // Another send holds the slot: wait for it within this send's timeout.
+                        busy = true;
+                        await waitOn(options.clock, wait, signal);
+                        wait = Math.min(wait * 2, SLOT_LOCK_RETRY_MAX_MS);
                     }
                 }
 
@@ -218,12 +242,17 @@ export function createCommentSender(options: ResolvedGithubChannelOptions) {
                 });
             } finally {
                 if (acquired && slotKey) {
-                    await untilAborted(options.locks.release(slotKey, owner), signal);
+                    // Not bound to the abort: the lease (twice timeoutMs) covers a release that never answers.
+                    options.locks.release(slotKey, owner).catch(options.onError);
                 }
             }
         } catch (error) {
             if (opts.signal?.aborted) {
                 throw opts.signal.reason;
+            }
+
+            if (controller.signal.aborted && busy && !acquired) {
+                throw busyError;
             }
 
             if (error instanceof ChamviError) {

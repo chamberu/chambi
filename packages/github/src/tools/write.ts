@@ -15,6 +15,7 @@ import type { IGithubApp } from '../app/types.ts';
 import { ISSUE_TITLE_MAX_CHARS, LABELS_MAX } from './constants.ts';
 import {
     REPO_PROPERTY,
+    hasFooterMarker,
     inputEffectKey,
     numberSchema,
     objectSchema,
@@ -207,7 +208,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
 
                     for await (const { data } of pages) {
                         for (const comment of data) {
-                            if (!comment.body?.includes(marker)) {
+                            if (!hasFooterMarker(comment.body, marker)) {
                                 continue;
                             }
 
@@ -337,7 +338,7 @@ export function createWriteTools(app: IGithubApp): ToolSet {
 
                     for await (const { data } of pages) {
                         for (const issue of data) {
-                            if (issue.body?.includes(marker)) {
+                            if (hasFooterMarker(issue.body, marker)) {
                                 return { number: issue.number, url: issue.html_url };
                             }
                         }
