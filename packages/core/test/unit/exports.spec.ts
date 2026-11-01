@@ -99,6 +99,7 @@ describe('public api', () => {
         'effectMarker',
         'approve',
         'outboundApproved',
+        'runSource',
         'ChamviError',
         'BudgetExceededError',
         'ArtifactNotFoundError',

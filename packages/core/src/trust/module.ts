@@ -11,6 +11,7 @@ import { stableHash } from '../effect/helpers.ts';
 import { InvalidRunStateError, ToolDeniedError } from '../errors/index.ts';
 import type { RunContext, RunTaint } from '../run/types.ts';
 import type { AgentTrust, ToolContext } from '../tool/types.ts';
+import type { RunSource } from './types.ts';
 
 type TrustState = {
     taint?: RunTaint;
@@ -22,7 +23,7 @@ type TrustState = {
     persist: (taint: RunTaint) => Promise<unknown>;
     engine?: Pick<IEngine, 'getChannel'>;
     /** The run's source channel and address when the trust context was bound, never the mutable `run.trigger`. */
-    source: { channel: string; address?: string };
+    source: RunSource;
 };
 
 const executions = new WeakMap<RunContext, TrustState>();
@@ -32,6 +33,18 @@ export function bindTrust(run: RunContext, options: Omit<TrustState, 'pending' |
     const { channel, address } = run.trigger;
 
     executions.set(run, { ...options, source: { channel, ...(address !== undefined ? { address } : {}) } });
+}
+
+/**
+ * The run's source channel and address as the engine bound them when the
+ * execution started, unaffected by tool code writing to `ctx.run.trigger`.
+ * `undefined` for a context the engine did not build. Trust classifiers that
+ * exempt the source destination read this, never `ctx.run.trigger`.
+ */
+export function runSource(ctx: Pick<ToolContext, 'run'>): RunSource | undefined {
+    const source = ctx?.run ? executions.get(ctx.run)?.source : undefined;
+
+    return source ? { ...source } : undefined;
 }
 
 /** Persistence failure is fatal to the execution, never a usable tool result. */
