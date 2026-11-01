@@ -15,6 +15,8 @@
             "@chamvi/github": ["./packages/github/src/index.ts"],
             "@chamvi/github/module": ["./packages/github/src/module/index.ts"],
             "@chamvi/http": ["./packages/http/src/index.ts"],
+            "@chamvi/knowledge": ["./packages/knowledge/src/index.ts"],
+            "@chamvi/knowledge/module": ["./packages/knowledge/src/module/index.ts"],
             "@chamvi/sandbox": ["./packages/sandbox/src/index.ts"],
             "@chamvi/sandbox/module": ["./packages/sandbox/src/module/index.ts"],
             "@chamvi/sandbox-docker": ["./packages/sandbox-docker/src/index.ts"],

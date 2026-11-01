@@ -1,6 +1,6 @@
 # @chamvi/test-kit
 
-Test helpers for chamvi: a controllable clock, the repository and workspace contract suites, a git fixture and an in-process fake GitHub.
+Test helpers for chamvi: a controllable clock, the repository, knowledge repository and workspace contract suites, mock language and embedding models, a git fixture and an in-process fake GitHub.
 
 ```bash
 npm install --save-dev @chamvi/test-kit @chamvi/core vitest
@@ -37,6 +37,24 @@ Registers the Vitest suite every sandbox provider's workspaces must pass: argv e
 describeWorkspaceContract('local', () => createLocalSandbox().create({ runId: 'r1' }));
 ```
 
+## describeKnowledgeRepositoryContract
+
+```ts
+function describeKnowledgeRepositoryContract(name: string, create: KnowledgeRepositoryContractFactory): void;
+
+type KnowledgeRepositoryContractFactory = () => ContractKnowledgeRepository | Promise<ContractKnowledgeRepository>; // every IKnowledgeRepository is one
+```
+
+Registers the Vitest suite every [`@chamvi/knowledge`](/reference/knowledge) repository must pass: collections (upsert, copies in and out, `Date` fields revived, code-point order), documents and chunks per generation (refused without their collection), `deleteGeneration` and `deleteGenerationsExcept`, and the cosine search (ranking, `topK`, `minScore`, the generation, ties by document and index). The types are structural, so the kit does not depend on `@chamvi/knowledge`.
+
+## mockEmbeddingModel
+
+```ts
+function mockEmbeddingModel(options?: { dimensions?: number }): MockEmbeddingModel; // calls: every doEmbed call
+```
+
+An AI SDK embedding model without a provider: a hashed bag of words, normalized, 64 dimensions by default (1 to 8192), so texts sharing words score close. `calls` records each call's values.
+
 ## createGitFixture
 
 ```ts
@@ -67,14 +85,6 @@ An in-process GitHub for `createGithubApp({ fetch: fake.fetch, privateKey: fake.
 | `failNext(method, path, status)` | The next matching request answers `status`, once |
 
 A request whose `signal` aborts, also while a route handler is pending, rejects with the signal's reason, as Node's `fetch` does. It never touches the network.
-
-## mockEmbeddingModel
-
-```ts
-function mockEmbeddingModel(options?: { dimensions?: number }): MockEmbeddingModel; // calls: every doEmbed call
-```
-
-An AI SDK embedding model without a provider: a hashed bag of words, normalized, 64 dimensions by default (1 to 8192), so texts sharing words score close. `calls` records each call's values.
 
 ## ControllableClock
 

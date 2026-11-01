@@ -159,6 +159,9 @@ function openclawModule(options?: OpenclawModuleOptions): IModule;         // 'c
 // @chamvi/ui/module
 function uiModule(options?: UiModuleOptions): IModule;                     // 'chamvi:ui'
 
+// @chamvi/knowledge/module
+function knowledgeModule(options?: KnowledgeModuleOptions): KnowledgeModule; // .knowledge: IKnowledge, 'chamvi:knowledge'
+
 // @chamvi/app/authup
 function authupModule(options?: AuthupModuleOptions): IModule;             // 'chamvi:authup'
 function oidcModule(options: OidcOptions): IModule;                        // 'chamvi:oidc', no env form

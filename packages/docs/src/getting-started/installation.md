@@ -80,6 +80,7 @@ npm install --save-dev tsdown   # only for chamvi build
 | `@chamvi/tool-web` | Shipped (0.x), `web_fetch`: public pages as markdown, registry JSON as is |
 | `@chamvi/channel-openclaw` | Shipped (0.x), the OpenClaw channel: messages and approval requests into a chat |
 | `@chamvi/ui` | Shipped (0.x), the dashboard |
+| `@chamvi/knowledge` | Unreleased, knowledge collections searched by meaning through `knowledge_search` |
 | `@chamvi/app`, `@chamvi/cli` | Shipped (0.x), `createApp()` and the `chamvi` bin |
 | Base image, Helm chart, template | <Badge type="warning" text="Planned" /> See the [roadmap](/roadmap) |
 
