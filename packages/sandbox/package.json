@@ -1,6 +1,6 @@
 {
     "name": "@chamvi/sandbox",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "type": "module",
     "description": "Sandbox contracts, workspace rules and run-scoped workspaces for chamvi agents.",
     "author": {
@@ -56,14 +56,14 @@
         "smob": "^1.6.2"
     },
     "devDependencies": {
-        "@chamvi/app": "^0.4.0",
-        "@chamvi/core": "^0.4.0",
+        "@chamvi/app": "^0.4.1",
+        "@chamvi/core": "^0.4.1",
         "ai": "^7.0.150",
         "zod": "^4.6.7"
     },
     "peerDependencies": {
-        "@chamvi/app": "^0.4.0",
-        "@chamvi/core": "^0.4.0",
+        "@chamvi/app": "^0.4.1",
+        "@chamvi/core": "^0.4.1",
         "ai": "^7"
     },
     "peerDependenciesMeta": {
