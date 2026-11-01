@@ -61,10 +61,11 @@ export interface IAgentsWatcher {
      */
     conflict(name: string): string | undefined;
     /**
-     * The error of the last failed skill preparation of `name` (an issue
-     * until a later attempt succeeds or the folder changes), else undefined.
+     * The last failed skill preparation of `name` (an issue until a later
+     * attempt succeeds or the folder changes) as `{ error }`, so a rejection
+     * with `undefined` still counts, else undefined.
      */
-    preparationFailure(name: string): unknown;
+    preparationFailure(name: string): { error: unknown } | undefined;
     /** The current load issues, as a fresh array. */
     issues(): AgentIssue[];
 }

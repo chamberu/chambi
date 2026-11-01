@@ -25,6 +25,7 @@ import type { PrepareSkillsOptions, PreparedSkill } from './types.ts';
 import {
     copyPreparationOptions,
     invalid,
+    isCancellation,
     toPreparationError,
     unavailable,
 } from './helpers.ts';
@@ -211,7 +212,14 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
                 path,
             });
 
-            const verdict = await (async () => verify?.(prepared))().catch(() => invalid());
+            // the caller's own cancellation stays a cancellation; any other verifier failure is a refusal
+            const verdict = await (async () => verify?.(prepared))().catch((error: unknown) => {
+                if (isCancellation(error, signal)) {
+                    throw error;
+                }
+
+                return invalid();
+            });
 
             if (verdict !== undefined) {
                 invalid();
@@ -253,14 +261,8 @@ export async function prepareSkills(options: PrepareSkillsOptions): Promise<read
     } catch (error) {
         failed = true;
 
-        if (signal?.aborted && error === signal.reason) {
-            throw error;
-        }
-
-        if (signal?.aborted && Error.isError(error)) {
-            if ('code' in error && error.code === 'ABORT_ERR' && error.cause === signal.reason) {
-                throw signal.reason;
-            }
+        if (isCancellation(error, signal)) {
+            throw signal!.reason;
         }
 
         return toPreparationError(error);

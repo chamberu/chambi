@@ -134,4 +134,8 @@ describe('jsonBody', () => {
     it.each(['', 'Rolls out v2.', '{ not json', '42', '"text"', 'null', '{} trailing'])('answers undefined for %j', (body) => {
         expect(jsonBody(body)).toBeUndefined();
     });
+
+    it('keeps a body above the size cap as text', () => {
+        expect(jsonBody(JSON.stringify({ input: 'x'.repeat(20_000) }))).toBeUndefined();
+    });
 });

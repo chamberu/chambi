@@ -211,6 +211,25 @@ describe('folder skill verification', () => {
         expect(await setup.store.agentRevisions.findOne('greeter')).toBeUndefined();
     });
 
+    it('fails a job of the agent whose preparation rejects with undefined, keeping that rejection', async () => {
+        await writeTree(root.path, {
+            'greeter/agent.ts': `export default { name: 'greeter', definition: { model: 'test/model', instructions: 'v1', skills: [${runtimeInput('throw undefined;')}] } };`,
+            'keeper/agent.ts': agentFile('keeper', 'test/model', 'keeper'),
+        });
+
+        const setup = buildAgentsDirHarness({
+            root: root.path,
+            mode: 'job',
+            job: { agent: 'greeter' },
+        });
+
+        harnesses.push(setup.harness);
+
+        const outcome = await setup.harness.setup().then(() => 'resolved', (reason: unknown) => ({ reason }));
+
+        expect(outcome).toEqual({ reason: undefined });
+    });
+
     it('runs a job of another agent when one folder agent fails preparation', async () => {
         await writeTree(root.path, {
             'greeter/agent.ts': sourceAgent(),

@@ -8,6 +8,7 @@
 import {
     Column,
     Entity,
+    Index,
     JoinColumn,
     ManyToOne,
     PrimaryColumn,
@@ -17,6 +18,7 @@ import type { ConversationSnapshot } from '@chamvi/core';
 import { OPTIONAL_JSON_TRANSFORMER, TableName } from './constants.ts';
 import { RunEntity } from './run.ts';
 
+@Index(['activeRunId'])
 @Entity({ name: TableName.CONVERSATIONS })
 export class ConversationEntity {
     @PrimaryColumn({

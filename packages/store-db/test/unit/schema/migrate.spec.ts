@@ -12,9 +12,11 @@ import {
     expect,
     it,
 } from 'vitest';
+import { RunNotFoundError } from '@chamvi/core';
 import {
     DatabaseRunRepository,
     STORE_MIGRATIONS,
+    createDatabaseStore,
     migrateStore,
     pendingMigrations,
 } from '@chamvi/store-db';
@@ -141,6 +143,20 @@ describePostgres('schema', () => {
         await expect(ds.query('UPDATE chamvi_steps SET run_id = $1', ['another-missing-run']))
             .rejects.toMatchObject({ driverError: { code: '23503' } });
         await expect(assertSchemaMatchesMetadata(ds)).resolves.toBeUndefined();
+
+        // a save over the kept orphan checkpoint (lower, equal and higher index) is refused like any missing run
+        const store = createDatabaseStore({ dataSource: ds });
+
+        for (const stepIndex of [1, 3, 5]) {
+            await expect(store.checkpoints.save({
+                runId: 'legacy-checkpoint-only',
+                stepIndex,
+                messages: [],
+                createdAt: new Date(),
+            })).rejects.toBeInstanceOf(RunNotFoundError);
+        }
+
+        expect(await ds.query(checkpointQuery)).toEqual(checkpoints);
     });
 
     it('store fixed conversation fields as columns and only frozen messages as JSONB', async () => {
@@ -236,6 +252,7 @@ describePostgres('schema', () => {
             [[
                 TableName.RUNS,
                 TableName.CHECKPOINTS,
+                TableName.CONVERSATIONS,
                 TableName.CONVERSATION_ITEMS,
                 TableName.CONVERSATION_NOTES,
                 TableName.CONVERSATION_OPERATIONS,
@@ -249,6 +266,7 @@ describePostgres('schema', () => {
         expect(leads(TableName.CONVERSATION_ITEMS, 'run_id')).toBe(true);
         expect(leads(TableName.CONVERSATION_NOTES, 'run_id')).toBe(true);
         expect(leads(TableName.CONVERSATION_OPERATIONS, 'run_id')).toBe(true);
+        expect(leads(TableName.CONVERSATIONS, 'active_run_id')).toBe(true);
     });
 
     it('creates the GIN index on docs', async () => {

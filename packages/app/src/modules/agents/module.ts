@@ -159,8 +159,8 @@ export class AgentsModule implements IModule {
         // a job of an agent whose skills failed to prepare fails with that error (configuration or transient)
         const failure = context.job ? watcher.preparationFailure(context.job.agent) : undefined;
 
-        if (failure !== undefined) {
-            throw failure;
+        if (failure) {
+            throw failure.error;
         }
     }
 

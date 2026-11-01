@@ -10,6 +10,7 @@ import type { ApiError } from '../api/error.ts';
 import type { RunWire } from '../api/types.ts';
 import { hasPermission } from '../auth/helpers.ts';
 import { shortId } from '../runs/helpers.ts';
+import { JSON_BODY_MAX_LENGTH } from './constants.ts';
 import type {
     ApprovalLink,
     DecidedApproval,
@@ -246,7 +247,8 @@ export function detailLines(detail: string): DetailLine[] {
 export function jsonBody(body: string): unknown {
     const text = body.trim();
 
-    if (!text.startsWith('{') && !text.startsWith('[')) {
+    // a large body would render one element per token: it stays text
+    if (text.length > JSON_BODY_MAX_LENGTH || (!text.startsWith('{') && !text.startsWith('['))) {
         return undefined;
     }
 

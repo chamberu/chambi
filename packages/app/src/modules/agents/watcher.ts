@@ -59,7 +59,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
     // job role: agents whose stored marker differs while they have unsettled runs, by issue message
     const conflicts = new Map<string, string>();
     // agents whose skill preparation failed, with the error (a job of one of them fails with it)
-    const preparationFailures = new Map<string, unknown>();
+    const preparationFailures = new Map<string, { error: unknown }>();
 
     let timer: { clear(): void } | undefined;
     let started = false;
@@ -161,7 +161,7 @@ export function createAgentsWatcher(options: AgentsWatcherOptions): IAgentsWatch
                 throw error;
             }
 
-            preparationFailures.set(name, error);
+            preparationFailures.set(name, { error });
 
             const delay = Math.min((previousRetry?.delay ?? pollMs) * 2, Math.max(pollMs, SKILL_PREPARATION_RETRY_MAX_MS));
 

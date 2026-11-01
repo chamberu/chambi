@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { hostname, tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -153,6 +154,81 @@ describe('prepareSkills failures', () => {
         });
 
         await expect(skills.prepareSkills(options)).resolves.toHaveLength(1);
+    });
+
+    it('keeps a guard another copy of this package in the process holds', async () => {
+        const { guard, options } = await setup();
+        const held = (globalThis as Record<symbol, unknown>)[Symbol.for('chamvi.skills.preparationGuards')] as Set<string>;
+
+        await writeOwner(guard, {
+            host: hostname(),
+            pid: process.pid,
+            processStart: Math.round(performance.timeOrigin),
+            token: 'other-copy',
+            createdAt: Date.now(),
+        });
+        held.add(guard);
+
+        try {
+            expect((await failureOf(skills.prepareSkills(options))).code).toBe(SKILL_PREPARATION_LOCKED_ERROR_CODE);
+        } finally {
+            held.delete(guard);
+        }
+    });
+
+    describe.skipIf(!existsSync('/proc/self/stat'))('with /proc', () => {
+        const ticksOf = (pid: number) => {
+            const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+
+            return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
+        };
+
+        it('never reclaims an old guard of a live owner on this host by its age', async () => {
+            const { guard, options } = await setup();
+
+            await writeOwner(guard, {
+                host: hostname(),
+                pid: process.ppid,
+                processStart: 0,
+                processTicks: ticksOf(process.ppid),
+                token: 'live',
+                createdAt: Date.now() - (2 * guardStaleMs()),
+            });
+
+            expect((await failureOf(skills.prepareSkills(options))).code).toBe(SKILL_PREPARATION_LOCKED_ERROR_CODE);
+        });
+
+        it('recovers a guard whose pid another process reused', async () => {
+            const { guard, options } = await setup();
+
+            await writeOwner(guard, {
+                host: hostname(),
+                pid: process.ppid,
+                processStart: 0,
+                processTicks: '1',
+                token: 'reused',
+                createdAt: Date.now(),
+            });
+
+            await expect(skills.prepareSkills(options)).resolves.toHaveLength(1);
+        });
+    });
+
+    it('keeps a verifier rejecting with the caller\'s abort reason a cancellation', async () => {
+        const { options } = await setup();
+        const controller = new AbortController();
+        const reason = new Error('stopped');
+        const error = await failureOf(skills.prepareSkills({
+            ...options,
+            signal: controller.signal,
+            verify: async () => {
+                controller.abort(reason);
+
+                throw reason;
+            },
+        }));
+
+        expect(error).toBe(reason);
     });
 
     it('removes a recovery guard a crashed recoverer left once it is a minute old', async () => {

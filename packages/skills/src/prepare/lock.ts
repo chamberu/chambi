@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
@@ -16,15 +17,34 @@ import { locked } from './helpers.ts';
 const OWNER_FILE = 'owner.json';
 // a recovery guard only lives for a stat, a read and a remove
 const RECOVERY_STALE_MS = 60_000;
-// the guards this process holds: a guard of this very process outside it was left by a failed release
-const held = new Set<string>();
+// the guards this process holds, shared by every copy of this package in the process (a guard of this
+// very process outside it was left by a failed release)
+const HELD_KEY = Symbol.for('chamvi.skills.preparationGuards');
+const held: Set<string> = ((globalThis as Record<symbol, unknown>)[HELD_KEY] as Set<string> | undefined) ??
+    ((globalThis as Record<symbol, unknown>)[HELD_KEY] = new Set<string>()) as Set<string>;
 // tells a guard of this process from one an earlier process with the same pid left (a container restart)
 const PROCESS_START = Math.round(performance.timeOrigin);
+
+/** A process's start time in clock ticks since boot (Linux `/proc/<pid>/stat`), so a reused pid is told apart. */
+function processStartTicks(pid: number | 'self'): string | undefined {
+    try {
+        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+        // the command (field 2) may hold spaces and parentheses: count from its closing parenthesis
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+
+        return fields[19];
+    } catch {
+        return undefined;
+    }
+}
+
+const PROCESS_TICKS = processStartTicks('self');
 
 type GuardOwner = {
     host?: unknown;
     pid?: unknown;
     processStart?: unknown;
+    processTicks?: unknown;
     token?: unknown;
     createdAt?: unknown;
 };
@@ -62,22 +82,37 @@ async function readOwner(guard: string): Promise<GuardOwner | undefined> {
     }
 }
 
+/**
+ * A guard of this host is judged by its owner: stale once the owner process is gone (a reused pid
+ * is told apart by its start time where `/proc` has it), never by age while that process is known
+ * to hold it. Only an owner this host cannot identify (another host on a shared filesystem, a
+ * malformed record, no `/proc`) falls back to the age bound.
+ */
 function isStale(guard: string, owner: GuardOwner | undefined, modifiedAt: number): boolean {
     const createdAt = typeof owner?.createdAt === 'number' ? owner.createdAt : modifiedAt;
-
-    if (Date.now() - createdAt >= guardStaleMs()) {
-        return true;
-    }
+    const aged = Date.now() - createdAt >= guardStaleMs();
 
     if (owner?.host !== hostname() || typeof owner.pid !== 'number' || !Number.isSafeInteger(owner.pid) || owner.pid <= 0) {
-        return false;
+        return aged;
     }
 
     if (owner.pid === process.pid) {
         return owner.processStart !== PROCESS_START || !held.has(guard);
     }
 
-    return !isAlive(owner.pid);
+    if (!isAlive(owner.pid)) {
+        return true;
+    }
+
+    const ticks = typeof owner.processTicks === 'string' ? owner.processTicks : undefined;
+    const current = ticks === undefined ? undefined : processStartTicks(owner.pid);
+
+    if (ticks === undefined || current === undefined) {
+        return aged;
+    }
+
+    // the pid now belongs to another process: its owner is gone
+    return current !== ticks;
 }
 
 /**
@@ -118,11 +153,36 @@ async function recoverGuard(guard: string): Promise<boolean> {
             return true;
         }
 
-        if (!isStale(guard, await readOwner(guard), stat.mtimeMs)) {
+        const owner = await readOwner(guard);
+
+        if (!isStale(guard, owner, stat.mtimeMs)) {
             return false;
         }
 
-        await fs.rm(guard, { recursive: true, force: true });
+        // the owner checked may release and a new preparer take the path before a plain remove:
+        // move the guard away atomically, then remove it only when it is still the one checked
+        const moved = `${guard}.stale-${randomUUID()}`;
+
+        try {
+            await fs.rename(guard, moved);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return true;
+            }
+
+            throw error;
+        }
+
+        const taken = await readOwner(moved);
+
+        if (taken?.token !== owner?.token) {
+            // a live guard taken after the check: put it back (best effort; the window is one rename)
+            await fs.rename(moved, guard).catch(() => {});
+
+            return false;
+        }
+
+        await fs.rm(moved, { recursive: true, force: true });
 
         return true;
     } finally {
@@ -158,6 +218,7 @@ export async function acquireGuard(guard: string): Promise<string> {
                 host: hostname(),
                 pid: process.pid,
                 processStart: PROCESS_START,
+                ...(PROCESS_TICKS !== undefined ? { processTicks: PROCESS_TICKS } : {}),
                 token,
                 createdAt: Date.now(),
             }), { flag: 'wx' });

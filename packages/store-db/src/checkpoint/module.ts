@@ -5,11 +5,11 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import { RepositoryNotFoundError } from '@chamvi/core';
+import { RepositoryNotFoundError, RunNotFoundError } from '@chamvi/core';
 import type { Checkpoint, ICheckpointRepository } from '@chamvi/core';
 import { LessThanOrEqual } from 'typeorm';
 import type { DataSource, Repository } from 'typeorm';
-import { CheckpointEntity } from '../entities/index.ts';
+import { CheckpointEntity, RunEntity } from '../entities/index.ts';
 import { toCheckpoint, toCheckpointValues, withRunReference } from '../repository/helpers.ts';
 
 export class DatabaseCheckpointRepository implements ICheckpointRepository {
@@ -24,6 +24,11 @@ export class DatabaseCheckpointRepository implements ICheckpointRepository {
     }
 
     async save(cp: Checkpoint): Promise<void> {
+        // an upsert over a legacy orphan row (its foreign key NOT VALID) keeps run_id, so PostgreSQL never rechecks it
+        if (!(await this.dataSource.getRepository(RunEntity).existsBy({ id: cp.runId }))) {
+            throw new RunNotFoundError(cp.runId);
+        }
+
         await withRunReference(this.dataSource, cp.runId, () => this.checkpoints.createQueryBuilder()
             .insert()
             .values(toCheckpointValues(cp))

@@ -140,3 +140,16 @@ export function copyPreparationOptions(options: PrepareSkillsOptions) {
         return invalid();
     }
 }
+
+/** Whether `error` is the caller's own cancellation: its abort reason, or an `ABORT_ERR` caused by it. */
+export function isCancellation(error: unknown, signal: AbortSignal | undefined): boolean {
+    if (!signal?.aborted) {
+        return false;
+    }
+
+    if (error === signal.reason) {
+        return true;
+    }
+
+    return Error.isError(error) && 'code' in error && error.code === 'ABORT_ERR' && error.cause === signal.reason;
+}

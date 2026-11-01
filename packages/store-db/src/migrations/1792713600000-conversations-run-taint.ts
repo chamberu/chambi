@@ -46,6 +46,7 @@ export class ConversationsRunTaint1792713600000 implements MigrationInterface {
         await queryRunner.query('CREATE INDEX "IDX_e3edf09ee4749bad2d7b394c83" ON "chamvi_conversation_items" ("run_id") ');
         await queryRunner.query('CREATE INDEX "IDX_08699555ad0212cc26e73325b7" ON "chamvi_conversation_notes" ("run_id") ');
         await queryRunner.query('CREATE INDEX "IDX_9490b26a059a1d8b50e8c1b0e2" ON "chamvi_conversation_operations" ("run_id") ');
+        await queryRunner.query('CREATE INDEX "IDX_ef8111d766fe466a3b307675e0" ON "chamvi_conversations" ("active_run_id") ');
         await queryRunner.query('ALTER TABLE "chamvi_runs" ADD "taint" jsonb');
         // Resumable legacy runs may already contain untrusted checkpoint content.
         await queryRunner.query(`
@@ -57,6 +58,7 @@ export class ConversationsRunTaint1792713600000 implements MigrationInterface {
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query('ALTER TABLE "chamvi_runs" DROP COLUMN "taint"');
+        await queryRunner.query('DROP INDEX "IDX_ef8111d766fe466a3b307675e0"');
         await queryRunner.query('DROP INDEX "IDX_9490b26a059a1d8b50e8c1b0e2"');
         await queryRunner.query('DROP INDEX "IDX_08699555ad0212cc26e73325b7"');
         await queryRunner.query('DROP INDEX "IDX_e3edf09ee4749bad2d7b394c83"');
