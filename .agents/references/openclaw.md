@@ -24,3 +24,18 @@ Read-only `gh api` excerpts independently confirmed session-row/transcript SQLit
 ## Integration boundary
 
 The existing `packages/channel-openclaw/src/channel/module.ts` sends requests to an OpenClaw host; it does not supply chamvi-owned conversational context. Replacing that transport path does not migrate assistant memories or runtime state. Keep operational migration notes local and require separate authorization for private source data access, pairing, sends or service changes.
+
+## Hooks channel (`@chamvi/channel-openclaw`)
+
+What the existing out-only channel relies on, as recorded in `.agents/architecture.md` ("OpenClaw Channel", facts verified 2026-10-21). The external source paths of these facts were not re-resolved for this note; resolve them against the pin above before relying on a path.
+
+| OpenClaw behaviour | chamvi counterpart | Difference / implication |
+|---|---|---|
+| Hooks endpoint `POST <hooks.path>/agent` (default path `/hooks`), off by default, bearer hook token | `packages/channel-openclaw/src/channel/helpers.ts:hookUrl`, `DEFAULT_HOOKS_PATH` (`constants.ts`), `resolveOptions` (token header check) | The channel only sends; nothing of OpenClaw's session or memory state is read. |
+| Body `{ message, name, agentId?, deliver: true, channel, to, accountId? }`; `channel: 'last'` and partial destinations answer 400, bodies over 256 KiB 413 | `packages/channel-openclaw/src/channel/module.ts:openclawChannel` (`out`) | The destination is always concrete: the address, else `deliver.to` (also the channel's `defaultAddress`). |
+| `200 { ok, runId }` means admitted, not delivered; OpenClaw runs an agent turn on the message and treats it as external content | `module.ts` (any 2xx resolves), `renderMessage` (relay instruction) | chamvi cannot observe delivery to the chat. |
+| `Idempotency-Key` replay entries live in memory for 5 minutes after completion, cleared by a restart; a longer key is silently ignored | `helpers.ts:transportKey` (`sha256:<hex>` above 256 characters or non-visible ASCII) | chamvi's own records (the emit effect, `waiting.notifiedAt`) are the primary dedupe; the message is deterministic because a changed body under one key starts a new run. |
+
+## WhatsApp transport replacement (plan 034, Task 1)
+
+`@chamvi/chat` (`packages/chat`) is to replace the OpenClaw relay for WhatsApp with a direct WhatsApp Web transport (a chamvi-owned Chat SDK adapter on Baileys 7.0.0-rc14, mapped in [chat-sdk.md](chat-sdk.md)). Task 1 inspected no OpenClaw source or state for this: the existing channel keeps working unchanged as the rollback path, and nothing in `packages/chat` imports or calls OpenClaw.
