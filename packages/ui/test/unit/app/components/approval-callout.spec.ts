@@ -87,6 +87,27 @@ describe('ApprovalCallout', () => {
         expect(html).not.toContain('Tool input');
     });
 
+    it('pretty-prints a JSON body (a trust approval) as a JSON block', async () => {
+        const body = JSON.stringify({
+            tool: 'git_push', 
+            input: { branch: 'fix/x' }, 
+            taint: { source: 'channel:github' }, 
+        });
+        const html = await render(wireRun({ status: 'waiting', waiting: { ...waiting, body } }));
+        const block = html.match(/<div[^>]*data-testid="approval-body"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? '';
+
+        expect(block).toContain('<pre class="code">');
+        expect(block.replace(/<[^>]+>/g, '')).toContain('{\n  &quot;tool&quot;: &quot;git_push&quot;,\n  &quot;input&quot;: {\n    &quot;branch&quot;');
+        expect(html).not.toContain(body.replace(/"/g, '&quot;'));
+    });
+
+    it.each(['{ not json', '42', '"quoted"'])('keeps a body that is no JSON object as text: %s', async (body) => {
+        const html = await render(wireRun({ status: 'waiting', waiting: { ...waiting, body } }));
+
+        expect(html).toContain('<p class="callout-text" data-testid="approval-body"');
+        expect(html).not.toContain('<pre class="code">');
+    });
+
     it('leaves the body out when the request has none', async () => {
         const html = await render(wireRun({ status: 'waiting', waiting }));
 

@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { isObject } from 'smob';
 import type { ApiError } from '../api/error.ts';
 import type { RunWire } from '../api/types.ts';
 import { hasPermission } from '../auth/helpers.ts';
@@ -236,4 +237,24 @@ export function detailLines(detail: string): DetailLine[] {
 
         return { text };
     });
+}
+
+/**
+ * The parsed body when it is a JSON object or array (a trust approval's
+ * `{ tool, input, taint }`), shown as a JSON block; else undefined (text).
+ */
+export function jsonBody(body: string): unknown {
+    const text = body.trim();
+
+    if (!text.startsWith('{') && !text.startsWith('[')) {
+        return undefined;
+    }
+
+    try {
+        const value: unknown = JSON.parse(text);
+
+        return isObject(value) || Array.isArray(value) ? value : undefined;
+    } catch {
+        return undefined;
+    }
 }

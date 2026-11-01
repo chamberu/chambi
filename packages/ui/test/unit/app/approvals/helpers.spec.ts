@@ -11,6 +11,7 @@ import {
     canApprove,
     detailLines,
     isDiffDetail,
+    jsonBody,
     notifiedLine,
     pendingApprovals,
 } from '../../../../app/approvals/helpers.ts';
@@ -121,5 +122,16 @@ describe('choice approvals', () => {
             { text: ' same' },
         ]);
         expect(detailLines('- item\n+1 vote')).toEqual([{ text: '- item' }, { text: '+1 vote' }]);
+    });
+});
+
+describe('jsonBody', () => {
+    it('parses a JSON object or array body', () => {
+        expect(jsonBody('{"tool":"git_push","input":{"force":false}}')).toEqual({ tool: 'git_push', input: { force: false } });
+        expect(jsonBody('  [1, 2]\n')).toEqual([1, 2]);
+    });
+
+    it.each(['', 'Rolls out v2.', '{ not json', '42', '"text"', 'null', '{} trailing'])('answers undefined for %j', (body) => {
+        expect(jsonBody(body)).toBeUndefined();
     });
 });
