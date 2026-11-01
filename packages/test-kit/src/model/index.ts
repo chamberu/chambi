@@ -5,5 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+export * from './embedding.ts';
 export * from './module.ts';
 export type * from './types.ts';

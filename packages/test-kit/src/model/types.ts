@@ -5,6 +5,9 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import type { EmbeddingModelV4CallOptions } from '@ai-sdk/provider';
+import type { MockEmbeddingModelV4 } from 'ai/test';
+
 export type MockPart = { type: 'text'; text: string } |
     {
         type: 'tool-call';
@@ -17,4 +20,14 @@ export type MockResponse = {
     /** One model turn: any mix of text and (parallel) tool calls. */
     parts: MockPart[];
     usage?: { inputTokens: number; outputTokens: number };
+};
+
+export type MockEmbeddingModelOptions = {
+    /** Vector length, 64 by default. */
+    dimensions?: number;
+};
+
+export type MockEmbeddingModel = MockEmbeddingModelV4 & {
+    /** The options of every model call, in call order (`values` holds the texts). */
+    readonly calls: EmbeddingModelV4CallOptions[];
 };

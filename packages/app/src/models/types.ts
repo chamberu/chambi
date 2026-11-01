@@ -6,7 +6,7 @@
  */
 
 import type { IModelResolver, ModelRef } from '@chamvi/core';
-import type { createProviderRegistry } from 'ai';
+import type { EmbeddingModel, createProviderRegistry } from 'ai';
 
 // #region public
 
@@ -90,4 +90,6 @@ export type ModelResolverOptions = {
 export type ModelResolver = IModelResolver & {
     /** Per provider name: why it could not be built (a package that is not installed). */
     errors: ReadonlyMap<string, string>;
+    /** Always present on the app's resolver: the provider's `embeddingModel(id)`. */
+    embedding(ref: string): EmbeddingModel;
 };

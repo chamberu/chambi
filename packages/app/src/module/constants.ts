@@ -25,6 +25,7 @@ export const AppToken = {
     STORE: token('STORE'),
     DATA_SOURCE: token('DATA_SOURCE'),
     ENGINE: token('ENGINE'),
+    MODELS: token('MODELS'),
     SHUTDOWN: token('SHUTDOWN'),
     SERVER: token('SERVER'),
     HTTP_ROUTES: token('HTTP_ROUTES'),

@@ -117,6 +117,7 @@ describe('public api', () => {
             'HTTP_ROUTES',
             'LIFECYCLE_HOOKS',
             'LOGGER',
+            'MODELS',
             'SERVER',
             'SHUTDOWN',
             'STORE',

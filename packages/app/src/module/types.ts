@@ -10,6 +10,7 @@ import type {
     IChannel,
     IClock,
     IEngine,
+    IModelResolver,
     IStore,
     ModelRef,
     SkillInput,
@@ -125,6 +126,8 @@ export type AppTokens = {
     STORE: IStore;
     DATA_SOURCE: DataSource;
     ENGINE: IEngine;
+    /** The engine module's model resolver (start and job mode, a check too): chat and, through `embedding()`, embedding models. */
+    MODELS: IModelResolver;
     SHUTDOWN: IShutdown;
     SERVER: Server;
     HTTP_ROUTES: HttpRoute;
