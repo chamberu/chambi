@@ -226,17 +226,44 @@ describe('workspace instruction delivery', () => {
         } as unknown as WorkspaceManagerOptions)).toThrow(InvalidAgentDefinitionError);
     });
 
-    it('keeps an acquired workspace when instruction inspection fails', async () => {
+    it('degrades to null instructions with a diagnostic when collection fails, keeping the workspace', async () => {
         const { exec } = fixture.workspace;
 
         fixture.workspace.exec = async () => {
             throw new SandboxError('inspection transport failed');
         };
 
-        await expect(callTool(manager.tools(), 'create_workspace', { repo: 'octo/demo' }, toolContext('r1'))).rejects.toThrow('inspection transport failed');
+        const tools = manager.tools();
+        const result = await callTool<WorkspaceResult & { instructionsError?: string }>(tools, 'create_workspace', { repo: 'octo/demo' }, toolContext('r1'));
+
+        expect(result.workspace).toBe(fixture.workspace.id);
+        expect(result.instructions).toBeNull();
+        expect(result.instructionsError).toContain('inspection transport failed');
+
+        // a retry reuses the workspace and still answers
+        const again = await callTool<WorkspaceResult & { instructionsError?: string }>(tools, 'create_workspace', { repo: 'octo/demo' }, toolContext('r1'));
+
+        expect(again.reused).toBe(true);
+        expect(again.instructions).toBeNull();
 
         fixture.workspace.exec = exec;
         expect(fixture.workspace.disposed).toBe(false);
         expect(await manager.get('r1', fixture.workspace.id)).toBe(fixture.workspace);
+
+        const healthy = await callTool<WorkspaceResult & { instructionsError?: string }>(tools, 'create_workspace', { repo: 'octo/demo' }, toolContext('r1'));
+
+        expect(healthy.instructions).not.toBeNull();
+        expect(healthy).not.toHaveProperty('instructionsError');
+    });
+
+    it('still rejects create_workspace when the run was cancelled during collection', async () => {
+        await manager.acquire('r1', { repo: 'octo/demo' });
+
+        const controller = new AbortController();
+
+        controller.abort();
+
+        await expect(callTool(manager.tools(), 'create_workspace', { repo: 'octo/demo' }, toolContext('r1', controller.signal))).rejects.toThrow();
+        expect(fixture.workspace.disposed).toBe(false);
     });
 });

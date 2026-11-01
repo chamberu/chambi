@@ -21,7 +21,7 @@ RUN apt-get update \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
         > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends mise gh=2.103.3 \
+    && apt-get install -y --no-install-recommends mise gh \
     && rm -rf /var/lib/apt/lists/*
 
 # /workspace, /home/sandbox (the workspace's HOME, @chamvi/sandbox's

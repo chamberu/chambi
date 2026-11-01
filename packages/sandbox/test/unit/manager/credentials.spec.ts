@@ -534,4 +534,12 @@ describe('workspace manager credentials', () => {
             expect(() => createWorkspaceManager({ provider, ...options })).toThrow(InvalidAgentDefinitionError);
         }
     });
+
+    it('refuses the credentialMode option removed in 0.4, naming it', () => {
+        const provider = createFakeProvider();
+        const options = { provider, credentialMode: 'tools' } as unknown as WorkspaceManagerOptions;
+
+        expect(() => createWorkspaceManager(options)).toThrow(InvalidAgentDefinitionError);
+        expect(() => createWorkspaceManager(options)).toThrow(/credentialMode/);
+    });
 });

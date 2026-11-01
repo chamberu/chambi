@@ -8,8 +8,22 @@
 import type { HttpAppOptions } from '@chamvi/http';
 
 /**
- * `createHttpApp` options the module passes through (`bodyLimit` also bounds
- * the webhook channel's deliveries); `engine`, `auth`, `shutdown`, `routes`,
- * `channels`, `basePath` and `onError` come from the app.
+ * Which of the built-in intake channels taint every run they start
+ * (`httpChannel({ untrusted })`, `mcpChannel({ untrusted })`), for callers
+ * that relay text written by others (an OpenClaw MCP principal). Both default
+ * to trusted.
  */
-export type HttpModuleOptions = Omit<HttpAppOptions, 'engine' | 'auth' | 'shutdown' | 'routes' | 'channels' | 'basePath' | 'onError'>;
+export type HttpModuleUntrustedOptions = {
+    http?: boolean;
+    mcp?: boolean;
+};
+
+/**
+ * `createHttpApp` options the module passes through (`bodyLimit` also bounds
+ * the webhook channel's deliveries), plus `untrusted` for the `http` and `mcp`
+ * channels; `engine`, `auth`, `shutdown`, `routes`, `channels`, `basePath`
+ * and `onError` come from the app.
+ */
+export type HttpModuleOptions = Omit<HttpAppOptions, 'engine' | 'auth' | 'shutdown' | 'routes' | 'channels' | 'basePath' | 'onError'> & {
+    untrusted?: HttpModuleUntrustedOptions;
+};

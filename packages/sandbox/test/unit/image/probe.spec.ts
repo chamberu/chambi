@@ -60,6 +60,17 @@ describe('probeImage', () => {
             'Pick an image with sh, git and coreutils, or install them in it.');
     });
 
+    it('names the repository guidance utilities and /bin/sh it lacks', async () => {
+        const { transport, calls } = transportAnswering({ exitCode: 3, stdout: ' /bin/sh base64 tr\n' });
+
+        await expect(probeImage(transport, { image: 'img' })).rejects.toThrow('lacks what a workspace needs: ' +
+            'sh at /bin/sh, base64 in /usr/bin or /bin, tr in /usr/bin or /bin.');
+        // the collector resolves them on TRUSTED_PATH only, so the probe does too
+        expect(calls[0]!.argv[2]).toContain('PATH=/usr/bin:/bin');
+        expect(calls[0]!.argv[2]).toContain('for u in head base64 tr');
+        expect(calls[0]!.argv[2]).toContain('/bin/sh');
+    });
+
     it('names a missing timeout', async () => {
         const { transport } = transportAnswering({ exitCode: 3, stdout: 'timeout' });
 

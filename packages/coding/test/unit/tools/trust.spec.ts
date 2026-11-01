@@ -10,40 +10,20 @@ import { codingTools } from '@chamvi/coding';
 import type { Tool } from 'ai';
 import type { ToolTrust } from '@chamvi/core';
 import type { IWorkspace } from '@chamvi/sandbox';
-import { toolContext } from '../../utils/context.ts';
 
 const READERS = ['read_file', 'grep', 'list_files', 'glob', 'git_diff', 'bash', 'bash_output'];
 
 describe('coding tool trust classification', () => {
-    it('classifies the selected workspace, never shell execution as outbound', async () => {
-        const requested: Array<{ runId: string; workspace?: string }> = [];
-        const tools = codingTools({
-            get: async (runId, workspace) => {
-                requested.push({ runId, workspace });
-
-                return { info: { repo: workspace === 'repo' ? 'https://github.com/octo/demo.git' : undefined } } as IWorkspace;
-            },
-        });
-        const ctx = toolContext('r1');
+    it('taints every read and shell result, repo-backed or repo-less, never as outbound', () => {
+        const tools = codingTools({ get: async () => ({ info: {} }) as IWorkspace });
 
         for (const name of READERS) {
             const { trust } = (tools[name] as Tool & { trust: ToolTrust });
 
             expect(trust.guardWhenTainted).toBeUndefined();
-
-            const classify = trust.taint;
-
-            if (typeof classify !== 'function') {
-                throw new TypeError(`${name} needs a workspace trust classifier`);
-            }
-
-            expect(await classify({ workspace: 'repo' }, ctx)).toBe(true);
-            expect(await classify({ workspace: 'empty' }, ctx)).toBe(false);
-            expect(await classify({}, ctx)).toBe(false);
+            // a repo-less workspace can fetch anything (curl, git clone), so its output is untrusted too
+            expect(trust.taint).toBe(true);
         }
-
-        expect(requested).toContainEqual({ runId: 'r1', workspace: 'repo' });
-        expect(requested).toContainEqual({ runId: 'r1', workspace: 'empty' });
 
         for (const name of ['write_file', 'edit_file', 'multi_edit', 'bash_kill']) {
             expect((tools[name] as { trust?: ToolTrust }).trust).toBeUndefined();

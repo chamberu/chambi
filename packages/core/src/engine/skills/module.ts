@@ -33,7 +33,13 @@ export class EngineSkills implements IEngineSkills {
         this.skillRuntime = this.skillProvider?.create(this.skills);
     }
 
-    checkAgent(agent: Agent): void {
+    /**
+     * Validates the agent's skill inputs against the engine's runtime (or the
+     * first one they would select). With `commit` (default) the inputs are
+     * captured once per agent and a first runtime is kept; a check-only call
+     * (`commit: false`) changes nothing.
+     */
+    checkAgent(agent: Agent, { commit = true }: { commit?: boolean } = {}): void {
         const captured = this.agentSkillInputs.get(agent);
         const supplied = captured ?? agent.definition.skills ?? [];
         const provider = selectSkillProvider(supplied, this.skillProvider);
@@ -42,6 +48,10 @@ export class EngineSkills implements IEngineSkills {
         const runtime = this.skillRuntime ?? provider?.create(this.skills);
 
         runtime?.checkAgent(agent, inputs);
+
+        if (!commit) {
+            return;
+        }
 
         // A rejected candidate must neither select the first runtime nor capture failed inputs.
         if (!captured) {

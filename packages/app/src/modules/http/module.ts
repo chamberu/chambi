@@ -21,13 +21,14 @@ import { AppToken, ModuleName } from '../../module/constants.ts';
 import { runHooks, throwIfStopped } from '../../module/helpers.ts';
 import { registerStartStep } from '../../module/start.ts';
 import type { Server } from '../../module/types.ts';
-import { createDeferredAuthenticator, resolveAuthenticators } from './helpers.ts';
+import { assertUntrustedOptions, createDeferredAuthenticator, resolveAuthenticators } from './helpers.ts';
 import type { HttpModuleOptions } from './types.ts';
 
 /**
  * Serves the HTTP app (start mode only). `setup` (start and job) contributes
  * the `http`, `mcp` and `webhook` channels to `CHANNELS` (the webhook channel
- * authenticates with the app's authenticator chain) and the folder agents'
+ * authenticates with the app's authenticator chain; `untrusted` makes the
+ * `http` or `mcp` channel taint its runs) and the folder agents'
  * MCP tool check (`AGENT_CHECKS`, unless `mcp: false`); `onReady` builds the
  * graceful shutdown (`SHUTDOWN`) and the routup app from every
  * `AUTHENTICATORS` and `HTTP_ROUTES` contribution, mounting every
@@ -55,6 +56,7 @@ export class HttpModule implements IModule {
     protected webhookAuth = createDeferredAuthenticator();
 
     constructor(options: HttpModuleOptions = {}) {
+        assertUntrustedOptions(options.untrusted);
         this.options = options;
     }
 
@@ -70,7 +72,14 @@ export class HttpModule implements IModule {
             ...(this.options.bodyLimit !== undefined && { bodyLimit: this.options.bodyLimit }),
         });
 
-        for (const channel of [httpChannel(), mcpChannel(), webhook]) {
+        const untrusted = this.options.untrusted ?? {};
+        const channels = [
+            httpChannel(untrusted.http ? { untrusted: true } : {}),
+            mcpChannel(untrusted.mcp ? { untrusted: true } : {}),
+            webhook,
+        ];
+
+        for (const channel of channels) {
             container.registerMany(AppToken.CHANNELS, { useValue: channel });
         }
 
@@ -114,8 +123,13 @@ export class HttpModule implements IModule {
         this.shutdown = shutdown;
         container.register(AppToken.SHUTDOWN, { useValue: shutdown });
 
+        // `untrusted` configures the channels above, not the http app
+        const appOptions = { ...this.options };
+
+        delete appOptions.untrusted;
+
         const app = createHttpApp({
-            ...this.options,
+            ...appOptions,
             engine,
             auth,
             shutdown,

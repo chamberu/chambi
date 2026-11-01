@@ -8,7 +8,22 @@
 import { InvalidAgentDefinitionError } from '@chamvi/core';
 import type { Authenticator } from '@chamvi/http';
 import type { IContainer } from 'eldin';
+import { isObject } from 'smob';
 import { AppToken } from '../../module/constants.ts';
+
+/** `httpModule({ untrusted })`: absent, or an object whose `http` and `mcp` are booleans when given. */
+export function assertUntrustedOptions(value: unknown): void {
+    if (value === undefined) {
+        return;
+    }
+
+    const valid = isObject(value) && Object.entries(value).every(([key, flag]) =>
+        (key === 'http' || key === 'mcp') && (flag === undefined || typeof flag === 'boolean'));
+
+    if (!valid) {
+        throw new InvalidAgentDefinitionError('httpModule({ untrusted }) must be an object with optional boolean http and mcp.');
+    }
+}
 
 /** Every `AUTHENTICATORS` contribution, lowest `order` first (stable); none is an error. */
 export function resolveAuthenticators(container: IContainer): Authenticator[] {

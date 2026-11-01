@@ -5,6 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
     InvalidAgentDefinitionError,
@@ -19,7 +20,7 @@ import { createGithubApp } from '@chamvi/github';
 import type { GithubCreatedPullRequest, GithubProposalsOptions, GithubProposeChangeInput } from '@chamvi/github';
 import { githubModule } from '@chamvi/github/module';
 import { createGithubFixture } from '../../utils/app.ts';
-import { callTool, toolContext } from '../../utils/tools.ts';
+import { assistant, callTool, toolContext } from '../../utils/tools.ts';
 
 const POLICY: GithubProposalsOptions = { repos: { 'octo/demo': { paths: ['config/**', 'README.md'] } } };
 const INPUT: GithubProposeChangeInput = {
@@ -28,6 +29,11 @@ const INPUT: GithubProposeChangeInput = {
     content: 'enabled: true\n',
     reason: 'Enable the agent.',
 };
+
+/** The effect key of a proposal: run, repository, path, a hash of the content and the model step. */
+function keyOf(runId: string, content = INPUT.content, path = INPUT.path, step = 0): string {
+    return `${runId}:propose:octo/demo:${path}:${createHash('sha256').update(content).digest('hex')}:${step}`;
+}
 
 /** Immutable Git objects and non-forced refs, isolated from the shared GitHub fake. */
 function setup(policy = POLICY) {
@@ -218,14 +224,15 @@ function setup(policy = POLICY) {
     fake.route('GET', '/repos/:owner/:repo/pulls', ({ query }) => {
         const page = Number(query.page ?? 1);
         const start = (page - 1) * 100;
+        const matching = pulls.filter((item) => !query.head || (item.head.label ?? `octo:${item.head.ref}`) === query.head);
 
         return {
             status: 200,
-            body: pulls.slice(start, start + 100).map((item) => ({
+            body: matching.slice(start, start + 100).map((item) => ({
                 ...item,
                 head: { ...item.head, sha: item.state === 'open' ? refs.get(`heads/${item.head.ref}`) : item.head.sha },
             })),
-            headers: pulls.length > start + 100 ? { link: `<https://github.test/repos/octo/demo/pulls?state=all&per_page=100&page=${page + 1}>; rel="next"` } : undefined,
+            headers: matching.length > start + 100 ? { link: `<https://github.test/repos/octo/demo/pulls?state=all&head=${encodeURIComponent(query.head ?? '')}&per_page=100&page=${page + 1}>; rel="next"` } : undefined,
         };
     });
     fake.route('POST', '/repos/:owner/:repo/pulls', ({ body }) => {
@@ -379,6 +386,24 @@ describe('github_propose_change', () => {
         expect(fake.requests).toEqual([]);
     });
 
+    it.each([
+        'CODEOWNERS',
+        'docs/CODEOWNERS',
+        'config/codeowners',
+        '.gitmodules',
+        'config/.GITMODULES',
+        '.husky/pre-commit',
+        '.HUSKY/a',
+        'config/\u202Etxt.exe',
+        'config/a\u200B',
+        'config/\u2066a',
+    ])('refuses %j even when the allowlist matches every path', async (path) => {
+        const { call, fake } = setup({ repos: { 'octo/demo': { paths: ['**', '.*', '.*/**', '**/.*'] } } });
+
+        await expect(call({ ...INPUT, path })).rejects.toThrow(ValidationError);
+        expect(fake.requests).toEqual([]);
+    });
+
     it('rejects unlisted repos and invalid input before requests', async () => {
         const { call, fake } = setup();
 
@@ -392,7 +417,7 @@ describe('github_propose_change', () => {
     it('validates policy eagerly', () => {
         const { fake } = createGithubFixture();
 
-        for (const policy of [null, { repos: [] }, { repos: { invalid: { paths: ['*'] } } }, { repos: { 'octo/demo': { paths: [] } } }, { repos: { 'octo/demo': { paths: ['../*'] } } }, { repos: { 'octo/demo': { paths: ['.github/**'] } } }, { repos: { 'octo/demo': { paths: ['config\\*'] } } }, { repos: { 'octo/demo': { paths: [1] } } }]) {
+        for (const policy of [null, { repos: [] }, { repos: { invalid: { paths: ['*'] } } }, { repos: { 'octo/demo': { paths: [] } } }, { repos: { 'octo/demo': { paths: ['../*'] } } }, { repos: { 'octo/demo': { paths: ['.github/**'] } } }, { repos: { 'octo/demo': { paths: ['config\\*'] } } }, { repos: { 'octo/demo': { paths: [1] } } }, { repos: { 'octo/demo': { paths: ['.husky/**'] } } }, { repos: { 'octo/demo': { paths: ['**/CODEOWNERS'] } } }, { repos: { 'octo/demo': { paths: ['.gitmodules'] } } }, { repos: { 'octo/demo': { paths: ['config/\u202E*'] } } }]) {
             expect(() => createGithubApp({
                 appId: 123,
                 privateKey: fake.privateKey,
@@ -416,7 +441,7 @@ describe('github_propose_change', () => {
         expect(result.head).toMatch(/^octo:chamvi\/triage\/config-agent-yaml-[a-f0-9]+$/);
         expect(fixture.branchFiles().get(INPUT.path)?.content).toBe(INPUT.content);
         expect(fixture.history.get('commit-1')?.parents).toEqual(['base-sha']);
-        expect(fixture.history.get('commit-1')?.message).toContain(effectMarker('r1:propose:octo/demo:config/agent.yaml'));
+        expect(fixture.history.get('commit-1')?.message).toContain(effectMarker(keyOf('r1')));
         expect(fixture.current()).toMatchObject({
             commits: 1,
             posts: 1,
@@ -436,12 +461,12 @@ describe('github_propose_change', () => {
         expect(one.head).not.toBe(two.head);
     });
 
-    it('reuses an open PR across runs and keeps a fixed effect within one run', async () => {
+    it('reuses an open PR across runs and keeps one effect per run and content', async () => {
         const fixture = setup();
         const tool = wrapped(fixture, 'r1');
         const ctx = toolContext({ runId: 'r1' });
         const first = await callTool({ propose: tool }, 'propose', INPUT, ctx);
-        const same = await callTool({ propose: tool }, 'propose', { ...INPUT, content: 'ignored' }, ctx);
+        const same = await callTool({ propose: tool }, 'propose', INPUT, ctx);
         const later = await replay(fixture, 'r2', { ...INPUT, content: 'later' });
 
         expect(same).toEqual(first);
@@ -454,12 +479,103 @@ describe('github_propose_change', () => {
         expect(fixture.branchFiles().get(INPUT.path)?.content).toBe('later');
     });
 
+    it('applies a corrected content under the same path in one run as a new effect', async () => {
+        const fixture = setup();
+        const tool = wrapped(fixture, 'r1');
+        const ctx = toolContext({ runId: 'r1' });
+
+        await callTool({ propose: tool }, 'propose', INPUT, ctx);
+
+        const corrected = await callTool<GithubCreatedPullRequest>({ propose: tool }, 'propose', { ...INPUT, content: 'enabled: false\n' }, ctx);
+
+        expect(corrected.number).toBe(12);
+        expect(fixture.branchFiles().get(INPUT.path)?.content).toBe('enabled: false\n');
+        expect(fixture.current()).toMatchObject({
+            commits: 2,
+            posts: 1,
+            patches: 1,
+        });
+        expect(fixture.history.get('commit-2')?.message).toContain(effectMarker(keyOf('r1', 'enabled: false\n')));
+    });
+
+    it('writes an earlier content again when a later step returns to it (A, B, A)', async () => {
+        const fixture = setup();
+        const tool = wrapped(fixture, 'r1');
+        const ctx = toolContext({ runId: 'r1' });
+
+        await callTool({ propose: tool }, 'propose', INPUT, ctx, { toolCallId: 'c1' });
+        await callTool({ propose: tool }, 'propose', { ...INPUT, content: 'enabled: false\n' }, ctx, { toolCallId: 'c2', messages: [assistant()] });
+        await callTool({ propose: tool }, 'propose', INPUT, ctx, { toolCallId: 'c3', messages: [assistant(), assistant()] });
+
+        expect(fixture.branchFiles().get(INPUT.path)?.content).toBe(INPUT.content);
+        expect(fixture.current()).toMatchObject({ commits: 3, posts: 1 });
+        expect(fixture.history.get('commit-3')?.message).toContain(effectMarker(keyOf('r1', INPUT.content, INPUT.path, 2)));
+    });
+
+    it('reconciles an applied open proposal while the base branch moves', async () => {
+        const fixture = setup();
+        const first = await replay(fixture, 'r1');
+        const before = fixture.current();
+
+        fixture.onCompare(() => {
+            fixture.history.set('busy-base', {
+                tree: 'base-tree',
+                message: 'Unrelated merge',
+                parents: ['base-sha'],
+            });
+            fixture.refs.set('heads/main', 'busy-base');
+        });
+
+        expect(await replay(fixture, 'r1')).toEqual(first);
+        expect(fixture.current()).toEqual(before);
+    });
+
+    it('owns a PR only by its final footer, not by a marker quoted earlier in the body', async () => {
+        const fixture = setup();
+        const result = await fixture.call();
+        const pull = fixture.current().pull!;
+
+        pull.body = `${pull.body}\n\nEdited by hand <!-- chamvi:proposal=${result.head.slice(5)} -->`;
+
+        await expect(fixture.call({ ...INPUT, content: 'later' }, 'r2')).rejects.toThrow(/not proposal-owned/);
+    });
+
+    it('finds its open PR behind a PR that is not on the predicted generation chain', async () => {
+        const fixture = setup();
+
+        await fixture.call();
+        fixture.close();
+
+        const second = await fixture.call({ ...INPUT, content: 'second' }, 'r2');
+        const root = fixture.pulls[0]!.head.ref as string;
+
+        fixture.pulls.push({
+            number: 40,
+            html_url: 'https://github.test/octo/demo/pull/40',
+            state: 'closed',
+            head: {
+                ref: root,
+                sha: 'base-sha',
+                label: `octo:${root}`,
+                repo: { full_name: 'octo/demo' },
+            },
+            base: { ref: 'main' },
+            body: 'A hand-made PR on the proposal branch.',
+        });
+
+        const third = await fixture.call({ ...INPUT, content: 'third' }, 'r3');
+
+        expect(third.number).toBe(second.number);
+        expect(fixture.current().posts).toBe(2);
+        expect(fixture.branchFiles().get(INPUT.path)?.content).toBe('third');
+    });
+
     it('recovers a lost effect record from ancestry after another run replaces the body and tip', async () => {
         const fixture = setup();
         const first = await replay(fixture, 'r1');
 
         await replay(fixture, 'r2', { ...INPUT, content: 'newer' });
-        expect(fixture.current().pull?.body).not.toContain(effectMarker('r1:propose:octo/demo:config/agent.yaml'));
+        expect(fixture.current().pull?.body).not.toContain(effectMarker(keyOf('r1')));
 
         const before = fixture.current();
 
@@ -855,7 +971,7 @@ describe('github_propose_change', () => {
         });
         fixture.history.set('owned', {
             tree: commit.tree,
-            message: `Later tool update\n<!-- chamvi:proposal=${branch.slice(6)} -->`,
+            message: `Later tool update\n\n<!-- chamvi:proposal=${branch.slice(6)} -->\n${effectMarker(keyOf('r9'))}`,
             parents: ['manual'],
         });
         fixture.refs.set(branch, 'owned');
@@ -863,7 +979,7 @@ describe('github_propose_change', () => {
         expect(fixture.current()).toMatchObject({ commits: 1, posts: 1 });
     });
 
-    it('fails closed on incomplete PR discovery rather than creating another generation', async () => {
+    it('finds its proposal by head branch in a repository with thousands of pull requests', async () => {
         const fixture = setup();
 
         await fixture.call();
@@ -878,13 +994,39 @@ describe('github_propose_change', () => {
 
         const before = fixture.fake.requests.length;
 
-        await expect(replay(fixture, 'r2')).rejects.toThrow(/PR discovery limit/);
-        expect(fixture.fake.requests.slice(before).filter((request) => request.path.endsWith('/pulls'))).toHaveLength(10);
+        expect(await replay(fixture, 'r2', { ...INPUT, content: 'next' })).toMatchObject({ number: 12 });
+
+        const lists = fixture.fake.requests.slice(before).filter((request) => request.path.endsWith('/pulls') && request.method === 'GET');
+
+        expect(lists.length).toBeGreaterThan(0);
+        expect(lists.every((request) => typeof request.query.head === 'string' && request.query.head.startsWith('octo:chamvi/'))).toBe(true);
         expect(fixture.current()).toMatchObject({
-            commits: 1,
+            commits: 2,
             posts: 1,
-            patches: 0,
+            patches: 1,
         });
+    });
+
+    it('fails closed on incomplete discovery of one head branch', async () => {
+        const fixture = setup();
+        const first = await fixture.call();
+        const ref = first.head.slice('octo:'.length);
+
+        for (let index = 0; index < 1000; index += 1) {
+            fixture.pulls.unshift({
+                number: 2000 + index,
+                state: 'closed',
+                body: `<!-- chamvi:proposal=${ref} -->`,
+                head: {
+                    ref,
+                    sha: 'commit-1',
+                    repo: { full_name: 'octo/demo' },
+                },
+            });
+        }
+
+        await expect(replay(fixture, 'r2')).rejects.toThrow(/PR discovery limit/);
+        expect(fixture.current()).toMatchObject({ commits: 1, posts: 1 });
     });
 
     it('rejects missing diff data', async () => {
@@ -934,10 +1076,26 @@ describe('github_propose_change', () => {
         }
 
         fixture.history.get('commit-1')!.message = 'Earlier commit';
-        fixture.history.get(parent)!.message = `Later proposal\n<!-- chamvi:proposal=${proposal.head.ref} -->\n${effectMarker('r1:propose:octo/demo:config/agent.yaml')}`;
+        fixture.history.get(parent)!.message = `Later proposal\n<!-- chamvi:proposal=${proposal.head.ref} -->\n${effectMarker(keyOf('r1'))}`;
         fixture.refs.set(`heads/${proposal.head.ref}`, parent);
         expect(await replay(fixture, 'r1')).toEqual(first);
         expect(fixture.fake.requests.some((request) => request.query.page === '2')).toBe(true);
+    });
+
+    it('reports an applied proposal when only the base moves after the PR write', async () => {
+        const fixture = setup();
+
+        fixture.onPublish(() => {
+            fixture.history.set('busy-base', {
+                tree: 'base-tree',
+                message: 'Unrelated merge',
+                parents: ['base-sha'],
+            });
+            fixture.refs.set('heads/main', 'busy-base');
+        });
+
+        expect(await fixture.call()).toMatchObject({ number: 12, base: 'main' });
+        expect(fixture.current()).toMatchObject({ commits: 1, posts: 1 });
     });
 
     it.each(['compare', 'update', 'publish', 'base'])('fails closed when a ref moves during %s', async (phase) => {

@@ -28,6 +28,7 @@ import { bindRunSnapshot } from '../../handoff/helpers.ts';
 import { toLanguageModel } from '../../model/asserts.ts';
 import { untilAborted } from '../../run/helpers.ts';
 import { RunStatus } from '../../run/constants.ts';
+import { CONVERSATION_SEND_GRACE_MS } from './constants.ts';
 import type { RunContext, Step, Usage } from '../../run/types.ts';
 import {
     resolveBudget,
@@ -454,6 +455,27 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         return pendingStepEnd;
     };
 
+    // Conversation sends a tool did not await, bounded: a transport that never settles stops being
+    // awaited after a grace, and the execution's abort on exit then ends the send (it stays pending,
+    // terminal reconciliation marks it unknown), so pause() and finish() are not held by it.
+    const awaitJournal = async (): Promise<void> => {
+        const journal = ctx.conversation?.capability.idle(run.id);
+
+        if (!journal) {
+            return;
+        }
+
+        let grace: { clear(): void } | undefined;
+
+        try {
+            await Promise.race([journal, new Promise<void>((resolve) => {
+                grace = clock.setTimeout(resolve, CONVERSATION_SEND_GRACE_MS);
+            })]);
+        } finally {
+            grace?.clear();
+        }
+    };
+
     if (pending.length > 0) {
         let outcome: Awaited<ReturnType<typeof runPending>>;
 
@@ -498,10 +520,24 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         replaying = false;
 
         if (outcome !== 'done') {
+            // the same bounded wait as after the model loop, before the abort ends the sends
+            await untilAborted(awaitJournal(), signal).catch(() => {});
+
+            // a cancel or the timeout during that wait settles the run, never a pause
+            const timedOut = timeout?.signal.aborted === true ? { reason: timeout.signal.reason as unknown } : undefined;
+
             local.abort();
             timeout?.clear();
 
-            if (outcome === 'failed' && fatal) {
+            if (ctx.signal.aborted) {
+                await ctx.finish({ status: RunStatus.CANCELLED, usage });
+            } else if (timedOut) {
+                await ctx.finish({
+                    status: RunStatus.FAILED,
+                    usage,
+                    error: toRunError(timedOut.reason),
+                });
+            } else if (outcome === 'failed' && fatal) {
                 await ctx.finish({
                     status: RunStatus.FAILED,
                     usage,
@@ -586,7 +622,7 @@ export async function executeRun(ctx: ExecuteContext): Promise<void> {
         const [steps, finishReason, text] = await Promise.all([stream.steps, stream.finishReason, stream.text]);
 
         // Keep normal sends alive until their journal settles; cancellation still exits via untilAborted.
-        await ctx.conversation?.capability.idle(run.id);
+        await awaitJournal();
 
         return {
             stream,

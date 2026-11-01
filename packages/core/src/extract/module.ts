@@ -10,10 +10,10 @@ import { isObject } from 'smob';
 import type { StateSchema } from '../state/types.ts';
 import { currentToolCall } from '../effect/frame.ts';
 import { stableHash } from '../effect/helpers.ts';
-import { ValidationError } from '../errors/index.ts';
+import { InvalidRunStateError, ValidationError } from '../errors/index.ts';
 import { resolveModel } from '../model/module.ts';
 import type { ToolContext } from '../tool/types.ts';
-import { markUntrusted } from '../trust/module.ts';
+import { assertTrust, markUntrusted } from '../trust/module.ts';
 import { isSafeExtractionOutput } from './output.ts';
 import { isSafeExtractionSchema } from './schema.ts';
 import type { ExtractOptions } from './types.ts';
@@ -22,6 +22,10 @@ import type { ExtractOptions } from './types.ts';
  * Extracts only structured output in a separate, tool-less model call. Raw
  * content, model messages and provider errors never enter the parent transcript.
  * Schemas outside the conservative allowlist taint the run, including on replay.
+ * Throws InvalidRunStateError outside an executing tool call of this run or
+ * without an execution-bound trust context, the taint write's error when it
+ * fails, the run signal's reason once the run was aborted, and a generic
+ * ValidationError for every model or validation failure.
  */
 export async function extract<T, S extends StateSchema = StateSchema>(
     ctx: ToolContext<S>,
@@ -30,8 +34,11 @@ export async function extract<T, S extends StateSchema = StateSchema>(
     const frame = currentToolCall();
 
     if (!frame || frame.runId !== ctx.run.runId) {
-        throw new ValidationError('extract() needs an executing tool call for this run.');
+        throw new InvalidRunStateError('extract() needs an executing tool call for this run.');
     }
+
+    // Trust failures (no execution-bound context, a failed taint write) are the run's, not the output's.
+    let trustFailure: { error: unknown } | undefined;
 
     try {
         ctx.run.signal.throwIfAborted();
@@ -56,10 +63,25 @@ export async function extract<T, S extends StateSchema = StateSchema>(
             model: options.model === undefined ? { kind: 'default' } : { kind: 'override', ref: options.model },
         })}` : undefined;
 
+        // every extraction needs the execution-bound trust context, also one with a safe schema
+        try {
+            assertTrust(ctx.run, true);
+        } catch (error) {
+            trustFailure = { error };
+
+            throw error;
+        }
+
         const safe = isSafeExtractionSchema(jsonSchema);
 
         if (!safe) {
-            await markUntrusted(ctx, 'extract');
+            try {
+                await markUntrusted(ctx, 'extract');
+            } catch (error) {
+                trustFailure = { error };
+
+                throw error;
+            }
         }
 
         ctx.run.signal.throwIfAborted();
@@ -118,6 +140,15 @@ export async function extract<T, S extends StateSchema = StateSchema>(
 
         return value;
     } catch {
+        if (trustFailure) {
+            throw trustFailure.error;
+        }
+
+        // A cancelled run (cancel, drain, timeout) rejects with its abort reason, never the SDK's error.
+        if (ctx.run.signal.aborted) {
+            throw ctx.run.signal.reason;
+        }
+
         // SDK errors can contain the raw response and provider request body.
         throw new ValidationError('extract() could not produce validated structured output.');
     }

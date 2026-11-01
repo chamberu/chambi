@@ -7,6 +7,7 @@
 
 import { isObject } from 'smob';
 import { stableHash } from '../effect/helpers.ts';
+import { EXTRACT_OUTPUT_MAX_LENGTH } from './constants.ts';
 import { isSafeExtractionSchema } from './schema.ts';
 
 function minimum(value: number, bound: unknown): boolean {
@@ -109,7 +110,7 @@ function matches(schema: Record<string, unknown>, value: unknown): boolean {
             const { length } = Array.from(string);
 
             return minimum(length, schema.minLength) && maximum(length, schema.maxLength) &&
-                new RegExp(schema.pattern as string, 'u').test(string);
+                new RegExp(`^(?:${schema.pattern as string})$`, 'u').test(string);
         }
         case 'array': {
             const array = value as unknown[];
@@ -150,7 +151,8 @@ function matches(schema: Record<string, unknown>, value: unknown): boolean {
 /** Checks the actual SDK output independently of any custom validator or transform. */
 export function isSafeExtractionOutput(schema: unknown, value: unknown): boolean {
     try {
-        return isSafeExtractionSchema(schema) && matches(schema as Record<string, unknown>, value);
+        return isSafeExtractionSchema(schema) && matches(schema as Record<string, unknown>, value) &&
+            JSON.stringify(value).length <= EXTRACT_OUTPUT_MAX_LENGTH;
     } catch {
         return false;
     }

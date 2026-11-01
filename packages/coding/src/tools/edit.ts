@@ -6,10 +6,10 @@
  */
 
 import type { Tool } from 'ai';
-import { ValidationError, defineTool } from '@chamvi/core';
+import { SandboxError, ValidationError, defineTool } from '@chamvi/core';
 import { REDACTED } from '@chamvi/sandbox';
 import type { IWorkspace } from '@chamvi/sandbox';
-import { FILE_PATH_PROPERTY, MULTI_EDIT_MAX_EDITS } from './constants.ts';
+import { FILE_NOT_FOUND, FILE_PATH_PROPERTY, MULTI_EDIT_MAX_EDITS } from './constants.ts';
 import {
     fileKey,
     inputObject,
@@ -115,6 +115,56 @@ function rawText(document: EditDocument): string {
     }
 
     return raw + document.text.slice(from);
+}
+
+/**
+ * The text `write_file` writes for `content`: a file holding redacted tokens
+ * gets each back where `content` keeps a `[redacted]` of the text the model
+ * read (the occurrences in order, a literal `[redacted]` of the file staying
+ * literal), so a read and write round trip never writes the marker over a
+ * token. ValidationError when the occurrences do not line up with the
+ * file's or when the file exists but cannot be read as text; `content`
+ * itself for a file without a token (or a missing one).
+ */
+export async function restoreRedacted(workspace: IWorkspace, path: string, content: string): Promise<string> {
+    if (!workspace.redactedSpans || !content.includes(REDACTED)) {
+        return content;
+    }
+
+    let document: EditDocument;
+
+    try {
+        document = await readDocument(workspace, path);
+    } catch (error) {
+        // a missing file holds no token the write could clobber; any other failed read might
+        if (error instanceof SandboxError && error.message.startsWith(FILE_NOT_FOUND)) {
+            return content;
+        }
+
+        throw new ValidationError(`content holds [redacted], but ${path} could not be read as text to put its tokens back: ` +
+            'write content without [redacted] or change the file with edit_file.');
+    }
+
+    if (document.markers.length === 0) {
+        return content;
+    }
+
+    // every [redacted] of the text the model read: a token's marker, or one literally in the file
+    const tokens = new Map(document.markers.map((marker) => [marker.at, marker.raw]));
+    const shown: Array<string | undefined> = [];
+
+    for (let at = document.text.indexOf(REDACTED); at !== -1; at = document.text.indexOf(REDACTED, at + REDACTED.length)) {
+        shown.push(tokens.get(at));
+    }
+
+    const parts = content.split(REDACTED);
+
+    if (parts.length - 1 !== shown.length) {
+        throw new ValidationError(`content holds ${parts.length - 1} [redacted] where ${path} shows ${shown.length} over a redacted credential: ` +
+            'keep each [redacted] of the text read_file returned, in order, or change the file with edit_file.');
+    }
+
+    return parts.reduce((text, part, index) => (index === 0 ? part : `${text}${shown[index - 1] ?? REDACTED}${part}`), '');
 }
 
 /**

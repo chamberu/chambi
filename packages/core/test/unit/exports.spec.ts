@@ -98,6 +98,7 @@ describe('public api', () => {
         'defineTool',
         'effectMarker',
         'approve',
+        'outboundApproved',
         'ChamviError',
         'BudgetExceededError',
         'ArtifactNotFoundError',

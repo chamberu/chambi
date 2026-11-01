@@ -40,7 +40,7 @@ describe('workspace tool trust classification', () => {
             expect(await taint(tools, 'read_repository_instructions', { workspace: empty.id })).toBe(false);
             expect(await taint(tools, 'git_fetch', {})).toBe(true);
             expect(await taint(tools, 'git_pull', {})).toBe(true);
-            expect((tools.git_push as Tool & { trust: ToolTrust }).trust).toEqual({ taint: true, guardWhenTainted: true });
+            expect((tools.git_push as Tool & { trust: ToolTrust }).trust).toMatchObject({ taint: true, guardWhenTainted: true });
         } finally {
             await manager.release('r1');
         }
@@ -463,6 +463,357 @@ describe('workspace tool trust classification', () => {
                 engine.stop();
             }
         });
+    });
+
+    it('asks once for git_push in a tainted run with push.mode approve, the commit log in the private gate body', async () => {
+        let pushes = 0;
+        const provider = createFakeProvider({
+            onExec(argv) {
+                if (argv.includes('push')) {
+                    pushes++;
+
+                    return {};
+                }
+
+                if (argv.includes('rev-parse')) {
+                    return argv.at(-1)?.startsWith('refs/remotes/') ? { exitCode: 1 } : { stdout: `${'1'.repeat(40)}\n` };
+                }
+
+                if (argv.includes('rev-list')) {
+                    return { stdout: '1\n' };
+                }
+
+                if (argv.includes('log')) {
+                    return { stdout: 'abc1234 fix the build\n' };
+                }
+
+                return {};
+            },
+        });
+        const manager = createWorkspaceManager({
+            provider,
+            gcIntervalMs: 0,
+            push: { mode: 'approve', allowBranch: () => true },
+        });
+        const store = createMemoryStore();
+        const call = (toolName: string, input: unknown = {}) => ({
+            parts: [{
+                type: 'tool-call' as const,
+                toolName,
+                toolCallId: toolName,
+                input,
+            }],
+        });
+        const engine = new Engine({
+            store,
+            agents: [defineAgent({
+                name: 'test',
+                instructions: 'test',
+                model: mockModel([
+                    // a repo-backed create taints the run (repository instructions)
+                    call('create_workspace', { repo: 'octo/demo' }),
+                    call('git_push', { branch: 'feature' }),
+                    { parts: [{ type: 'text', text: 'done' }] },
+                ]),
+                tools: manager.tools(),
+            })],
+        });
+
+        manager.attach(engine);
+
+        try {
+            await engine.start();
+
+            const { runId } = await engine.dispatch({
+                agent: 'test',
+                channel: 'http',
+                trigger: 'test',
+                payload: {},
+            });
+
+            await engine.idle();
+
+            const gate = await store.runs.findOne(runId);
+
+            expect(gate?.status).toBe('waiting');
+            expect(gate?.waiting?.approvalId).toMatch(/^bound:/);
+            expect(JSON.parse(gate!.waiting!.body!)).toMatchObject({
+                tool: 'git_push',
+                detail: 'Push 1 commit to feature\nTo https://github.com/octo/demo.git:\nabc1234 fix the build\n' +
+                    `Push ${'1'.repeat(40)} to feature at https://github.com/octo/demo.git (lease none)`,
+            });
+            expect(pushes).toBe(0);
+
+            await engine.approve(runId, { approvalId: gate!.waiting!.approvalId, approved: true });
+            await engine.idle();
+
+            const run = await store.runs.findOne(runId);
+            const waits = (await store.steps.find(runId)).filter((step) => step.kind === 'wait');
+
+            expect(run?.status).toBe('completed');
+            expect(waits).toHaveLength(1);
+            expect(pushes).toBe(1);
+        } finally {
+            engine.stop();
+            await manager.close();
+        }
+    });
+
+    async function gatedPush(
+        options: { push: { allowBranch?: () => boolean }, input: Record<string, unknown> },
+        onExec: (argv: readonly string[], approved: boolean) => { stdout?: string; exitCode?: number } | undefined,
+    ) {
+        const pushed: string[][] = [];
+        const remote: string[][] = [];
+        let approved = false;
+        const provider = createFakeProvider({
+            onExec(argv) {
+                if (argv.includes('push')) {
+                    pushed.push([...argv]);
+
+                    return {};
+                }
+
+                if (argv.includes('ls-remote')) {
+                    remote.push([...argv]);
+
+                    return { stdout: 'ref: refs/heads/main\tHEAD\n' };
+                }
+
+                return onExec(argv, approved) ?? {};
+            },
+        });
+        const manager = createWorkspaceManager({
+            provider, 
+            gcIntervalMs: 0, 
+            push: options.push, 
+        });
+        const store = createMemoryStore();
+        const call = (toolName: string, input: unknown = {}) => ({
+            parts: [{
+                type: 'tool-call' as const,
+                toolName,
+                toolCallId: toolName,
+                input,
+            }],
+        });
+        const engine = new Engine({
+            store,
+            agents: [defineAgent({
+                name: 'test',
+                instructions: 'test',
+                model: mockModel([
+                    call('create_workspace', { repo: 'octo/demo' }),
+                    call('git_push', options.input),
+                    { parts: [{ type: 'text', text: 'done' }] },
+                ]),
+                tools: manager.tools(),
+            })],
+        });
+
+        manager.attach(engine);
+
+        try {
+            await engine.start();
+
+            const { runId } = await engine.dispatch({
+                agent: 'test',
+                channel: 'http',
+                trigger: 'test',
+                payload: {},
+            });
+
+            await engine.idle();
+
+            const gate = await store.runs.findOne(runId);
+            const before = { pushed: pushed.length, remote: remote.length };
+
+            expect(gate?.status).toBe('waiting');
+
+            approved = true;
+            await engine.approve(runId, { approvalId: gate!.waiting!.approvalId, approved: true });
+            await engine.idle();
+
+            return {
+                before,
+                pushed,
+                remote,
+                run: await store.runs.findOne(runId),
+            };
+        } finally {
+            engine.stop();
+            await manager.close();
+        }
+    }
+
+    it('pushes the commit the gate approved, not one the branch moved to after the decision', async () => {
+        const reviewed = 'a'.repeat(40);
+        const moved = 'b'.repeat(40);
+        let reads = 0;
+        const result = await gatedPush({ push: { allowBranch: () => true }, input: { branch: 'feature' } }, (argv, approved) => {
+            if (!argv.includes('rev-parse')) {
+                return undefined;
+            }
+
+            if (argv.at(-1)?.startsWith('refs/remotes/')) {
+                return { exitCode: 1 };
+            }
+
+            // after the decision: the gate's replay still reads the reviewed commit, any later read the moved one
+            if (approved) {
+                reads++;
+            }
+
+            return { stdout: `${approved && reads > 1 ? moved : reviewed}\n` };
+        });
+
+        expect(result.run?.status).toBe('completed');
+        expect(result.pushed).toHaveLength(1);
+        expect(result.pushed[0]!.join(' ')).toContain(`${reviewed}:refs/heads/feature`);
+        expect(result.pushed[0]!.join(' ')).not.toContain(moved);
+    });
+
+    it('contacts another remote for its default branch only after the push was approved', async () => {
+        const result = await gatedPush({ push: {}, input: { remote: 'other/fork', branch: 'feature' } }, (argv) => {
+            if (!argv.includes('rev-parse')) {
+                return undefined;
+            }
+
+            return argv.at(-1)?.startsWith('refs/remotes/') ? { exitCode: 1 } : { stdout: `${'1'.repeat(40)}\n` };
+        });
+
+        expect(result.before).toEqual({ pushed: 0, remote: 0 });
+        expect(result.remote.length).toBeGreaterThan(0);
+        expect(result.remote.every((argv) => argv.some((arg) => arg.includes('other/fork')))).toBe(true);
+        expect(result.pushed).toHaveLength(1);
+    });
+
+    async function taintedPush(push: {
+        mode: 'approve' | 'auto';
+        channel?: string;
+        allowBranch: () => boolean
+    }) {
+        let pushes = 0;
+        const sent: string[] = [];
+        const provider = createFakeProvider({
+            onExec(argv) {
+                if (argv.includes('push')) {
+                    pushes++;
+
+                    return {};
+                }
+
+                if (argv.includes('rev-parse')) {
+                    return argv.at(-1)?.startsWith('refs/remotes/') ? { exitCode: 1 } : { stdout: `${'1'.repeat(40)}\n` };
+                }
+
+                if (argv.includes('rev-list')) {
+                    return { stdout: '1\n' };
+                }
+
+                if (argv.includes('log')) {
+                    return { stdout: 'abc1234 fix the build\n' };
+                }
+
+                return {};
+            },
+        });
+        const manager = createWorkspaceManager({
+            provider,
+            gcIntervalMs: 0,
+            push,
+        });
+        const store = createMemoryStore();
+        const call = (toolName: string, input: unknown = {}) => ({
+            parts: [{
+                type: 'tool-call' as const,
+                toolName,
+                toolCallId: toolName,
+                input,
+            }],
+        });
+        const engine = new Engine({
+            store,
+            channels: [{
+                name: 'ops',
+                out: async (message) => {
+                    sent.push(message.kind);
+                },
+            }],
+            agents: [defineAgent({
+                name: 'test',
+                instructions: 'test',
+                model: mockModel([
+                    call('create_workspace', { repo: 'octo/demo' }),
+                    call('git_push', { branch: 'feature' }),
+                    { parts: [{ type: 'text', text: 'done' }] },
+                ]),
+                tools: manager.tools(),
+            })],
+        });
+
+        manager.attach(engine);
+        await engine.start();
+
+        const { runId } = await engine.dispatch({
+            agent: 'test',
+            channel: 'http',
+            trigger: 'test',
+            payload: {},
+        });
+
+        await engine.idle();
+
+        return {
+            engine,
+            manager,
+            store,
+            runId,
+            sent,
+            pushes: () => pushes,
+        };
+    }
+
+    it('never asks the gate for a git_push the push policy refuses in a tainted run', async () => {
+        const t = await taintedPush({ mode: 'approve', allowBranch: () => false });
+
+        try {
+            const run = await t.store.runs.findOne(t.runId);
+            const steps = await t.store.steps.find(t.runId);
+
+            expect(run?.status).toBe('completed');
+            expect(steps.filter((step) => step.kind === 'wait')).toHaveLength(0);
+            expect(steps.find((step) => step.name === 'git_push')?.error).toMatchObject({ code: 'tool_denied' });
+            expect(t.pushes()).toBe(0);
+        } finally {
+            t.engine.stop();
+            await t.manager.close();
+        }
+    });
+
+    it('answers a tainted git_push with push.channel through the gate only, never asking push.channel', async () => {
+        const t = await taintedPush({
+            mode: 'approve',
+            channel: 'ops',
+            allowBranch: () => true,
+        });
+
+        try {
+            const gate = await t.store.runs.findOne(t.runId);
+
+            expect(gate?.waiting?.approvalId).toMatch(/^bound:/);
+            expect(gate?.waiting?.channel).toBeUndefined();
+
+            await t.engine.approve(t.runId, { approvalId: gate!.waiting!.approvalId, approved: true });
+            await t.engine.idle();
+
+            expect((await t.store.runs.findOne(t.runId))?.status).toBe('completed');
+            expect(t.sent).toEqual([]);
+            expect(t.pushes()).toBe(1);
+        } finally {
+            t.engine.stop();
+            await t.manager.close();
+        }
     });
 
     it('does not taint workspace creation when repository instructions are disabled', async () => {

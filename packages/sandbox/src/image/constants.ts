@@ -67,8 +67,12 @@ export const ROOT_CAPABILITIES: readonly string[] = Object.freeze([
     'KILL',
 ]);
 
-/** What a workspace image must provide: a shell, git and a `timeout` that takes `-k`. */
-export const IMAGE_REQUIREMENTS: readonly string[] = Object.freeze(['sh', 'git', 'timeout']);
+/**
+ * What a workspace image must provide: a shell (also at `/bin/sh`), git, a
+ * `timeout` that takes `-k`, and `head`, `base64` and `tr` in `/usr/bin` or
+ * `/bin` (the repository guidance collector resolves them nowhere else).
+ */
+export const IMAGE_REQUIREMENTS: readonly string[] = Object.freeze(['sh', 'git', 'timeout', 'head', 'base64', 'tr']);
 
 /** How long the image probe of a create may take. */
 export const IMAGE_PROBE_TIMEOUT_MS = 30_000;
@@ -78,13 +82,16 @@ export const IMAGE_PROBE_MISSING_EXIT = 3;
 
 /**
  * Prints what the image lacks (`git`, `timeout`, or `timeout-k` for a
- * `timeout` without `-k`, like an old busybox) and exits
- * `IMAGE_PROBE_MISSING_EXIT` then, else 0.
+ * `timeout` without `-k`, like an old busybox; `/bin/sh` and the `head`,
+ * `base64` and `tr` the repository guidance collector resolves on
+ * `/usr/bin:/bin` only) and exits `IMAGE_PROBE_MISSING_EXIT` then, else 0.
  */
 export const IMAGE_PROBE_SCRIPT = [
     PATH_GUARD_SCRIPT,
     'm=',
     'command -v git >/dev/null 2>&1 || m="$m git"',
+    '[ -x /bin/sh ] || m="$m /bin/sh"',
+    'for u in head base64 tr; do (PATH=/usr/bin:/bin; command -v "$u") >/dev/null 2>&1 || m="$m $u"; done',
     'if ! command -v timeout >/dev/null 2>&1; then m="$m timeout"; ' +
     'elif ! timeout -k 1 5 true >/dev/null 2>&1; then m="$m timeout-k"; fi',
     `if [ -n "$m" ]; then printf '%s\\n' "$m"; exit ${IMAGE_PROBE_MISSING_EXIT}; fi`,

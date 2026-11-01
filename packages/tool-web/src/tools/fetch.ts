@@ -38,7 +38,9 @@ type WebFetchInput = {
 
 export function webFetchTool(options: WebToolsOptionsNormalized): Tool<WebFetchInput, WebFetchResult> {
     return defineTool<WebFetchInput, WebFetchResult>({
-        trust: { taint: true, guardWhenTainted: true },
+        // Results taint the run. A fetch on a tainted run is not gated: its URL can carry data out
+        // (exfiltration); agents that must stop that opt in with trust.tools: { web_fetch: { guardWhenTainted: true } }.
+        trust: { taint: true },
         description: 'Fetch a public web page or file over http(s): an HTML page as readable markdown (default) or plain text, ' +
             'any other text (JSON, e.g. a package registry such as https://registry.npmjs.org/<name> or ' +
             'https://pypi.org/pypi/<name>/json) as is. ' +

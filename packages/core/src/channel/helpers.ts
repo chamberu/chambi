@@ -8,7 +8,7 @@
 import { conversationFor } from '../conversation/context.ts';
 import { gateOutbound } from '../trust/module.ts';
 import { isObject } from 'smob';
-import { requestApproval } from '../approval/request.ts';
+import { requestApproval, reserveApproval } from '../approval/request.ts';
 import type { ApprovalDecision, ApprovalRequestInput } from '../approval/types.ts';
 import { currentToolCall } from '../effect/frame.ts';
 import { matchesEmitReceipt } from '../conversation/helpers.ts';
@@ -81,7 +81,10 @@ function assertEmitMessage(message: unknown): asserts message is EmitMessage {
  * redone step (or a parallel identical call) sends once; a throwing `out`
  * records nothing. `approve` is approve() with the request delivered
  * through this channel to `address` (default: the bound address, else the
- * channel's `defaultAddress`).
+ * channel's `defaultAddress`). Both pass the outbound gate for any target but
+ * the run's source address on its source channel and the channel's
+ * `defaultAddress`; `run` holds the snapshot of the trigger taken when the
+ * execution's channels were built.
  */
 function createChannelHandle(
     run: RunContext,
@@ -98,6 +101,10 @@ function createChannelHandle(
         `Channel "${name}" needs an address: only the run's source channel and a channel with a defaultAddress have a default one.`,
     );
     const capture = conversation && run.trigger.channel === name ? conversation : undefined;
+    // The run's own source address and the channel's configured defaultAddress are exempt from the
+    // outbound gate: the exemption fixes the destination, not the content.
+    const isFixedDestination = (target: string) => (name === run.trigger.channel && target === run.trigger.address) ||
+        target === channel.defaultAddress;
     const send = async (effectKey: string, key: string, message: EmitMessage, target: string) => {
         const stored = await effects.findOne(effectKey);
 
@@ -186,10 +193,7 @@ function createChannelHandle(
         const key = message.key ?? effectKey;
         const captured = { ...message };
         const work = (async () => {
-            const fixed = (name === run.trigger.channel && target === run.trigger.address) ||
-                target === channel.defaultAddress;
-
-            if (!fixed) {
+            if (!isFixedDestination(target)) {
                 await gateOutbound({ run: execution }, 'channel.emit', {
                     channel: name,
                     address: target,
@@ -257,11 +261,28 @@ function createChannelHandle(
             throw new ValidationError('The address must be a non-empty string.');
         }
 
+        // The request body goes to the target: another destination passes the outbound gate like emit()
+        // (outside a tool call requestApproval() refuses the request). The plain ordinal is reserved
+        // before the gate's awaits, so parallel requests keep their ids across replays.
+        let reservation: ReturnType<typeof reserveApproval> | undefined;
+
+        if (currentToolCall() && !isFixedDestination(target)) {
+            reservation = reserveApproval(rest as ApprovalRequestInput);
+
+            await gateOutbound({ run: execution }, 'channel.approve', {
+                channel: name,
+                address: target,
+                // the reserved copy of the choices, so the gate binds what the destination receives
+                request: { ...rest, ...reservation.choice },
+                ...(slot !== undefined ? { slot } : {}),
+            });
+        }
+
         return requestApproval(rest as ApprovalRequestInput, {
             channel: name,
             address: target,
             slot,
-        });
+        }, reservation);
     };
 
     return {
@@ -286,13 +307,19 @@ export function createToolChannels(
 ): ToolChannels {
     const inflight: Inflight = new Map();
     const conversation = conversationFor(run);
-    // Snapshot destination authority, but retain the original execution identity for trust gates.
-    const trusted = conversation ? {
+    // Snapshot destination authority for every run (tool code may write to ctx.run),
+    // but retain the original execution identity for trust gates.
+    const trusted: RunContext = conversation ? {
         runId: conversation.run.id,
         agent: conversation.run.agent,
         trigger: structuredClone(conversation.run.trigger),
         signal: run.signal,
-    } : run;
+    } : {
+        runId: run.runId,
+        agent: run.agent,
+        trigger: structuredClone(run.trigger),
+        signal: run.signal,
+    };
     const canSend = (channel: IChannel<any, any> | undefined): channel is IChannel<any, any> => (
         typeof channel?.out === 'function'
     );

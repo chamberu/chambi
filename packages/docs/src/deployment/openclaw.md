@@ -32,7 +32,7 @@ In the OpenClaw configuration:
 | `hooks.allowedAgentIds` | Lists the `agentId` you pass, if any |
 | `mcp.servers` | The app's `/mcp` endpoint with a token of a principal holding `agent:<name>:run`, never `agent:<name>:approve` |
 
-`deliver.channel` and `deliver.to` must name a concrete destination of your OpenClaw setup (OpenClaw refuses `channel: 'last'` and a partial destination for hooks); the examples use placeholders.
+`deliver.channel` and `deliver.to` must name a concrete destination of your OpenClaw setup (OpenClaw refuses `channel: 'last'` and a partial destination for hooks); the examples use placeholders. `deliver.to` is the channel's `defaultAddress`, which the outbound gate exempts: a run tainted by untrusted content can still send to it without approval, so pick a recipient that may receive what any such run produces (see [untrusted content and outbound tools](/guide/tools#untrusted-content-and-outbound-tools)).
 
 For approvals the message includes how to answer: the `approvalUrl` link when configured, e.g. `https://<app>/ui/approvals?run=<runId>&approval=<approvalId>`, which opens the run's approval in the UI, where the signed-in owner answers it through `POST /runs/:id/approve` (the owner's principal needs `agent:<agent>:approve` to answer and `run:read` or `agent:<agent>:run` for the UI to show the run's approval); else a line saying to answer in the chamvi UI or through `POST /runs/:id/approve`.
 

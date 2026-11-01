@@ -37,8 +37,9 @@ The same options pass through `httpModule()` in `@chamvi/app`. See [GitHub intak
 ## Channels
 
 ```ts
-function httpChannel(): IChannel;                                // name 'http': REST runs; no in, no out
-function mcpChannel(): IChannel;                                 // name 'mcp': MCP run_<agent> runs; no in, no out
+function httpChannel(options?: HttpChannelOptions): IChannel;   // name 'http': REST runs; no in, no out
+function mcpChannel(options?: HttpChannelOptions): IChannel;    // name 'mcp': MCP run_<agent> runs; no in, no out
+// HttpChannelOptions { untrusted?: boolean }: true taints every run the channel starts (default trusted)
 function webhookChannel(options: WebhookChannelOptions): WebhookChannel; // in at /channels/<name>/<agent><path>; on() bound to its name
 function readRequestBody(request: Request, options: ReadRequestBodyOptions): Promise<Uint8Array>; // for a channel's in: 413 above options.limit
 
@@ -53,6 +54,8 @@ const WEBHOOK_CHANNEL_NAME: 'webhook';
 <<< ../../../http/src/channels/types.ts{ts}
 
 <<< ../../../http/src/subscriptions/types.ts{ts}
+
+`httpChannel({ untrusted: true })` and `mcpChannel({ untrusted: true })` opt the REST and MCP intake into the [run-taint boundary](/guide/tools#untrusted-content-and-outbound-tools), for callers that relay text written by others (an OpenClaw MCP principal forwarding chat messages): every run they start is tainted (`channel:http`/`channel:mcp`), so outbound tools wait for approval. Both default to trusted, since the caller is an authenticated principal. In an `@chamvi/app` app, configure the built-in http module: `httpModule({ untrusted: { mcp: true } })` (or `http: true`) in `createApp({ modules })`.
 
 The engine refuses an `http.on()` subscription unless it holds `httpChannel()` (REST and MCP keep separate idempotency scopes through the two channel names), and a `webhook.on()` one unless it holds the webhook channel. `webhook.on()` throws `InvalidAgentDefinitionError` for a path that does not start with `/`. See [Channels](/guide/http#channels).
 

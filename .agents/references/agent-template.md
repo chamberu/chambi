@@ -40,7 +40,7 @@ Documentation follow-up in chamvi/agent-template: show `httpModule({ channelRate
 
 ## Bash-first migration (2026-10-28)
 
-Reviewed local template commit 0374e2b. `.env.example:49-50` advertises CHAMVI_GIT_CREDENTIAL_MODE and dedicated Git tools; remove those lines when consuming #59. Keep token and author configuration. No source/test consumer found. Downstream follow-up is separate from the monorepo PR.
+Reviewed local template commit 0374e2b. `.env.example:49-50` advertises CHAMVI_GIT_CREDENTIAL_MODE and dedicated Git tools. Since 0.4 (`fix/release-0.4-audit`) `@chamvi/sandbox/module` refuses a set `CHAMVI_GIT_CREDENTIAL_MODE` (and a `credentialMode` option) with `InvalidAgentDefinitionError`, so an app started from a `.env` that sets it fails startup: the template must drop those lines in a PR released with 0.4 (required downstream action, not yet opened). Keep token and author configuration. No source/test consumer found. Downstream follow-up is separate from the monorepo PR.
 
 ## Approved local skills compatibility check (2026-10-28, unreleased)
 

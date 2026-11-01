@@ -306,6 +306,55 @@ describe('edits of a file holding an issued token', () => {
         expect(await bytesOf('src/a.ts')).toBe(`[redacted] ${SECRET} [redacted] ${SECRET} [redacted]\n`);
     });
 
+    it('puts the token back when write_file round-trips the text read_file showed', async () => {
+        const call = redactingTools();
+        // the text read_file shows through the redacting view
+        const shown = FILE.replace(SECRET, '[redacted]');
+
+        await call('write_file', { path: 'src/a.ts', content: `// header\n${shown}` });
+        expect(await bytesOf('src/a.ts')).toBe(`// header\n${FILE}`);
+    });
+
+    it('keeps a literal [redacted] of the file and restores tokens in order', async () => {
+        await s.workspace.writeFile('src/a.ts', `[redacted] ${SECRET} [redacted] ${SECRET}\n`);
+
+        const call = redactingTools();
+
+        await call('write_file', { path: 'src/a.ts', content: 'A [redacted] B [redacted] C [redacted] D [redacted]\n' });
+        expect(await bytesOf('src/a.ts')).toBe(`A [redacted] B ${SECRET} C [redacted] D ${SECRET}\n`);
+    });
+
+    it('refuses write_file content whose [redacted] markers do not line up with the file, writing nothing', async () => {
+        const call = redactingTools();
+        const error = await call('write_file', { path: 'src/a.ts', content: 'const t = \'[redacted]\';\nconst u = \'[redacted]\';\n' })
+            .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(ValidationError);
+        expect((error as Error).message).toMatch(/redacted credential/);
+        expect((error as Error).message).not.toContain(SECRET);
+        expect(await bytesOf('src/a.ts')).toBe(FILE);
+    });
+
+    it('refuses write_file content with [redacted] over a token file it cannot read as text, writing nothing', async () => {
+        const bytes = new Uint8Array([...new TextEncoder().encode(`t = '${SECRET}';\n`), 0xFF]);
+
+        await s.workspace.writeFile('src/a.ts', bytes);
+
+        const call = redactingTools();
+        const error = await call('write_file', { path: 'src/a.ts', content: "t = '[redacted]';\n" }).catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(ValidationError);
+        expect((error as Error).message).not.toContain(SECRET);
+        expect(await s.workspace.readBytes('src/a.ts')).toEqual(bytes);
+    });
+
+    it('writes a literal [redacted] where the file holds no token', async () => {
+        const call = redactingTools();
+
+        await call('write_file', { path: 'src/new.ts', content: 'x [redacted]\n' });
+        expect(await bytesOf('src/new.ts')).toBe('x [redacted]\n');
+    });
+
     it('leaves the file untouched and echoes no text when oldString is missing', async () => {
         const call = redactingTools();
         const error = await call('edit_file', {

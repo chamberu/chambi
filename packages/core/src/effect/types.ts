@@ -40,6 +40,8 @@ export type ToolCallFrame = {
     boundApprovals?: number;
     /** The final-input classification captured before the tool can mutate its input. */
     taint?: boolean;
+    /** Set when the outbound gate asked and approved this call: `outboundApproved()` reads it. */
+    outboundApproved?: boolean;
     /** Where approve() reads the recorded decisions. */
     effects: IEffectRepository;
     /** Set by the approve() that suspended the call; the wrapper answers it with a placeholder. */

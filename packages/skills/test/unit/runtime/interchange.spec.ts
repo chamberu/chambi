@@ -115,7 +115,7 @@ describe('runtime structural interchange', () => {
         expect(Object.isFrozen(contributions[0]?.contribution)).toBe(true);
         expect(() => successful.commit()).toThrow(/already committed/i);
     });
-    it.each(['constructor', 'checkAgent', 'prepare'] as const)('retains real content captured by %s after protocol and body replacement', async (capture) => {
+    it.each(['constructor', 'prepare'] as const)('retains real content captured by %s after protocol and body replacement', async (capture) => {
         const original = ready();
         const a = candidate([original]);
         const model = mockModel([{
@@ -130,10 +130,6 @@ describe('runtime structural interchange', () => {
             model,
             agents: capture === 'constructor' ? [a] : [],
         });
-
-        if (capture === 'checkAgent') {
-            e.checkAgent(a);
-        }
 
         if (capture === 'prepare') {
             await e.prepare({ agents: [a] });

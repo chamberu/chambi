@@ -21,12 +21,17 @@ type TrustState = {
     now: () => Date;
     persist: (taint: RunTaint) => Promise<unknown>;
     engine?: Pick<IEngine, 'getChannel'>;
+    /** The run's source channel and address when the trust context was bound, never the mutable `run.trigger`. */
+    source: { channel: string; address?: string };
 };
 
 const executions = new WeakMap<RunContext, TrustState>();
 
-export function bindTrust(run: RunContext, options: Omit<TrustState, 'pending' | 'failure' | 'failed'>): void {
-    executions.set(run, options);
+export function bindTrust(run: RunContext, options: Omit<TrustState, 'pending' | 'failure' | 'failed' | 'source'>): void {
+    // snapshot the notification target: tool code may write to ctx.run.trigger later
+    const { channel, address } = run.trigger;
+
+    executions.set(run, { ...options, source: { channel, ...(address !== undefined ? { address } : {}) } });
 }
 
 /** Persistence failure is fatal to the execution, never a usable tool result. */
@@ -78,7 +83,17 @@ export async function markUntrusted(ctx: Pick<ToolContext, 'run'>, source: strin
     await state.pending;
 }
 
-export async function gateOutbound(ctx: Pick<ToolContext, 'run'>, name: string, input: unknown): Promise<void> {
+/**
+ * The outbound gate: nothing in an untainted run (false), a ToolDeniedError
+ * under `onTainted: 'deny'`, else the bound approval (true once approved).
+ * `detail` (a tool's `approvalDetail`) joins the private body and the binding.
+ */
+export async function gateOutbound(
+    ctx: Pick<ToolContext, 'run'>,
+    name: string,
+    input: unknown,
+    detail?: () => string | undefined | Promise<string | undefined>,
+): Promise<boolean> {
     const state = executions.get(ctx.run);
 
     if (!state) {
@@ -89,12 +104,14 @@ export async function gateOutbound(ctx: Pick<ToolContext, 'run'>, name: string, 
     assertTrust(ctx.run);
 
     if (!state.taint) {
-        return;
+        return false;
     }
 
     if (state.policy?.onTainted === 'deny') {
         throw new ToolDeniedError('Outbound execution denied after exposure to untrusted content.');
     }
+
+    const extra = await detail?.();
 
     const decision = await requestApproval({
         title: 'Approve outbound execution from an untrusted run?',
@@ -102,16 +119,23 @@ export async function gateOutbound(ctx: Pick<ToolContext, 'run'>, name: string, 
             tool: name,
             input,
             taint: state.taint,
+            ...(extra !== undefined && { detail: extra }),
         }),
-        // Bind replay to the final arguments, independently of tool-call ids.
-        binding: stableHash({ name, input }),
+        // Bind replay to the final arguments (and the detail), independently of tool-call ids.
+        binding: stableHash(extra === undefined ? { name, input } : {
+            name,
+            input,
+            detail: extra,
+        }),
         notification: 'An outbound operation requires review in the approval inbox.',
-    }, ctx.run.trigger.address && state.engine?.getChannel(ctx.run.trigger.channel)?.out ? {
-        channel: ctx.run.trigger.channel,
-        address: ctx.run.trigger.address,
+    }, state.source.address && state.engine?.getChannel(state.source.channel)?.out ? {
+        channel: state.source.channel,
+        address: state.source.address,
     } : {});
 
     if (!decision.approved) {
         throw new ToolDeniedError('Outbound execution was not approved.');
     }
+
+    return true;
 }

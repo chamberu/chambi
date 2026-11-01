@@ -16,6 +16,7 @@ import { jsonSchema } from 'ai';
 import {
     Engine,
     MemoryConversationRepository,
+    approve,
     createMemoryStore,
     defineAgent,
     defineTool,
@@ -23,6 +24,7 @@ import {
 import type { IChannel, IEngine, ToolContext } from '@chamvi/core';
 import { ControllableClock } from '../../utils/clock.ts';
 import { mockModel } from '../../utils/mock-model.ts';
+import { CONVERSATION_SEND_GRACE_MS } from '../../../src/engine/execute/constants.ts';
 
 const target = {
     account: 'main',
@@ -51,6 +53,7 @@ function setup(
     action: (context: ToolContext) => Promise<unknown> = async (ctx) => ctx.channels.findOneOrFail().emit({ body: 'actual reply' }),
     clock?: ControllableClock,
     defaultAddress?: string,
+    budget?: { timeoutMs: number },
 ) {
     const store = createMemoryStore({ clock }); const conversations = new MemoryConversationRepository({ clock });
     const out = vi.fn<NonNullable<IChannel['out']>>(async () => {}); const other = vi.fn<NonNullable<IChannel['out']>>(async () => {});
@@ -80,6 +83,7 @@ function setup(
             instructions: 'help',
             conversation: true,
             model,
+            ...(budget ? { budget } : {}),
             tools: { reply: tool },
         })],
         channels: [channel, alternate],
@@ -491,6 +495,126 @@ describe('source emit journal', () => {
         expect(await s.conversations.activeRun(scope)).toBeUndefined();
         expect((await items(s)).find((i) => i.id === 'pending')?.status).toBe('sent');
         expect(s.out).not.toHaveBeenCalled();
+    });
+    it.each(['pause', 'cancel'] as const)('a fire-and-forget emit on a hanging transport does not hold %s', async (kind) => {
+        const clock = new ControllableClock();
+        const s = setup(async (ctx) => {
+            void ctx.channels.findOneOrFail().emit({ body: 'in flight' }).catch(() => {});
+
+            return approve(ctx, { title: 'go on?' });
+        }, clock);
+
+        s.out.mockImplementation(async () => new Promise<void>(() => {}));
+
+        const { runId } = await s.ctx.dispatchConversation({
+            agent: 'helper',
+            trigger: 'message',
+            payload: 'hello',
+            address: 'source',
+        }, target);
+
+        await s.engine.start();
+        await vi.waitFor(() => expect(s.out).toHaveBeenCalledTimes(1));
+        await vi.waitFor(async () => {
+            clock.advance(CONVERSATION_SEND_GRACE_MS);
+            expect((await s.store.runs.findOne(runId))?.status).toBe('waiting');
+        });
+
+        if (kind === 'pause') {
+            return;
+        }
+
+        await s.engine.cancel(runId);
+        expect((await s.store.runs.findOne(runId))?.status).toBe('cancelled');
+        expect((await items(s)).filter((i) => i.role === 'assistant')).toMatchObject([{ status: 'unknown' }]);
+    });
+    it('a replayed pending call gives its fire-and-forget emit the same grace before it pauses again', async () => {
+        const clock = new ControllableClock();
+        const s = setup(async (ctx) => {
+            void ctx.channels.findOneOrFail().emit({ body: 'in flight' }).catch(() => {});
+
+            await approve(ctx, { title: 'one' });
+
+            return approve(ctx, { title: 'two' });
+        }, clock);
+
+        s.out.mockImplementation(async () => new Promise<void>(() => {}));
+
+        const { runId } = await s.ctx.dispatchConversation({
+            agent: 'helper',
+            trigger: 'message',
+            payload: 'hello',
+            address: 'source',
+        }, target);
+
+        await s.engine.start();
+        await vi.waitFor(() => expect(s.out).toHaveBeenCalledTimes(1));
+        await vi.waitFor(async () => {
+            clock.advance(CONVERSATION_SEND_GRACE_MS);
+            expect((await s.store.runs.findOne(runId))?.status).toBe('waiting');
+        });
+
+        const first = await s.store.runs.findOne(runId);
+
+        await s.engine.approve(runId, { approvalId: first!.waiting!.approvalId, approved: true });
+        await s.engine.tick();
+        await vi.waitFor(() => expect(s.out).toHaveBeenCalledTimes(2));
+
+        const { signal } = s.out.mock.calls[1]![2];
+
+        await new Promise((resolve) => {
+            setTimeout(resolve, 20);
+        });
+        expect(signal.aborted).toBe(false);
+        expect((await s.store.runs.findOne(runId))?.status).toBe('running');
+
+        await vi.waitFor(async () => {
+            clock.advance(CONVERSATION_SEND_GRACE_MS);
+            expect((await s.store.runs.findOne(runId))?.waiting?.title).toBe('two');
+        });
+        expect(signal.aborted).toBe(true);
+    });
+    it('a timeout during the grace wait of a replayed pending call fails the run instead of pausing it', async () => {
+        const clock = new ControllableClock();
+        let replaying = false;
+        const s = setup(async (ctx) => {
+            if (replaying) {
+                void ctx.channels.findOneOrFail().emit({ body: 'in flight' }).catch(() => {});
+            }
+
+            await approve(ctx, { title: 'one' });
+
+            return approve(ctx, { title: 'two' });
+        }, clock, undefined, { timeoutMs: 10_000 });
+
+        s.out.mockImplementation(async () => new Promise<void>(() => {}));
+
+        const { runId } = await s.ctx.dispatchConversation({
+            agent: 'helper',
+            trigger: 'message',
+            payload: 'hello',
+            address: 'source',
+        }, target);
+
+        await s.engine.start();
+        await vi.waitFor(async () => expect((await s.store.runs.findOne(runId))?.status).toBe('waiting'));
+
+        const first = await s.store.runs.findOne(runId);
+
+        replaying = true;
+        await s.engine.approve(runId, { approvalId: first!.waiting!.approvalId, approved: true });
+        await s.engine.tick();
+        await vi.waitFor(() => expect(s.out).toHaveBeenCalledTimes(1));
+
+        // the timeout (10 s) ends the 30 s grace: the run fails, it never waits on "two"
+        await vi.waitFor(async () => {
+            clock.advance(10_000);
+
+            const run = await s.store.runs.findOne(runId);
+
+            expect(run?.status).toBe('failed');
+            expect(run?.error?.code).toBe('Timeout');
+        });
     });
     it('stop_does_not_pretend_flush_cancels_send', async () => {
         const gate = Promise.withResolvers<void>();

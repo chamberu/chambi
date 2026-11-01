@@ -23,7 +23,6 @@ import { createModuleHarness } from '@chamvi/app/testing';
 import type { ModuleHarness } from '@chamvi/app/testing';
 import { sandboxModule } from '@chamvi/sandbox/module';
 import type { IGitCredentials } from '@chamvi/sandbox';
-import { INSTALL_CREDENTIALS_SCRIPT } from '../../../src/git/constants.ts';
 import { createFakeProvider } from '../../utils/provider.ts';
 import { textModel } from '../../utils/model.ts';
 import { createRecordingLogger } from '../../utils/module.ts';
@@ -103,26 +102,38 @@ describe('sandboxModule git credentials', () => {
         }
     });
 
-    it('installs the workspace credentials whatever CHAMVI_GIT_CREDENTIAL_MODE says (the variable is gone)', async () => {
-        const provider = createFakeProvider();
-        const module = sandboxModule({
-            provider,
+    it('refuses CHAMVI_GIT_CREDENTIAL_MODE, removed in 0.4, naming the variable', () => {
+        for (const value of ['tools', 'env', 'workspace']) {
+            let error: unknown;
+
+            try {
+                sandboxModule({ provider: createFakeProvider(), env: { CHAMVI_GIT_CREDENTIAL_MODE: value } });
+            } catch (e) {
+                error = e;
+            }
+
+            expect(error).toBeInstanceOf(InvalidAgentDefinitionError);
+            expect((error as Error).message).toContain('CHAMVI_GIT_CREDENTIAL_MODE');
+            expect((error as Error).message).not.toContain(`"${value}"`);
+        }
+
+        // empty is unset
+        expect(() => sandboxModule({
+            provider: createFakeProvider(),
             gcIntervalMs: 0,
-            env: {
-                CHAMVI_GIT_TOKENS: JSON.stringify([{ host: 'github.com', token: 'ghp_envtoken' }]),
-                CHAMVI_GIT_CREDENTIAL_MODE: 'tools',
-            },
-        });
-        const { workspace } = await module.manager.acquire('r1', { repo: 'octo/demo' });
+            env: { CHAMVI_GIT_CREDENTIAL_MODE: '' },
+        })).not.toThrow();
+    });
 
-        await workspace.exec(['true']);
+    it('refuses a credentialMode option, removed in 0.4', () => {
+        const options = {
+            provider: createFakeProvider(),
+            env: {},
+            credentialMode: 'tools',
+        } as Parameters<typeof sandboxModule>[0];
 
-        const raw = provider.workspaces.get(workspace.id)!;
-
-        expect(raw.calls.some((call) => call.argv[2] === INSTALL_CREDENTIALS_SCRIPT)).toBe(true);
-        // a value the former parser refused is ignored too
-        expect(() => sandboxModule({ provider, env: { CHAMVI_GIT_CREDENTIAL_MODE: 'env' } })).not.toThrow();
-        await module.manager.close();
+        expect(() => sandboxModule(options)).toThrow(InvalidAgentDefinitionError);
+        expect(() => sandboxModule(options)).toThrow(/credentialMode/);
     });
 
     it('asks the sources other modules contribute after its own', async () => {

@@ -17,6 +17,16 @@ export type ToolTrust<I = any, S extends StateSchema = StateSchema> = {
 
     /** Apply the agent's approval-or-deny policy before execution if the run is already tainted. */
     guardWhenTainted?: boolean | ((input: I, ctx: ToolContext<S>) => boolean | Promise<boolean>);
+
+    /**
+     * Extra private detail of the outbound gate's approval (e.g. the commits
+     * a push sends), computed on the final input when the gate asks: it goes
+     * into the private approval body (inbox and API, never the source
+     * channel's notification) and into the decision's binding, so a changed
+     * detail on replay asks again. The tool reads `outboundApproved(ctx)` to
+     * skip an approval of its own the gate already covered.
+     */
+    approvalDetail?: (input: I, ctx: ToolContext<S>) => string | undefined | Promise<string | undefined>;
 };
 
 export type AgentTrust = {

@@ -129,7 +129,7 @@ describe('public api', () => {
         expect(sandbox.CACHE_DIR).toBe('/cache');
         expect(sandbox.CACHE_ENV).not.toHaveProperty('MISE_DATA_DIR');
         expect(sandbox.IMAGE_PROBE_TIMEOUT_MS).toBe(30_000);
-        expect(sandbox.IMAGE_REQUIREMENTS).toEqual(['sh', 'git', 'timeout']);
+        expect(sandbox.IMAGE_REQUIREMENTS).toEqual(['sh', 'git', 'timeout', 'head', 'base64', 'tr']);
         expect(sandbox.ROOT_CAPABILITIES).toContain('SETUID');
     });
 

@@ -372,6 +372,23 @@ describe('skill runtime integration', () => {
         await e.idle(); await e.stop();
         expect(checks).toBe(1);
     });
+    it('checks a candidate without selecting a runtime or capturing its inputs', async () => {
+        const one = fakeSkillRuntime({ protocol: 'one/v1' });
+        const two = fakeSkillRuntime({ protocol: 'two/v1' });
+        const e = engine();
+        const candidate = agent(one.input);
+
+        expect(() => e.checkAgent(candidate)).not.toThrow();
+        // nothing was selected: another protocol still checks and registers
+        expect(() => e.checkAgent(agent(two.input))).not.toThrow();
+
+        // nothing was captured: the candidate's current definition counts when it is registered
+        Object.assign(candidate.definition, { skills: [two.input] });
+        await e.putAgent(candidate);
+        expect(two.calls.prepares).toBe(1);
+        expect(one.calls.prepares).toBe(0);
+        await e.stop();
+    });
     it('does not adopt a runtime whose synchronous composition check rejects', () => {
         const rejected = fakeSkillRuntime({
             protocol: 'rejected/v1',
@@ -413,7 +430,7 @@ describe('skill runtime integration', () => {
         });
         await e.stop();
     });
-    it.each(['constructor', 'checkAgent', 'prepare'] as const)('keeps captured input descriptors after %s and array/definition replacement', async (capture) => {
+    it.each(['constructor', 'prepare'] as const)('keeps captured input descriptors after %s and array/definition replacement', async (capture) => {
         const original = fakeSkillRuntime();
         const replacement = fakeSkillRuntime({ protocol: 'replacement/v2' });
         const input = { runtime: original.runtime };
@@ -428,10 +445,6 @@ describe('skill runtime integration', () => {
             model,
             agents: capture === 'constructor' ? [a] : [],
         });
-
-        if (capture === 'checkAgent') {
-            e.checkAgent(a);
-        }
 
         if (capture === 'prepare') {
             await e.prepare({ agents: [a] });

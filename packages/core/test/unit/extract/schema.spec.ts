@@ -50,6 +50,32 @@ describe('safe extraction schemas', () => {
         { type: 'string', pattern: '.*' },
         {
             type: 'string',
+            pattern: '.',
+            maxLength: 200,
+        },
+        {
+            type: 'string',
+            pattern: '^[a-z]+',
+            maxLength: 200,
+        },
+        {
+            type: 'string',
+            pattern: '[a-z]+$',
+            maxLength: 200,
+        },
+        {
+            type: 'string',
+            pattern: '^[a-z]+\\$',
+            maxLength: 200,
+        },
+        {
+            // invalid on its own; wrapped as ^(?:...)$ it would become an unanchored alternation
+            type: 'string',
+            pattern: '^a)|(?:b$',
+            maxLength: 200,
+        },
+        {
+            type: 'string',
             pattern: '^.+$',
             maxLength: 201,
         },
@@ -94,6 +120,55 @@ describe('safe extraction schemas', () => {
         { enum: [] },
     ])('rejects unsafe or unsupported schema %j', (schema) => {
         expect(isSafeExtractionSchema(schema)).toBe(false);
+    });
+
+    it('caps the properties of an object', () => {
+        const properties = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`p${index}`, { type: 'boolean' }]));
+
+        expect(isSafeExtractionSchema({
+            type: 'object', 
+            additionalProperties: false, 
+            properties: properties(32), 
+        })).toBe(true);
+        expect(isSafeExtractionSchema({
+            type: 'object', 
+            additionalProperties: false, 
+            properties: properties(33), 
+        })).toBe(false);
+    });
+
+    it('caps the free-text characters the whole schema can carry', () => {
+        const text = {
+            type: 'string',
+            pattern: '^.*$',
+            maxLength: 200,
+        };
+        const fields = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, index) => [`f${index}`, text]));
+
+        expect(isSafeExtractionSchema({
+            type: 'object', 
+            additionalProperties: false, 
+            properties: fields(5), 
+        })).toBe(true);
+        expect(isSafeExtractionSchema({
+            type: 'object', 
+            additionalProperties: false, 
+            properties: fields(6), 
+        })).toBe(false);
+        expect(isSafeExtractionSchema({
+            type: 'array', 
+            maxItems: 10, 
+            items: text, 
+        })).toBe(false);
+        expect(isSafeExtractionSchema({
+            type: 'array',
+            maxItems: 10,
+            items: {
+                type: 'array', 
+                maxItems: 10, 
+                items: { ...text, maxLength: 20 }, 
+            },
+        })).toBe(false);
     });
 
     it('rejects recursive schemas instead of recursing indefinitely', () => {

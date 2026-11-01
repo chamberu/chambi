@@ -9,6 +9,17 @@ import type { ChannelRequest, IChannel } from '@chamvi/core';
 import type { Authenticator } from '../auth/types.ts';
 import type { WebhookSubscriber } from '../subscriptions/types.ts';
 
+/** Options of `httpChannel()` and `mcpChannel()`. */
+export type HttpChannelOptions = {
+    /**
+     * Taint every run started through this channel (`channel:<name>`), so
+     * classified outbound tools need approval; default false (the caller is
+     * an authenticated principal). Set it when principals relay content you
+     * do not trust.
+     */
+    untrusted?: boolean;
+};
+
 export type WebhookChannelOptions = {
     /** The channel name; default `webhook`. A second instance needs its own. */
     name?: string;

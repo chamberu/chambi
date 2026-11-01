@@ -7,5 +7,5 @@
 
 export { HTTP_CHANNEL_NAME, MCP_CHANNEL_NAME, WEBHOOK_CHANNEL_NAME } from './constants.ts';
 export * from './http.ts';
-export type { WebhookChannel, WebhookChannelOptions } from './types.ts';
+export type { HttpChannelOptions, WebhookChannel, WebhookChannelOptions } from './types.ts';
 export * from './webhook.ts';

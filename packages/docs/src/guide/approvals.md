@@ -10,7 +10,7 @@ The gate runs after `beforeToolExecution` and validation of rewritten input, but
 
 The full arguments and taint details are visible in the **private approval inbox and authenticated API**. A source-channel notification contains only a generic request to review the inbox, plus its approval link when configured; it does not copy the argument-bearing approval body. This redaction applies to automatic trust gates, not arbitrary bodies you put into `ChannelHandle.approve()` yourself. Do not include secrets in source-visible approval text.
 
-Channel sends to the run's original source destination or a configured `defaultAddress` are exempt. The destination is fixed, not the content; this exemption does not make sensitive messages safe to publish.
+`ChannelHandle.emit()` and `ChannelHandle.approve()` to another destination pass this gate first (`channel.emit`, `channel.approve`); in a tainted run an approval request to a model-selected address waits for the private inbox before it is delivered there. Sends to the run's original source destination (a snapshot taken when the execution starts, never the mutable `ctx.run.trigger`) or to a channel's configured `defaultAddress` are exempt, on every channel. The destination is fixed, not the content; this exemption does not make sensitive messages safe to publish. See [Untrusted content](/guide/tools#untrusted-content-and-outbound-tools) for the `defaultAddress` caveat.
 
 ## Asking from a tool
 

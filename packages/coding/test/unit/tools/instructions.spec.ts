@@ -134,6 +134,46 @@ describe('repository instructions on read_file', () => {
         await expect(setup.call('read_file', { path: 'src/a.ts' }, undefined, controller.signal)).rejects.toThrow(SandboxError);
     });
 
+    it('degrades to null instructions with a diagnostic when collection fails, keeping the file read', async () => {
+        const { exec } = setup.workspace;
+
+        setup.workspace.exec = async () => {
+            throw new SandboxError('inspection transport failed');
+        };
+
+        try {
+            const result = await setup.call<ReadFileResult>('read_file', { path: 'src/a.ts' });
+
+            expect(result.content).toBe('export const a = 1;\nexport const b = 2;');
+            expect(result.instructions).toBeNull();
+            expect(result.instructionsError).toContain('inspection transport failed');
+        } finally {
+            setup.workspace.exec = exec;
+        }
+    });
+
+    it('skips the collector in a workspace without a repository', async () => {
+        const { workspace } = await setup.manager.acquire('r2', {});
+
+        await workspace.writeFile('AGENTS.md', 'not a checkout\n');
+        await workspace.writeFile('notes.txt', 'hello\n');
+
+        const calls: unknown[] = [];
+        const { exec } = workspace;
+
+        workspace.exec = async (...args) => {
+            calls.push(args[0]);
+
+            return exec.apply(workspace, args);
+        };
+
+        const result = await setup.call<ReadFileResult>('read_file', { path: 'notes.txt' }, 'r2');
+
+        expect(result.content).toBe('hello');
+        expect(result).not.toHaveProperty('instructions');
+        expect(calls).toEqual([]);
+    });
+
     it('leaves image results free of instruction context', async () => {
         await setup.workspace.writeFile('AGENTS.md', 'root guidance\n');
         await setup.workspace.writeFile('image.png', new Uint8Array([

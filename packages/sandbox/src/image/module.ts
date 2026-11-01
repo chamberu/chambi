@@ -23,6 +23,10 @@ const MISSING_LABELS: Readonly<Record<string, string>> = {
     git: 'git',
     timeout: 'timeout',
     'timeout-k': 'a timeout that supports -k (GNU coreutils)',
+    '/bin/sh': 'sh at /bin/sh',
+    head: 'head in /usr/bin or /bin',
+    base64: 'base64 in /usr/bin or /bin',
+    tr: 'tr in /usr/bin or /bin',
 };
 
 /** Probe output is a few words: never hold more. */
@@ -60,7 +64,8 @@ export function isRootUser(user: string | number): boolean {
 
 /**
  * Checks once, right after the container or pod started and before any
- * checkout, that the image has `sh`, `git` and a `timeout` that takes `-k`
+ * checkout, that the image has `sh` (also at `/bin/sh`), `git`, a `timeout`
+ * that takes `-k` and `head`, `base64` and `tr` in `/usr/bin` or `/bin`
  * (`IMAGE_PROBE_SCRIPT`, run straight on the transport, since every
  * workspace exec goes through `timeout`). SandboxError naming what is
  * missing, or why the probe failed (also after `IMAGE_PROBE_TIMEOUT_MS`

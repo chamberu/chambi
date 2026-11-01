@@ -24,7 +24,7 @@ import {
     toApprovalDecision,
     toApprovalOptions,
 } from './helpers.ts';
-import type { ApprovalDecision, ApprovalRequestInput } from './types.ts';
+import type { ApprovalDecision, ApprovalRequestInput, ApprovalReservation } from './types.ts';
 
 /**
  * Thrown by approve() to suspend its tool call until the approval is
@@ -68,22 +68,7 @@ function assertRequest(request: unknown): Pick<ApprovalRequest, 'options' | 'mul
     return toApprovalOptions(request.options, request.multiple);
 }
 
-/**
- * The approval logic behind approve() and ChannelHandle.approve(): the n-th
- * request of the current tool call has the id `<stepIndex>:<toolCallId>:<n>`
- * (the step index of the model step that made the call, so a call id a
- * provider reuses in a later step is another approval); a decision
- * recorded for it is returned, otherwise the call is suspended (the request
- * is stashed on the frame and a SuspendSignal thrown). Sends nothing.
- */
-export async function requestApproval(
-    request: ApprovalRequestInput & { binding?: string; notification?: string },
-    target: {
-        channel?: string;
-        address?: string;
-        slot?: string
-    } = {},
-): Promise<ApprovalDecision> {
+function checkFrame(request: unknown) {
     const frame = currentToolCall();
 
     if (!frame) {
@@ -96,12 +81,59 @@ export async function requestApproval(
         );
     }
 
-    const choice = assertRequest(request);
+    return { frame, choice: assertRequest(request) };
+}
 
-    // taken before any await, so the ordinals follow the order of the calls
-    frame.boundApprovals ??= 0;
+/**
+ * Checks a plain request and takes its ordinal synchronously (internal), so a
+ * caller that awaits before requestApproval() (ChannelHandle.approve() behind
+ * the outbound gate) keeps the ordinals in the order of the calls.
+ */
+export function reserveApproval(request: ApprovalRequestInput): ApprovalReservation {
+    const { frame, choice } = checkFrame(request);
 
-    const ordinal = request.binding ? frame.boundApprovals++ : frame.approvals++;
+    return {
+        frame,
+        choice,
+        ordinal: frame.approvals++,
+    };
+}
+
+/**
+ * The approval logic behind approve() and ChannelHandle.approve(): the n-th
+ * request of the current tool call has the id `<stepIndex>:<toolCallId>:<n>`
+ * (the step index of the model step that made the call, so a call id a
+ * provider reuses in a later step is another approval); a decision
+ * recorded for it is returned, otherwise the call is suspended (the request
+ * is stashed on the frame and a SuspendSignal thrown). Sends nothing.
+ * `reservation` is a plain ordinal reserveApproval() took for this request.
+ */
+export async function requestApproval(
+    request: ApprovalRequestInput & { binding?: string; notification?: string },
+    target: {
+        channel?: string;
+        address?: string;
+        slot?: string
+    } = {},
+    reservation?: ApprovalReservation,
+): Promise<ApprovalDecision> {
+    let frame: ApprovalReservation['frame'];
+    let choice: ApprovalReservation['choice'];
+    let ordinal: number;
+
+    if (reservation && !request.binding) {
+        ({
+            frame,
+            choice,
+            ordinal,
+        } = reservation);
+    } else {
+        ({ frame, choice } = checkFrame(request));
+        // taken before any await, so the ordinals follow the order of the calls
+        frame.boundApprovals ??= 0;
+        ordinal = request.binding ? frame.boundApprovals++ : frame.approvals++;
+    }
+
     // Bound automatic ids regardless of provider call-id length; ordinary replay ids stay unchanged.
     const approvalId = request.binding ?
         `bound:${stableHash([frame.stepIndex, frame.toolCallId, ordinal, request.binding])}` :
@@ -153,4 +185,20 @@ export async function approve<S extends StateSchema = StateSchema>(
     }
 
     return requestApproval(request);
+}
+
+/**
+ * Whether the outbound gate asked for and got an approval of the current tool
+ * call (a `guardWhenTainted` tool in a tainted run): a tool with an approval
+ * of its own skips it then, so one decision covers the call. False outside a
+ * tool call, for another run's context and when no gate asked.
+ */
+export function outboundApproved<S extends StateSchema = StateSchema>(ctx: Pick<ToolContext<S>, 'run'>): boolean {
+    const frame = currentToolCall();
+
+    if (!frame || ctx?.run?.runId !== frame.runId) {
+        return false;
+    }
+
+    return frame.outboundApproved === true;
 }
