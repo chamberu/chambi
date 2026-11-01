@@ -9,9 +9,10 @@ import { InvalidAgentDefinitionError, assertConcurrencyMaxRuns } from '@chamvi/c
 import type { ChannelSubscription } from '@chamvi/core';
 import { isObject } from 'smob';
 import { CHAT_CHANNEL_NAME } from '../channel/constants.ts';
-import { encodeChatAddress, hashKey } from '../channel/helpers.ts';
+import { encodeChatAddress } from '../channel/helpers.ts';
 import type { ChatEvent, ChatPayload } from '../channel/types.ts';
 import { CHAT_EVENTS, DEFAULT_CHAT_EVENTS } from './constants.ts';
+import { chatConcurrencyKey, chatIdempotencyKey } from './helpers.ts';
 import type { ChatSubscriber, ChatSubscriptionOptions, ChatTarget } from './types.ts';
 
 function invalid(message: string): InvalidAgentDefinitionError {
@@ -90,8 +91,8 @@ export function createChatSubscription(
             ...(adapter !== undefined ? { adapter } : {}),
             ...(filter ? { filter } : {}),
         },
-        concurrencyKey: (payload) => hashKey([channel, payload.adapter, payload.threadId]),
-        idempotencyKey: (payload) => hashKey([channel, payload.adapter, payload.threadId, payload.message.id]),
+        concurrencyKey: (payload) => chatConcurrencyKey(channel, payload),
+        idempotencyKey: (payload) => chatIdempotencyKey(channel, payload),
     };
 }
 

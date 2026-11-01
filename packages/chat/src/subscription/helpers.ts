@@ -7,7 +7,18 @@
 
 import type { ChannelSubscription } from '@chamvi/core';
 import { isObject } from 'smob';
+import { hashKey } from '../channel/helpers.ts';
 import type { ChatPayload } from '../channel/types.ts';
+
+/** The idempotency key of a message: one run per agent, message and chat (a hash of channel, adapter, thread and message id). */
+export function chatIdempotencyKey(channel: string, payload: Pick<ChatPayload, 'adapter' | 'threadId' | 'message'>): string {
+    return hashKey([channel, payload.adapter, payload.threadId, payload.message.id]);
+}
+
+/** The concurrency key of a chat: one run per chat at a time (a hash of channel, adapter and thread). */
+export function chatConcurrencyKey(channel: string, payload: Pick<ChatPayload, 'adapter' | 'threadId'>): string {
+    return hashKey([channel, payload.adapter, payload.threadId]);
+}
 
 /**
  * Whether a chat subscription takes `payload`: its adapter (when set), one of

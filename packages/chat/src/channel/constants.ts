@@ -20,6 +20,9 @@ export const CHAT_STOP_TIMEOUT_MS = 30_000;
 /** The code of the error stop() reports for messages still being accepted at its timeout. */
 export const CHAT_STOP_TIMEOUT_ERROR_CODE = 'chat_stop_timeout';
 
+/** The code of the error reported for a message that started not every run it should have. */
+export const CHAT_INTAKE_FAILED_ERROR_CODE = 'chat_intake_failed';
+
 /** A channel name: the agent name rule. */
 export const CHANNEL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 

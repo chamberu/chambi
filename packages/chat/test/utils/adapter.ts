@@ -22,6 +22,10 @@ export type FakeAdapter = Adapter<string, unknown> & {
     /** how often initialize() and disconnect() ran */
     readonly initializeCalls: number;
     readonly disconnectCalls: number;
+    /** every platform read the adapter served (history, thread, user lookups), by method name */
+    readonly reads: string[];
+    /** whether a thread is a direct chat; default every thread is */
+    isDirect: (threadId: string) => boolean;
     /** runs inside initialize(), after the adapter took the ChatInstance */
     onInitialize?: (chat: ChatInstance) => void | Promise<void>;
     /** hands a message to chat.processMessage and returns its promise, as a webhook adapter can */
@@ -30,12 +34,13 @@ export type FakeAdapter = Adapter<string, unknown> & {
     deliverIgnored(message: Message): void;
 };
 
-/** A transport-free Chat SDK adapter: every thread is a direct chat. */
+/** A transport-free Chat SDK adapter: every thread is a direct chat unless `isDirect` says otherwise. */
 export function createFakeAdapter(name = 'fake'): FakeAdapter {
     let chat: ChatInstance | undefined;
     let initializeCalls = 0;
     let disconnectCalls = 0;
     const posts: FakeAdapter['posts'] = [];
+    const reads: string[] = [];
 
     const requireChat = (): ChatInstance => {
         if (!chat) {
@@ -58,6 +63,8 @@ export function createFakeAdapter(name = 'fake'): FakeAdapter {
             return disconnectCalls;
         },
         posts,
+        reads,
+        isDirect: () => true,
         async initialize(instance) {
             initializeCalls += 1;
             chat = instance;
@@ -75,7 +82,7 @@ export function createFakeAdapter(name = 'fake'): FakeAdapter {
         encodeThreadId: (id) => `${name}:${id}`,
         decodeThreadId: (threadId) => threadId.slice(name.length + 1),
         channelIdFromThreadId: (threadId) => threadId,
-        isDM: () => true,
+        isDM: (threadId) => adapter.isDirect(threadId),
         parseMessage: () => {
             throw new Error('not used');
         },
@@ -103,9 +110,18 @@ export function createFakeAdapter(name = 'fake'): FakeAdapter {
         removeReaction: () => Promise.resolve(),
         startTyping: () => Promise.resolve(),
         async fetchMessages() {
+            reads.push('fetchMessages');
+
             return { messages: [] };
         },
+        async getUser() {
+            reads.push('getUser');
+
+            return null;
+        },
         async fetchThread(threadId) {
+            reads.push('fetchThread');
+
             return {
                 id: threadId,
                 channelId: threadId,
@@ -118,12 +134,16 @@ export function createFakeAdapter(name = 'fake'): FakeAdapter {
     return adapter;
 }
 
-/** A text message from another user in the fake adapter's thread. */
+/** A text message from another user (`user-1` unless `author` says otherwise) in the fake adapter's thread. */
 export function createTextMessage(input: {
     adapter?: string;
     thread?: string;
     id: string;
-    text?: string
+    text?: string;
+    author?: string;
+    isMe?: boolean;
+    isMention?: boolean;
+    attachments?: Message['attachments'];
 }): Message {
     const text = input.text ?? 'hello';
 
@@ -134,13 +154,14 @@ export function createTextMessage(input: {
         formatted: parseMarkdown(text),
         raw: {},
         author: {
-            userId: 'user-1',
+            userId: input.author ?? 'user-1',
             userName: 'user',
             fullName: 'User',
-            isBot: false,
-            isMe: false,
+            isBot: input.isMe === true,
+            isMe: input.isMe === true,
         },
         metadata: { dateSent: new Date(0), edited: false },
-        attachments: [],
+        attachments: input.attachments ?? [],
+        ...(input.isMention !== undefined ? { isMention: input.isMention } : {}),
     });
 }

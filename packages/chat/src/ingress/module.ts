@@ -18,6 +18,8 @@ import type { ChatIngress, IChatReceiver } from './types.ts';
 
 type IngressState = {
     receiver: IChatReceiver | undefined;
+    /** told about a message that arrived after the last receiver was unbound */
+    onRefused?: (error: unknown) => void;
 };
 
 // ingress -> its receiver binding; keyed by the wrapper object, never a global singleton of data
@@ -65,7 +67,16 @@ async function receive(
     const { receiver } = state;
 
     if (!receiver) {
-        throw new InvalidRunStateError(`Chat adapter "${adapter.name}" has no receiver bound.`);
+        // a late event (a socket message after stop) is refused, and the stopped channel told once
+        const error = new InvalidRunStateError(`Chat adapter "${adapter.name}" has no receiver bound (its channel is not started); the message is refused.`);
+
+        try {
+            state.onRefused?.(error);
+        } catch {
+            // the report must not replace the refusal
+        }
+
+        throw error;
     }
 
     const resolved = typeof message === 'function' ? await message() : message;
@@ -82,6 +93,9 @@ async function receive(
  * SDK's handlers: initialize(chat) hands the adapter a ChatInstance whose
  * processMessage goes to the bound receiver (no SDK dedupe, no SDK handler) and
  * whose every other member is the real chat's, called on the real chat.
+ *
+ * The deprecated handleIncomingMessage takes the same path, so no message
+ * reaches the SDK's handlers or its dedupe through it.
  *
  * Of processMessage's WebhookOptions only `waitUntil` is applied: it gets the
  * acceptance task (rejecting when the message was not accepted), so a webhook
@@ -109,7 +123,15 @@ export function createChatIngressAdapter(adapter: Adapter): ChatIngress {
             return task;
         };
 
-        return forwardMembers(chat, { processMessage });
+        const handleIncomingMessage: ChatInstance['handleIncomingMessage'] = (source, threadId, message) => {
+            const task = receive(state, source, threadId, message);
+
+            task.catch(() => undefined);
+
+            return task;
+        };
+
+        return forwardMembers(chat, { processMessage, handleIncomingMessage });
     };
 
     const initialize: Adapter['initialize'] = (chat) => adapter.initialize(facadeOf(chat));
@@ -128,9 +150,15 @@ export function isChatIngress(value: unknown): value is ChatIngress {
 /**
  * Binds the receiver of an ingress (internal: the channel binds itself on start).
  * Returns the disposer that unbinds it again; a disposer only ever unbinds its
- * own receiver, so a stale one leaves a later binding alone.
+ * own receiver, so a stale one leaves a later binding alone. After the unbind
+ * `onRefused` hears of every message refused for want of a receiver, until
+ * the next bind.
  */
-export function bindIngress(ingress: ChatIngress, receiver: IChatReceiver): () => void {
+export function bindIngress(
+    ingress: ChatIngress,
+    receiver: IChatReceiver,
+    onRefused?: (error: unknown) => void,
+): () => void {
     const state = states.get(ingress);
 
     if (!state) {
@@ -142,10 +170,17 @@ export function bindIngress(ingress: ChatIngress, receiver: IChatReceiver): () =
     }
 
     state.receiver = receiver;
+    delete state.onRefused;
 
     return () => {
-        if (state.receiver === receiver) {
-            state.receiver = undefined;
+        if (!(state.receiver === receiver)) {
+            return;
+        }
+
+        state.receiver = undefined;
+
+        if (onRefused) {
+            state.onRefused = onRefused;
         }
     };
 }

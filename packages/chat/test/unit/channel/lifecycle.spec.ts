@@ -347,7 +347,7 @@ describe('chatChannel lifecycle', () => {
         await expect(fixture.adapter.deliver(createTextMessage({ id: 'awaited' }))).rejects.toThrow('store down');
     });
 
-    it('refuses messages until the intake is wired', async () => {
+    it('accepts a message no agent subscribes to without starting a run', async () => {
         const adapter = createFakeAdapter();
         const ingress = createChatIngressAdapter(adapter);
         const chat = buildChat({ [ingress.name]: ingress });
@@ -369,8 +369,9 @@ describe('chatChannel lifecycle', () => {
         engines.push(engine);
         await engine.start();
 
-        await expect(adapter.deliver(createTextMessage({ id: 'm-1' }))).rejects.toThrow(InvalidRunStateError);
-        expect(errors).toHaveLength(1);
+        await expect(adapter.deliver(createTextMessage({ id: 'm-1' }))).resolves.toBeUndefined();
+        expect(await engine.store.runs.find({})).toEqual({ data: [], total: 0 });
+        expect(errors).toEqual([]);
     });
 });
 

@@ -7,6 +7,7 @@
 
 import { ChamviError, InvalidRunStateError } from '@chamvi/core';
 import type { ChannelContext } from '@chamvi/core';
+import { createChatIntake } from '../intake/module.ts';
 import { bindIngress } from '../ingress/module.ts';
 import type { ChatIncoming, IChatReceiver } from '../ingress/types.ts';
 import { createChatSubscription } from '../subscription/module.ts';
@@ -29,6 +30,8 @@ type ChatRun = {
     readonly context: ChannelContext;
     readonly controller: AbortController;
     readonly inFlight: Set<Promise<void>>;
+    /** the intake tasks already tracked: deliveries sharing one task report its failure once */
+    readonly tasks: WeakSet<Promise<void>>;
     accepting: boolean;
     disposers: Array<() => void>;
     /** the start's own work (bind, initialize, connect), settled */
@@ -51,12 +54,24 @@ function createReceiver(
                 return Promise.reject(error);
             }
 
-            const task = (async () => intake(incoming, {
-                context: run.context,
-                signal: run.controller.signal,
-                options,
-            }))();
+            let task: Promise<void>;
 
+            try {
+                task = intake(incoming, {
+                    context: run.context,
+                    signal: run.controller.signal,
+                    options,
+                });
+            } catch (error) {
+                task = Promise.reject(error);
+            }
+
+            // a second delivery of a message the intake is still accepting shares its task
+            if (run.tasks.has(task)) {
+                return task;
+            }
+
+            run.tasks.add(task);
             run.inFlight.add(task);
 
             // the one report of a failed message, whether its producer awaits it or not
@@ -173,6 +188,7 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
             context,
             controller: new AbortController(),
             inFlight: new Set(),
+            tasks: new WeakSet(),
             accepting: true,
             disposers: [],
         };
@@ -184,7 +200,7 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
 
             // bound before the adapters initialize, so their first message has a receiver
             for (const adapter of resolved.adapters) {
-                run.disposers.push(bindIngress(adapter, receiver));
+                run.disposers.push(bindIngress(adapter, receiver, (error) => reportError(resolved, error)));
             }
 
             await resolved.chat.initialize();
@@ -227,16 +243,12 @@ export function createChatChannel(options: ChatChannelOptions, intake: ChatIntak
     };
 }
 
-/** Refuses every message: the channel's intake is not wired. */
-const refuseIntake: ChatIntake = async (incoming, { options }) => {
-    throw new InvalidRunStateError(`Chat channel "${options.name}" accepts no message of adapter "${incoming.adapter.name}" yet.`);
-};
-
 /**
  * A chat channel over a Chat SDK `Chat` whose adapters are wrapped by
- * createChatIngressAdapter(). See createChatChannel() for the lifecycle.
+ * createChatIngressAdapter(). See createChatChannel() for the lifecycle and
+ * createChatIntake() for what a message must pass to start runs.
  * Throws InvalidAgentDefinitionError for an invalid option.
  */
 export function chatChannel(options: ChatChannelOptions): ChatChannel {
-    return createChatChannel(options, refuseIntake);
+    return createChatChannel(options, createChatIntake());
 }
